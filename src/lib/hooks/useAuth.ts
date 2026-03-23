@@ -16,11 +16,26 @@ export function useAuth() {
   const handleLogin = useCallback(async (credentials: LoginCredentials) => {
     const result = await dispatch(login(credentials));
     if (login.fulfilled.match(result)) {
-      const roles = result.payload.roles;
-      if (roles.includes(USER_ROLES.PATIENT)) router.push(ROUTES.PATIENT_DASHBOARD);
-      else if (roles.includes(USER_ROLES.DOCTOR)) router.push(ROUTES.DOCTOR_DASHBOARD);
-      else if (roles.includes(USER_ROLES.CLINICAL_ASSISTANT)) router.push(ROUTES.CA_DASHBOARD);
-      else router.push(ROUTES.DOCTOR_DASHBOARD);
+      const roles = result.payload?.roles || [];
+      console.log("handleLogin - roles:", roles);
+      console.log("USER_ROLES values:", USER_ROLES);
+      console.log("roles.includes(PATIENT):", roles.includes(USER_ROLES.PATIENT));
+      console.log("roles.includes(DOCTOR):", roles.includes(USER_ROLES.DOCTOR));
+      console.log("roles.includes(CLINICAL_ASSISTANT):", roles.includes(USER_ROLES.CLINICAL_ASSISTANT));
+      
+      if (roles.includes(USER_ROLES.PATIENT)) {
+        console.log("Routing to PATIENT_DASHBOARD");
+        router.push(ROUTES.PATIENT_DASHBOARD);
+      } else if (roles.includes(USER_ROLES.DOCTOR)) {
+        console.log("Routing to DOCTOR_DASHBOARD");
+        router.push(ROUTES.DOCTOR_DASHBOARD);
+      } else if (roles.includes(USER_ROLES.CLINICAL_ASSISTANT)) {
+        console.log("Routing to CA_DASHBOARD");
+        router.push(ROUTES.CA_DASHBOARD);
+      } else {
+        console.log("No role match, defaulting to DOCTOR_DASHBOARD");
+        router.push(ROUTES.DOCTOR_DASHBOARD);
+      }
     }
     return result;
   }, [dispatch, router]);

@@ -21,13 +21,26 @@ export const login = createAsyncThunk(
   "auth/login",
   async (credentials: LoginCredentials, { rejectWithValue }) => {
     try {
+      console.log("Attempting login with:", credentials.email);
       const response = await authService.login(credentials);
+      console.log("Login response:", response);
+      
+      if (!response.user) {
+        console.error("No user in response:", response);
+        return rejectWithValue("User data missing from response");
+      }
+      
       localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.access_token);
       localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, response.refresh_token);
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.user));
+      
+      console.log("Login successful, returning user:", response.user);
       return response.user;
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.detail || "Login failed");
+      console.error("Login error:", error);
+      const errorMessage = error.response?.data?.detail || error.message || "Login failed";
+      console.error("Error message:", errorMessage);
+      return rejectWithValue(errorMessage);
     }
   }
 );
