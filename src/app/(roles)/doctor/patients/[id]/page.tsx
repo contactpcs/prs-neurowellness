@@ -1,13 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
-import { ChevronRight, Search, HelpCircle, Bell, Play, Lock, Plus } from "lucide-react";
-import { useSessions } from "@/lib/hooks";
+import { ChevronRight } from "lucide-react";
 import { PageLoader } from "@/components/ui";
 import { DUMMY_PATIENTS } from "../../dashboard/page";
-import type { AssessmentSession } from "@/types/prs.types";
+import conditionMap from "@/data/conditionMap.json";
+import {
+  prsAssessmentService,
+  type PrsAssessmentQuestion,
+  type PrsConditionDetails,
+  type PrsQuestionOptionsResult,
+} from "@/lib/api/services/prsAssessment.service";
 
 interface PatientDetails {
   id: string;
@@ -29,82 +33,132 @@ interface Assessment {
   statusColor?: string;
 }
 
+type PrsDisease = {
+  id: string;
+  name: string;
+  description?: string;
+  scales?: string[];
+};
+
+type QuestionWithOptions = PrsAssessmentQuestion & {
+  optionsPayload?: PrsQuestionOptionsResult;
+};
+
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { sessions, loadPatientSessions } = useSessions();
   const [patient, setPatient] = useState<PatientDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedAssessment, setSelectedAssessment] = useState<string>("FNON");
-  const [activeTab, setActiveTab] = useState("today");
+
+  const [selectedDiseaseId, setSelectedDiseaseId] = useState<string | null>(null);
+  const [conditionDetails, setConditionDetails] = useState<PrsConditionDetails | null>(null);
+  const [questions, setQuestions] = useState<QuestionWithOptions[]>([]);
+  const [isPrsLoading, setIsPrsLoading] = useState(false);
+  const [prsError, setPrsError] = useState<string | null>(null);
+  const requestSeq = useRef(0);
+
+  const prsDiseases: PrsDisease[] = useMemo(() => {
+    const conditions = (conditionMap as any)?.conditions || {};
+    return Object.entries(conditions).map(([key, value]: any) => ({
+      id: String(key),
+      name: String(value?.label || key),
+      description: value?.description ? String(value.description) : undefined,
+      scales: Array.isArray(value?.scales) ? value.scales.map((s: any) => String(s)) : undefined,
+    }));
+  }, []);
 
   useEffect(() => {
     setIsLoading(true);
     
     // Load patient from dummy data or create one
-    const dummyPatient = DUMMY_PATIENTS[id];
-    if (dummyPatient) {
-      setPatient({
-        id,
-        ...dummyPatient,
-      });
-    } else {
-      setPatient({
-        id,
-        name: "Patient",
-        age: 25,
-        gender: "Unknown",
-        condition: "General",
-        status: "new",
-      });
-    }
+    const dummyPatient = Array.isArray(DUMMY_PATIENTS)
+      ? (DUMMY_PATIENTS as any[]).find((p) => String(p?.id) === String(id))
+      : (DUMMY_PATIENTS as any)?.[id];
 
-    loadPatientSessions(id);
+    setPatient(
+      dummyPatient
+        ? { id, ...dummyPatient }
+        : {
+            id,
+            name: "Patient",
+            age: 25,
+            gender: "Unknown",
+            condition: "General",
+            status: "new",
+          }
+    );
+
     setIsLoading(false);
-  }, [id, loadPatientSessions]);
+  }, [id]);
+
+  const handleSelectDisease = async (diseaseId: string) => {
+    setSelectedDiseaseId(diseaseId);
+    setConditionDetails(null);
+    setQuestions([]);
+    setPrsError(null);
+
+    const seq = ++requestSeq.current;
+    setIsPrsLoading(true);
+
+    try {
+      const details = await prsAssessmentService.getConditionDetails(diseaseId);
+      if (requestSeq.current !== seq) return;
+      setConditionDetails(details);
+
+      const firstScale = Array.isArray(details?.scales) ? details.scales[0] : undefined;
+      if (!firstScale?.scale_id) {
+        setQuestions([]);
+        return;
+      }
+
+      const start = await prsAssessmentService.startAssessment({
+        scale_id: firstScale.scale_id,
+        disease_id: diseaseId,
+        taken_by: "doctor_on_behalf",
+        patient_id: String(id),
+      });
+
+      if (requestSeq.current !== seq) return;
+      const baseQuestions = start?.scale?.questions || [];
+
+      const withOptions = await Promise.all(
+        baseQuestions.map(async (q) => {
+          try {
+            const optionsPayload = await prsAssessmentService.getQuestionOptions(q.question_id);
+            return { ...q, optionsPayload };
+          } catch {
+            return { ...q };
+          }
+        })
+      );
+
+      if (requestSeq.current !== seq) return;
+      setQuestions(withOptions);
+    } catch (e: any) {
+      if (requestSeq.current !== seq) return;
+      const msg =
+        e?.response?.data?.message || e?.response?.data?.detail || e?.message || "Failed to load PRS assessment";
+      setPrsError(String(msg));
+    } finally {
+      if (requestSeq.current === seq) setIsPrsLoading(false);
+    }
+  };
 
   if (isLoading) return <PageLoader />;
 
-  const assessments: Assessment[] = [
-    { id: "prs", icon: "✓", name: "PRS", status: "start" },
-    { id: "doctors-notes", icon: "📝", name: "Doctor's Notes", status: "start" },
-    { id: "final-report", icon: "💰", name: "Final Report", status: "locked" },
-  ];
-
-  const activitiesPerformed = ["Crossword", "Toe Touch", "Walking", "Sudoku", "Balance Test"];
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#f7f6f2] to-[#f4f0ef]">
-      {/* Header with navigation */}
       <div className="bg-white border-b border-neutral-200">
         <div className="max-w-full px-8 py-4 flex items-center justify-between">
-          <button 
+          <button
             onClick={() => router.back()}
             className="flex items-center gap-2 text-neutral-600 hover:text-neutral-900 transition-colors"
           >
             <ChevronRight className="w-6 h-6 rotate-180" />
-            <span>back to Search</span>
+            <span>Back</span>
           </button>
 
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 bg-white border border-neutral-200 px-5 py-3 rounded-full shadow-sm w-96">
-              <Search className="w-5 h-5 text-neutral-400" />
-              <input 
-                type="text"
-                placeholder="Search patients, schedule, courses, equipments, etc"
-                className="flex-1 outline-none text-neutral-700 placeholder:text-neutral-400"
-              />
-            </div>
-            <button className="p-3 hover:bg-neutral-100 rounded-full transition-colors">
-              <HelpCircle className="w-6 h-6 text-neutral-600" />
-            </button>
-            <div className="relative">
-              <button className="p-3 hover:bg-neutral-100 rounded-full transition-colors">
-                <Bell className="w-6 h-6 text-neutral-600" />
-                <span className="absolute top-2 right-2 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-semibold">3</span>
-              </button>
-            </div>
-          </div>
+          <div className="text-sm text-neutral-500">Patient ID: {id}</div>
         </div>
       </div>
 
@@ -146,145 +200,104 @@ export default function PatientDetailPage() {
             </div>
           </div>
 
-          {/* Next activity card */}
-          <div className="bg-white rounded-lg shadow-md p-5 flex items-center justify-between">
-            <div className="bg-[#f1f7ff] rounded-lg p-4">
-              <p className="text-neutral-600 text-sm mb-2">Next Activity</p>
-              <p className="text-neutral-900 font-semibold text-lg">Brain Mapping</p>
-              <div className="flex items-center gap-2 mt-2">
-                <span className="px-2 py-1 bg-[#f1f7ff] text-[#1b74f9] text-xs font-semibold rounded">Basic 2/7</span>
-              </div>
-            </div>
-            <button className="px-5 py-3 bg-[#f47920] text-white rounded-full hover:bg-[#d96b1a] transition-colors font-medium flex items-center gap-2">
-              <Play className="w-4 h-4" /> Start
-            </button>
+          <div className="bg-white rounded-lg shadow-md p-5">
+            <p className="text-neutral-600 text-sm">Condition</p>
+            <p className="text-neutral-900 font-semibold text-lg">{patient?.condition || "—"}</p>
+            <p className="text-neutral-600 text-sm mt-3">Status</p>
+            <p className="text-neutral-900 font-semibold text-lg capitalize">{patient?.status || "—"}</p>
           </div>
         </div>
 
-        {/* Assessment tabs */}
-        <div className="mb-6 flex items-center gap-3 bg-white rounded-lg p-4 shadow-sm">
-          <button 
-            onClick={() => setActiveTab("today")}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeTab === "today" 
-                ? "bg-neutral-900 text-white" 
-                : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-            }`}
-          >
-            Today's Activity
-          </button>
-          <div className="w-px h-6 bg-neutral-200"></div>
-          <button 
-            className="px-4 py-2 rounded-lg font-medium bg-white text-neutral-600 border border-neutral-300 hover:bg-neutral-50"
-          >
-            Clinical Assessment 1
-          </button>
-          <div className="w-px h-6 bg-neutral-200"></div>
-          <button 
-            className="px-4 py-2 rounded-lg font-medium bg-neutral-900 text-white"
-          >
-            Follow Up Assessment 1
-          </button>
-          <button className="ml-auto w-10 h-10 border border-neutral-300 rounded-lg flex items-center justify-center hover:bg-neutral-50">
-            <Plus className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Main content area */}
-        <div className="grid grid-cols-4 gap-6">
-          {/* Left sidebar */}
-          <div className="bg-white rounded-lg shadow-md overflow-clip">
-            <div className="p-4 border-b border-neutral-200">
-              <h3 className="font-semibold text-neutral-900">Basic</h3>
-            </div>
-            <div className="divide-y divide-neutral-200">
-              {assessments.map((assessment) => (
-                <button
-                  key={assessment.id}
-                  onClick={() => setSelectedAssessment(assessment.name)}
-                  className={`w-full px-4 py-4 flex items-center justify-between text-left transition-colors ${
-                    selectedAssessment === assessment.name
-                      ? "bg-[#f1f7ff] border-l-3 border-[#1b74f9]"
-                      : "hover:bg-neutral-50"
-                  }`}
-                >
-                  <span className="font-medium text-neutral-900">{assessment.name}</span>
-                  {assessment.status === "done" && (
-                    <span className="px-2 py-1 bg-[#06c270] text-white text-xs font-semibold rounded">Done</span>
-                  )}
-                  {assessment.status === "start" && (
-                    <span className="px-2 py-1 bg-[#f47920] text-white text-xs font-semibold rounded flex items-center gap-1">
-                      <Play className="w-3 h-3" /> Start
-                    </span>
-                  )}
-                  {assessment.status === "locked" && (
-                    <Lock className="w-4 h-4 text-neutral-400" />
-                  )}
-                </button>
-              ))}
-            </div>
-            <div className="border-t border-neutral-200 p-4">
-              <h4 className="font-semibold text-neutral-900">Treatment Sessions</h4>
+        {/* PRS (only) */}
+        <div className="bg-white rounded-lg shadow-md p-8">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-neutral-900 mb-1">PRS</h2>
+              <p className="text-neutral-600 text-sm">PRS diseases for this patient</p>
             </div>
           </div>
 
-          {/* Right content panel */}
-          <div className="col-span-3 bg-white rounded-lg shadow-md p-8">
-            <div className="mb-8">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-2xl font-bold text-neutral-900 mb-2">{selectedAssessment}</h2>
-                  <div className="flex items-center gap-2 text-neutral-600">
-                    <span>✓</span>
-                    <span>completed on 24 Jan, 2026</span>
+          {prsDiseases.length === 0 ? (
+            <div className="text-neutral-600 text-sm">
+              No PRS disease data yet. (Waiting for your dataset.)
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {prsDiseases.map((disease) => {
+                const isSelected = selectedDiseaseId === disease.id;
+                return (
+                  <button
+                    type="button"
+                    key={disease.id}
+                    onClick={() => handleSelectDisease(disease.id)}
+                    className={
+                      "w-full text-left flex items-center justify-between border rounded-lg px-4 py-3 transition-colors " +
+                      (isSelected
+                        ? "border-neutral-400 bg-neutral-50"
+                        : "border-neutral-200 hover:bg-neutral-50")
+                    }
+                  >
+                    <div>
+                      <div className="font-medium text-neutral-900">{disease.name}</div>
+                      {disease.description ? (
+                        <div className="text-sm text-neutral-600">{disease.description}</div>
+                      ) : null}
+                    </div>
+                    <div className="text-sm text-neutral-500">View</div>
+                  </button>
+                );
+              })}
+
+              {prsError ? <div className="text-sm text-red-600">{prsError}</div> : null}
+
+              {isPrsLoading ? (
+                <div className="text-sm text-neutral-600">Loading PRS questions…</div>
+              ) : selectedDiseaseId ? (
+                <div className="pt-4">
+                  <div className="text-sm text-neutral-600 mb-3">
+                    {conditionDetails?.scales?.length
+                      ? `Loaded ${conditionDetails.scales.length} scale(s). Showing questions for the first scale.`
+                      : "No scales found for this disease."}
                   </div>
-                </div>
-                <div className="flex gap-3">
-                  <button className="px-5 py-3 border border-neutral-500 text-neutral-900 rounded-full hover:bg-neutral-50 transition-colors font-medium">
-                    View Detailed Report
-                  </button>
-                  <button className="px-5 py-3 border border-neutral-500 text-neutral-900 rounded-full hover:bg-neutral-50 transition-colors font-medium">
-                    Edit Report
-                  </button>
-                </div>
-              </div>
 
-              {/* Metrics */}
-              <div className="grid grid-cols-4 gap-4 mb-8">
-                <div className="bg-[#f1f7ff] rounded-lg p-4">
-                  <p className="text-neutral-600 text-sm mb-2">{selectedAssessment} Score</p>
-                  <p className="text-neutral-900 font-semibold text-lg">32</p>
-                </div>
-                <div className="bg-[#f1f7ff] rounded-lg p-4">
-                  <p className="text-neutral-600 text-sm mb-2">Improvement</p>
-                  <p className="text-neutral-900 font-semibold text-lg">+20%</p>
-                </div>
-                <div className="bg-[#f1f7ff] rounded-lg p-4">
-                  <p className="text-neutral-600 text-sm mb-2">Duration</p>
-                  <p className="text-neutral-900 font-semibold text-lg">45 mins</p>
-                </div>
-                <div className="bg-[#f1f7ff] rounded-lg p-4">
-                  <p className="text-neutral-600 text-sm mb-2">Completed by</p>
-                  <p className="text-neutral-900 font-semibold text-lg">Dr. James</p>
-                </div>
-              </div>
+                  {questions.length ? (
+                    <div className="space-y-3">
+                      {questions.map((q) => (
+                        <div
+                          key={q.question_id}
+                          className="border border-neutral-200 rounded-lg px-4 py-3"
+                        >
+                          <div className="font-medium text-neutral-900">
+                            {typeof q.question_index === "number" ? q.question_index + 1 : ""}. {q.question_text}
+                          </div>
+                          <div className="text-xs text-neutral-500 mt-1">Type: {q.answer_type}</div>
 
-              {/* Activities */}
-              <div>
-                <h3 className="font-semibold text-neutral-900 mb-4">Activities Performed</h3>
-                <div className="flex flex-wrap gap-3">
-                  {activitiesPerformed.map((activity) => (
-                    <span 
-                      key={activity}
-                      className="px-4 py-2 bg-[#f1f7ff] text-[#1b74f9] font-medium text-sm rounded-lg"
-                    >
-                      {activity}
-                    </span>
-                  ))}
+                          {q.optionsPayload?.options?.length ? (
+                            <div className="mt-2 space-y-1">
+                              {q.optionsPayload.options
+                                .slice()
+                                .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+                                .map((opt) => (
+                                  <div key={opt.option_id} className="text-sm text-neutral-700">
+                                    {opt.label}
+                                  </div>
+                                ))}
+                            </div>
+                          ) : (q.optionsPayload?.answer_type === "number" || q.optionsPayload?.answer_type === "slider") ? (
+                            <div className="mt-2 text-sm text-neutral-700">
+                              Range: {q.optionsPayload.min} - {q.optionsPayload.max}
+                            </div>
+                          ) : (
+                            <div className="mt-2 text-sm text-neutral-600">Options not available.</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
-              </div>
+              ) : null}
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

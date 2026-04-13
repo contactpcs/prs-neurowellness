@@ -1,14 +1,17 @@
 export const ENDPOINTS = {
   AUTH: {
-    LOGIN: "/users/login",
-    REGISTER: "/users/register",
+    LOGIN: "/auth/login",
+    REGISTER: "/auth/register",
   },
   PRS: {
     HEALTH: "/prs/health",
     SCALES: "/prs/scales",
     SCALE: (id: string) => `/prs/scales/${id}`,
+    SCALE_BY_CODE: (code: string) => `/prs/scales/by-code/${code}`,
     CONDITIONS: "/prs/conditions",
     CONDITION: (id: string) => `/prs/conditions/${id}`,
+    ASSESSMENT_START: "/prs/assessment/start",
+    QUESTION_OPTIONS: (questionId: string) => `/prs/questions/${questionId}/options`,
     SESSIONS: "/prs/sessions",
     MY_SESSIONS: "/prs/sessions/my",
     PATIENT_SESSIONS: (patientId: string) => `/prs/sessions/patient/${patientId}`,
