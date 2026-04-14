@@ -10,11 +10,21 @@ export const doctorsService = {
 
   async getPatients(params?: { page?: number; limit?: number; search?: string }): Promise<{ patients: PatientListItem[]; total: number }> {
     const { data } = await apiClient.get(ENDPOINTS.DOCTORS.PATIENTS, { params });
-    const payload = data.data ?? data;
-    return {
-      patients: payload.patients ?? payload ?? [],
-      total: payload.total ?? 0,
-    };
+    const rawList: unknown[] = data.data ?? [];
+    const total: number = (data.meta as Record<string, number> | undefined)?.total ?? rawList.length;
+    const patients = rawList.map((item) => {
+      const p = item as Record<string, unknown>;
+      const profile = (p.profiles as Record<string, unknown>) ?? {};
+      const fullName = (profile.full_name as string) ?? "";
+      const parts = fullName.trim().split(/\s+/);
+      return {
+        id: p.id as string,
+        first_name: parts[0] ?? "",
+        last_name: parts.slice(1).join(" "),
+        email: (profile.email as string) ?? "",
+      } as PatientListItem;
+    });
+    return { patients, total };
   },
 
   async getPatient(patientId: string): Promise<PatientDetail> {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSessions } from "@/lib/hooks";
+import { doctorsService } from "@/lib/api/services";
 import { Button, Input, Card, CardContent, PageLoader } from "@/components/ui";
 import { ConditionSelector } from "@/components/assessment";
 import { Clock } from "lucide-react";
@@ -10,7 +11,7 @@ import { Clock } from "lucide-react";
 export default function AssignAssessmentPage() {
   const { id: patientId } = useParams<{ id: string }>();
   const router = useRouter();
-  const { conditions, currentCondition, loadConditions, loadConditionDetail, resetConditionDetail, assignSession } = useSessions();
+  const { conditions, currentCondition, loadConditions, loadConditionDetail, resetConditionDetail } = useSessions();
   const [selectedCondition, setSelectedCondition] = useState<string | null>(null);
   const [mode, setMode] = useState<"self" | "clinician_administered" | "voice">("self");
   const [title, setTitle] = useState("");
@@ -39,14 +40,8 @@ export default function AssignAssessmentPage() {
     if (!selectedCondition) return;
     setIsSubmitting(true);
     try {
-      await assignSession({
-        patient_id: patientId,
-        condition_id: selectedCondition,
-        title: title || undefined,
-        clinical_notes: notes || undefined,
-        patient_instructions: instructions || undefined,
-        mode,
-        due_date: dueDate || undefined,
+      await doctorsService.grantAssessment(patientId, {
+        disease_id: selectedCondition,
       });
       router.push(`/doctor/patients/${patientId}`);
     } catch (err) {
