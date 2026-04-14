@@ -2,15 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useSessions, useAuth } from "@/lib/hooks";
+import { useSessions } from "@/lib/hooks";
 import { Button, Input, Card, CardContent, PageLoader } from "@/components/ui";
 import { ConditionSelector } from "@/components/assessment";
+import { Clock } from "lucide-react";
 
 export default function AssignAssessmentPage() {
   const { id: patientId } = useParams<{ id: string }>();
   const router = useRouter();
-  const { user } = useAuth();
-  const { conditions, loadConditions, assignSession } = useSessions();
+  const { conditions, currentCondition, loadConditions, loadConditionDetail, resetConditionDetail, assignSession } = useSessions();
   const [selectedCondition, setSelectedCondition] = useState<string | null>(null);
   const [mode, setMode] = useState<"self" | "clinician_administered" | "voice">("self");
   const [title, setTitle] = useState("");
@@ -21,7 +21,19 @@ export default function AssignAssessmentPage() {
 
   useEffect(() => { loadConditions(); }, [loadConditions]);
 
-  if (conditions.length === 0) return <PageLoader />;
+  const handleSelectCondition = (conditionId: string) => {
+    setSelectedCondition(conditionId); // composite id used for session creation
+    // use UUID (id field) for the detail API path to avoid slashes in composite condition_ids
+    const cond = safeConditions.find((c) => c.condition_id === conditionId);
+    loadConditionDetail(cond?.id ?? conditionId);
+  };
+
+  useEffect(() => {
+    return () => { resetConditionDetail(); };
+  }, [resetConditionDetail]);
+
+  const safeConditions = Array.isArray(conditions) ? conditions : [];
+  if (safeConditions.length === 0) return <PageLoader />;
 
   const handleAssign = async () => {
     if (!selectedCondition) return;
@@ -50,8 +62,33 @@ export default function AssignAssessmentPage() {
 
       <section>
         <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide mb-3">Select Condition</h2>
-        <ConditionSelector conditions={conditions} selectedId={selectedCondition} onSelect={setSelectedCondition} />
+        <ConditionSelector conditions={safeConditions} selectedId={selectedCondition} onSelect={handleSelectCondition} />
       </section>
+
+      {selectedCondition && currentCondition?.scales && currentCondition.scales.length > 0 && (
+        <Card>
+          <CardContent className="space-y-3">
+            <h3 className="font-medium text-neutral-900">Included Scales</h3>
+            <p className="text-xs text-neutral-500">
+              {currentCondition.scales.length} scale{currentCondition.scales.length !== 1 ? "s" : ""} will be administered for this assessment
+            </p>
+            <div className="divide-y divide-neutral-100">
+              {currentCondition.scales.map((scale) => (
+                <div key={scale.scale_id} className="flex items-start justify-between py-3">
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-medium text-neutral-800">{scale.full_name}</p>
+                    <p className="text-xs text-neutral-500">{scale.short_name} · {scale.category}</p>
+                  </div>
+                  <div className="flex items-center gap-1 text-xs text-neutral-400 shrink-0 ml-4">
+                    <Clock className="h-3.5 w-3.5" />
+                    <span>~{scale.estimated_minutes} min</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {selectedCondition && (
         <>

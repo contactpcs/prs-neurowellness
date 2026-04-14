@@ -6,6 +6,7 @@ interface SessionState {
   sessions: AssessmentSession[];
   currentSession: AssessmentSession | null;
   conditions: ConditionBattery[];
+  currentCondition: ConditionBattery | null;
   scales: Scale[];
   isLoading: boolean;
   error: string | null;
@@ -15,6 +16,7 @@ const initialState: SessionState = {
   sessions: [],
   currentSession: null,
   conditions: [],
+  currentCondition: null,
   scales: [],
   isLoading: false,
   error: null,
@@ -39,6 +41,13 @@ export const fetchScales = createAsyncThunk("session/fetchScales", async () => {
   return scales;
 });
 
+export const fetchConditionDetail = createAsyncThunk(
+  "session/fetchConditionDetail",
+  async (conditionId: string) => {
+    return prsService.getCondition(conditionId);
+  }
+);
+
 export const fetchPatientSessions = createAsyncThunk(
   "session/fetchPatientSessions",
   async (patientId: string) => {
@@ -59,6 +68,7 @@ const sessionSlice = createSlice({
   initialState,
   reducers: {
     clearCurrentSession: (state) => { state.currentSession = null; },
+    clearCurrentCondition: (state) => { state.currentCondition = null; },
   },
   extraReducers: (builder) => {
     builder
@@ -85,9 +95,15 @@ const sessionSlice = createSlice({
       })
       .addCase(createSession.fulfilled, (state, action) => {
         state.sessions.unshift(action.payload);
+      })
+      .addCase(fetchConditionDetail.fulfilled, (state, action) => {
+        state.currentCondition = action.payload;
+      })
+      .addCase(fetchConditionDetail.pending, (state) => {
+        state.currentCondition = null;
       });
   },
 });
 
-export const { clearCurrentSession } = sessionSlice.actions;
+export const { clearCurrentSession, clearCurrentCondition } = sessionSlice.actions;
 export default sessionSlice.reducer;

@@ -130,6 +130,7 @@ export interface ConditionBattery {
   label: string;
   description: string | null;
   scale_ids: string[];
+  scales?: Scale[];
   is_active: boolean;
   display_order: number;
 }

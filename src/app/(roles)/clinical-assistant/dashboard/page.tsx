@@ -3,26 +3,33 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Users, AlertTriangle, ClipboardCheck, Activity } from "lucide-react";
-import { useSessions } from "@/lib/hooks";
-import { prsService } from "@/lib/api/services";
+import { staffService } from "@/lib/api/services/staff.service";
+import { prsService } from "@/lib/api/services/prs.service";
 import { PageLoader, Card, CardContent, Button } from "@/components/ui";
 import { RiskAlertBanner } from "@/components/assessment";
+import type { StaffDashboard } from "@/types/domain.types";
 import type { RiskAlert } from "@/types/prs.types";
 
 export default function CADashboard() {
-  const { sessions, isLoading, loadMySessions } = useSessions();
+  const [dashboard, setDashboard] = useState<StaffDashboard | null>(null);
   const [alerts, setAlerts] = useState<RiskAlert[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => { loadMySessions(); }, [loadMySessions]);
   useEffect(() => {
-    prsService.getMyAlerts("active").then(({ alerts: a }) => setAlerts(a)).catch(() => {});
+    Promise.all([
+      staffService.getDashboard(),
+      prsService.getMyAlerts("active"),
+    ]).then(([dash, { alerts: a }]) => {
+      setDashboard(dash);
+      setAlerts(a);
+    }).catch(() => {}).finally(() => setIsLoading(false));
   }, []);
 
   if (isLoading) return <PageLoader />;
 
-  const pendingCount = sessions.filter(s => s.status === "assigned").length;
-  const inProgressCount = sessions.filter(s => s.status === "in_progress").length;
-  const completedCount = sessions.filter(s => s.status === "completed").length;
+  const sessions = dashboard?.upcoming_sessions ?? [];
+  const patientCount = dashboard?.patient_count ?? 0;
+  const pendingCount = dashboard?.pending_count ?? sessions.filter(s => s.status === "assigned").length;
 
   return (
     <div className="space-y-6">
@@ -37,9 +44,9 @@ export default function CADashboard() {
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
-          { label: "Assigned", value: pendingCount, icon: ClipboardCheck, color: "text-primary-500" },
-          { label: "In Progress", value: inProgressCount, icon: Activity, color: "text-warning-500" },
-          { label: "Completed", value: completedCount, icon: ClipboardCheck, color: "text-success-500" },
+          { label: "Total Patients", value: patientCount, icon: Users, color: "text-primary-500" },
+          { label: "Pending", value: pendingCount, icon: ClipboardCheck, color: "text-warning-500" },
+          { label: "Upcoming Sessions", value: sessions.length, icon: Activity, color: "text-success-500" },
           { label: "Active Alerts", value: alerts.length, icon: AlertTriangle, color: "text-danger-500" },
         ].map((stat) => (
           <Card key={stat.label}>
@@ -64,15 +71,19 @@ export default function CADashboard() {
       )}
 
       <section>
-        <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide mb-3">Recent Sessions</h2>
+        <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide mb-3">Upcoming Sessions</h2>
         <Card>
           <div className="divide-y divide-neutral-100">
             {sessions.slice(0, 10).map((s) => (
               <Link key={s.id} href={`/clinical-assistant/sessions/${s.id}`} className="block px-6 py-3 hover:bg-neutral-50 transition-colors">
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="text-sm font-medium text-neutral-900">{s.title || s.condition_id || "Assessment"}</span>
-                    <span className="text-xs text-neutral-500 ml-2">Patient: {s.patient_id.slice(0, 8)}...</span>
+                    <span className="text-sm font-medium text-neutral-900">
+                      {s.title || s.condition_id || "Assessment"}
+                    </span>
+                    {s.patient_name && (
+                      <span className="text-xs text-neutral-500 ml-2">{s.patient_name}</span>
+                    )}
                   </div>
                   <span className={`text-xs font-medium px-2 py-1 rounded-full ${
                     s.status === "completed" ? "bg-success-500/10 text-success-700" :
@@ -82,10 +93,15 @@ export default function CADashboard() {
                     {s.status.replace("_", " ")}
                   </span>
                 </div>
+                {s.due_date && (
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    Due: {new Date(s.due_date).toLocaleDateString()}
+                  </p>
+                )}
               </Link>
             ))}
             {sessions.length === 0 && (
-              <div className="px-6 py-8 text-center text-neutral-500 text-sm">No sessions yet</div>
+              <div className="px-6 py-8 text-center text-neutral-500 text-sm">No upcoming sessions</div>
             )}
           </div>
         </Card>
