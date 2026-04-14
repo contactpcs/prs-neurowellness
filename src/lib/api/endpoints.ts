@@ -1,17 +1,76 @@
 export const ENDPOINTS = {
+  // ─── Auth ───
   AUTH: {
     LOGIN: "/auth/login",
     REGISTER: "/auth/register",
+    ME: "/auth/me",
+    SYNC_PROFILE: "/auth/sync-profile",
   },
+
+  // ─── Doctors ───
+  DOCTORS: {
+    DASHBOARD: "/doctors/dashboard",
+    PATIENTS: "/doctors/patients",
+    PATIENT: (patientId: string) => `/doctors/patients/${patientId}`,
+    GRANT_ASSESSMENT: (patientId: string) => `/doctors/patients/${patientId}/grant-assessment`,
+    AVAILABILITY: "/doctors/availability",
+  },
+
+  // ─── Patients ───
+  PATIENTS: {
+    DASHBOARD: "/patients/dashboard",
+    MY_DOCTOR: "/patients/my-doctor",
+    MY_ASSESSMENTS: "/patients/my-assessments",
+    MY_SCORES: "/patients/my-scores",
+    // Legacy kept for CA patient detail (uses /staff endpoints now)
+    LIST: "/patients",
+    DETAIL: (id: string) => `/patients/${id}`,
+  },
+
+  // ─── Staff ───
+  STAFF: {
+    DASHBOARD: "/staff/dashboard",
+    PATIENTS: "/staff/patients",
+    PATIENT: (patientId: string) => `/staff/patients/${patientId}`,
+    DOCTORS: "/staff/doctors",
+    ALLOCATE: (patientId: string) => `/staff/patients/${patientId}/allocate`,
+  },
+
+  // ─── Notifications ───
+  NOTIFICATIONS: {
+    LIST: "/notifications",
+    READ_ALL: "/notifications/read-all",
+    READ: (id: string) => `/notifications/${id}/read`,
+  },
+
+  // ─── PRS — Scales ───
   PRS: {
     HEALTH: "/prs/health",
+    // Scales
     SCALES: "/prs/scales",
     SCALE: (id: string) => `/prs/scales/${id}`,
     SCALE_BY_CODE: (code: string) => `/prs/scales/by-code/${code}`,
-    CONDITIONS: "/prs/conditions",
-    CONDITION: (id: string) => `/prs/conditions/${id}`,
-    ASSESSMENT_START: "/prs/assessment/start",
+    // Conditions
+    CONDITIONS: "/prs/conditions/",
+    CONDITION: (id: string) => `/prs/conditions/${encodeURIComponent(id)}`,
+    // Questions
     QUESTION_OPTIONS: (questionId: string) => `/prs/questions/${questionId}/options`,
+    // Permissions
+    PERMISSIONS: "/prs/permissions",
+    MY_PERMISSIONS: "/prs/permissions/my",
+    PATIENT_PERMISSIONS: (patientId: string) => `/prs/permissions/patient/${patientId}`,
+    REVOKE_PERMISSION: (permissionId: string) => `/prs/permissions/${permissionId}/revoke`,
+    // Assessment
+    ASSESSMENT_START: "/prs/assessment/start",
+    ASSESSMENT_SUBMIT: "/prs/assessment/submit",
+    ASSESSMENT_SAVE_RESPONSE: "/prs/assessment/save-response",
+    ASSESSMENT_RESPONSES: (instanceId: string) => `/prs/assessment/${instanceId}/responses`,
+    // Scores
+    MY_SCORES: "/prs/scores/me",
+    MY_SCORES_SUMMARY: "/prs/scores/me/summary",
+    PATIENT_SCORES: (patientId: string) => `/prs/scores/patient/${patientId}`,
+    PATIENT_SCORES_SUMMARY: (patientId: string) => `/prs/scores/patient/${patientId}/summary`,
+    // Sessions (legacy — kept for questionnaire flow)
     SESSIONS: "/prs/sessions",
     MY_SESSIONS: "/prs/sessions/my",
     PATIENT_SESSIONS: (patientId: string) => `/prs/sessions/patient/${patientId}`,
@@ -32,9 +91,5 @@ export const ENDPOINTS = {
     ACKNOWLEDGE_ALERT: (id: string) => `/prs/alerts/${id}/acknowledge`,
     RESOLVE_ALERT: (id: string) => `/prs/alerts/${id}/resolve`,
     SCORE_HISTORY: (patientId: string) => `/prs/history/${patientId}`,
-  },
-  PATIENTS: {
-    LIST: "/patients",
-    DETAIL: (id: string) => `/patients/${id}`,
   },
 } as const;

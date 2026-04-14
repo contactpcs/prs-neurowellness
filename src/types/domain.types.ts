@@ -1,0 +1,149 @@
+// ─── Doctor domain ───────────────────────────────────────────────
+
+export interface PatientListItem {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone?: string;
+  mrn?: string;
+  date_of_birth?: string;
+  gender?: string;
+  condition?: string;
+  status?: string;
+  assigned_at?: string;
+}
+
+export interface PatientDetail extends PatientListItem {
+  permissions?: Permission[];
+  scores?: ScoreSummaryItem[];
+  sessions?: SessionSummary[];
+}
+
+export interface DoctorDashboard {
+  doctor: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    specialization?: string;
+    availability_status?: string;
+  };
+  patient_count: number;
+  pending_count?: number;
+  recent_scores?: ScoreSummaryItem[];
+}
+
+// ─── Patient domain ───────────────────────────────────────────────
+
+export interface PatientDashboard {
+  profile: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone?: string;
+    date_of_birth?: string;
+    gender?: string;
+  };
+  assigned_doctor?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    specialization?: string;
+    phone?: string;
+  };
+  pending_assessments?: AssessmentPermission[];
+  recent_scores?: ScoreSummaryItem[];
+}
+
+export interface AssessmentPermission {
+  permission_id: string;
+  disease_id: string;
+  disease_name: string;
+  granted_at: string;
+  status: "granted" | "completed" | "expired" | "revoked";
+  scales?: { scale_id: string; scale_name: string }[];
+}
+
+// ─── Staff domain ─────────────────────────────────────────────────
+
+export interface StaffDashboard {
+  upcoming_sessions?: SessionSummary[];
+  recent_scores?: ScoreSummaryItem[];
+  patient_count?: number;
+  pending_count?: number;
+}
+
+export interface DoctorListItem {
+  id: string;
+  first_name: string;
+  last_name: string;
+  specialization?: string;
+  availability_status: "available" | "unavailable";
+  patient_count: number;
+  phone?: string;
+}
+
+export interface SessionSummary {
+  id: string;
+  patient_id: string;
+  patient_name?: string;
+  condition_id?: string;
+  title?: string;
+  status: string;
+  assigned_at: string;
+  due_date?: string;
+}
+
+// ─── Notifications ────────────────────────────────────────────────
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  title: string;
+  message: string;
+  type: string;
+  is_read: boolean;
+  created_at: string;
+  metadata?: Record<string, unknown>;
+}
+
+// ─── PRS Permissions ─────────────────────────────────────────────
+
+export interface Permission {
+  permission_id: string;
+  patient_id: string;
+  granted_by: string;
+  disease_id: string;
+  disease_name?: string;
+  scale_ids: string[];
+  status: "granted" | "completed" | "expired" | "revoked";
+  granted_at: string;
+  completed_at?: string;
+  expires_at?: string;
+}
+
+// ─── PRS Scores ───────────────────────────────────────────────────
+
+export interface ScoreSummaryItem {
+  instance_id?: string;
+  scale_id: string;
+  scale_name?: string;
+  scale_code?: string;
+  total_score?: number;
+  max_possible_score?: number;
+  percentage?: number;
+  severity_level?: string;
+  severity_label?: string;
+  completed_at?: string;
+  recorded_at?: string;
+}
+
+export interface PatientScoreInstance {
+  instance_id: string;
+  disease_id?: string;
+  disease_name?: string;
+  completed_at: string;
+  overall_severity?: string;
+  scale_results: ScoreSummaryItem[];
+}

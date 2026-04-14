@@ -1,3 +1,9 @@
 export { authService } from "./auth.service";
 export { prsService } from "./prs.service";
 export { prsAssessmentService } from "./prsAssessment.service";
+export { doctorsService } from "./doctors.service";
+export { patientsService } from "./patients.service";
+export { staffService } from "./staff.service";
+export { notificationsService } from "./notifications.service";
+export { permissionsService } from "./permissions.service";
+export { scoresService } from "./scores.service";

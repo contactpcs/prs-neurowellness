@@ -2,27 +2,19 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Search, UserCircle } from "lucide-react";
+import { Search } from "lucide-react";
 import { Input, Card, PageLoader } from "@/components/ui";
-import apiClient from "@/lib/api/client";
-import { ENDPOINTS } from "@/lib/api/endpoints";
-
-interface Patient {
-  id: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  mrn?: string;
-}
+import { staffService } from "@/lib/api/services/staff.service";
+import type { PatientListItem } from "@/types/domain.types";
 
 export default function CAPatientsPage() {
-  const [patients, setPatients] = useState<Patient[]>([]);
+  const [patients, setPatients] = useState<PatientListItem[]>([]);
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    apiClient.get(ENDPOINTS.PATIENTS.LIST).then(({ data }) => {
-      setPatients(data.patients || data || []);
+    staffService.getPatients().then(({ patients: p }) => {
+      setPatients(p);
     }).catch(() => {}).finally(() => setIsLoading(false));
   }, []);
 
@@ -59,7 +51,16 @@ export default function CAPatientsPage() {
                 <p className="text-sm font-medium text-neutral-900">{p.first_name} {p.last_name}</p>
                 <p className="text-xs text-neutral-500">{p.email}</p>
               </div>
-              {p.mrn && <span className="text-xs text-neutral-400">MRN: {p.mrn}</span>}
+              <div className="flex items-center gap-3 text-xs text-neutral-400">
+                {p.mrn && <span>MRN: {p.mrn}</span>}
+                {p.status && (
+                  <span className={`px-2 py-0.5 rounded-full font-medium ${
+                    p.status === "active" ? "bg-success-50 text-success-700" : "bg-neutral-100 text-neutral-500"
+                  }`}>
+                    {p.status}
+                  </span>
+                )}
+              </div>
             </Link>
           ))}
           {filtered.length === 0 && (
