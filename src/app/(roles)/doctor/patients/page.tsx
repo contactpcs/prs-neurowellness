@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
-import { Input, Card, PageLoader } from "@/components/ui";
+import { Input, Card, PatientListSkeleton } from "@/components/ui";
 import { doctorsService } from "@/lib/api/services";
 import type { PatientListItem } from "@/types/domain.types";
 
@@ -22,7 +22,7 @@ export default function DoctorPatientsPage() {
     `${p.first_name} ${p.last_name} ${p.email} ${p.mrn || ""}`.toLowerCase().includes(search.toLowerCase())
   );
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PatientListSkeleton />;
 
   return (
     <div className="space-y-6">
