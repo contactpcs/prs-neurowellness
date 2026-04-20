@@ -32,7 +32,7 @@ export default function CAPatientProfilePage() {
 
   if (isLoading || sessionsLoading) return <PageLoader />;
 
-  const fullName = patient ? `${patient.first_name} ${patient.last_name}` : "Patient";
+  const fullName = patient?.full_name || "Patient";
   const age = patient?.date_of_birth
     ? new Date().getFullYear() - new Date(patient.date_of_birth).getFullYear()
     : null;

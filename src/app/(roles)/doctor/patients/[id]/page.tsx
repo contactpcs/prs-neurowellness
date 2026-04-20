@@ -56,7 +56,7 @@ export default function DoctorPatientDetailPage() {
 
   if (isLoading) return <PatientDetailSkeleton />;
 
-  const fullName = patient ? `${patient.first_name} ${patient.last_name}` : "Patient";
+  const fullName = patient?.full_name || "Patient";
   const age = patient?.date_of_birth
     ? new Date().getFullYear() - new Date(patient.date_of_birth).getFullYear()
     : null;
@@ -87,7 +87,7 @@ export default function DoctorPatientDetailPage() {
           <div className="col-span-2 bg-white rounded-lg shadow-md p-7">
             <div className="flex items-center gap-5">
               <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-white font-bold text-2xl border-2 border-[#f47920]">
-                {patient?.first_name?.[0]?.toUpperCase()}
+                {fullName?.[0]?.toUpperCase()}
               </div>
               <div>
                 <div className="flex items-center gap-3">

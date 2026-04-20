@@ -48,7 +48,7 @@ export default function DoctorPatientsPage() {
                 {p.first_name?.[0]}{p.last_name?.[0]}
               </div>
               <div className="flex-1">
-                <p className="text-sm font-medium text-neutral-900">{p.first_name} {p.last_name}</p>
+                <p className="text-sm font-medium text-neutral-900">{p.full_name || `${p.first_name} ${p.last_name}`}</p>
                 <p className="text-xs text-neutral-500">{p.email}</p>
               </div>
               <div className="flex items-center gap-3 text-xs text-neutral-400">

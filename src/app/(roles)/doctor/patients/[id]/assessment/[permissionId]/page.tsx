@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Send, UserCheck } from "lucide-react";
+import { ChevronLeft, ChevronRight, Send, UserCheck, Mic, MicOff } from "lucide-react";
 import { AssessmentSkeleton, Button, ProgressBar } from "@/components/ui";
 import { QuestionRenderer } from "@/components/questionnaire/QuestionRenderer";
 import { ProgressSidebar } from "@/components/questionnaire/ProgressSidebar";
+import { STTBar } from "@/components/questionnaire/STTBar";
+import { useAssessmentSTT } from "@/lib/hooks/useAssessmentSTT";
 import { permissionsService } from "@/lib/api/services/permissions.service";
 import { prsAssessmentService } from "@/lib/api/services/prsAssessment.service";
 import type { ScaleQuestion, QuestionOption } from "@/types/prs.types";
@@ -18,7 +20,8 @@ type LoadedScale = {
   scale_name: string;
   instance_id: string;
   questions: ScaleQuestion[];
-  question_ids: string[]; // original IDs, index-aligned with questions
+  question_ids: string[];
+  question_required: boolean[];
 };
 
 // ─── Conversion helpers ──────────────────────────────────────────────────────
@@ -45,23 +48,14 @@ function mapAnswerType(raw: string): ScaleQuestion["type"] {
   }
 }
 
-function toPrsScaleQuestion(
-  q: PrsAssessmentQuestion,
-): ScaleQuestion {
-  const answerType = q.answer_type;
-  const type = mapAnswerType(answerType);
-
-  const options: QuestionOption[] | undefined =
-    q.options?.length
-      ? q.options
-          .slice()
-          .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
-          .map((o) => ({
-            value: Number(o.value),
-            label: o.label,
-            points: o.points,
-          }))
-      : undefined;
+function toPrsScaleQuestion(q: PrsAssessmentQuestion): ScaleQuestion {
+  const type = mapAnswerType(q.answer_type);
+  const options: QuestionOption[] | undefined = q.options?.length
+    ? q.options
+        .slice()
+        .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+        .map((o) => ({ value: Number(o.value), label: o.label, points: o.points }))
+    : undefined;
 
   return {
     index: q.question_index,
@@ -88,21 +82,19 @@ export default function DoctorOnBehalfAssessmentPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [sttEnabled, setSttEnabled] = useState(false);
   const initialized = useRef(false);
 
-  // Load permission + start all scale assessments in parallel
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
 
     (async () => {
       try {
-        // 1. Find the permission
         const { permissions } = await permissionsService.getPatientPermissions(patientId);
         const permission = permissions.find((p) => p.permission_id === permissionId);
         if (!permission) throw new Error("Permission not found");
 
-        // 2. Resolve scale IDs — use permission.scale_ids or fetch condition details
         let scaleIds: string[] = permission.scale_ids ?? [];
         if (scaleIds.length === 0) {
           const details = await prsAssessmentService.getConditionDetails(permission.disease_id);
@@ -110,7 +102,6 @@ export default function DoctorOnBehalfAssessmentPage() {
         }
         if (scaleIds.length === 0) throw new Error("No scales found for this assessment");
 
-        // 3. Start all scales in parallel
         const startResults = await Promise.all(
           scaleIds.map((scale_id) =>
             prsAssessmentService.startAssessment({
@@ -123,25 +114,22 @@ export default function DoctorOnBehalfAssessmentPage() {
           ),
         );
 
-        // 4. Convert backend questions (options are pre-attached)
-        const loadedScales: LoadedScale[] = await Promise.all(
-          startResults.map(async (result) => {
-            const baseQuestions = result.scale?.questions ?? [];
-            return {
-              scale_id: result.scale.scale_id,
-              scale_name: result.scale.scale_name ?? result.scale.scale_code ?? result.scale.scale_id,
-              instance_id: result.instance_id,
-              questions: baseQuestions.map((q) => toPrsScaleQuestion(q)),
-              question_ids: baseQuestions.map((q) => q.question_id),
-            };
-          }),
-        );
+        const loadedScales: LoadedScale[] = startResults.map((result) => {
+          const baseQuestions = result.scale?.questions ?? [];
+          return {
+            scale_id: result.scale.scale_id,
+            scale_name: result.scale.scale_name ?? result.scale.scale_code ?? result.scale.scale_id,
+            instance_id: result.instance_id,
+            questions: baseQuestions.map(toPrsScaleQuestion),
+            question_ids: baseQuestions.map((q) => q.question_id),
+            question_required: baseQuestions.map((q) => q.is_required ?? true),
+          };
+        });
 
         setScales(loadedScales);
       } catch (e: unknown) {
         const msg =
-          (e as { response?: { data?: { message?: string; detail?: string } }; message?: string })
-            ?.response?.data?.message ??
+          (e as { response?: { data?: { message?: string; detail?: string } } })?.response?.data?.message ??
           (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
           (e as { message?: string })?.message ??
           "Failed to load assessment";
@@ -158,9 +146,11 @@ export default function DoctorOnBehalfAssessmentPage() {
   const currentQuestion = questions[currentQuestionIndex];
   const totalQuestions = questions.length;
   const currentValue = responses[currentScale?.scale_id]?.[String(currentQuestionIndex)];
+  const isCurrentRequired = currentScale?.question_required[currentQuestionIndex] ?? true;
   const isLastQuestion = currentQuestionIndex >= totalQuestions - 1;
   const isFirstScale = currentScaleIndex === 0;
   const isLastScale = currentScaleIndex >= scales.length - 1;
+  const questionKey = `${currentScaleIndex}-${currentQuestionIndex}`;
 
   const sidebarScales = scales.map((s) => ({
     scale_id: s.scale_id,
@@ -169,26 +159,31 @@ export default function DoctorOnBehalfAssessmentPage() {
 
   // ─── Handlers ────────────────────────────────────────────────────────────
 
-  const handleAnswer = (questionIndex: number, value: number | string) => {
-    const scaleId = currentScale.scale_id;
+  const handleAnswer = useCallback((questionIndex: number, value: number | string) => {
+    const scaleId = currentScale?.scale_id;
+    if (!scaleId) return;
     setResponses((prev) => ({
       ...prev,
       [scaleId]: { ...(prev[scaleId] ?? {}), [String(questionIndex)]: value },
     }));
-    // Fire-and-forget auto-save
     const questionId = currentScale.question_ids[questionIndex];
     if (questionId) {
       prsAssessmentService
-        .saveResponse(currentScale.instance_id, currentScale.scale_id, questionIndex, questionId, value)
-        .catch(() => {/* silent */});
+        .saveResponse(currentScale.instance_id, scaleId, questionIndex, questionId, value)
+        .catch(() => {});
     }
-  };
+  }, [currentScale]);
 
-  const handleNext = () => {
-    if (currentQuestionIndex < totalQuestions - 1) {
-      setCurrentQuestionIndex((i) => i + 1);
-    }
-  };
+  const handleNext = useCallback(() => {
+    setCurrentQuestionIndex((i) => i + 1);
+  }, []);
+
+  const handleAutoAdvance = useCallback(() => {
+    setCurrentQuestionIndex((prev) => {
+      if (prev < totalQuestions - 1) return prev + 1;
+      return prev;
+    });
+  }, [totalQuestions]);
 
   const handlePrev = () => {
     if (currentQuestionIndex > 0) {
@@ -206,9 +201,7 @@ export default function DoctorOnBehalfAssessmentPage() {
     try {
       const scaleResponses = responses[currentScale.scale_id] ?? {};
       await prsAssessmentService.submitAssessment(currentScale.instance_id, currentScale.scale_id, scaleResponses);
-
       setCompletedScaleIds((prev) => new Set(prev).add(currentScale.scale_id));
-
       if (isLastScale) {
         router.push(`/doctor/patients/${patientId}`);
       } else {
@@ -217,8 +210,7 @@ export default function DoctorOnBehalfAssessmentPage() {
       }
     } catch (e: unknown) {
       const msg =
-        (e as { response?: { data?: { message?: string; detail?: string } } })?.response?.data
-          ?.message ??
+        (e as { response?: { data?: { message?: string; detail?: string } } })?.response?.data?.message ??
         (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
         (e as { message?: string })?.message ??
         "Failed to submit";
@@ -227,6 +219,15 @@ export default function DoctorOnBehalfAssessmentPage() {
       setIsSubmitting(false);
     }
   };
+
+  // ─── STT ─────────────────────────────────────────────────────────────────
+  const { phase, transcript, matchedLabel, hint, isSupported } = useAssessmentSTT({
+    questionKey,
+    question: currentQuestion,
+    enabled: sttEnabled && !isSubmitting,
+    onAnswer: handleAnswer,
+    onAutoAdvance: handleAutoAdvance,
+  });
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -269,16 +270,38 @@ export default function DoctorOnBehalfAssessmentPage() {
               </div>
               <h2 className="text-lg font-semibold text-neutral-900">{currentScale.scale_name}</h2>
             </div>
-            <ProgressBar
-              value={currentQuestionIndex + 1}
-              max={totalQuestions}
-              className="w-32"
-            />
+            <div className="flex items-center gap-3">
+              {isSupported && (
+                <Button
+                  size="sm"
+                  variant={sttEnabled ? "danger" : "outline"}
+                  onClick={() => setSttEnabled((e) => !e)}
+                >
+                  {sttEnabled ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  {sttEnabled ? "Mic On" : "Use Voice"}
+                </Button>
+              )}
+              <ProgressBar value={currentQuestionIndex + 1} max={totalQuestions} className="w-32" />
+            </div>
           </div>
           <p className="text-sm text-neutral-500 mt-1">
-            Scale {currentScaleIndex + 1} of {scales.length} · Question {currentQuestionIndex + 1} of {totalQuestions}
+            Scale {currentScaleIndex + 1} of {scales.length}
+            {" · "}Question {currentQuestionIndex + 1} of {totalQuestions}
+            {!isCurrentRequired && (
+              <span className="ml-2 text-xs text-neutral-400">(optional)</span>
+            )}
           </p>
         </div>
+
+        {/* STT status bar */}
+        {sttEnabled && (
+          <STTBar
+            phase={phase}
+            transcript={transcript}
+            matchedLabel={matchedLabel}
+            hint={hint}
+          />
+        )}
 
         {/* Question */}
         <div className="flex-1 overflow-y-auto p-8">
@@ -312,7 +335,7 @@ export default function DoctorOnBehalfAssessmentPage() {
           ) : (
             <Button
               onClick={handleNext}
-              disabled={currentValue === undefined}
+              disabled={isCurrentRequired && currentValue === undefined}
             >
               Next <ChevronRight className="h-4 w-4" />
             </Button>

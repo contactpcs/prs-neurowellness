@@ -36,7 +36,7 @@ export default function PatientDashboard() {
     <div className="max-w-3xl mx-auto space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-neutral-900">
-          Welcome, {dashboard?.profile?.first_name ?? ""}
+          Welcome, {dashboard?.profile?.full_name ?? ""}
         </h1>
         <p className="text-sm text-neutral-500 mt-1">Your health assessment overview</p>
       </div>
@@ -51,7 +51,7 @@ export default function PatientDashboard() {
             <div>
               <p className="text-xs text-neutral-500 uppercase">Assigned Doctor</p>
               <p className="text-sm font-semibold text-neutral-900">
-                Dr. {doctor.first_name} {doctor.last_name}
+                Dr. {doctor.full_name}
               </p>
               {doctor.specialization && (
                 <p className="text-xs text-neutral-500">{doctor.specialization}</p>
