@@ -40,6 +40,7 @@ export type PrsAssessmentQuestion = {
   skip_logic?: unknown;
   display_order?: number;
   question_index: number;
+  options?: PrsQuestionOption[];
 };
 
 export type PrsAssessmentStartResult = {
@@ -80,6 +81,7 @@ export const prsAssessmentService = {
     disease_id?: string;
     taken_by: "patient" | "doctor_on_behalf";
     patient_id?: string;
+    include_options?: boolean;
   }): Promise<PrsAssessmentStartResult> {
     const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_START, payload);
     return unwrap<PrsAssessmentStartResult>(data);
@@ -88,5 +90,43 @@ export const prsAssessmentService = {
   async getQuestionOptions(questionId: string): Promise<PrsQuestionOptionsResult> {
     const { data } = await apiClient.get(ENDPOINTS.PRS.QUESTION_OPTIONS(questionId));
     return unwrap<PrsQuestionOptionsResult>(data);
+  },
+
+  async saveResponse(
+    instanceId: string,
+    scaleId: string,
+    questionIndex: number,
+    questionId: string,
+    value: number | string,
+    label?: string | null
+  ): Promise<void> {
+    await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_SAVE_RESPONSE, {
+      instance_id: instanceId,
+      scale_id: scaleId,
+      question_index: questionIndex,
+      question_id: questionId,
+      response_value: String(value),
+      response_label: label ?? undefined,
+    });
+  },
+
+  async submitAssessment(
+    instanceId: string,
+    scaleId: string,
+    responses: Record<string, number | string>
+  ): Promise<unknown> {
+    const responseList = Object.entries(responses)
+      .map(([idx, v]) => ({
+        question_index: Number(idx),
+        response_value: String(v),
+      }))
+      .filter((r) => Number.isFinite(r.question_index));
+
+    const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_SUBMIT, {
+      instance_id: instanceId,
+      scale_id: scaleId,
+      responses: responseList,
+    });
+    return unwrap<unknown>(data);
   },
 };

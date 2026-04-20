@@ -1,6 +1,10 @@
 "use client";
 
+import { useState } from "react";
+import { Volume2 } from "lucide-react";
 import type { ScaleQuestion } from "@/types/prs.types";
+import { useTTS } from "@/lib/hooks";
+import { Button } from "@/components/ui";
 import { LikertInput } from "./LikertInput";
 import { VASSlider } from "./VASSlider";
 import { NumericInput } from "./NumericInput";
@@ -23,8 +27,19 @@ export function QuestionRenderer({
   questionNumber, totalQuestions,
   isVoiceMode = false, readOnly = false,
 }: QuestionRendererProps) {
+  const [showTTSLabel, setShowTTSLabel] = useState(false);
+  const { speak, stop, isSpeaking, isSupported } = useTTS();
+
   const handleAnswer = (val: number | string) => {
     onAnswer(question.index, val);
+  };
+
+  const handleSpeakQuestion = () => {
+    if (isSpeaking) {
+      stop();
+    } else {
+      speak(question.label);
+    }
   };
 
   return (
@@ -35,9 +50,27 @@ export function QuestionRenderer({
         </span>
       </div>
 
-      <h3 className="text-lg font-medium text-neutral-900 leading-relaxed">
-        {question.label}
-      </h3>
+      <div className="flex items-start justify-between gap-4">
+        <h3 className="text-lg font-medium text-neutral-900 leading-relaxed flex-1">
+          {question.label}
+        </h3>
+        {isSupported && (
+          <button
+            onClick={handleSpeakQuestion}
+            onMouseEnter={() => setShowTTSLabel(true)}
+            onMouseLeave={() => setShowTTSLabel(false)}
+            className={`flex-shrink-0 p-2 rounded-lg transition-colors ${
+              isSpeaking
+                ? "bg-primary-100 text-primary-700"
+                : "bg-neutral-100 text-neutral-600 hover:bg-primary-50 hover:text-primary-600"
+            }`}
+            title="Read question aloud"
+            aria-label="Read question aloud"
+          >
+            <Volume2 className="h-5 w-5" />
+          </button>
+        )}
+      </div>
 
       <div className="mt-4">
         {renderInput(question, value, handleAnswer, readOnly)}

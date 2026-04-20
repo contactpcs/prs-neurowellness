@@ -1,30 +1,34 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ClipboardList, UserCircle, Activity } from "lucide-react";
+import Link from "next/link";
+import { ClipboardList, UserCircle, Activity, PlayCircle } from "lucide-react";
 import { patientsService } from "@/lib/api/services/patients.service";
-import { PageLoader, Card, CardContent } from "@/components/ui";
+import { PatientDashboardSkeleton, Card, CardContent, Button } from "@/components/ui";
 import type { PatientDashboard, AssessmentPermission, ScoreSummaryItem } from "@/types/domain.types";
 
 export default function PatientDashboard() {
   const [dashboard, setDashboard] = useState<PatientDashboard | null>(null);
+  const [assessments, setAssessments] = useState<AssessmentPermission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    patientsService.getDashboard()
-      .then(setDashboard)
+    Promise.all([
+      patientsService.getDashboard(),
+      patientsService.getMyAssessments(),
+    ])
+      .then(([dash, { permissions }]) => {
+        setDashboard(dash);
+        setAssessments(permissions);
+      })
       .catch(() => {})
       .finally(() => setIsLoading(false));
   }, []);
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PatientDashboardSkeleton />;
 
-  const pending = (dashboard?.pending_assessments ?? []).filter(
-    (a) => a.status === "granted"
-  );
-  const completed = (dashboard?.pending_assessments ?? []).filter(
-    (a) => a.status === "completed"
-  );
+  const pending = assessments.filter((a) => a.status === "granted");
+  const completed = assessments.filter((a) => a.status === "completed");
   const recentScores = dashboard?.recent_scores ?? [];
   const doctor = dashboard?.assigned_doctor;
 
@@ -32,7 +36,7 @@ export default function PatientDashboard() {
     <div className="max-w-3xl mx-auto space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-neutral-900">
-          Welcome, {dashboard?.profile?.first_name ?? ""}
+          Welcome, {dashboard?.profile?.full_name ?? ""}
         </h1>
         <p className="text-sm text-neutral-500 mt-1">Your health assessment overview</p>
       </div>
@@ -47,7 +51,7 @@ export default function PatientDashboard() {
             <div>
               <p className="text-xs text-neutral-500 uppercase">Assigned Doctor</p>
               <p className="text-sm font-semibold text-neutral-900">
-                Dr. {doctor.first_name} {doctor.last_name}
+                Dr. {doctor.full_name}
               </p>
               {doctor.specialization && (
                 <p className="text-xs text-neutral-500">{doctor.specialization}</p>
@@ -116,9 +120,9 @@ export default function PatientDashboard() {
 function AssessmentPermissionCard({ permission }: { permission: AssessmentPermission }) {
   return (
     <Card>
-      <CardContent className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-semibold text-neutral-900">{permission.disease_name}</p>
+      <CardContent className="flex items-center justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-neutral-900 truncate">{permission.disease_name}</p>
           <p className="text-xs text-neutral-500 mt-0.5">
             Granted {new Date(permission.granted_at).toLocaleDateString()}
             {permission.scales && permission.scales.length > 0 && (
@@ -126,15 +130,24 @@ function AssessmentPermissionCard({ permission }: { permission: AssessmentPermis
             )}
           </p>
         </div>
-        <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-          permission.status === "completed"
-            ? "bg-success-500/10 text-success-700"
-            : permission.status === "granted"
-            ? "bg-primary-50 text-primary-700"
-            : "bg-neutral-100 text-neutral-500"
-        }`}>
-          {permission.status}
-        </span>
+        <div className="flex items-center gap-3 shrink-0">
+          <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+            permission.status === "completed"
+              ? "bg-success-500/10 text-success-700"
+              : permission.status === "granted"
+              ? "bg-primary-50 text-primary-700"
+              : "bg-neutral-100 text-neutral-500"
+          }`}>
+            {permission.status}
+          </span>
+          {permission.status === "granted" && (
+            <Link href={`/patient/assessment/${permission.permission_id}`}>
+              <Button size="sm">
+                <PlayCircle className="h-4 w-4" /> Take Assessment
+              </Button>
+            </Link>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

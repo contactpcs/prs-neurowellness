@@ -2,6 +2,7 @@
 
 export interface PatientListItem {
   id: string;
+  full_name: string;
   first_name: string;
   last_name: string;
   email: string;
@@ -38,6 +39,7 @@ export interface DoctorDashboard {
 export interface PatientDashboard {
   profile: {
     id: string;
+    full_name: string;
     first_name: string;
     last_name: string;
     email: string;
@@ -47,6 +49,7 @@ export interface PatientDashboard {
   };
   assigned_doctor?: {
     id: string;
+    full_name: string;
     first_name: string;
     last_name: string;
     specialization?: string;
