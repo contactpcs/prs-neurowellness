@@ -3,7 +3,7 @@ export const ENDPOINTS = {
   AUTH: {
     LOGIN: "/auth/login",
     REGISTER: "/auth/register",
-    ME: "/auth/me",
+    ME: "/auth/login",
     SYNC_PROFILE: "/auth/sync-profile",
   },
 
@@ -21,10 +21,6 @@ export const ENDPOINTS = {
     DASHBOARD: "/patients/dashboard",
     MY_DOCTOR: "/patients/my-doctor",
     MY_ASSESSMENTS: "/patients/my-assessments",
-    MY_SCORES: "/patients/my-scores",
-    // Legacy kept for CA patient detail (uses /staff endpoints now)
-    LIST: "/patients",
-    DETAIL: (id: string) => `/patients/${id}`,
   },
 
   // ─── Staff ───
@@ -38,16 +34,15 @@ export const ENDPOINTS = {
 
   // ─── Notifications ───
   NOTIFICATIONS: {
-    LIST: "/notifications",
+    LIST: "/notifications/",
     READ_ALL: "/notifications/read-all",
     READ: (id: string) => `/notifications/${id}/read`,
   },
 
-  // ─── PRS — Scales ───
+  // ─── PRS ───
   PRS: {
-    HEALTH: "/prs/health",
     // Scales
-    SCALES: "/prs/scales",
+    SCALES: "/prs/scales/",
     SCALE: (id: string) => `/prs/scales/${id}`,
     SCALE_BY_CODE: (code: string) => `/prs/scales/by-code/${code}`,
     // Conditions
@@ -56,7 +51,7 @@ export const ENDPOINTS = {
     // Questions
     QUESTION_OPTIONS: (questionId: string) => `/prs/questions/${questionId}/options`,
     // Permissions
-    PERMISSIONS: "/prs/permissions",
+    PERMISSIONS: "/prs/permissions/",
     MY_PERMISSIONS: "/prs/permissions/my",
     PATIENT_PERMISSIONS: (patientId: string) => `/prs/permissions/patient/${patientId}`,
     REVOKE_PERMISSION: (permissionId: string) => `/prs/permissions/${permissionId}/revoke`,
@@ -68,9 +63,10 @@ export const ENDPOINTS = {
     // Scores
     MY_SCORES: "/prs/scores/me",
     MY_SCORES_SUMMARY: "/prs/scores/me/summary",
+    INSTANCE_SCORE: (instanceId: string) => `/prs/scores/instance/${instanceId}`,
     PATIENT_SCORES: (patientId: string) => `/prs/scores/patient/${patientId}`,
     PATIENT_SCORES_SUMMARY: (patientId: string) => `/prs/scores/patient/${patientId}/summary`,
-    // Sessions (legacy — kept for questionnaire flow)
+    // Sessions (legacy — kept for existing session-based flows)
     SESSIONS: "/prs/sessions",
     MY_SESSIONS: "/prs/sessions/my",
     PATIENT_SESSIONS: (patientId: string) => `/prs/sessions/patient/${patientId}`,

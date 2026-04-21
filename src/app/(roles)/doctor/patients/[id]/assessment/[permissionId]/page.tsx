@@ -11,7 +11,7 @@ import { useAssessmentSTT } from "@/lib/hooks/useAssessmentSTT";
 import { permissionsService } from "@/lib/api/services/permissions.service";
 import { prsAssessmentService } from "@/lib/api/services/prsAssessment.service";
 import type { ScaleQuestion, QuestionOption } from "@/types/prs.types";
-import type { PrsAssessmentQuestion } from "@/lib/api/services/prsAssessment.service";
+import type { PrsAssessmentQuestion, PrsAssessmentScaleResult } from "@/lib/api/services/prsAssessment.service";
 
 // ─── Type helpers ───────────────────────────────────────────────────────────
 
@@ -46,6 +46,17 @@ function mapAnswerType(raw: string): ScaleQuestion["type"] {
     default:
       return "text";
   }
+}
+
+function toLoadedScale(scale: PrsAssessmentScaleResult, instanceId: string): LoadedScale {
+  return {
+    scale_id: scale.scale_id,
+    scale_name: scale.scale_name ?? scale.scale_code ?? scale.scale_id,
+    instance_id: instanceId,
+    questions: scale.questions.map(toPrsScaleQuestion),
+    question_ids: scale.questions.map((q) => q.question_id),
+    question_required: scale.questions.map((q) => q.is_required ?? true),
+  };
 }
 
 function toPrsScaleQuestion(q: PrsAssessmentQuestion): ScaleQuestion {
@@ -95,36 +106,17 @@ export default function DoctorOnBehalfAssessmentPage() {
         const permission = permissions.find((p) => p.permission_id === permissionId);
         if (!permission) throw new Error("Permission not found");
 
-        let scaleIds: string[] = permission.scale_ids ?? [];
-        if (scaleIds.length === 0) {
-          const details = await prsAssessmentService.getConditionDetails(permission.disease_id);
-          scaleIds = (details.scales ?? []).map((s) => s.scale_id);
-        }
-        if (scaleIds.length === 0) throw new Error("No scales found for this assessment");
-
-        const startResults = await Promise.all(
-          scaleIds.map((scale_id) =>
-            prsAssessmentService.startAssessment({
-              scale_id,
-              disease_id: permission.disease_id,
-              taken_by: "doctor_on_behalf",
-              patient_id: patientId,
-              include_options: true,
-            }),
-          ),
-        );
-
-        const loadedScales: LoadedScale[] = startResults.map((result) => {
-          const baseQuestions = result.scale?.questions ?? [];
-          return {
-            scale_id: result.scale.scale_id,
-            scale_name: result.scale.scale_name ?? result.scale.scale_code ?? result.scale.scale_id,
-            instance_id: result.instance_id,
-            questions: baseQuestions.map(toPrsScaleQuestion),
-            question_ids: baseQuestions.map((q) => q.question_id),
-            question_required: baseQuestions.map((q) => q.is_required ?? true),
-          };
+        const result = await prsAssessmentService.startAssessment({
+          disease_id: permission.disease_id,
+          taken_by: "doctor_on_behalf",
+          patient_id: patientId,
         });
+
+        if (result.scales.length === 0) throw new Error("No scales found for this assessment");
+
+        const loadedScales: LoadedScale[] = result.scales.map((scale) =>
+          toLoadedScale(scale, result.instance_id),
+        );
 
         setScales(loadedScales);
       } catch (e: unknown) {
