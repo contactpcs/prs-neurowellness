@@ -1,6 +1,6 @@
 import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
-import type { PatientDashboard, AssessmentPermission, ScoreSummaryItem } from "@/types/domain.types";
+import type { PatientDashboard, AssessmentPermission } from "@/types/domain.types";
 
 export const patientsService = {
   async getDashboard(): Promise<PatientDashboard> {
@@ -17,14 +17,36 @@ export const patientsService = {
     const { data } = await apiClient.get(ENDPOINTS.PATIENTS.MY_ASSESSMENTS);
     const payload = data.data ?? data;
 
-    // Raw list: one row per scale (id, disease_id, scale_id, prs_diseases, prs_scales, status, ...)
     const rawList: unknown[] = Array.isArray(payload)
       ? payload
       : Array.isArray(payload?.permissions)
         ? payload.permissions
-        : [];
+        : Array.isArray(payload?.assessments)
+          ? payload.assessments
+          : [];
 
-    // Group rows by disease_id so each AssessmentPermission covers all scales for that disease
+    if (rawList.length === 0) return { permissions: [], total: 0 };
+
+    // New format: backend returns one item per disease with embedded scales[]
+    const firstItem = rawList[0] as Record<string, unknown>;
+    const isNewFormat = typeof firstItem.disease_id === "string" && Array.isArray(firstItem.scales);
+
+    if (isNewFormat) {
+      const permissions = rawList.map((item) => {
+        const p = item as Record<string, unknown>;
+        return {
+          permission_id: String(p.permission_id ?? p.id ?? p.disease_id ?? ""),
+          disease_id: String(p.disease_id ?? ""),
+          disease_name: String(p.disease_name ?? p.disease_id ?? ""),
+          granted_at: String(p.granted_at ?? ""),
+          status: (p.status as AssessmentPermission["status"]) ?? "granted",
+          scales: (p.scales as { scale_id: string; scale_name: string }[]) ?? [],
+        } as AssessmentPermission;
+      });
+      return { permissions, total: permissions.length };
+    }
+
+    // Legacy format: one row per scale (id, disease_id, scale_id, prs_diseases, prs_scales, ...)
     const diseaseMap = new Map<string, AssessmentPermission>();
 
     for (const item of rawList) {
@@ -61,14 +83,5 @@ export const patientsService = {
 
     const permissions = Array.from(diseaseMap.values());
     return { permissions, total: permissions.length };
-  },
-
-  async getMyScores(): Promise<{ scores: ScoreSummaryItem[]; total: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.PATIENTS.MY_SCORES);
-    const payload = data.data ?? data;
-    return {
-      scores: payload.scores ?? payload ?? [],
-      total: payload.total ?? 0,
-    };
   },
 };

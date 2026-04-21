@@ -43,14 +43,17 @@ export type PrsAssessmentQuestion = {
   options?: PrsQuestionOption[];
 };
 
+export type PrsAssessmentScaleResult = {
+  scale_id: string;
+  scale_code?: string;
+  scale_name?: string;
+  display_order?: number;
+  questions: PrsAssessmentQuestion[];
+};
+
 export type PrsAssessmentStartResult = {
   instance_id: string;
-  scale: Record<string, unknown> & {
-    scale_id: string;
-    scale_code?: string;
-    scale_name?: string;
-    questions: PrsAssessmentQuestion[];
-  };
+  scales: PrsAssessmentScaleResult[];
 };
 
 export type PrsQuestionOption = {
@@ -77,11 +80,9 @@ export const prsAssessmentService = {
   },
 
   async startAssessment(payload: {
-    scale_id: string;
-    disease_id?: string;
+    disease_id: string;
     taken_by: "patient" | "doctor_on_behalf";
     patient_id?: string;
-    include_options?: boolean;
   }): Promise<PrsAssessmentStartResult> {
     const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_START, payload);
     return unwrap<PrsAssessmentStartResult>(data);
