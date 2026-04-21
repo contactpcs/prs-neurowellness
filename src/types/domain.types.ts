@@ -124,15 +124,18 @@ export interface Permission {
   granted_at: string;
   completed_at?: string;
   expires_at?: string;
+  instance_id?: string;
 }
 
 // ─── PRS Scores ───────────────────────────────────────────────────
 
 export interface ScoreSummaryItem {
   instance_id?: string;
-  scale_id: string;
+  scale_id?: string;
   scale_name?: string;
   scale_code?: string;
+  disease_id?: string;
+  disease_name?: string;
   total_score?: number;
   max_possible_score?: number;
   percentage?: number;
@@ -140,6 +143,30 @@ export interface ScoreSummaryItem {
   severity_label?: string;
   completed_at?: string;
   recorded_at?: string;
+}
+
+export interface ScaleResultSummary {
+  scale_id: string;
+  scale_name?: string;
+  scale_code?: string;
+  calculated_value?: number;
+  max_possible?: number;
+  percentage?: number;
+  severity_level?: string;
+  severity_label?: string;
+  subscale_scores?: Record<string, unknown>;
+}
+
+export interface AssessmentInstance {
+  instance_id: string;
+  disease_id: string;
+  disease_name?: string;
+  disease_score?: number;
+  severity_level?: string;
+  severity_label?: string;
+  percentage?: number;
+  completed_at?: string;
+  scale_summaries?: ScaleResultSummary[];
 }
 
 export interface PatientScoreInstance {

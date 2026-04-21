@@ -12,7 +12,7 @@ export const permissionsService = {
     const { data } = await apiClient.get(ENDPOINTS.PRS.MY_PERMISSIONS);
     const payload = data.data ?? data;
     return {
-      permissions: payload.permissions ?? payload ?? [],
+      permissions: payload.permissions ?? (Array.isArray(payload) ? payload : []),
       total: payload.total ?? 0,
     };
   },
@@ -21,47 +21,29 @@ export const permissionsService = {
     const { data } = await apiClient.get(ENDPOINTS.PRS.PATIENT_PERMISSIONS(patientId));
     const payload = data.data ?? data;
 
-    // Raw list: one row per scale (id, disease_id, scale_id, prs_diseases, prs_scales, status, ...)
+    // Backend now returns deduplicated disease-level entries — map directly
     const rawList: unknown[] = Array.isArray(payload)
       ? payload
       : Array.isArray(payload?.permissions)
         ? payload.permissions
         : [];
 
-    // Group rows by disease_id so each Permission covers all scales for that disease
-    const diseaseMap = new Map<string, Permission & { _rowIds: string[] }>();
-
-    for (const item of rawList) {
+    const permissions: Permission[] = rawList.map((item) => {
       const p = item as Record<string, unknown>;
-      const diseaseId = String(p.disease_id ?? "");
-      if (!diseaseId) continue;
+      return {
+        permission_id: String(p.permission_id ?? p.id ?? ""),
+        patient_id:    String(p.patient_id ?? ""),
+        granted_by:    String(p.granted_by ?? p.doctor_id ?? ""),
+        disease_id:    String(p.disease_id ?? ""),
+        disease_name:  p.disease_name as string | undefined,
+        scale_ids:     (p.scale_ids as string[]) ?? [],
+        status:        (p.status as Permission["status"]) ?? "granted",
+        granted_at:    String(p.granted_at ?? ""),
+        expires_at:    p.expires_at ? String(p.expires_at) : undefined,
+        instance_id:   p.instance_id ? String(p.instance_id) : undefined,
+      };
+    });
 
-      const scaleId = String(p.scale_id ?? "");
-      const diseases = (p.prs_diseases as Record<string, unknown>) ?? {};
-
-      if (!diseaseMap.has(diseaseId)) {
-        diseaseMap.set(diseaseId, {
-          permission_id: String(p.id ?? ""),
-          patient_id: String(p.patient_id ?? ""),
-          granted_by: String(p.doctor_id ?? ""),
-          disease_id: diseaseId,
-          disease_name: (diseases.disease_name as string) || undefined,
-          scale_ids: scaleId ? [scaleId] : [],
-          status: (p.status as Permission["status"]) ?? "granted",
-          granted_at: String(p.granted_at ?? ""),
-          expires_at: p.expires_at ? String(p.expires_at) : undefined,
-          _rowIds: [String(p.id ?? "")],
-        });
-      } else {
-        const existing = diseaseMap.get(diseaseId)!;
-        if (scaleId && !existing.scale_ids.includes(scaleId)) {
-          existing.scale_ids.push(scaleId);
-        }
-        existing._rowIds.push(String(p.id ?? ""));
-      }
-    }
-
-    const permissions = Array.from(diseaseMap.values()).map(({ _rowIds: _, ...rest }) => rest);
     return { permissions, total: permissions.length };
   },
 

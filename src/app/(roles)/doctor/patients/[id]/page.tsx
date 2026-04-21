@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight, Plus, ClipboardList, PlayCircle } from "lucide-react";
+import { ChevronRight, Plus, ClipboardList, PlayCircle, BarChart2 } from "lucide-react";
 import { PatientDetailSkeleton, Button } from "@/components/ui";
 import { doctorsService } from "@/lib/api/services/doctors.service";
 import { permissionsService } from "@/lib/api/services/permissions.service";
@@ -161,6 +161,13 @@ export default function DoctorPatientDetailPage() {
                       <Link href={`/doctor/patients/${id}/assessment/${a.permission_id}`}>
                         <Button size="sm" variant="secondary">
                           <PlayCircle className="h-4 w-4" /> Take on Behalf
+                        </Button>
+                      </Link>
+                    )}
+                    {a.status === "completed" && a.instance_id && (
+                      <Link href={`/doctor/patients/${id}/results/${a.instance_id}`}>
+                        <Button size="sm" variant="outline">
+                          <BarChart2 className="h-4 w-4" /> View Results
                         </Button>
                       </Link>
                     )}

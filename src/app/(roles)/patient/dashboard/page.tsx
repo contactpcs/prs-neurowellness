@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ClipboardList, UserCircle, Activity, PlayCircle } from "lucide-react";
+import { ClipboardList, UserCircle, Activity, PlayCircle, ChevronRight } from "lucide-react";
 import { patientsService } from "@/lib/api/services/patients.service";
 import { PatientDashboardSkeleton, Card, CardContent, Button } from "@/components/ui";
 import type { PatientDashboard, AssessmentPermission, ScoreSummaryItem } from "@/types/domain.types";
@@ -27,7 +27,7 @@ export default function PatientDashboard() {
 
   if (isLoading) return <PatientDashboardSkeleton />;
 
-  const pending = assessments.filter((a) => a.status === "granted");
+  const pending   = assessments.filter((a) => a.status === "granted");
   const completed = assessments.filter((a) => a.status === "completed");
   const recentScores = dashboard?.recent_scores ?? [];
   const doctor = dashboard?.assigned_doctor;
@@ -50,9 +50,7 @@ export default function PatientDashboard() {
             </div>
             <div>
               <p className="text-xs text-neutral-500 uppercase">Assigned Doctor</p>
-              <p className="text-sm font-semibold text-neutral-900">
-                Dr. {doctor.full_name}
-              </p>
+              <p className="text-sm font-semibold text-neutral-900">Dr. {doctor.full_name}</p>
               {doctor.specialization && (
                 <p className="text-xs text-neutral-500">{doctor.specialization}</p>
               )}
@@ -78,21 +76,26 @@ export default function PatientDashboard() {
         </section>
       )}
 
-      {/* Recent Scores */}
+      {/* Recent Results */}
       {recentScores.length > 0 && (
         <section>
-          <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide mb-3">
-            Recent Results
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">
+              Recent Results
+            </h2>
+            <Link href="/patient/results" className="text-xs text-primary-600 hover:underline flex items-center gap-0.5">
+              View all <ChevronRight className="h-3 w-3" />
+            </Link>
+          </div>
           <div className="grid grid-cols-1 gap-3">
             {recentScores.map((score, i) => (
-              <ScoreRow key={score.scale_id + i} score={score} />
+              <ScoreRow key={(score.instance_id ?? score.disease_id ?? i)} score={score} />
             ))}
           </div>
         </section>
       )}
 
-      {/* Completed */}
+      {/* Completed Assessments */}
       {completed.length > 0 && (
         <section>
           <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide mb-3">
@@ -118,6 +121,7 @@ export default function PatientDashboard() {
 }
 
 function AssessmentPermissionCard({ permission }: { permission: AssessmentPermission }) {
+  const isCompleted = permission.status === "completed";
   return (
     <Card>
       <CardContent className="flex items-center justify-between gap-4">
@@ -132,8 +136,8 @@ function AssessmentPermissionCard({ permission }: { permission: AssessmentPermis
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-            permission.status === "completed"
-              ? "bg-success-500/10 text-success-700"
+            isCompleted
+              ? "bg-green-50 text-green-700"
               : permission.status === "granted"
               ? "bg-primary-50 text-primary-700"
               : "bg-neutral-100 text-neutral-500"
@@ -147,6 +151,13 @@ function AssessmentPermissionCard({ permission }: { permission: AssessmentPermis
               </Button>
             </Link>
           )}
+          {isCompleted && (
+            <Link href="/patient/results">
+              <Button size="sm" variant="outline">
+                View Results
+              </Button>
+            </Link>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -154,15 +165,16 @@ function AssessmentPermissionCard({ permission }: { permission: AssessmentPermis
 }
 
 function ScoreRow({ score }: { score: ScoreSummaryItem }) {
-  return (
-    <Card>
+  const label  = score.disease_name ?? score.scale_name ?? score.disease_id ?? score.scale_id;
+  const linked = !!score.instance_id;
+
+  const inner = (
+    <Card className={linked ? "hover:shadow-md transition-shadow cursor-pointer" : undefined}>
       <CardContent className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Activity className="h-5 w-5 text-primary-400 flex-shrink-0" />
           <div>
-            <p className="text-sm font-medium text-neutral-900">
-              {score.scale_name ?? score.scale_id}
-            </p>
+            <p className="text-sm font-medium text-neutral-900">{label}</p>
             {score.recorded_at && (
               <p className="text-xs text-neutral-400">
                 {new Date(score.recorded_at).toLocaleDateString()}
@@ -179,6 +191,9 @@ function ScoreRow({ score }: { score: ScoreSummaryItem }) {
               )}
             </p>
           )}
+          {score.percentage != null && (
+            <p className="text-xs text-neutral-500">{score.percentage.toFixed(0)}%</p>
+          )}
           {score.severity_label && (
             <p className="text-xs text-neutral-500">{score.severity_label}</p>
           )}
@@ -186,4 +201,8 @@ function ScoreRow({ score }: { score: ScoreSummaryItem }) {
       </CardContent>
     </Card>
   );
+
+  return linked
+    ? <Link href={`/patient/results/${score.instance_id}`}>{inner}</Link>
+    : inner;
 }
