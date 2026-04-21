@@ -12,6 +12,7 @@ export const ENDPOINTS = {
     DASHBOARD: "/doctors/dashboard",
     PATIENTS: "/doctors/patients",
     PATIENT: (patientId: string) => `/doctors/patients/${patientId}`,
+    PATIENT_RESULT: (patientId: string, instanceId: string) => `/doctors/patients/${patientId}/results?instance_id=${encodeURIComponent(instanceId)}`,
     GRANT_ASSESSMENT: (patientId: string) => `/doctors/patients/${patientId}/grant-assessment`,
     AVAILABILITY: "/doctors/availability",
   },

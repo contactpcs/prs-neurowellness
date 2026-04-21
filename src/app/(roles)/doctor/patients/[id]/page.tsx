@@ -165,7 +165,7 @@ export default function DoctorPatientDetailPage() {
                       </Link>
                     )}
                     {a.status === "completed" && a.instance_id && (
-                      <Link href={`/doctor/patients/${id}/results/${a.instance_id}`}>
+                      <Link href={`/doctor/patients/${id}/results?instance_id=${encodeURIComponent(a.instance_id)}`}>
                         <Button size="sm" variant="outline">
                           <BarChart2 className="h-4 w-4" /> View Results
                         </Button>

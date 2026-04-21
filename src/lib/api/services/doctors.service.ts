@@ -1,6 +1,7 @@
 import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type { DoctorDashboard, PatientListItem, PatientDetail } from "@/types/domain.types";
+import type { InstanceScoreDetail } from "./scores.service";
 
 export const doctorsService = {
   async getDashboard(): Promise<DoctorDashboard> {
@@ -29,6 +30,11 @@ export const doctorsService = {
 
   async getPatient(patientId: string): Promise<PatientDetail> {
     const { data } = await apiClient.get(ENDPOINTS.DOCTORS.PATIENT(patientId));
+    return data.data ?? data;
+  },
+
+  async getPatientResult(patientId: string, instanceId: string): Promise<InstanceScoreDetail> {
+    const { data } = await apiClient.get(ENDPOINTS.DOCTORS.PATIENT_RESULT(patientId, instanceId));
     return data.data ?? data;
   },
 
