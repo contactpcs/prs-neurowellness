@@ -21,28 +21,51 @@ export function VoiceMode({ questionText, options, onAnswer, isActive }: VoiceMo
     onTranscript: (text) => {
       if (!options) return;
       const lower = text.toLowerCase().trim();
-      // Match by number ("one", "two", "1", "2") or by label substring
+      const words = lower.split(/\s+/);
+
       const numMap: Record<string, number> = {
-        zero: 0, one: 1, two: 2, three: 3, four: 4,
-        "0": 0, "1": 1, "2": 2, "3": 3, "4": 4,
+        zero: 0, none: 0,
+        one: 1, first: 1,
+        two: 2, second: 2,
+        three: 3, third: 3,
+        four: 4, fourth: 4,
+        five: 5, fifth: 5,
       };
-      if (numMap[lower] !== undefined && options.find(o => o.value === numMap[lower])) {
-        onAnswer(numMap[lower]);
-        return;
+
+      // 1. Spoken number (digit or word) maps to option.value
+      for (const word of words) {
+        const num = parseFloat(word);
+        if (!isNaN(num)) {
+          const opt = options.find(o => o.value === num);
+          if (opt) { onAnswer(opt.value); return; }
+        }
+        if (numMap[word] !== undefined) {
+          const opt = options.find(o => o.value === numMap[word]);
+          if (opt) { onAnswer(opt.value); return; }
+        }
       }
-      const match = options.find(o => lower.includes(o.label.toLowerCase().split(" ")[0]));
-      if (match) onAnswer(match.value);
+
+      // 2. Exact label match
+      for (const opt of options) {
+        if (lower === opt.label.toLowerCase()) { onAnswer(opt.value); return; }
+      }
+
+      // 3. Transcript contains full label
+      for (const opt of options) {
+        if (lower.includes(opt.label.toLowerCase())) { onAnswer(opt.value); return; }
+      }
+
+      // 4. First significant word (≥4 chars) of label appears in transcript
+      for (const opt of options) {
+        const sig = opt.label.toLowerCase().split(/\s+/).find(w => w.length >= 4);
+        if (sig && lower.includes(sig)) { onAnswer(opt.value); return; }
+      }
     },
   });
 
   useEffect(() => {
     if (isActive && questionText) {
-      const timer = setTimeout(() => {
-        const fullText = options
-          ? `${questionText}. Your options are: ${options.map((o, i) => `${i}: ${o.label}`).join(". ")}`
-          : questionText;
-        speak(fullText);
-      }, 300);
+      const timer = setTimeout(() => speak(questionText), 300);
       return () => clearTimeout(timer);
     }
   }, [questionText, isActive]);
