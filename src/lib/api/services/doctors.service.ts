@@ -30,7 +30,8 @@ export const doctorsService = {
 
   async getPatient(patientId: string): Promise<PatientDetail> {
     const { data } = await apiClient.get(ENDPOINTS.DOCTORS.PATIENT(patientId));
-    return data.data ?? data;
+    const payload = data.data ?? data;
+    return payload.patient ?? payload;
   },
 
   async getPatientResult(patientId: string, instanceId: string): Promise<InstanceScoreDetail> {

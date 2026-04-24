@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Send, UserCheck, Mic, MicOff } from "lucide-react";
+import { ChevronLeft, ChevronRight, Send, UserCheck, Mic, MicOff, RotateCcw } from "lucide-react";
 import { AssessmentSkeleton, Button, ProgressBar } from "@/components/ui";
 import { QuestionRenderer } from "@/components/questionnaire/QuestionRenderer";
 import { ProgressSidebar } from "@/components/questionnaire/ProgressSidebar";
@@ -94,6 +94,7 @@ export default function DoctorOnBehalfAssessmentPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sttEnabled, setSttEnabled] = useState(false);
+  const [isResumed, setIsResumed] = useState(false);
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -117,8 +118,53 @@ export default function DoctorOnBehalfAssessmentPage() {
         const loadedScales: LoadedScale[] = result.scales.map((scale) =>
           toLoadedScale(scale, result.instance_id),
         );
-
         setScales(loadedScales);
+
+        const alreadyCompleted = new Set(
+          result.scales.filter((s) => s.is_completed).map((s) => s.scale_id),
+        );
+        setCompletedScaleIds(alreadyCompleted);
+
+        if (result.is_resumed) {
+          setIsResumed(true);
+          try {
+            const saved = await prsAssessmentService.getResponses(result.instance_id);
+            const byQid = saved.responses_by_qid;
+
+            const restoredResponses: Record<string, Record<string, number | string>> = {};
+            for (const scale of loadedScales) {
+              const scaleMap: Record<string, number | string> = {};
+              scale.question_ids.forEach((qid, idx) => {
+                const entry = byQid[qid];
+                if (entry) {
+                  scaleMap[String(idx)] =
+                    entry.response_value !== null && entry.response_value !== undefined
+                      ? entry.response_value
+                      : entry.given_response;
+                }
+              });
+              if (Object.keys(scaleMap).length > 0) {
+                restoredResponses[scale.scale_id] = scaleMap;
+              }
+            }
+            setResponses(restoredResponses);
+
+            const firstIncompleteIdx = loadedScales.findIndex(
+              (s) => !alreadyCompleted.has(s.scale_id),
+            );
+            if (firstIncompleteIdx >= 0) {
+              const scale = loadedScales[firstIncompleteIdx];
+              const answered = restoredResponses[scale.scale_id] ?? {};
+              const firstUnanswered = scale.question_ids.findIndex(
+                (_, idx) => answered[String(idx)] === undefined,
+              );
+              setCurrentScaleIndex(firstIncompleteIdx);
+              setCurrentQuestionIndex(firstUnanswered >= 0 ? firstUnanswered : 0);
+            }
+          } catch {
+            // If restoring saved responses fails, continue from the beginning
+          }
+        }
       } catch (e: unknown) {
         const msg =
           (e as { response?: { data?: { message?: string; detail?: string } } })?.response?.data?.message ??
@@ -254,6 +300,12 @@ export default function DoctorOnBehalfAssessmentPage() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="bg-white border-b px-6 py-4">
+          {isResumed && (
+            <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-1.5 mb-3 w-fit">
+              <RotateCcw className="h-3.5 w-3.5" />
+              Resuming from where you left off
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium flex items-center gap-1.5">

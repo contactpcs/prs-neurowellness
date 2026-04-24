@@ -105,11 +105,7 @@ function matchTranscript(
 }
 
 function buildReadAloudText(question: ScaleQuestion): string {
-  if (!question.options?.length) return question.label;
-  const opts = question.options
-    .map((o, i) => `${i + 1}: ${o.label}`)
-    .join(". ");
-  return `${question.label}. Your options are: ${opts}.`;
+  return question.label;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────

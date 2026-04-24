@@ -49,11 +49,28 @@ export type PrsAssessmentScaleResult = {
   scale_name?: string;
   display_order?: number;
   questions: PrsAssessmentQuestion[];
+  is_completed?: boolean;
 };
 
 export type PrsAssessmentStartResult = {
   instance_id: string;
+  is_resumed?: boolean;
   scales: PrsAssessmentScaleResult[];
+};
+
+export type PrsSavedResponse = {
+  response_id: string;
+  question_id: string;
+  given_response: string;
+  response_value: number | null;
+};
+
+export type PrsInstanceResponses = {
+  instance_id: string;
+  status: string;
+  responses_count: number;
+  responses: PrsSavedResponse[];
+  responses_by_qid: Record<string, PrsSavedResponse>;
 };
 
 export type PrsQuestionOption = {
@@ -109,6 +126,11 @@ export const prsAssessmentService = {
       response_value: String(value),
       response_label: label ?? undefined,
     });
+  },
+
+  async getResponses(instanceId: string): Promise<PrsInstanceResponses> {
+    const { data } = await apiClient.get(ENDPOINTS.PRS.ASSESSMENT_RESPONSES(instanceId));
+    return unwrap<PrsInstanceResponses>(data);
   },
 
   async submitAssessment(

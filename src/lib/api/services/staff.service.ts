@@ -19,7 +19,8 @@ export const staffService = {
 
   async getPatient(patientId: string): Promise<PatientDetail> {
     const { data } = await apiClient.get(ENDPOINTS.STAFF.PATIENT(patientId));
-    return data.data ?? data;
+    const payload = data.data ?? data;
+    return payload.patient ?? payload;
   },
 
   async getDoctors(): Promise<{ doctors: DoctorListItem[]; total: number }> {

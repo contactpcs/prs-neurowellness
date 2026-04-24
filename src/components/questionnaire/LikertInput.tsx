@@ -17,7 +17,7 @@ export function LikertInput({ options, value, onChange, readOnly }: LikertInputP
 
   return (
     <div className="space-y-2">
-      {options.map((opt) => {
+      {options.map((opt, i) => {
         const isSelected = value === opt.value;
         return (
           <div
@@ -49,7 +49,7 @@ export function LikertInput({ options, value, onChange, readOnly }: LikertInputP
                   {opt.label}
                 </span>
               </div>
-              <span className="text-xs text-neutral-400 flex-shrink-0">({opt.value})</span>
+              <span className="text-xs text-neutral-400 flex-shrink-0">({i + 1})</span>
             </button>
             {isSupported && (
               <button

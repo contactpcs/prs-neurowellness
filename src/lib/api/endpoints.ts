@@ -60,7 +60,7 @@ export const ENDPOINTS = {
     ASSESSMENT_START: "/prs/assessment/start",
     ASSESSMENT_SUBMIT: "/prs/assessment/submit",
     ASSESSMENT_SAVE_RESPONSE: "/prs/assessment/save-response",
-    ASSESSMENT_RESPONSES: (instanceId: string) => `/prs/assessment/${instanceId}/responses`,
+    ASSESSMENT_RESPONSES: (instanceId: string) => `/prs/assessment/responses?instance_id=${encodeURIComponent(instanceId)}`,
     // Scores
     MY_SCORES: "/prs/scores/me",
     MY_SCORES_SUMMARY: "/prs/scores/me/summary",
