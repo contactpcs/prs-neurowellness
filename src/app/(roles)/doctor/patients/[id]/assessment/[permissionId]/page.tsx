@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Send, UserCheck, Mic, MicOff, RotateCcw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Send, SkipForward, UserCheck, Mic, MicOff, RotateCcw } from "lucide-react";
 import { AssessmentSkeleton, Button, ProgressBar } from "@/components/ui";
 import { QuestionRenderer } from "@/components/questionnaire/QuestionRenderer";
 import { ProgressSidebar } from "@/components/questionnaire/ProgressSidebar";
@@ -233,14 +233,35 @@ export default function DoctorOnBehalfAssessmentPage() {
     }
   };
 
+  const handleSkipSection = () => {
+    setResponses((prev) => {
+      const next = { ...prev };
+      delete next[currentScale.scale_id];
+      return next;
+    });
+    if (isLastScale) {
+      handleSubmitScale();
+    } else {
+      setCurrentScaleIndex((i) => i + 1);
+      setCurrentQuestionIndex(0);
+    }
+  };
+
   const handleSubmitScale = async () => {
     if (!currentScale) return;
     setIsSubmitting(true);
     try {
       const scaleResponses = responses[currentScale.scale_id] ?? {};
       await prsAssessmentService.submitAssessment(currentScale.instance_id, currentScale.scale_id, scaleResponses);
-      setCompletedScaleIds((prev) => new Set(prev).add(currentScale.scale_id));
+      const newCompleted = new Set(completedScaleIds).add(currentScale.scale_id);
+      setCompletedScaleIds(newCompleted);
       if (isLastScale) {
+        const skipped = scales.filter((s) => !newCompleted.has(s.scale_id));
+        await Promise.all(
+          skipped.map((s) =>
+            prsAssessmentService.submitAssessment(s.instance_id, s.scale_id, {})
+          )
+        );
         router.push(`/doctor/patients/${patientId}`);
       } else {
         setCurrentScaleIndex((i) => i + 1);
@@ -283,7 +304,7 @@ export default function DoctorOnBehalfAssessmentPage() {
   if (!currentScale || !currentQuestion) return <AssessmentSkeleton />;
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] -m-6">
+    <div className="flex h-[calc(100vh-4rem)] -mx-6 -mb-6">
       {/* Scale sidebar */}
       <ProgressSidebar
         scales={sidebarScales}
@@ -371,19 +392,32 @@ export default function DoctorOnBehalfAssessmentPage() {
             <ChevronLeft className="h-4 w-4" /> Previous
           </Button>
 
-          {isLastQuestion ? (
-            <Button onClick={handleSubmitScale} isLoading={isSubmitting}>
-              <Send className="h-4 w-4" />
-              {isLastScale ? "Complete Assessment" : "Submit & Next Scale"}
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleSkipSection}>
+              <SkipForward className="h-4 w-4" />
+              Skip Section
             </Button>
-          ) : (
-            <Button
-              onClick={handleNext}
-              disabled={isCurrentRequired && currentValue === undefined}
-            >
-              Next <ChevronRight className="h-4 w-4" />
-            </Button>
-          )}
+
+            {!isCurrentRequired && (
+              <Button variant="outline" size="sm" onClick={() => isLastQuestion ? handleSubmitScale() : handleNext()}>
+                Skip Question
+              </Button>
+            )}
+
+            {isLastQuestion ? (
+              <Button onClick={handleSubmitScale} isLoading={isSubmitting}>
+                <Send className="h-4 w-4" />
+                {isLastScale ? "Submit Assessment" : "Submit & Next Scale"}
+              </Button>
+            ) : (
+              <Button
+                onClick={handleNext}
+                disabled={isCurrentRequired && currentValue === undefined}
+              >
+                Next <ChevronRight className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>

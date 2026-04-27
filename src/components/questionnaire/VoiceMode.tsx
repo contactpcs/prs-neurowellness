@@ -23,25 +23,29 @@ export function VoiceMode({ questionText, options, onAnswer, isActive }: VoiceMo
       const lower = text.toLowerCase().trim();
       const words = lower.split(/\s+/);
 
-      const numMap: Record<string, number> = {
-        zero: 0, none: 0,
-        one: 1, first: 1,
-        two: 2, second: 2,
+      // Word → 1-based display index (matches what LikertInput displays as "(1)", "(2)", …)
+      const indexMap: Record<string, number> = {
+        one: 1,   first: 1,
+        two: 2,   second: 2,
         three: 3, third: 3,
-        four: 4, fourth: 4,
-        five: 5, fifth: 5,
+        four: 4,  fourth: 4,
+        five: 5,  fifth: 5,
+        six: 6,   sixth: 6,
+        seven: 7, seventh: 7,
+        eight: 8, eighth: 8,
+        nine: 9,  ninth: 9,
       };
 
-      // 1. Spoken number (digit or word) maps to option.value
+      // 1. Spoken number or word → 1-based display index (say "1" → first option)
       for (const word of words) {
-        const num = parseFloat(word);
-        if (!isNaN(num)) {
-          const opt = options.find(o => o.value === num);
-          if (opt) { onAnswer(opt.value); return; }
+        const digit = parseInt(word, 10);
+        if (!isNaN(digit) && digit >= 1 && digit <= options.length) {
+          onAnswer(options[digit - 1].value);
+          return;
         }
-        if (numMap[word] !== undefined) {
-          const opt = options.find(o => o.value === numMap[word]);
-          if (opt) { onAnswer(opt.value); return; }
+        if (indexMap[word] !== undefined) {
+          const idx = indexMap[word];
+          if (idx >= 1 && idx <= options.length) { onAnswer(options[idx - 1].value); return; }
         }
       }
 
@@ -102,10 +106,16 @@ export function VoiceMode({ questionText, options, onAnswer, isActive }: VoiceMo
         </div>
       </div>
 
+      {options && options.length > 0 && !isListening && !transcript && (
+        <p className="text-xs text-primary-600/70">
+          Say the option number (1, 2, 3…) or part of the option text.
+        </p>
+      )}
+
       {isListening && (
         <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-danger-500 rounded-full animate-pulse" />
-          <span className="text-sm text-neutral-600">Listening...</span>
+          <div className="w-2.5 h-2.5 bg-danger-500 rounded-full animate-pulse flex-shrink-0" />
+          <span className="text-sm text-neutral-600">Listening…</span>
         </div>
       )}
 

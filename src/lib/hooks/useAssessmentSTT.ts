@@ -26,18 +26,18 @@ export interface UseAssessmentSTTOptions {
 
 // ─── Matching logic ───────────────────────────────────────────────────────────
 
-const WORD_TO_NUM: Record<string, number> = {
-  zero: 0, none: 0,
-  one: 1, first: 1,
-  two: 2, second: 2,
+// Word → 1-based display index (matches the "(1)", "(2)"… labels shown in LikertInput)
+const WORD_TO_INDEX: Record<string, number> = {
+  one: 1,   first: 1,
+  two: 2,   second: 2,
   three: 3, third: 3,
-  four: 4, fourth: 4,
-  five: 5, fifth: 5,
-  six: 6, sixth: 6,
+  four: 4,  fourth: 4,
+  five: 5,  fifth: 5,
+  six: 6,   sixth: 6,
   seven: 7, seventh: 7,
   eight: 8, eighth: 8,
-  nine: 9, ninth: 9,
-  ten: 10, tenth: 10,
+  nine: 9,  ninth: 9,
+  ten: 10,  tenth: 10,
 };
 
 function matchTranscript(
@@ -49,16 +49,19 @@ function matchTranscript(
 
   // ─── Likert / radio / checkbox ──────────────────────────────────────────
   if (question.options?.length) {
-    // 1. Spoken number (digit or word) that maps to option.value
+    // 1. Spoken number or word → 1-based display index (say "1" → first option)
     for (const word of words) {
-      const num = parseFloat(word);
-      if (!isNaN(num)) {
-        const opt = question.options.find((o) => o.value === num);
-        if (opt) return { value: opt.value, label: opt.label };
+      const digit = parseInt(word, 10);
+      if (!isNaN(digit) && digit >= 1 && digit <= question.options.length) {
+        const opt = question.options[digit - 1];
+        return { value: opt.value, label: opt.label };
       }
-      if (WORD_TO_NUM[word] !== undefined) {
-        const opt = question.options.find((o) => o.value === WORD_TO_NUM[word]);
-        if (opt) return { value: opt.value, label: opt.label };
+      if (WORD_TO_INDEX[word] !== undefined) {
+        const idx = WORD_TO_INDEX[word];
+        if (idx >= 1 && idx <= question.options.length) {
+          const opt = question.options[idx - 1];
+          return { value: opt.value, label: opt.label };
+        }
       }
     }
 

@@ -5,95 +5,100 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
 import { useAuth } from "@/lib/hooks";
 import {
-  LayoutDashboard, Users, ClipboardList, AlertTriangle,
-  TrendingUp, UserCircle, LogOut, Brain, Menu
+  LayoutDashboard, Users, ClipboardList,
+  TrendingUp, UserCircle, LogOut, Brain,
 } from "lucide-react";
 import { useSidebar } from "@/contexts/SidebarContext";
 
 const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React.ElementType }>> = {
   patient: [
-    { label: "Dashboard", href: "/patient/dashboard", icon: LayoutDashboard },
-    { label: "My Results", href: "/patient/results", icon: ClipboardList },
-    { label: "Profile", href: "/patient/profile", icon: UserCircle },
+    { label: "Dashboard",  href: "/patient/dashboard", icon: LayoutDashboard },
+    { label: "My Results", href: "/patient/results",   icon: ClipboardList },
+    { label: "Profile",    href: "/patient/profile",   icon: UserCircle },
   ],
   doctor: [
-    { label: "Dashboard", href: "/doctor/dashboard", icon: LayoutDashboard }  ],
+    { label: "Dashboard", href: "/doctor/dashboard", icon: LayoutDashboard },
+  ],
   clinical_assistant: [
     { label: "Dashboard", href: "/clinical-assistant/dashboard", icon: LayoutDashboard },
-    { label: "Patients", href: "/clinical-assistant/patients", icon: Users },
+    { label: "Patients",  href: "/clinical-assistant/patients",  icon: Users },
   ],
 };
 
 export function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
-  const { isCollapsed, setIsCollapsed } = useSidebar();
+  const { isCollapsed } = useSidebar();
 
-  const role = String(user?.roles?.[0] || (user as any)?.role || "patient").toLowerCase();
+  const role  = String(user?.roles?.[0] || (user as any)?.role || "patient").toLowerCase();
   const items = NAV_ITEMS[role] || NAV_ITEMS.patient;
 
+  const initials = [user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join("").toUpperCase();
+  const roleName = role.replace("_", " ");
+
   return (
-    <>
-      <button
-        onClick={() => setIsCollapsed(!isCollapsed)}
-        className="fixed top-4 left-4 z-50 p-2 rounded-md bg-white shadow-md text-neutral-600 hover:bg-neutral-100"
-      >
-        <Menu className="h-6 w-6" />
-      </button>
+    <aside
+      className={cn(
+        "fixed left-0 top-0 h-full w-64 bg-white border-r border-neutral-200/80 flex flex-col z-40 transition-transform duration-250 ease-in-out",
+        isCollapsed ? "-translate-x-full" : "translate-x-0"
+      )}
+    >
+      {/* Logo */}
+      <div className="h-16 flex items-center px-5 border-b border-neutral-100 flex-shrink-0">
+        <Link href="/" className="flex items-center gap-3 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-brand-gradient flex items-center justify-center flex-shrink-0">
+            <Brain className="h-4.5 w-4.5 text-white" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-accent-dark leading-tight truncate">NeuroWellness</p>
+            <p className="text-[10px] font-semibold text-primary-500 uppercase tracking-widest leading-tight">PRS</p>
+          </div>
+        </Link>
+      </div>
 
-      <aside
-        className={cn(
-          "fixed left-0 top-0 h-full w-64 bg-white border-r border-neutral-200 flex flex-col z-40 transition-transform", 
-          isCollapsed ? "-translate-x-full" : "translate-x-0"
-        )}
-      >
-        <div className="px-6 py-5 border-b border-neutral-100">
-          <Link href="/" className="flex items-center gap-2">
-            <Brain className="h-7 w-7 text-accent" />
-            <div>
-              <span className="text-lg font-bold text-accent-dark">NeuroWellness</span>
-              <span className="block text-xs text-primary-500 font-medium -mt-0.5">PRS</span>
-            </div>
-          </Link>
-        </div>
+      {/* Navigation */}
+      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
+        {items.map((item) => {
+          const isActive = pathname.startsWith(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150",
+                isActive
+                  ? "bg-primary-50 text-primary-700 shadow-[inset_3px_0_0_0_#0ea5e9]"
+                  : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
+              )}
+            >
+              <item.icon className={cn("h-4.5 w-4.5 flex-shrink-0", isActive ? "text-primary-600" : "text-neutral-400")} />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
 
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          {items.map((item) => {
-            const isActive = pathname.startsWith(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-primary-50 text-primary-700"
-                    : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
-                )}
-              >
-                <item.icon className="h-5 w-5" />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="px-3 py-4 border-t border-neutral-100">
-          <div className="px-3 py-2 mb-2">
-            <p className="text-sm font-medium text-neutral-900 truncate">
+      {/* User section */}
+      <div className="border-t border-neutral-100 px-3 py-3 flex-shrink-0">
+        <div className="flex items-center gap-3 px-3 py-2 rounded-lg mb-1">
+          <div className="w-8 h-8 rounded-full bg-brand-gradient flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+            {initials}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-neutral-900 truncate leading-tight">
               {user?.first_name} {user?.last_name}
             </p>
-            <p className="text-xs text-neutral-500 capitalize">{role.replace("_", " ")}</p>
+            <p className="text-xs text-neutral-500 capitalize leading-tight mt-0.5">{roleName}</p>
           </div>
-          <button
-            onClick={logout}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-neutral-600 hover:bg-neutral-50 hover:text-danger-500 w-full transition-colors"
-          >
-            <LogOut className="h-5 w-5" />
-            Logout
-          </button>
         </div>
-      </aside>
-    </>
+        <button
+          onClick={logout}
+          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-neutral-500 hover:bg-danger-50 hover:text-danger-600 w-full transition-all duration-150"
+        >
+          <LogOut className="h-4 w-4 flex-shrink-0" />
+          <span>Sign out</span>
+        </button>
+      </div>
+    </aside>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Mic, ChevronLeft, ChevronRight, Send } from "lucide-react";
+import { Mic, ChevronLeft, ChevronRight, Send, SkipForward } from "lucide-react";
 import { useQuestionnaire, useSessions } from "@/lib/hooks";
 import { prsService } from "@/lib/api/services";
 import { PageLoader, Button, ProgressBar } from "@/components/ui";
@@ -66,8 +66,15 @@ export default function QuestionnairePage() {
     try {
       const result = await questionnaire.submitCurrentScale();
       if (result) {
-        setCompletedScaleIds((prev) => new Set(prev).add(questionnaire.currentScaleId!));
+        const newCompleted = new Set(completedScaleIds).add(questionnaire.currentScaleId!);
+        setCompletedScaleIds(newCompleted);
         if (result.session_completed || questionnaire.isLastScale) {
+          const skippedIds = currentSession.resolved_scale_ids.filter(
+            (sid) => !newCompleted.has(sid)
+          );
+          await Promise.all(
+            skippedIds.map((sid) => prsService.submitResponse(id, sid, {}))
+          );
           router.push(`/patient/sessions/${id}/complete`);
         } else {
           questionnaire.nextScale();
@@ -85,8 +92,22 @@ export default function QuestionnairePage() {
     short_name: scaleDefinitions[sid]?.shortName || sid,
   }));
 
+  const handleSkipQuestion = () => {
+    if (isLastQuestion) handleSubmitScale();
+    else questionnaire.nextQuestion(totalQuestions);
+  };
+
+  const handleSkipSection = () => {
+    questionnaire.clearScaleResponses(questionnaire.currentScaleId!);
+    if (questionnaire.isLastScale) {
+      handleSubmitScale();
+    } else {
+      questionnaire.nextScale();
+    }
+  };
+
   return (
-    <div className="flex h-[calc(100vh-7rem)] -m-6">
+    <div className="flex h-[calc(100vh-4rem)] -mx-6 -mb-6">
       {/* Left sidebar: scale progress */}
       <ProgressSidebar
         scales={scaleList}
@@ -156,7 +177,7 @@ export default function QuestionnairePage() {
         </div>
 
         {/* Navigation footer */}
-        <div className="bg-white border-t px-6 py-4 flex items-center justify-between">
+        <div className="bg-white border-t px-6 py-4 flex items-center justify-between gap-3">
           <Button
             variant="outline"
             onClick={questionnaire.currentQuestionIndex > 0 ? questionnaire.prevQuestion : questionnaire.prevScale}
@@ -165,19 +186,40 @@ export default function QuestionnairePage() {
             <ChevronLeft className="h-4 w-4" /> Previous
           </Button>
 
-          {isLastQuestion ? (
-            <Button onClick={handleSubmitScale} isLoading={isSubmitting}>
-              <Send className="h-4 w-4" />
-              {questionnaire.isLastScale ? "Complete Assessment" : "Submit & Next Scale"}
-            </Button>
-          ) : (
+          <div className="flex items-center gap-2">
             <Button
-              onClick={() => questionnaire.nextQuestion(totalQuestions)}
-              disabled={currentValue === undefined}
+              variant="outline"
+              size="sm"
+              onClick={handleSkipSection}
             >
-              Next <ChevronRight className="h-4 w-4" />
+              <SkipForward className="h-4 w-4" />
+              Skip Section
             </Button>
-          )}
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSkipQuestion}
+              disabled={isSubmitting}
+              className="text-neutral-400 hover:text-neutral-600"
+            >
+              Skip Question
+            </Button>
+
+            {isLastQuestion ? (
+              <Button onClick={handleSubmitScale} isLoading={isSubmitting} disabled={currentValue === undefined}>
+                <Send className="h-4 w-4" />
+                {questionnaire.isLastScale ? "Submit Assessment" : "Submit & Next Scale"}
+              </Button>
+            ) : (
+              <Button
+                onClick={() => questionnaire.nextQuestion(totalQuestions)}
+                disabled={currentValue === undefined}
+              >
+                Next <ChevronRight className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -7,6 +7,7 @@ import {
   initQuestionnaire, setAnswer,
   nextQuestion, prevQuestion,
   nextScale, prevScale, goToScale,
+  clearScaleResponses,
   toggleVoiceMode, resetQuestionnaire,
 } from "@/store/slices/questionnaireSlice";
 import { prsService } from "@/lib/api/services";
@@ -59,6 +60,7 @@ export function useQuestionnaire() {
     nextScale: () => dispatch(nextScale()),
     prevScale: () => dispatch(prevScale()),
     goToScale: (idx: number) => dispatch(goToScale(idx)),
+    clearScaleResponses: (scaleId: string) => dispatch(clearScaleResponses(scaleId)),
     toggleVoice: () => dispatch(toggleVoiceMode()),
     reset: () => dispatch(resetQuestionnaire()),
   };

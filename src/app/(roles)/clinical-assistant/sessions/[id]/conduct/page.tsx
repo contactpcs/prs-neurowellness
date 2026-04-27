@@ -69,8 +69,15 @@ export default function CAConductAssessmentPage() {
         await prsService.submitResponse(id, scaleId, responses);
       }
 
-      setCompletedScaleIds((prev) => new Set(prev).add(scaleId));
+      const newCompleted = new Set(completedScaleIds).add(scaleId);
+      setCompletedScaleIds(newCompleted);
       if (questionnaire.isLastScale) {
+        const skippedIds = currentSession.resolved_scale_ids.filter(
+          (sid) => !newCompleted.has(sid)
+        );
+        await Promise.all(
+          skippedIds.map((sid) => prsService.submitResponse(id, sid, {}))
+        );
         router.push(`/clinical-assistant/sessions/${id}`);
       } else {
         questionnaire.nextScale();
@@ -88,7 +95,7 @@ export default function CAConductAssessmentPage() {
   }));
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] -m-6">
+    <div className="flex h-[calc(100vh-4rem)] -mx-6 -mb-6">
       <ProgressSidebar scales={scaleList} currentIndex={questionnaire.currentScaleIndex} completedScaleIds={completedScaleIds} responses={questionnaire.responses} onNavigate={questionnaire.goToScale} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -119,7 +126,7 @@ export default function CAConductAssessmentPage() {
           </Button>
           {isLastQuestion ? (
             <Button onClick={handleSubmitScale} isLoading={isSubmitting}>
-              <Send className="h-4 w-4" /> {questionnaire.isLastScale ? "Complete" : "Submit & Next Scale"}
+              <Send className="h-4 w-4" /> {questionnaire.isLastScale ? "Submit Assessment" : "Submit & Next Scale"}
             </Button>
           ) : (
             <Button onClick={() => questionnaire.nextQuestion(totalQuestions)} disabled={currentValue === undefined}>
