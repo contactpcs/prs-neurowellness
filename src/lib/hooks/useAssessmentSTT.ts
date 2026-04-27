@@ -108,7 +108,21 @@ function matchTranscript(
 }
 
 function buildReadAloudText(question: ScaleQuestion): string {
-  return question.label;
+  let text = question.label;
+
+  if (question.options?.length) {
+    const optionLines = question.options
+      .map((opt, i) => `${i + 1}: ${opt.label}`)
+      .join(". ");
+    text += `. Options are: ${optionLines}.`;
+  } else if (
+    (question.type === "vas" || question.type === "nrs" || question.type === "numeric") &&
+    question.min != null && question.max != null
+  ) {
+    text += ` Enter a number between ${question.min} and ${question.max}.`;
+  }
+
+  return text;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
