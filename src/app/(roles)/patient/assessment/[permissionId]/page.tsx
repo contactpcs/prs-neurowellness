@@ -234,9 +234,13 @@ export default function PatientAssessmentPage() {
   };
 
   const handleSkipSection = () => {
-    setCompletedScaleIds((prev) => new Set(prev).add(currentScale.scale_id));
+    setResponses((prev) => {
+      const next = { ...prev };
+      delete next[currentScale.scale_id];
+      return next;
+    });
     if (isLastScale) {
-      router.push("/patient/dashboard");
+      handleSubmitScale();
     } else {
       setCurrentScaleIndex((i) => i + 1);
       setCurrentQuestionIndex(0);
@@ -253,8 +257,15 @@ export default function PatientAssessmentPage() {
         currentScale.scale_id,
         scaleResponses,
       );
-      setCompletedScaleIds((prev) => new Set(prev).add(currentScale.scale_id));
+      const newCompleted = new Set(completedScaleIds).add(currentScale.scale_id);
+      setCompletedScaleIds(newCompleted);
       if (isLastScale) {
+        const skipped = scales.filter((s) => !newCompleted.has(s.scale_id));
+        await Promise.all(
+          skipped.map((s) =>
+            prsAssessmentService.submitAssessment(s.instance_id, s.scale_id, {})
+          )
+        );
         router.push("/patient/dashboard");
       } else {
         setCurrentScaleIndex((i) => i + 1);
@@ -299,7 +310,7 @@ export default function PatientAssessmentPage() {
   const sidebarScales = scales.map((s) => ({ scale_id: s.scale_id, short_name: s.scale_name }));
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] -m-6">
+    <div className="flex h-[calc(100vh-4rem)] -mx-6 -mb-6">
       {/* Scale sidebar */}
       <ProgressSidebar
         scales={sidebarScales}
@@ -381,10 +392,9 @@ export default function PatientAssessmentPage() {
 
             <div className="flex items-center gap-2">
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 onClick={handleSkipSection}
-                className="text-neutral-400 hover:text-neutral-600"
               >
                 <SkipForward className="h-4 w-4" />
                 Skip Section
@@ -399,7 +409,7 @@ export default function PatientAssessmentPage() {
               {isLastQuestion ? (
                 <Button onClick={handleSubmitScale} isLoading={isSubmitting}>
                   <Send className="h-4 w-4" />
-                  {isLastScale ? "Complete Assessment" : "Submit & Next Section"}
+                  {isLastScale ? "Submit Assessment" : "Submit & Next Section"}
                 </Button>
               ) : (
                 <Button

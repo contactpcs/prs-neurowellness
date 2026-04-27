@@ -105,7 +105,7 @@ export function PatientDetailSkeleton() {
 
 export function AssessmentSkeleton() {
   return (
-    <div className="flex h-[calc(100vh-7rem)] -m-6">
+    <div className="flex h-[calc(100vh-4rem)] -mx-6 -mb-6">
       {/* Sidebar */}
       <div className="w-64 bg-white border-r border-neutral-200 p-4">
         <Skeleton className="h-4 w-32 mb-4" />

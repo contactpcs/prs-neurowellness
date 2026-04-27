@@ -25,16 +25,19 @@ const config: Config = {
         },
         success: {
           50: "#f0fdf4",
+          100: "#dcfce7",
           500: "#22c55e",
           700: "#15803d",
         },
         warning: {
           50: "#fffbeb",
+          100: "#fef3c7",
           500: "#f59e0b",
           700: "#b45309",
         },
         danger: {
           50: "#fef2f2",
+          100: "#fee2e2",
           500: "#ef4444",
           700: "#b91c1c",
         },
@@ -65,7 +68,32 @@ const config: Config = {
         sans: ["Inter", "system-ui", "sans-serif"],
       },
       backgroundImage: {
-        "brand-gradient": "linear-gradient(108deg, #00A1E4 0%, #09172E 99.51%)",
+        "brand-gradient": "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)",
+      },
+      boxShadow: {
+        xs: "0 1px 2px 0 rgb(0 0 0 / 0.04)",
+        card: "0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04)",
+        "card-hover": "0 4px 12px 0 rgb(0 0 0 / 0.08), 0 2px 4px -1px rgb(0 0 0 / 0.04)",
+        dropdown: "0 4px 16px 0 rgb(0 0 0 / 0.10), 0 1px 4px 0 rgb(0 0 0 / 0.06)",
+        "focus-ring": "0 0 0 3px rgb(14 165 233 / 0.15)",
+      },
+      keyframes: {
+        "fade-in": {
+          from: { opacity: "0", transform: "translateY(4px)" },
+          to:   { opacity: "1", transform: "translateY(0)" },
+        },
+        "slide-in": {
+          from: { opacity: "0", transform: "translateX(-8px)" },
+          to:   { opacity: "1", transform: "translateX(0)" },
+        },
+      },
+      animation: {
+        "fade-in":  "fade-in 0.2s ease-out",
+        "slide-in": "slide-in 0.2s ease-out",
+      },
+      borderRadius: {
+        "2xl": "1rem",
+        "3xl": "1.5rem",
       },
     },
   },

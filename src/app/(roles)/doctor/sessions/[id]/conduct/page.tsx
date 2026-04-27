@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { UserCheck, Send, ChevronLeft, ChevronRight } from "lucide-react";
+import { UserCheck, Send, ChevronLeft, ChevronRight, SkipForward } from "lucide-react";
 import { useQuestionnaire, useSessions } from "@/lib/hooks";
 import { prsService } from "@/lib/api/services";
 import { PageLoader, Button, ProgressBar, Card, CardContent } from "@/components/ui";
@@ -69,8 +69,15 @@ export default function ConductAssessmentPage() {
         await prsService.submitResponse(id, scaleId, responses);
       }
 
-      setCompletedScaleIds((prev) => new Set(prev).add(scaleId));
+      const newCompleted = new Set(completedScaleIds).add(scaleId);
+      setCompletedScaleIds(newCompleted);
       if (questionnaire.isLastScale) {
+        const skippedIds = currentSession.resolved_scale_ids.filter(
+          (sid) => !newCompleted.has(sid)
+        );
+        await Promise.all(
+          skippedIds.map((sid) => prsService.submitResponse(id, sid, {}))
+        );
         router.push(`/doctor/sessions/${id}`);
       } else {
         questionnaire.nextScale();
@@ -82,13 +89,22 @@ export default function ConductAssessmentPage() {
     }
   };
 
+  const handleSkipSection = () => {
+    questionnaire.clearScaleResponses(questionnaire.currentScaleId!);
+    if (questionnaire.isLastScale) {
+      handleSubmitScale();
+    } else {
+      questionnaire.nextScale();
+    }
+  };
+
   const scaleList = currentSession.resolved_scale_ids.map((sid) => ({
     scale_id: sid,
     short_name: scaleDefinitions[sid]?.shortName || sid,
   }));
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] -m-6">
+    <div className="flex h-[calc(100vh-4rem)] -mx-6 -mb-6">
       <ProgressSidebar scales={scaleList} currentIndex={questionnaire.currentScaleIndex} completedScaleIds={completedScaleIds} responses={questionnaire.responses} onNavigate={questionnaire.goToScale} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -120,15 +136,21 @@ export default function ConductAssessmentPage() {
           <Button variant="outline" onClick={questionnaire.currentQuestionIndex > 0 ? questionnaire.prevQuestion : questionnaire.prevScale} disabled={questionnaire.isFirstScale && questionnaire.currentQuestionIndex === 0}>
             <ChevronLeft className="h-4 w-4" /> Previous
           </Button>
-          {isLastQuestion ? (
-            <Button onClick={handleSubmitScale} isLoading={isSubmitting}>
-              <Send className="h-4 w-4" /> {questionnaire.isLastScale ? "Complete" : "Submit & Next Scale"}
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleSkipSection}>
+              <SkipForward className="h-4 w-4" />
+              Skip Section
             </Button>
-          ) : (
-            <Button onClick={() => questionnaire.nextQuestion(totalQuestions)} disabled={currentValue === undefined}>
-              Next <ChevronRight className="h-4 w-4" />
-            </Button>
-          )}
+            {isLastQuestion ? (
+              <Button onClick={handleSubmitScale} isLoading={isSubmitting}>
+                <Send className="h-4 w-4" /> {questionnaire.isLastScale ? "Submit Assessment" : "Submit & Next Scale"}
+              </Button>
+            ) : (
+              <Button onClick={() => questionnaire.nextQuestion(totalQuestions)} disabled={currentValue === undefined}>
+                Next <ChevronRight className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>

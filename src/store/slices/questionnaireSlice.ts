@@ -60,6 +60,9 @@ const questionnaireSlice = createSlice({
       state.currentScaleIndex = action.payload;
       state.currentQuestionIndex = 0;
     },
+    clearScaleResponses: (state, action: PayloadAction<string>) => {
+      delete state.responses[action.payload];
+    },
     toggleVoiceMode: (state) => {
       state.isVoiceMode = !state.isVoiceMode;
     },
@@ -71,6 +74,7 @@ export const {
   initQuestionnaire, setAnswer,
   nextQuestion, prevQuestion,
   nextScale, prevScale, goToScale,
+  clearScaleResponses,
   toggleVoiceMode, resetQuestionnaire,
 } = questionnaireSlice.actions;
 

@@ -20,22 +20,25 @@ export default function LoginPage() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold text-neutral-900">Welcome back</h2>
-        <p className="text-sm text-neutral-500 mt-1">Sign in to your NeuroWellness PRS account</p>
+      <div className="mb-7">
+        <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">Welcome back</h2>
+        <p className="text-sm text-neutral-500 mt-1.5">Sign in to your NeuroWellness PRS account</p>
       </div>
 
       {error && (
-        <div className="mb-4 bg-danger-50 text-danger-700 px-4 py-3 rounded-lg text-sm">{error}</div>
+        <div className="mb-5 bg-danger-50 border border-danger-100 text-danger-700 px-4 py-3 rounded-lg text-sm">
+          {error}
+        </div>
       )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <Input
           id="email"
-          label="Email"
+          label="Email address"
           type="email"
           placeholder="you@example.com"
           error={errors.email?.message}
+          autoComplete="email"
           {...register("email")}
         />
         <Input
@@ -44,17 +47,18 @@ export default function LoginPage() {
           type="password"
           placeholder="Enter your password"
           error={errors.password?.message}
+          autoComplete="current-password"
           {...register("password")}
         />
-        <Button type="submit" className="w-full" size="lg" isLoading={isLoading}>
-          Sign In
+        <Button type="submit" className="w-full mt-1" size="lg" isLoading={isLoading}>
+          Sign in
         </Button>
       </form>
 
       <p className="mt-6 text-center text-sm text-neutral-500">
         Don&apos;t have an account?{" "}
-        <Link href="/register" className="text-primary-600 font-medium hover:underline">
-          Register
+        <Link href="/register" className="text-primary-600 font-medium hover:text-primary-700 hover:underline transition-colors">
+          Create one
         </Link>
       </p>
     </div>
