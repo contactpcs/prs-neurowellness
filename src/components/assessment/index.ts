@@ -1,3 +1,4 @@
+export { AnamnesisForm } from "./AnamnesisForm";
 export { AssessmentCard } from "./AssessmentCard";
 export { SeverityBadge } from "./SeverityBadge";
 export { RiskAlertBanner } from "./RiskAlertBanner";

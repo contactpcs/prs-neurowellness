@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Search, X, Users } from "lucide-react";
+import { Search, X, Users, HelpCircle, Bell } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { PageLoader } from "@/components/ui";
 import { doctorsService } from "@/lib/api/services";
@@ -33,128 +33,161 @@ export default function DoctorDashboard() {
   if (isLoading) return <PageLoader />;
 
   const doctorName = user?.first_name || "Doctor";
+  // Show up to 6 most recent patients (from the API response)
+  const recentPatients = filtered.slice(0, 6);
 
   return (
-    <div className="max-w-5xl mx-auto animate-fade-in">
-      {/* Page header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">
-          Good day, Dr. {doctorName}
-        </h1>
-        <p className="text-sm text-neutral-500 mt-1">
-          {patients.length} patient{patients.length !== 1 ? "s" : ""} assigned to you
-        </p>
-      </div>
+    <div className="h-screen bg-gradient-to-b from-neutral-100 to-neutral-50 flex flex-col">
+      <div className="max-w-7xl mx-auto px-12 py-12 w-full flex flex-col flex-1 overflow-hidden">
+        {/* Top Navigation */}
+        
 
-      {/* Search */}
-      <div className="mb-6">
-        <div className="relative max-w-lg">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search by name, MRN or condition…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-10 py-2.5 text-sm bg-white border border-neutral-300 rounded-lg text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 hover:border-neutral-400 transition-all duration-150"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded text-neutral-400 hover:text-neutral-600 transition-colors"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Patient list */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wider">
-            {searchQuery ? `Results for "${searchQuery}"` : "Your Patients"}
-          </h2>
-          {filtered.length > 0 && (
-            <span className="text-xs text-neutral-400">{filtered.length} shown</span>
-          )}
+        {/* Welcome Section */}
+        <div className="text-center mb-12 flex-shrink-0">
+          <h1 className="text-5xl font-bold text-neutral-900 mb-2">
+            Welcome, Dr. {doctorName} 👋
+          </h1>
+          <p className="text-xl text-neutral-600">
+            Here's everything you need for today's clinic
+          </p>
         </div>
 
-        <div className="bg-white rounded-xl border border-neutral-200/80 shadow-card overflow-hidden">
-          {filtered.length > 0 ? (
-            <ul className="divide-y divide-neutral-100">
-              {filtered.map((patient) => (
-                <li key={patient.id}>
-                  <Link
-                    href={`/doctor/patients/${patient.id}`}
-                    className="flex items-center gap-4 px-6 py-4 hover:bg-neutral-50 transition-colors group"
-                  >
-                    {/* Avatar */}
-                    <div className="w-10 h-10 rounded-full bg-brand-gradient flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
-                      {patient.first_name?.[0]?.toUpperCase()}{patient.last_name?.[0]?.toUpperCase()}
-                    </div>
+        {/* Search Bar */}
+        <div className="mb-12 flex justify-center flex-shrink-0">
+          <div className="relative w-full max-w-2xl">
+            <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-400 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search patients by name or ID"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-14 pr-6 py-4 text-base bg-white border border-neutral-200 rounded-full text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 hover:border-neutral-300 transition-all duration-150 shadow-sm"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-6 top-1/2 -translate-y-1/2 p-1 text-neutral-400 hover:text-neutral-600 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
 
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-neutral-900 group-hover:text-primary-700 transition-colors">
-                          {patient.first_name} {patient.last_name}
+        {/* Recently Searched */}
+        {recentPatients.length > 0 && (
+          <div className="flex flex-col flex-1 overflow-hidden">
+            <h2 className="text-lg font-semibold text-neutral-900 mb-4 flex-shrink-0">
+              Recently Searched
+            </h2>
+
+            <div className="bg-white rounded-2xl border border-neutral-200 shadow-md p-6 flex-1 overflow-y-auto">
+              <div className="space-y-5">
+              {recentPatients.map((patient) => (
+                <Link
+                  key={patient.id}
+                  href={`/doctor/patients/${patient.id}`}
+                  className="flex items-center gap-4 hover:bg-neutral-50 -mx-6 px-6 py-4 rounded-xl transition-colors group"
+                >
+                  {/* Avatar */}
+                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-bold text-lg flex-shrink-0 shadow-md">
+                    {patient.first_name?.[0]?.toUpperCase()}{patient.last_name?.[0]?.toUpperCase()}
+                  </div>
+
+                  {/* Patient Info */}
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-base font-semibold text-neutral-900">
+                        {patient.first_name} {patient.last_name}
+                      </span>
+                      {patient.mrn && (
+                        <span className="text-sm text-neutral-500 font-medium">
+                          ({patient.mrn})
                         </span>
-                        {patient.mrn && (
-                          <span className="text-xs text-neutral-400 font-mono">MRN: {patient.mrn}</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5 text-xs text-neutral-500">
-                        {patient.date_of_birth && (
-                          <span>{new Date().getFullYear() - new Date(patient.date_of_birth).getFullYear()} yrs</span>
-                        )}
-                        {patient.date_of_birth && patient.gender && (
-                          <span className="w-1 h-1 rounded-full bg-neutral-300 flex-shrink-0" />
-                        )}
-                        {patient.gender && <span className="capitalize">{patient.gender}</span>}
-                        {(patient.date_of_birth || patient.gender) && patient.email && (
-                          <span className="w-1 h-1 rounded-full bg-neutral-300 flex-shrink-0" />
-                        )}
-                        {patient.email && <span className="truncate max-w-[200px]">{patient.email}</span>}
-                      </div>
+                      )}
                     </div>
+                    <div className="flex items-center gap-2 text-sm text-neutral-600">
+                      {patient.date_of_birth && (
+                        <span>
+                          {new Date().getFullYear() - new Date(patient.date_of_birth).getFullYear()} Yrs
+                        </span>
+                      )}
+                      {patient.date_of_birth && patient.condition && (
+                        <span className="w-1 h-1 rounded-full bg-neutral-400" />
+                      )}
+                      {patient.condition && <span>{patient.condition}</span>}
+                    </div>
+                  </div>
 
-                    {/* Status */}
-                    {patient.status && (
-                      <StatusBadge status={patient.status} />
-                    )}
-                  </Link>
-                </li>
+                  {/* Status Badges */}
+                  <StatusBadges patient={patient} />
+                </Link>
               ))}
-            </ul>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="w-12 h-12 rounded-full bg-neutral-100 flex items-center justify-center mb-3">
-                <Users className="w-5 h-5 text-neutral-400" />
               </div>
-              <p className="text-sm font-medium text-neutral-700">
-                {searchQuery ? "No patients match your search" : "No patients assigned yet"}
-              </p>
-              <p className="text-xs text-neutral-400 mt-1">
-                {searchQuery ? "Try a different name, MRN or condition" : "Patients will appear here once assigned"}
-              </p>
             </div>
-          )}
-        </div>
+            </div>
+        )}
+
+        {/* Empty State */}
+        {filtered.length === 0 && (
+          <div className="flex flex-col items-center justify-center flex-1">
+            <div className="w-16 h-16 rounded-full bg-neutral-200 flex items-center justify-center mb-4">
+              <Users className="w-8 h-8 text-neutral-400" />
+            </div>
+            <p className="text-lg font-medium text-neutral-700 mb-1">
+              {searchQuery ? "No patients match your search" : "No patients assigned yet"}
+            </p>
+            <p className="text-neutral-500">
+              {searchQuery ? "Try a different name or ID" : "Patients will appear here once assigned"}
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    active:   "bg-success-50  text-success-700  border-success-100",
-    pending:  "bg-neutral-100 text-neutral-600  border-neutral-200",
-    inactive: "bg-warning-50  text-warning-700  border-warning-100",
-  };
-  const cls = styles[status] ?? "bg-neutral-100 text-neutral-600 border-neutral-200";
+function StatusBadges({ patient }: { patient: PatientListItem }) {
+  // Create badges based on available status data
+  const badges = [];
+
+  // You can customize this based on your actual patient status fields
+  if (patient.status === "new") {
+    badges.push(
+      <span
+        key="new"
+        className="px-3 py-1 text-sm font-medium text-primary-700 bg-blue-50 rounded-lg"
+      >
+        New
+      </span>
+    );
+  }
+
+  if (patient.status === "active") {
+    badges.push(
+      <span
+        key="paid"
+        className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium text-success-700 bg-success-50 rounded-lg"
+      >
+        ✓ Paid
+      </span>
+    );
+  }
+
+  if (patient.status === "pending") {
+    badges.push(
+      <span
+        key="pending"
+        className="px-3 py-1 text-sm font-medium text-neutral-600 bg-neutral-100 rounded-lg"
+      >
+        Pending
+      </span>
+    );
+  }
+
   return (
-    <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${cls} flex-shrink-0`}>
-      {status.charAt(0).toUpperCase() + status.slice(1)}
-    </span>
+    <div className="flex items-center gap-2 flex-shrink-0">
+      {badges.length > 0 ? badges : null}
+    </div>
   );
 }
