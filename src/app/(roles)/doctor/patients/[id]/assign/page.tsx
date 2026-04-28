@@ -6,7 +6,7 @@ import { useSessions } from "@/lib/hooks";
 import { doctorsService } from "@/lib/api/services";
 import { Button, Input, Card, CardContent, PageLoader } from "@/components/ui";
 import { ConditionSelector } from "@/components/assessment";
-import { Clock } from "lucide-react";
+import { Clock, ChevronLeft } from "lucide-react";
 
 export default function AssignAssessmentPage() {
   const { id: patientId } = useParams<{ id: string }>();
@@ -53,6 +53,16 @@ export default function AssignAssessmentPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
+      <div className="flex items-center gap-4">
+        <button
+          onClick={() => router.push(`/doctor/patients/${patientId}`)}
+          className="flex items-center gap-1.5 text-sm font-medium text-neutral-600 hover:text-neutral-900 transition-colors"
+        >
+          <ChevronLeft className="w-4 h-4" />
+          Back to Patient
+        </button>
+      </div>
+
       <h1 className="text-2xl font-bold text-neutral-900">Assign Assessment</h1>
 
       <section>
