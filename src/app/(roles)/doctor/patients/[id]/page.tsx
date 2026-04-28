@@ -117,51 +117,53 @@ export default function DoctorPatientDetailPage() {
       </div>
 
       <div className="px-8 py-8 space-y-6">
-        {/* Patient Card */}
-        <div className="bg-white rounded-lg shadow-md p-7 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-white font-bold text-2xl border-2 border-[#f47920]">
-              {fullName?.[0]?.toUpperCase()}
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-neutral-900">{fullName}</h1>
-              {patient?.mrn && (
-                <p className="text-sm text-neutral-600">({patient.mrn})</p>
-              )}
-              <div className="flex items-center gap-2 mt-2">
-                {age && <span className="text-base text-neutral-700">{age} Yrs · Female</span>}
-                <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg">New</span>
-                <span className="px-3 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-lg flex items-center gap-1">
-                  <Check className="w-3 h-3" /> Paid
-                </span>
+        {/* Patient info + Next Activity — two side-by-side cards */}
+        <div className="grid grid-cols-2 gap-6">
+          {/* Left — Patient Name Card */}
+          <div className="bg-white rounded-lg shadow-md p-7 flex items-center justify-between">
+            <div className="flex items-center gap-5">
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-white font-bold text-2xl border-2 border-[#f47920] flex-shrink-0">
+                {fullName?.[0]?.toUpperCase()}
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-neutral-900">{fullName}</h1>
+                {patient?.mrn && (
+                  <p className="text-sm text-neutral-600">({patient.mrn})</p>
+                )}
+                <div className="flex items-center gap-2 mt-2">
+                  {age && <span className="text-base text-neutral-700">{age} Yrs · Female</span>}
+                  <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg">New</span>
+                  <span className="px-3 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-lg flex items-center gap-1">
+                    <Check className="w-3 h-3" /> Paid
+                  </span>
+                </div>
               </div>
             </div>
+            <div className="flex flex-col gap-2 flex-shrink-0">
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button className="px-6 py-3 border border-neutral-400 text-neutral-900 font-medium rounded-full hover:bg-neutral-50 transition-colors">
-              Prev. Patient
-            </button>
-            <button className="px-6 py-3 border border-neutral-400 text-neutral-900 font-medium rounded-full hover:bg-neutral-50 transition-colors">
-              Next Patient
-            </button>
+
+          {/* Right — Next Activity Card */}
+          <div className="bg-white rounded-lg shadow-md p-7 flex items-center justify-between">
+            {nextAssessment ? (
+              <>
+                <div>
+                  <p className="text-neutral-500 text-sm mb-1">Next Activity</p>
+                  <h3 className="text-2xl font-bold text-neutral-900">{nextAssessment.disease_name}</h3>
+                  <span className="inline-block mt-2 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg">Basic 2/7</span>
+                </div>
+                <button className="px-6 py-3 bg-orange-500 text-white font-medium rounded-full hover:bg-orange-600 transition-colors flex items-center gap-2 flex-shrink-0">
+                  ▶ Start
+                </button>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center w-full py-4 text-center">
+                <p className="text-neutral-500 text-sm">No pending activity</p>
+                <p className="text-neutral-400 text-xs mt-1">Assign an assessment to get started</p>
+              </div>
+            )}
           </div>
         </div>
-
-        {/* Next Activity Card */}
-        {nextAssessment && (
-          <div className="bg-white rounded-lg shadow-md p-6 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div>
-                <p className="text-neutral-600 text-sm">Next Activity</p>
-                <h3 className="text-2xl font-bold text-neutral-900">{nextAssessment.disease_name}</h3>
-                <span className="inline-block mt-1 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg">Basic 2/7</span>
-              </div>
-            </div>
-            <button className="px-6 py-3 bg-orange-500 text-white font-medium rounded-full hover:bg-orange-600 transition-colors flex items-center gap-2">
-              ▶ Start
-            </button>
-          </div>
-        )}
 
         {/* Assessment Tabs and Content */}
         <div className="space-y-6">

@@ -32,7 +32,7 @@ export function LikertInput({ options, value, onChange, readOnly }: LikertInputP
               onClick={() => !readOnly && onChange(opt.value)}
               disabled={readOnly}
               className={cn(
-                "flex flex-col items-center justify-between p-4 rounded-xl border-2 text-center transition-all min-h-[96px] gap-2",
+                "flex flex-col items-center justify-between p-3 rounded-lg border-2 text-center transition-all min-h-[72px] gap-1.5",
                 isSelected
                   ? "border-orange-500 bg-orange-50"
                   : "border-neutral-200 bg-white hover:border-orange-300 hover:bg-orange-50/40",
@@ -41,7 +41,7 @@ export function LikertInput({ options, value, onChange, readOnly }: LikertInputP
             >
               <span
                 className={cn(
-                  "text-sm leading-snug flex-1 flex items-center justify-center text-center",
+                  "text-xs leading-snug flex-1 flex items-center justify-center text-center",
                   isSelected ? "text-orange-900 font-medium" : "text-neutral-700",
                 )}
               >
@@ -73,7 +73,7 @@ export function LikertInput({ options, value, onChange, readOnly }: LikertInputP
             onClick={() => !readOnly && onChange(opt.value)}
             disabled={readOnly}
             className={cn(
-              "w-full flex items-center gap-4 px-4 py-3 rounded-lg border text-left transition-all",
+              "w-full flex items-center gap-3 px-3 py-2 rounded-lg border text-left transition-all",
               isSelected
                 ? "border-orange-500 bg-orange-50 ring-2 ring-orange-200"
                 : "border-neutral-200 hover:border-orange-300 hover:bg-neutral-50",

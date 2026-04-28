@@ -4,9 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
 import { useAuth } from "@/lib/hooks";
+import { useSidebar } from "@/contexts/SidebarContext";
 import {
   LayoutDashboard, Users, ClipboardList,
-  UserCircle, LogOut, Brain,
+  UserCircle, LogOut, Brain, ChevronLeft, ChevronRight,
 } from "lucide-react";
 
 const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React.ElementType }>> = {
@@ -27,26 +28,49 @@ const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React
 export function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const { isCollapsed, setIsCollapsed } = useSidebar();
 
-  const role  = String(user?.roles?.[0] || (user as any)?.role || "patient").toLowerCase();
-  const items = NAV_ITEMS[role] || NAV_ITEMS.patient;
-
+  const role     = String(user?.roles?.[0] || (user as any)?.role || "patient").toLowerCase();
+  const items    = NAV_ITEMS[role] || NAV_ITEMS.patient;
   const initials = [user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join("").toUpperCase();
   const roleName = role.replace("_", " ");
 
   return (
-    <aside className="group fixed left-0 top-0 h-full w-16 hover:w-64 bg-white border-r border-neutral-200/80 flex flex-col z-40 transition-[width] duration-300 ease-in-out overflow-hidden">
-      {/* Logo */}
-      <div className="h-16 flex items-center px-4 border-b border-neutral-100 flex-shrink-0">
-        <Link href="/" className="flex items-center gap-3 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-brand-gradient flex items-center justify-center flex-shrink-0">
-            <Brain className="h-4.5 w-4.5 text-white" />
-          </div>
-          <div className="min-w-0 overflow-hidden max-w-0 group-hover:max-w-[160px] transition-[max-width] duration-300 ease-in-out opacity-0 group-hover:opacity-100">
-            <p className="text-sm font-bold text-accent-dark leading-tight whitespace-nowrap">NeuroWellness</p>
-            <p className="text-[10px] font-semibold text-primary-500 uppercase tracking-widest leading-tight whitespace-nowrap">PRS</p>
-          </div>
-        </Link>
+    <aside className={cn(
+      "fixed left-0 top-0 h-full bg-blue-800 flex flex-col z-40 transition-all duration-200",
+      isCollapsed ? "w-16" : "w-64",
+    )}>
+      {/* Logo + toggle */}
+      <div className="h-16 flex items-center border-b border-blue-700 flex-shrink-0 relative px-4">
+        {!isCollapsed && (
+          <Link href="/" className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center flex-shrink-0">
+              <Brain className="h-4 w-4 text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-white leading-tight">NeuroWellness</p>
+              <p className="text-[10px] font-semibold text-blue-300 uppercase tracking-widest leading-tight">PRS</p>
+            </div>
+          </Link>
+        )}
+        {isCollapsed && (
+          <Link href="/" className="flex items-center justify-center w-full">
+            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center flex-shrink-0">
+              <Brain className="h-4 w-4 text-white" />
+            </div>
+          </Link>
+        )}
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className={cn(
+            "absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-blue-600 border border-blue-500 flex items-center justify-center hover:bg-blue-500 transition-colors z-50",
+          )}
+        >
+          {isCollapsed
+            ? <ChevronRight className="h-3 w-3 text-white" />
+            : <ChevronLeft className="h-3 w-3 text-white" />
+          }
+        </button>
       </div>
 
       {/* Navigation */}
@@ -57,43 +81,53 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              title={isCollapsed ? item.label : undefined}
               className={cn(
-                "flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150",
+                "flex items-center rounded-lg text-sm font-medium transition-colors border-l-2",
+                isCollapsed ? "justify-center px-2 py-2.5" : "gap-3 px-3 py-2.5",
                 isActive
-                  ? "bg-primary-50 text-primary-700 shadow-[inset_3px_0_0_0_#0ea5e9]"
-                  : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
+                  ? "bg-white/15 text-white border-white"
+                  : "text-blue-100 hover:bg-white/10 hover:text-white border-transparent",
               )}
             >
-              <item.icon className={cn("h-4.5 w-4.5 flex-shrink-0", isActive ? "text-primary-600" : "text-neutral-400")} />
-              <span className="overflow-hidden max-w-0 group-hover:max-w-[160px] transition-[max-width] duration-300 ease-in-out opacity-0 group-hover:opacity-100 whitespace-nowrap ml-3">
-                {item.label}
-              </span>
+              <item.icon className={cn("h-4.5 w-4.5 flex-shrink-0", isActive ? "text-white" : "text-blue-300")} />
+              {!isCollapsed && <span>{item.label}</span>}
             </Link>
           );
         })}
       </nav>
 
       {/* User section */}
-      <div className="border-t border-neutral-100 px-2 py-3 flex-shrink-0">
-        <div className="flex items-center px-3 py-2 rounded-lg mb-1">
-          <div className="w-8 h-8 rounded-full bg-brand-gradient flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
-            {initials}
+      <div className="border-t border-blue-700 px-2 py-3 flex-shrink-0">
+        {!isCollapsed ? (
+          <div className="flex items-center gap-3 px-3 py-2 rounded-lg mb-1">
+            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+              {initials}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-white leading-tight truncate">
+                {user?.first_name} {user?.last_name}
+              </p>
+              <p className="text-xs text-blue-300 capitalize leading-tight mt-0.5">{roleName}</p>
+            </div>
           </div>
-          <div className="overflow-hidden max-w-0 group-hover:max-w-[160px] transition-[max-width] duration-300 ease-in-out opacity-0 group-hover:opacity-100 ml-3">
-            <p className="text-sm font-semibold text-neutral-900 whitespace-nowrap leading-tight">
-              {user?.first_name} {user?.last_name}
-            </p>
-            <p className="text-xs text-neutral-500 capitalize leading-tight mt-0.5 whitespace-nowrap">{roleName}</p>
+        ) : (
+          <div className="flex justify-center py-2 mb-1">
+            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white text-xs font-semibold" title={`${user?.first_name} ${user?.last_name}`}>
+              {initials}
+            </div>
           </div>
-        </div>
+        )}
         <button
           onClick={logout}
-          className="flex items-center px-3 py-2 rounded-lg text-sm font-medium text-neutral-500 hover:bg-danger-50 hover:text-danger-600 w-full transition-all duration-150"
+          title={isCollapsed ? "Sign out" : undefined}
+          className={cn(
+            "flex items-center rounded-lg text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white w-full transition-colors",
+            isCollapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-2",
+          )}
         >
           <LogOut className="h-4 w-4 flex-shrink-0" />
-          <span className="overflow-hidden max-w-0 group-hover:max-w-[160px] transition-[max-width] duration-300 ease-in-out opacity-0 group-hover:opacity-100 whitespace-nowrap ml-3">
-            Sign out
-          </span>
+          {!isCollapsed && <span>Sign out</span>}
         </button>
       </div>
     </aside>

@@ -21,14 +21,14 @@ export function ProgressSidebar({
   overallProgress = 0,
 }: ProgressSidebarProps) {
   return (
-    <div className="w-72 bg-white border-r border-neutral-200 flex flex-col overflow-hidden flex-shrink-0">
+    <div className="w-56 bg-white border-r border-neutral-200 flex flex-col overflow-hidden flex-shrink-0">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
         <span className="text-xs font-bold text-neutral-500 uppercase tracking-widest">
           PROGRESS
         </span>
-        <div className="relative w-11 h-11">
-          <svg className="w-11 h-11 -rotate-90" viewBox="0 0 36 36">
+        <div className="relative w-9 h-9">
+          <svg className="w-9 h-9 -rotate-90" viewBox="0 0 36 36">
             <circle
               cx="18"
               cy="18"
@@ -48,7 +48,7 @@ export function ProgressSidebar({
               strokeLinecap="round"
             />
           </svg>
-          <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-neutral-700">
+          <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-neutral-700">
             {overallProgress}%
           </span>
         </div>
@@ -66,7 +66,7 @@ export function ProgressSidebar({
               key={scale.scale_id}
               onClick={() => onNavigate(idx)}
               className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 text-left transition-all border-r-2",
+                "w-full flex items-center gap-2 px-3 py-2 text-left transition-all border-r-2",
                 isActive
                   ? "bg-orange-50 border-r-orange-500"
                   : "border-r-transparent hover:bg-neutral-50",
@@ -74,7 +74,7 @@ export function ProgressSidebar({
             >
               <div
                 className={cn(
-                  "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0",
+                  "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0",
                   isComplete && "bg-green-100 text-green-700",
                   isActive && !isComplete && "bg-orange-500 text-white",
                   !isActive && !isComplete && hasResponses && "bg-amber-100 text-amber-700",
@@ -86,7 +86,7 @@ export function ProgressSidebar({
               <div className="flex-1 min-w-0">
                 <p
                   className={cn(
-                    "text-sm font-semibold truncate",
+                    "text-xs font-semibold truncate",
                     isActive
                       ? "text-orange-700"
                       : isComplete
