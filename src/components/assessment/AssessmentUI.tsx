@@ -10,6 +10,8 @@ import {
   ChevronLeft,
   ChevronRight,
   SkipForward,
+  Mic,
+  MicOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { QuestionRenderer } from "@/components/questionnaire/QuestionRenderer";
@@ -78,10 +80,12 @@ export function AssessmentUI({
   onSubmitScale,
   onNavigateScale,
   sttEnabled,
+  onToggleStt,
   sttPhase,
   sttTranscript,
   sttMatchedLabel,
   sttHint,
+  isSttsupported,
   isSubmitting,
 }: AssessmentUIProps) {
   const currentScale = scales[currentScaleIndex];
@@ -221,13 +225,23 @@ export function AssessmentUI({
                     )}
                   >
                     <div className="flex items-start gap-4 mb-5">
-                      <div
-                        className={cn(
-                          "w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5",
-                          isAnswered ? "bg-green-500 text-white" : "bg-orange-500 text-white",
+                      <div className="relative flex-shrink-0 mt-0.5">
+                        <div
+                          className={cn(
+                            "w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold",
+                            isAnswered ? "bg-green-500 text-white" : "bg-orange-500 text-white",
+                          )}
+                        >
+                          {idx + 1}
+                        </div>
+                        {isCurrentStt && sttPhase === "listening" && (
+                          <span className="absolute -inset-1 rounded-full bg-red-400 opacity-30 animate-ping" />
                         )}
-                      >
-                        {idx + 1}
+                        {isCurrentStt && (
+                          <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-red-500 flex items-center justify-center">
+                            <Mic className="w-2.5 h-2.5 text-white" />
+                          </span>
+                        )}
                       </div>
                       <h3 className="text-base font-semibold text-neutral-900 leading-snug flex-1 pt-0.5">
                         {question.label}
@@ -264,6 +278,31 @@ export function AssessmentUI({
                 <Info className="w-4 h-4" />
                 {questionsRemaining} question{questionsRemaining !== 1 ? "s" : ""} remaining
               </div>
+
+              {isSttsupported && onToggleStt && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onToggleStt(!sttEnabled)}
+                  className={cn(
+                    sttEnabled
+                      ? "border-red-300 text-red-600 bg-red-50 hover:bg-red-100"
+                      : "border-neutral-300 text-neutral-600 hover:bg-neutral-50",
+                  )}
+                >
+                  {sttEnabled ? (
+                    <>
+                      <MicOff className="h-4 w-4" />
+                      Stop Voice
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="h-4 w-4" />
+                      Voice Input
+                    </>
+                  )}
+                </Button>
+              )}
 
               <Button
                 variant="outline"

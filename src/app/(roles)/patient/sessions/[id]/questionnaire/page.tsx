@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Mic, ChevronLeft, ChevronRight, Send, SkipForward } from "lucide-react";
 import { useQuestionnaire, useSessions } from "@/lib/hooks";
+import { useAssessmentSTT } from "@/lib/hooks/useAssessmentSTT";
 import { prsService } from "@/lib/api/services";
-import { PageLoader, Button, ProgressBar } from "@/components/ui";
-import { QuestionRenderer } from "@/components/questionnaire/QuestionRenderer";
-import { ProgressSidebar } from "@/components/questionnaire/ProgressSidebar";
-import { VoiceMode } from "@/components/questionnaire/VoiceMode";
+import { PageLoader } from "@/components/ui";
+import { AssessmentUI } from "@/components/assessment/AssessmentUI";
 import type { ScaleDefinition } from "@/types/prs.types";
 
 export default function QuestionnairePage() {
@@ -19,8 +17,8 @@ export default function QuestionnairePage() {
   const [scaleDefinitions, setScaleDefinitions] = useState<Record<string, ScaleDefinition>>({});
   const [completedScaleIds, setCompletedScaleIds] = useState<Set<string>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [sttEnabled, setSttEnabled] = useState(false);
 
-  // Load session and init questionnaire
   useEffect(() => { loadSession(id); }, [id, loadSession]);
 
   useEffect(() => {
@@ -36,7 +34,7 @@ export default function QuestionnairePage() {
     }
   }, [currentSession]);
 
-  // Load scale definitions on demand
+  // Load current scale definition on demand
   useEffect(() => {
     if (!questionnaire.currentScaleId || scaleDefinitions[questionnaire.currentScaleId]) return;
     prsService.getScale(questionnaire.currentScaleId).then((scale) => {
@@ -45,36 +43,68 @@ export default function QuestionnairePage() {
     });
   }, [questionnaire.currentScaleId]);
 
-  if (!currentSession || !questionnaire.currentScaleId) return <PageLoader />;
+  // Pre-load all scale definitions for sidebar labels
+  useEffect(() => {
+    if (!currentSession) return;
+    currentSession.resolved_scale_ids.forEach((sid) => {
+      if (!scaleDefinitions[sid]) {
+        prsService.getScale(sid).then((scale) => {
+          const def = (scale as any).definition || scale;
+          setScaleDefinitions((prev) => ({ ...prev, [sid]: def }));
+        }).catch(() => {});
+      }
+    });
+  }, [currentSession]);
 
-  const currentDef = scaleDefinitions[questionnaire.currentScaleId];
+  // ─── Derive state safely (before early returns so hooks order stays fixed) ─
+
+  const currentScaleId = questionnaire.currentScaleId;
+  const currentDef = currentScaleId ? scaleDefinitions[currentScaleId] : undefined;
+  const questions = currentDef?.questions ?? [];
+  const totalQuestions = questions.length;
+  const questionsAnswered = Object.keys(questionnaire.currentResponses).length;
+  const currentQuestion = questions[questionnaire.currentQuestionIndex];
+  const questionKey = `${questionnaire.currentScaleIndex}-${questionnaire.currentQuestionIndex}`;
+
+  const handleAnswer = useCallback(
+    (questionIndex: number, value: number | string) => {
+      if (!currentScaleId) return;
+      questionnaire.answer(currentScaleId, questionIndex, value);
+    },
+    [questionnaire, currentScaleId],
+  );
+
+  const handleAutoAdvance = useCallback(() => {
+    questionnaire.nextQuestion(totalQuestions);
+  }, [questionnaire, totalQuestions]);
+
+  // ─── STT ──────────────────────────────────────────────────────────────────
+  const { phase, transcript, matchedLabel, hint, isSupported } = useAssessmentSTT({
+    questionKey,
+    question: currentQuestion,
+    enabled: sttEnabled && !isSubmitting,
+    onAnswer: handleAnswer,
+    onAutoAdvance: handleAutoAdvance,
+  });
+
+  // ─── Early returns (after all hooks) ──────────────────────────────────────
+  if (!currentSession || !currentScaleId) return <PageLoader />;
   if (!currentDef) return <PageLoader />;
 
-  const questions = currentDef.questions || [];
-  const currentQuestion = questions[questionnaire.currentQuestionIndex];
-  const totalQuestions = questions.length;
-  const currentValue = questionnaire.currentResponses[String(questionnaire.currentQuestionIndex)];
-
-  const isLastQuestion = questionnaire.currentQuestionIndex >= totalQuestions - 1;
-
-  const handleAnswer = (qIdx: number, value: number | string) => {
-    questionnaire.answer(questionnaire.currentScaleId!, qIdx, value);
-  };
+  // ─── Handlers ─────────────────────────────────────────────────────────────
 
   const handleSubmitScale = async () => {
     setIsSubmitting(true);
     try {
       const result = await questionnaire.submitCurrentScale();
       if (result) {
-        const newCompleted = new Set(completedScaleIds).add(questionnaire.currentScaleId!);
+        const newCompleted = new Set(completedScaleIds).add(currentScaleId);
         setCompletedScaleIds(newCompleted);
         if (result.session_completed || questionnaire.isLastScale) {
           const skippedIds = currentSession.resolved_scale_ids.filter(
-            (sid) => !newCompleted.has(sid)
+            (sid) => !newCompleted.has(sid),
           );
-          await Promise.all(
-            skippedIds.map((sid) => prsService.submitResponse(id, sid, {}))
-          );
+          await Promise.all(skippedIds.map((sid) => prsService.submitResponse(id, sid, {})));
           router.push(`/patient/sessions/${id}/complete`);
         } else {
           questionnaire.nextScale();
@@ -87,18 +117,8 @@ export default function QuestionnairePage() {
     }
   };
 
-  const scaleList = currentSession.resolved_scale_ids.map((sid) => ({
-    scale_id: sid,
-    short_name: scaleDefinitions[sid]?.shortName || sid,
-  }));
-
-  const handleSkipQuestion = () => {
-    if (isLastQuestion) handleSubmitScale();
-    else questionnaire.nextQuestion(totalQuestions);
-  };
-
   const handleSkipSection = () => {
-    questionnaire.clearScaleResponses(questionnaire.currentScaleId!);
+    questionnaire.clearScaleResponses(currentScaleId);
     if (questionnaire.isLastScale) {
       handleSubmitScale();
     } else {
@@ -106,122 +126,44 @@ export default function QuestionnairePage() {
     }
   };
 
+  const scalesWithMetadata = currentSession.resolved_scale_ids.map((sid) => {
+    const def = scaleDefinitions[sid];
+    return {
+      scale_id: sid,
+      scale_name: def?.name || def?.shortName || sid,
+      short_name: def?.shortName || sid,
+      description: def?.description,
+      instructions:
+        def?.instructions ||
+        "Under each heading, please tick the ONE box that best describes your health TODAY.",
+    };
+  });
+
   return (
-    <div className="flex h-[calc(100vh-4rem)] -mx-6 -mb-6">
-      {/* Left sidebar: scale progress */}
-      <ProgressSidebar
-        scales={scaleList}
-        currentIndex={questionnaire.currentScaleIndex}
-        completedScaleIds={completedScaleIds}
-        responses={questionnaire.responses}
-        onNavigate={questionnaire.goToScale}
-      />
-
-      {/* Main content area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Scale header */}
-        <div className="bg-white border-b px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-neutral-900">
-                {currentDef.shortName || currentDef.name}
-              </h2>
-              {currentDef.recallPeriod && (
-                <p className="text-sm text-neutral-500 mt-0.5">{currentDef.recallPeriod}</p>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                size="sm"
-                variant={questionnaire.isVoiceMode ? "danger" : "outline"}
-                onClick={questionnaire.toggleVoice}
-              >
-                <Mic className="h-4 w-4" />
-                {questionnaire.isVoiceMode ? "Voice ON" : "Voice"}
-              </Button>
-              <ProgressBar
-                value={questionnaire.currentQuestionIndex + 1}
-                max={totalQuestions}
-                className="w-32"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Question area */}
-        <div className="flex-1 overflow-y-auto p-8">
-          <div className="max-w-2xl mx-auto">
-            {currentQuestion && (
-              <QuestionRenderer
-                question={currentQuestion}
-                scaleId={questionnaire.currentScaleId!}
-                value={currentValue}
-                onAnswer={handleAnswer}
-                questionNumber={questionnaire.currentQuestionIndex + 1}
-                totalQuestions={totalQuestions}
-                isVoiceMode={questionnaire.isVoiceMode}
-              />
-            )}
-
-            {questionnaire.isVoiceMode && currentQuestion && (
-              <div className="mt-6">
-                <VoiceMode
-                  questionText={currentQuestion.label}
-                  options={currentQuestion.options}
-                  onAnswer={(val) => handleAnswer(currentQuestion.index, val)}
-                  isActive={questionnaire.isVoiceMode}
-                />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Navigation footer */}
-        <div className="bg-white border-t px-6 py-4 flex items-center justify-between gap-3">
-          <Button
-            variant="outline"
-            onClick={questionnaire.currentQuestionIndex > 0 ? questionnaire.prevQuestion : questionnaire.prevScale}
-            disabled={questionnaire.isFirstScale && questionnaire.currentQuestionIndex === 0}
-          >
-            <ChevronLeft className="h-4 w-4" /> Previous
-          </Button>
-
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSkipSection}
-            >
-              <SkipForward className="h-4 w-4" />
-              Skip Section
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleSkipQuestion}
-              disabled={isSubmitting}
-              className="text-neutral-400 hover:text-neutral-600"
-            >
-              Skip Question
-            </Button>
-
-            {isLastQuestion ? (
-              <Button onClick={handleSubmitScale} isLoading={isSubmitting} disabled={currentValue === undefined}>
-                <Send className="h-4 w-4" />
-                {questionnaire.isLastScale ? "Submit Assessment" : "Submit & Next Scale"}
-              </Button>
-            ) : (
-              <Button
-                onClick={() => questionnaire.nextQuestion(totalQuestions)}
-                disabled={currentValue === undefined}
-              >
-                Next <ChevronRight className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+    <AssessmentUI
+      scales={scalesWithMetadata}
+      currentScaleIndex={questionnaire.currentScaleIndex}
+      currentQuestionIndex={questionnaire.currentQuestionIndex}
+      completedScaleIds={completedScaleIds}
+      questions={questions}
+      responses={questionnaire.responses}
+      totalScales={currentSession.resolved_scale_ids.length}
+      isFirstScale={questionnaire.isFirstScale}
+      isLastScale={questionnaire.isLastScale}
+      questionsAnswered={questionsAnswered}
+      onAnswer={handleAnswer}
+      onPrev={questionnaire.prevScale}
+      onSkipSection={handleSkipSection}
+      onSubmitScale={handleSubmitScale}
+      onNavigateScale={questionnaire.goToScale}
+      sttEnabled={sttEnabled}
+      onToggleStt={setSttEnabled}
+      sttPhase={phase}
+      sttTranscript={transcript}
+      sttMatchedLabel={matchedLabel}
+      sttHint={hint}
+      isSttsupported={isSupported}
+      isSubmitting={isSubmitting}
+    />
   );
 }
