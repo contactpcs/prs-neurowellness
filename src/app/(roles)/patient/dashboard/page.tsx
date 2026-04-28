@@ -4,25 +4,29 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ClipboardList, UserCircle, Activity,
-  PlayCircle, ChevronRight, Calendar,
+  PlayCircle, ChevronRight, Calendar, AlertTriangle,
 } from "lucide-react";
 import { patientsService } from "@/lib/api/services/patients.service";
+import { anamnesisService } from "@/lib/api/services/anamnesis.service";
 import { PatientDashboardSkeleton, Card, CardContent, Button } from "@/components/ui";
 import type { PatientDashboard, AssessmentPermission, ScoreSummaryItem } from "@/types/domain.types";
 
 export default function PatientDashboard() {
   const [dashboard, setDashboard]   = useState<PatientDashboard | null>(null);
   const [assessments, setAssessments] = useState<AssessmentPermission[]>([]);
+  const [anamnesisCompleted, setAnamnesisCompleted] = useState<boolean | null>(null);
   const [isLoading, setIsLoading]   = useState(true);
 
   useEffect(() => {
     Promise.all([
       patientsService.getDashboard(),
       patientsService.getMyAssessments(),
+      anamnesisService.getMyAnamnesis().catch(() => null),
     ])
-      .then(([dash, { permissions }]) => {
+      .then(([dash, { permissions }, anamnesis]) => {
         setDashboard(dash);
         setAssessments(permissions);
+        setAnamnesisCompleted(anamnesis?.status === "completed" ?? false);
       })
       .catch(() => {})
       .finally(() => setIsLoading(false));
@@ -45,6 +49,28 @@ export default function PatientDashboard() {
         </h1>
         <p className="text-sm text-neutral-500 mt-1">Health assessment overview</p>
       </div>
+
+      {/* Anamnesis gate banner */}
+      {anamnesisCompleted === false && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="flex items-center gap-3.5 py-3.5">
+            <div className="w-9 h-9 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center flex-shrink-0">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-amber-900">Medical History Required</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                Complete your anamnesis before starting any assessment.
+              </p>
+            </div>
+            <Link href="/patient/anamnesis">
+              <Button size="sm" className="flex-shrink-0 bg-amber-500 hover:bg-amber-600 text-white border-0">
+                Complete Now <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Assigned doctor */}
       {doctor && (

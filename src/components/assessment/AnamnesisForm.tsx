@@ -1,520 +1,506 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
-import { Save, Stethoscope } from "lucide-react";
-import type { PatientDetail } from "@/types/domain.types";
+import { CheckCircle, Lock, AlertCircle, Stethoscope, Loader2 } from "lucide-react";
+import { anamnesisService } from "@/lib/api/services/anamnesis.service";
+import type { AnamnesisQuestion } from "@/lib/api/services/anamnesis.service";
+import type { AnamnesisRecord, PatientDetail } from "@/types/domain.types";
+
+// ── types ─────────────────────────────────────────────────────────────────────
+
+type ResponseMap = Record<string, { value: string; values: string[] }>;
+type RecordState = "loading" | "no-record" | "in_progress" | "completed";
 
 interface AnamnesisFormProps {
-  patient?: PatientDetail;
   patientId: string;
+  patient?: PatientDetail;
+  mode: "patient" | "doctor";
+  initialRecord?: AnamnesisRecord | null;
+  onSubmitted?: () => void;
 }
 
-interface FormData {
-  chiefComplaint: string;
-  mainSymptoms: string;
-  initialSymptoms: string;
-  diagnosisRelated: string;
-  diagnosisDetails: string;
-  symptomsStart: string;
-  symptomsDuration: string;
-  symptomsFrequency: string;
-  symptomsIntensity: string;
-  symptomsProgression: string;
-  secondarySymptoms: string[];
-  secondaryDetails: string;
-  hasOperations: string;
-  operationsDetails: string;
-  treatments: string;
-  medications: string;
-  brainMRI: string;
-  mriDetails: string;
-  otherScans: string;
-  neuromodulation: string;
-  neuromodulationDetails: string;
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+function groupBySection(questions: AnamnesisQuestion[]) {
+  const map: Record<number, { number: number; title: string; questions: AnamnesisQuestion[] }> = {};
+  for (const q of questions) {
+    if (!map[q.section_number]) {
+      map[q.section_number] = { number: q.section_number, title: q.section_title, questions: [] };
+    }
+    map[q.section_number].questions.push(q);
+  }
+  return Object.values(map).sort((a, b) => a.number - b.number);
 }
 
-export function AnamnesisForm({ patient, patientId }: AnamnesisFormProps) {
-  const [formData, setFormData] = useState<FormData>({
-    chiefComplaint: "",
-    mainSymptoms: "",
-    initialSymptoms: "",
-    diagnosisRelated: "",
-    diagnosisDetails: "",
-    symptomsStart: "",
-    symptomsDuration: "",
-    symptomsFrequency: "",
-    symptomsIntensity: "",
-    symptomsProgression: "",
-    secondarySymptoms: [],
-    secondaryDetails: "",
-    hasOperations: "",
-    operationsDetails: "",
-    treatments: "",
-    medications: "",
-    brainMRI: "",
-    mriDetails: "",
-    otherScans: "",
-    neuromodulation: "",
-    neuromodulationDetails: "",
+function isVisible(q: AnamnesisQuestion, responses: ResponseMap): boolean {
+  if (!q.depends_on_question_id) return true;
+  return responses[q.depends_on_question_id]?.value === q.depends_on_value;
+}
+
+function fmt(ts: string | null | undefined) {
+  if (!ts) return "—";
+  return new Date(ts).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function hydrateResponses(record: AnamnesisRecord): ResponseMap {
+  const out: ResponseMap = {};
+  for (const r of record.responses ?? []) {
+    out[r.question_id] = {
+      value: r.response_value ?? "",
+      values: r.response_values ?? [],
+    };
+  }
+  return out;
+}
+
+const SEC_ICON: Record<number, string> = {
+  1: "📋", 2: "⚡", 3: "📝", 4: "🔪", 5: "💊", 6: "💉", 7: "🧠", 8: "⚡",
+};
+
+// ── question field ────────────────────────────────────────────────────────────
+
+const inputCls =
+  "w-full px-3 py-2.5 border border-neutral-200 rounded-lg text-sm outline-none transition-colors focus:border-orange-500 focus:ring-1 focus:ring-orange-100 disabled:bg-neutral-50 disabled:text-neutral-500 disabled:cursor-default";
+const textareaCls = `${inputCls} min-h-[88px] resize-y`;
+
+function QuestionField({
+  q, response, onChange, readOnly,
+}: {
+  q: AnamnesisQuestion;
+  response: { value: string; values: string[] } | undefined;
+  onChange: (questionId: string, value: string | null, values: string[] | null) => void;
+  readOnly: boolean;
+}) {
+  const val  = response?.value  ?? "";
+  const vals = response?.values ?? [];
+
+  if (q.answer_type === "radio") {
+    return (
+      <div className="flex flex-wrap gap-5 mt-1">
+        {q.options.map((o) => (
+          <label
+            key={o.option_value}
+            className={`flex items-center gap-2 text-sm text-neutral-700 ${readOnly ? "cursor-default" : "cursor-pointer"}`}
+          >
+            <input
+              type="radio"
+              name={q.question_id}
+              value={o.option_value}
+              checked={val === o.option_value}
+              disabled={readOnly}
+              onChange={() => !readOnly && onChange(q.question_id, o.option_value, null)}
+              className="w-3.5 h-3.5 accent-orange-500"
+            />
+            {o.option_label}
+          </label>
+        ))}
+      </div>
+    );
+  }
+
+  if (q.answer_type === "select") {
+    return (
+      <select
+        value={val}
+        disabled={readOnly}
+        onChange={(e) => onChange(q.question_id, e.target.value, null)}
+        className={inputCls}
+      >
+        <option value="">Select an option…</option>
+        {q.options.map((o) => (
+          <option key={o.option_value} value={o.option_value}>{o.option_label}</option>
+        ))}
+      </select>
+    );
+  }
+
+  if (q.answer_type === "checkbox") {
+    const toggle = (v: string) => {
+      if (readOnly) return;
+      const next = vals.includes(v) ? vals.filter((x) => x !== v) : [...vals, v];
+      onChange(q.question_id, null, next);
+    };
+    return (
+      <div className="grid grid-cols-2 gap-2 mt-1">
+        {q.options.map((o) => (
+          <label
+            key={o.option_value}
+            className={`flex items-center gap-2 p-1.5 rounded text-sm text-neutral-700 ${readOnly ? "cursor-default" : "cursor-pointer hover:bg-neutral-50"}`}
+          >
+            <input
+              type="checkbox"
+              checked={vals.includes(o.option_value)}
+              disabled={readOnly}
+              onChange={() => toggle(o.option_value)}
+              className="w-3.5 h-3.5 accent-orange-500"
+            />
+            {o.option_label}
+          </label>
+        ))}
+      </div>
+    );
+  }
+
+  if (q.answer_type === "textarea") {
+    return (
+      <textarea
+        value={val}
+        readOnly={readOnly}
+        placeholder={readOnly ? "" : (q.helper_text ?? "")}
+        onChange={(e) => onChange(q.question_id, e.target.value, null)}
+        className={textareaCls}
+      />
+    );
+  }
+
+  // text / conditional_text / default
+  return (
+    <input
+      type="text"
+      value={val}
+      readOnly={readOnly}
+      placeholder={readOnly ? "" : (q.helper_text ?? "")}
+      onChange={(e) => onChange(q.question_id, e.target.value, null)}
+      className={inputCls}
+    />
+  );
+}
+
+// ── main component ────────────────────────────────────────────────────────────
+
+export function AnamnesisForm({ patientId, patient, mode, initialRecord, onSubmitted }: AnamnesisFormProps) {
+  const [questions,   setQuestions]   = useState<AnamnesisQuestion[]>([]);
+  const [sections,    setSections]    = useState<ReturnType<typeof groupBySection>>([]);
+  const [responses,   setResponses]   = useState<ResponseMap>({});
+  const [anamnesisId, setAnamnesisId] = useState<string | null>(initialRecord?.anamnesis_id ?? null);
+  const [meta,        setMeta]        = useState<{ completed_at: string | null; taken_by: string } | null>(
+    initialRecord ? { completed_at: initialRecord.completed_at, taken_by: initialRecord.taken_by } : null
+  );
+  const [recordState, setRecordState] = useState<RecordState>(() => {
+    if (initialRecord === undefined) return "loading";
+    if (initialRecord === null)      return mode === "doctor" ? "no-record" : "loading";
+    return initialRecord.status === "completed" ? "completed" : "in_progress";
   });
+  const [saving,     setSaving]     = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error,      setError]      = useState("");
 
-  const [isSaving, setIsSaving] = useState(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleTextChange = (field: keyof FormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
+  // ── fetch questions + record ───────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
 
-  const handleRadioChange = (field: keyof FormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
+    const fetchRecord = (): Promise<AnamnesisRecord | null> => {
+      if (initialRecord !== undefined) {
+        return Promise.resolve(initialRecord);
+      }
+      const getter =
+        mode === "patient"
+          ? anamnesisService.getMyAnamnesis()
+          : anamnesisService.getForPatient(patientId);
+      return getter.catch((e: { response?: { status?: number } }) =>
+        e?.response?.status === 404 ? null : Promise.reject(e)
+      );
+    };
 
-  const handleCheckboxChange = (value: string, checked: boolean) => {
-    setFormData(prev => {
-      const updated = checked
-        ? [...prev.secondarySymptoms, value]
-        : prev.secondarySymptoms.filter(s => s !== value);
-      return { ...prev, secondarySymptoms: updated };
-    });
-  };
+    Promise.all([anamnesisService.getQuestions(), fetchRecord()])
+      .then(([qs, record]) => {
+        if (cancelled) return;
+        setQuestions(qs);
+        setSections(groupBySection(qs));
 
-  const handleSave = async () => {
-    setIsSaving(true);
+        if (record) {
+          setAnamnesisId(record.anamnesis_id);
+          setMeta({ completed_at: record.completed_at, taken_by: record.taken_by });
+          setResponses(hydrateResponses(record));
+          setRecordState(record.status === "completed" ? "completed" : "in_progress");
+        } else {
+          // no record found
+          setRecordState(mode === "doctor" ? "no-record" : "loading");
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setError("Failed to load anamnesis. Please refresh.");
+        setRecordState("no-record");
+      });
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientId, mode]);
+
+  // ── auto-start for patient when no record ─────────────────────────────────
+  useEffect(() => {
+    // "loading" after questions are fetched = patient has no record
+    if (recordState !== "loading" || mode !== "patient" || questions.length === 0) return;
+
+    anamnesisService
+      .start({ patient_id: patientId, taken_by: "patient" })
+      .then((r) => {
+        setAnamnesisId(r.anamnesis_id);
+        setMeta({ completed_at: null, taken_by: "patient" });
+        setRecordState("in_progress");
+      })
+      .catch((e: { response?: { data?: { detail?: string } } }) => {
+        setError(e?.response?.data?.detail ?? "Failed to start anamnesis. Please refresh.");
+        setRecordState("no-record");
+      });
+  }, [recordState, mode, questions.length, patientId]);
+
+  // ── per-question auto-save (600 ms debounce) ──────────────────────────────
+  const handleChange = useCallback((questionId: string, value: string | null, values: string[] | null) => {
+    if (recordState === "completed") return;
+
+    setResponses((prev) => ({
+      ...prev,
+      [questionId]: { value: value ?? "", values: values ?? [] },
+    }));
+
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      if (!anamnesisId) return;
+      setSaving(true);
+      try {
+        await anamnesisService.saveResponse({
+          anamnesis_id:    anamnesisId,
+          question_id:     questionId,
+          response_value:  value   ?? null,
+          response_values: values  ?? null,
+        });
+      } catch { /* silent — will be caught on submit if needed */ }
+      finally { setSaving(false); }
+    }, 600);
+  }, [anamnesisId, recordState]);
+
+  // ── submit ────────────────────────────────────────────────────────────────
+  const handleSubmit = async () => {
+    setError("");
+
+    const missing = questions.filter(
+      (q) =>
+        q.is_required &&
+        isVisible(q, responses) &&
+        !responses[q.question_id]?.value &&
+        !(responses[q.question_id]?.values?.length)
+    );
+    if (missing.length) {
+      setError(
+        `Please answer all required questions. Missing: ${missing
+          .map((q) => `"${q.question_text.slice(0, 40)}"`)
+          .join(", ")}`
+      );
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    if (!anamnesisId) return;
+    setSubmitting(true);
     try {
-      // Save to localStorage for now (can be replaced with API call)
-      const dataToSave = {
-        ...formData,
-        patientId,
-        completedAt: new Date().toISOString(),
-        completedBy: "Dr. Current User",
-      };
-      localStorage.setItem(`anamnesis-${patientId}`, JSON.stringify(dataToSave));
-      alert("Anamnesis form saved successfully!");
-    } catch (error) {
-      console.error("Error saving form:", error);
-      alert("Error saving form. Please try again.");
+      await anamnesisService.submit({ anamnesis_id: anamnesisId });
+      setMeta((prev) => ({ ...(prev ?? { taken_by: "patient" }), completed_at: new Date().toISOString() }));
+      setRecordState("completed");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      onSubmitted?.();
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(detail ?? "Submission failed. Please try again.");
     } finally {
-      setIsSaving(false);
+      setSubmitting(false);
     }
   };
 
+  // ── doctor: start on behalf ───────────────────────────────────────────────
+  const handleStartOnBehalf = async () => {
+    setError("");
+    try {
+      // Fetch questions alongside start if not already loaded
+      const [r, qs] = await Promise.all([
+        anamnesisService.start({ patient_id: patientId, taken_by: "doctor_on_behalf" }),
+        questions.length === 0 ? anamnesisService.getQuestions().catch(() => [] as AnamnesisQuestion[]) : Promise.resolve(questions),
+      ]);
+      if (questions.length === 0 && qs.length > 0) {
+        setQuestions(qs);
+        setSections(groupBySection(qs));
+      }
+      setAnamnesisId(r.anamnesis_id);
+      setMeta({ completed_at: null, taken_by: "doctor_on_behalf" });
+      setRecordState("in_progress");
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(detail ?? "Failed to start anamnesis on behalf of patient.");
+    }
+  };
+
+  // ── render: early states ─────────────────────────────────────────────────
+
+  // Show spinner only while the initial data is still loading
+  if (recordState === "loading" && questions.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-7 h-7 text-orange-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (recordState === "no-record" && mode === "doctor") {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">
+        <div className="w-14 h-14 rounded-full bg-neutral-100 flex items-center justify-center">
+          <Stethoscope className="w-7 h-7 text-neutral-400" />
+        </div>
+        <div>
+          <p className="font-semibold text-neutral-800">No anamnesis record found</p>
+          <p className="text-sm text-neutral-500 mt-1">The patient has not yet completed their medical history intake.</p>
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <Button onClick={handleStartOnBehalf}>
+          <Stethoscope className="w-4 h-4" /> Start on Patient's Behalf
+        </Button>
+      </div>
+    );
+  }
+
+  if (recordState === "no-record" && mode === "patient") {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
+        <AlertCircle className="w-10 h-10 text-red-400" />
+        <p className="font-semibold text-neutral-800">Could not start anamnesis</p>
+        <p className="text-sm text-red-600">{error || "Unknown error. Please refresh."}</p>
+      </div>
+    );
+  }
+
+  // Doctor filling on behalf (taken_by='doctor_on_behalf', in_progress) → editable
+  // Doctor viewing patient's own record or any completed record → read-only
+  const isFillingOnBehalf =
+    mode === "doctor" &&
+    meta?.taken_by === "doctor_on_behalf" &&
+    recordState === "in_progress";
+  const readOnly  = recordState === "completed" || (mode === "doctor" && !isFillingOnBehalf);
+  const completed = recordState === "completed";
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+
       {/* Header */}
-      <div className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg px-6 py-6 border border-orange-200">
-        <div className="flex items-start gap-4">
-          <div className="bg-orange-500 rounded-lg p-3">
-            <Stethoscope className="w-6 h-6 text-white" />
+      <div className="bg-orange-50 border border-orange-200 rounded-xl px-5 py-4 flex items-center gap-3.5">
+        <span className="text-2xl flex-shrink-0">🩺</span>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-lg font-bold text-neutral-900">Anamnesis Assessment</h1>
+            {completed && (
+              <span className="flex items-center gap-1 px-2.5 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded-full border border-green-200">
+                <CheckCircle className="w-3 h-3" /> Completed
+              </span>
+            )}
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-neutral-900 flex items-center gap-2 mb-1">
-              Start New Anamnesis Assessment
-            </h1>
-            <p className="text-sm text-neutral-600">Patient Symptoms & Medical History (New Entry)</p>
-          </div>
+          <p className="text-xs text-neutral-500 mt-0.5">Patient Symptoms &amp; Medical History</p>
         </div>
       </div>
 
-      {/* Patient Info Card */}
-      {patient && (
-        <div className="bg-orange-50 border-2 border-orange-200 rounded-lg p-6">
-          <h2 className="text-lg font-bold text-neutral-900 mb-2">Patient Information</h2>
-          <p className="text-sm text-neutral-600 mb-4">{patient.full_name} - Clinical Assessment Active</p>
-          <div className="grid grid-cols-3 gap-6">
-            <div>
-              <p className="text-xs font-semibold text-neutral-600 uppercase mb-1 tracking-wide">Patient ID</p>
-              <p className="text-sm font-bold text-neutral-900">{patient.mrn || patientId}</p>
+      {/* Completed banner */}
+      {completed && (
+        <div className="flex items-center gap-2.5 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-700 font-medium">
+          <CheckCircle className="w-4 h-4 flex-shrink-0" />
+          Anamnesis submitted on {fmt(meta?.completed_at)} — this record is now read-only.
+        </div>
+      )}
+
+      {/* Meta row */}
+      {completed && meta && (
+        <div className="bg-white rounded-xl border border-neutral-200 shadow-sm px-5 py-4">
+          <div className="flex gap-8 flex-wrap text-sm">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Completed On</span>
+              <span className="font-semibold text-neutral-900">{fmt(meta.completed_at)}</span>
             </div>
-            <div>
-              <p className="text-xs font-semibold text-neutral-600 uppercase mb-1 tracking-wide">Assessment Date</p>
-              <p className="text-sm font-bold text-neutral-900">{new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}</p>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Filled By</span>
+              <span className="font-semibold text-neutral-900">
+                {meta.taken_by === "doctor_on_behalf" ? "Doctor (on behalf)" : "Patient"}
+              </span>
             </div>
-            <div>
-              <p className="text-xs font-semibold text-neutral-600 uppercase mb-1 tracking-wide">Age</p>
-              <p className="text-sm font-bold text-neutral-900">
-                {patient.date_of_birth ? new Date().getFullYear() - new Date(patient.date_of_birth).getFullYear() : "—"} years
-              </p>
-            </div>
+            {patient && (
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Patient</span>
+                <span className="font-semibold text-neutral-900">{patient.full_name}</span>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* Section 1: Chief Complaint */}
-      <div className="bg-white rounded-lg border border-neutral-200 p-6 space-y-4">
-        <h3 className="text-lg font-bold text-neutral-900 pb-3 border-b-2 border-orange-500 flex items-center gap-2">
-          <span className="text-orange-500">1.</span> Chief Complaint & Diagnosis
-        </h3>
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">Why are you here today? / Primary Diagnosis</label>
-          <textarea
-            value={formData.chiefComplaint}
-            onChange={(e) => handleTextChange("chiefComplaint", e.target.value)}
-            placeholder="Describe the main reason for this visit and any existing diagnosis..."
-            className="w-full px-4 py-3 border-2 border-neutral-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-sm min-h-24"
-          />
+      {/* Read-only notice (doctor in_progress) */}
+      {readOnly && !completed && (
+        <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-4 py-2.5 text-xs text-neutral-500">
+          <Lock className="w-3.5 h-3.5 flex-shrink-0" /> Viewing in read-only mode
         </div>
-      </div>
+      )}
 
-      {/* Section 2: Main Symptoms */}
-      <div className="bg-white rounded-lg border border-neutral-200 p-6 space-y-4">
-        <h3 className="text-lg font-bold text-neutral-900 pb-3 border-b-2 border-orange-500 flex items-center gap-2">
-          <span className="text-orange-500">2.</span> Main Symptoms
-        </h3>
-
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">What are your main symptoms?</label>
-          <textarea
-            value={formData.mainSymptoms}
-            onChange={(e) => handleTextChange("mainSymptoms", e.target.value)}
-            placeholder="Describe the primary symptoms you are experiencing..."
-            className="w-full px-4 py-3 border-2 border-neutral-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-sm min-h-24"
-          />
+      {/* Error */}
+      {error && (
+        <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          {error}
         </div>
+      )}
 
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">What were the initial symptoms?</label>
-          <textarea
-            value={formData.initialSymptoms}
-            onChange={(e) => handleTextChange("initialSymptoms", e.target.value)}
-            placeholder="Describe how your symptoms first appeared..."
-            className="w-full px-4 py-3 border-2 border-neutral-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-sm min-h-24"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">Is there a diagnosis related to the symptoms?</label>
-          <div className="flex gap-8 mb-3">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="diagnosisRelated"
-                value="yes"
-                checked={formData.diagnosisRelated === "yes"}
-                onChange={(e) => handleRadioChange("diagnosisRelated", e.target.value)}
-                className="w-4 h-4 accent-orange-500"
-              />
-              <span className="text-sm text-neutral-700">Yes</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="diagnosisRelated"
-                value="no"
-                checked={formData.diagnosisRelated === "no"}
-                onChange={(e) => handleRadioChange("diagnosisRelated", e.target.value)}
-                className="w-4 h-4 accent-orange-500"
-              />
-              <span className="text-sm text-neutral-700">No</span>
-            </label>
+      {/* Sections */}
+      {sections.map((sec) => (
+        <div key={sec.number} className="bg-white rounded-xl border border-neutral-200 shadow-sm p-5 space-y-5">
+          <div className="flex items-center gap-2.5 pb-3.5 border-b-2 border-orange-500">
+            <div className="w-6 h-6 rounded-full bg-orange-500 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+              {sec.number}
+            </div>
+            <h3 className="text-sm font-bold text-neutral-900">
+              {SEC_ICON[sec.number]} {sec.title}
+            </h3>
           </div>
-          <input
-            type="text"
-            value={formData.diagnosisDetails}
-            onChange={(e) => handleTextChange("diagnosisDetails", e.target.value)}
-            placeholder="If yes, please specify the diagnosis..."
-            className="w-full px-4 py-2 border-2 border-neutral-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-sm"
-          />
-        </div>
 
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">When did the symptoms start?</label>
-          <input
-            type="text"
-            value={formData.symptomsStart}
-            onChange={(e) => handleTextChange("symptomsStart", e.target.value)}
-            placeholder="e.g., 3 months ago, January 2024..."
-            className="w-full px-4 py-2 border-2 border-neutral-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-sm"
-          />
+          {sec.questions
+            .filter((q) => isVisible(q, responses))
+            .map((q) => (
+              <div key={q.question_id}>
+                <label className="block text-sm font-semibold text-neutral-700 mb-1.5">
+                  {q.question_text}
+                  {q.is_required && !readOnly && <span className="text-red-500 ml-1">*</span>}
+                </label>
+                <QuestionField
+                  q={q}
+                  response={responses[q.question_id]}
+                  onChange={handleChange}
+                  readOnly={readOnly}
+                />
+                {q.helper_text &&
+                  q.answer_type !== "text" &&
+                  q.answer_type !== "textarea" &&
+                  q.answer_type !== "conditional_text" && (
+                    <p className="text-xs text-neutral-400 mt-1">{q.helper_text}</p>
+                  )}
+              </div>
+            ))}
         </div>
+      ))}
 
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">For how long have you had these symptoms?</label>
-          <input
-            type="text"
-            value={formData.symptomsDuration}
-            onChange={(e) => handleTextChange("symptomsDuration", e.target.value)}
-            placeholder="e.g., 2 weeks, 6 months, 2 years..."
-            className="w-full px-4 py-2 border-2 border-neutral-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-sm"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">How often do you have these symptoms?</label>
-          <select
-            value={formData.symptomsFrequency}
-            onChange={(e) => handleTextChange("symptomsFrequency", e.target.value)}
-            className="w-full px-4 py-2 border-2 border-neutral-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-sm"
+      {/* Footer — patient in_progress only */}
+      {!readOnly && (
+        <div className="bg-white rounded-xl border border-neutral-200 shadow-sm px-5 py-4 flex items-center justify-end gap-3">
+          {saving && (
+            <span className="flex items-center gap-1.5 text-xs text-neutral-400 mr-auto">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Auto-saving…
+            </span>
+          )}
+          <Button
+            onClick={handleSubmit}
+            isLoading={submitting}
+            className="bg-orange-500 hover:bg-orange-600 text-white"
           >
-            <option value="">Select frequency...</option>
-            <option value="daily">Daily</option>
-            <option value="several-times-week">Several times a week</option>
-            <option value="weekly">Weekly</option>
-            <option value="monthly">Monthly</option>
-            <option value="occasionally">Occasionally</option>
-          </select>
+            ✓ Submit Anamnesis
+          </Button>
         </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">How intense or severe are these symptoms?</label>
-          <select
-            value={formData.symptomsIntensity}
-            onChange={(e) => handleTextChange("symptomsIntensity", e.target.value)}
-            className="w-full px-4 py-2 border-2 border-neutral-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-sm"
-          >
-            <option value="">Select intensity...</option>
-            <option value="mild">Mild</option>
-            <option value="moderate">Moderate</option>
-            <option value="severe">Severe</option>
-            <option value="very-severe">Very Severe</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">Are the symptoms getting better, worse, or staying about the same?</label>
-          <select
-            value={formData.symptomsProgression}
-            onChange={(e) => handleTextChange("symptomsProgression", e.target.value)}
-            className="w-full px-4 py-2 border-2 border-neutral-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-sm"
-          >
-            <option value="">Select progression...</option>
-            <option value="better">Getting better</option>
-            <option value="worse">Getting worse</option>
-            <option value="same">Staying about the same</option>
-            <option value="fluctuating">Fluctuating</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Section 3: Secondary Symptoms */}
-      <div className="bg-white rounded-lg border border-neutral-200 p-6 space-y-4">
-        <h3 className="text-lg font-bold text-neutral-900 pb-3 border-b-2 border-orange-500 flex items-center gap-2">
-          <span className="text-orange-500">3.</span> Secondary Symptoms
-        </h3>
-        <p className="text-sm text-neutral-600">Please check all that apply and provide details where relevant:</p>
-
-        <div className="grid grid-cols-2 gap-4">
-          {[
-            { value: "sleep", label: "Sleep Issues" },
-            { value: "concentration", label: "Concentration Problems" },
-            { value: "memory", label: "Memory Issues" },
-            { value: "gastrointestinal", label: "Gastrointestinal Issues" },
-            { value: "mood", label: "Mood Fluctuations" },
-            { value: "fatigue", label: "Fatigue" },
-            { value: "weakness", label: "Weakness" },
-            { value: "pain", label: "Pain" },
-            { value: "depression", label: "Depression/Anxiety" },
-            { value: "bladder", label: "Bladder Function Issues" },
-          ].map(({ value, label }) => (
-            <label key={value} className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-neutral-50">
-              <input
-                type="checkbox"
-                checked={formData.secondarySymptoms.includes(value)}
-                onChange={(e) => handleCheckboxChange(value, e.target.checked)}
-                className="w-4 h-4 accent-orange-500"
-              />
-              <span className="text-sm text-neutral-700">{label}</span>
-            </label>
-          ))}
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">Additional details about secondary symptoms:</label>
-          <textarea
-            value={formData.secondaryDetails}
-            onChange={(e) => handleTextChange("secondaryDetails", e.target.value)}
-            placeholder="Please provide more details about the checked symptoms..."
-            className="w-full px-4 py-3 border-2 border-neutral-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-sm min-h-24"
-          />
-        </div>
-      </div>
-
-      {/* Section 4: Operations/Surgeries */}
-      <div className="bg-white rounded-lg border border-neutral-200 p-6 space-y-4">
-        <h3 className="text-lg font-bold text-neutral-900 pb-3 border-b-2 border-orange-500 flex items-center gap-2">
-          <span className="text-orange-500">4.</span> Operations/Surgeries
-        </h3>
-
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">Have you had any operations or surgeries?</label>
-          <div className="flex gap-8">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="hasOperations"
-                value="yes"
-                checked={formData.hasOperations === "yes"}
-                onChange={(e) => handleRadioChange("hasOperations", e.target.value)}
-                className="w-4 h-4 accent-orange-500"
-              />
-              <span className="text-sm text-neutral-700">Yes</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="hasOperations"
-                value="no"
-                checked={formData.hasOperations === "no"}
-                onChange={(e) => handleRadioChange("hasOperations", e.target.value)}
-                className="w-4 h-4 accent-orange-500"
-              />
-              <span className="text-sm text-neutral-700">No</span>
-            </label>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">If yes, please provide details:</label>
-          <textarea
-            value={formData.operationsDetails}
-            onChange={(e) => handleTextChange("operationsDetails", e.target.value)}
-            placeholder="Include: Which operations, how many, when performed, post-surgery condition/effects..."
-            className="w-full px-4 py-3 border-2 border-neutral-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-sm min-h-24"
-          />
-        </div>
-      </div>
-
-      {/* Section 5: Previous/Ongoing Treatments */}
-      <div className="bg-white rounded-lg border border-neutral-200 p-6 space-y-4">
-        <h3 className="text-lg font-bold text-neutral-900 pb-3 border-b-2 border-orange-500 flex items-center gap-2">
-          <span className="text-orange-500">5.</span> Previous or Ongoing Treatments
-        </h3>
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">Previous or ongoing treatments (physiotherapy, speech therapy, psychotherapy, etc.)</label>
-          <textarea
-            value={formData.treatments}
-            onChange={(e) => handleTextChange("treatments", e.target.value)}
-            placeholder="Include: Type of treatment, how long, how often, outcomes/improvements..."
-            className="w-full px-4 py-3 border-2 border-neutral-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-sm min-h-24"
-          />
-        </div>
-      </div>
-
-      {/* Section 6: Medications */}
-      <div className="bg-white rounded-lg border border-neutral-200 p-6 space-y-4">
-        <h3 className="text-lg font-bold text-neutral-900 pb-3 border-b-2 border-orange-500 flex items-center gap-2">
-          <span className="text-orange-500">6.</span> Medications & Supplements
-        </h3>
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">Current medications and supplements:</label>
-          <textarea
-            value={formData.medications}
-            onChange={(e) => handleTextChange("medications", e.target.value)}
-            placeholder="List all current medications and supplements with dosages..."
-            className="w-full px-4 py-3 border-2 border-neutral-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-sm min-h-24"
-          />
-        </div>
-      </div>
-
-      {/* Section 7: Brain MRI & Scans */}
-      <div className="bg-white rounded-lg border border-neutral-200 p-6 space-y-4">
-        <h3 className="text-lg font-bold text-neutral-900 pb-3 border-b-2 border-orange-500 flex items-center gap-2">
-          <span className="text-orange-500">7.</span> Brain MRI & Other Scans
-        </h3>
-
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">Have you had a Brain MRI?</label>
-          <div className="flex gap-8">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="brainMRI"
-                value="yes"
-                checked={formData.brainMRI === "yes"}
-                onChange={(e) => handleRadioChange("brainMRI", e.target.value)}
-                className="w-4 h-4 accent-orange-500"
-              />
-              <span className="text-sm text-neutral-700">Yes</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="brainMRI"
-                value="no"
-                checked={formData.brainMRI === "no"}
-                onChange={(e) => handleRadioChange("brainMRI", e.target.value)}
-                className="w-4 h-4 accent-orange-500"
-              />
-              <span className="text-sm text-neutral-700">No</span>
-            </label>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">If yes, when was it performed and what were the results?</label>
-          <textarea
-            value={formData.mriDetails}
-            onChange={(e) => handleTextChange("mriDetails", e.target.value)}
-            placeholder="Include: Date of MRI, results, any other scans (CT, EEG, EMG)..."
-            className="w-full px-4 py-3 border-2 border-neutral-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-sm min-h-24"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">Other scans (CT, EEG, EMG, etc.):</label>
-          <textarea
-            value={formData.otherScans}
-            onChange={(e) => handleTextChange("otherScans", e.target.value)}
-            placeholder="List any other scans or tests performed..."
-            className="w-full px-4 py-3 border-2 border-neutral-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-sm min-h-24"
-          />
-        </div>
-      </div>
-
-      {/* Section 8: Neuromodulation Experience */}
-      <div className="bg-white rounded-lg border border-neutral-200 p-6 space-y-4">
-        <h3 className="text-lg font-bold text-neutral-900 pb-3 border-b-2 border-orange-500 flex items-center gap-2">
-          <span className="text-orange-500">8.</span> Neuromodulation Experience
-        </h3>
-
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">Have you used any neuromodulation techniques before?</label>
-          <div className="flex gap-8">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="neuromodulation"
-                value="yes"
-                checked={formData.neuromodulation === "yes"}
-                onChange={(e) => handleRadioChange("neuromodulation", e.target.value)}
-                className="w-4 h-4 accent-orange-500"
-              />
-              <span className="text-sm text-neutral-700">Yes</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="neuromodulation"
-                value="no"
-                checked={formData.neuromodulation === "no"}
-                onChange={(e) => handleRadioChange("neuromodulation", e.target.value)}
-                className="w-4 h-4 accent-orange-500"
-              />
-              <span className="text-sm text-neutral-700">No</span>
-            </label>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-neutral-700 mb-2">If yes, please specify devices used and experience:</label>
-          <textarea
-            value={formData.neuromodulationDetails}
-            onChange={(e) => handleTextChange("neuromodulationDetails", e.target.value)}
-            placeholder="Include: Type of device, duration of use, effectiveness, any side effects..."
-            className="w-full px-4 py-3 border-2 border-neutral-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-sm min-h-24"
-          />
-        </div>
-      </div>
-
-      {/* Save Button */}
-      <Button
-        size="lg"
-        onClick={handleSave}
-        isLoading={isSaving}
-        className="w-full bg-orange-500 hover:bg-orange-600 text-white"
-      >
-        <Save className="w-5 h-5" />
-        Save Anamnesis Form
-      </Button>
+      )}
     </div>
   );
 }

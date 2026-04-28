@@ -9,7 +9,8 @@ import { AnamnesisForm } from "@/components/assessment/AnamnesisForm";
 import { doctorsService } from "@/lib/api/services/doctors.service";
 import { permissionsService } from "@/lib/api/services/permissions.service";
 import { scoresService } from "@/lib/api/services/scores.service";
-import type { PatientDetail, Permission, AssessmentInstance } from "@/types/domain.types";
+import { anamnesisService } from "@/lib/api/services/anamnesis.service";
+import type { PatientDetail, Permission, AssessmentInstance, AnamnesisRecord } from "@/types/domain.types";
 
 function statusClass(status: Permission["status"]): string {
   switch (status) {
@@ -25,14 +26,16 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
-const ASSESSMENT_SECTIONS = [
-  { id: "anamnesis", name: "Anamnesis", status: "done" },
-  { id: "brain-mapping", name: "Brain Mapping", status: "start" },
-  { id: "prs", name: "PRS", status: "start" },
-  { id: "notes", name: "Doctor's Notes", status: null },
-  { id: "treatment-plan", name: "Treatment Plan", status: "locked" },
-  { id: "final-report", name: "Final Report", status: "locked" },
-];
+function buildSections(anamnesisStatus: "in_progress" | "completed" | null) {
+  return [
+    { id: "anamnesis", name: "Anamnesis", status: anamnesisStatus === "completed" ? "done" : anamnesisStatus === "in_progress" ? "start" : null },
+    { id: "brain-mapping", name: "Brain Mapping", status: "start" },
+    { id: "prs", name: "PRS", status: "start" },
+    { id: "notes", name: "Doctor's Notes", status: null },
+    { id: "treatment-plan", name: "Treatment Plan", status: "locked" },
+    { id: "final-report", name: "Final Report", status: "locked" },
+  ];
+}
 
 export default function DoctorPatientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -42,6 +45,7 @@ export default function DoctorPatientDetailPage() {
   const [assessments, setAssessments] = useState<Permission[]>([]);
   const [scoreInstances, setScoreInstances] = useState<AssessmentInstance[]>([]);
   const [totalAssessments, setTotalAssessments] = useState(0);
+  const [anamnesisRecord, setAnamnesisRecord] = useState<AnamnesisRecord | null | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedSection, setSelectedSection] = useState("anamnesis");
   const [selectedAssessmentTab, setSelectedAssessmentTab] = useState(0);
@@ -51,10 +55,11 @@ export default function DoctorPatientDetailPage() {
 
     (async () => {
       try {
-        const [patientData, permissionsData, scoresSummary] = await Promise.all([
+        const [patientData, permissionsData, scoresSummary, anamnesis] = await Promise.all([
           doctorsService.getPatient(id),
           permissionsService.getPatientPermissions(id),
           scoresService.getPatientScoresSummary(id).catch(() => ({ instances: [], total: 0, diseases: 0 })),
+          anamnesisService.getForPatient(id).catch(() => null),
         ]);
 
         if (cancelled) return;
@@ -62,6 +67,7 @@ export default function DoctorPatientDetailPage() {
         setAssessments(permissionsData.permissions ?? []);
         setScoreInstances(scoresSummary.instances ?? []);
         setTotalAssessments(scoresSummary.total ?? 0);
+        setAnamnesisRecord(anamnesis ?? null);
       } catch {
         if (cancelled) return;
       } finally {
@@ -117,51 +123,53 @@ export default function DoctorPatientDetailPage() {
       </div>
 
       <div className="px-8 py-8 space-y-6">
-        {/* Patient Card */}
-        <div className="bg-white rounded-lg shadow-md p-7 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-white font-bold text-2xl border-2 border-[#f47920]">
-              {fullName?.[0]?.toUpperCase()}
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-neutral-900">{fullName}</h1>
-              {patient?.mrn && (
-                <p className="text-sm text-neutral-600">({patient.mrn})</p>
-              )}
-              <div className="flex items-center gap-2 mt-2">
-                {age && <span className="text-base text-neutral-700">{age} Yrs · Female</span>}
-                <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg">New</span>
-                <span className="px-3 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-lg flex items-center gap-1">
-                  <Check className="w-3 h-3" /> Paid
-                </span>
+        {/* Patient info + Next Activity — two side-by-side cards */}
+        <div className="grid grid-cols-2 gap-6">
+          {/* Left — Patient Name Card */}
+          <div className="bg-white rounded-lg shadow-md p-7 flex items-center justify-between">
+            <div className="flex items-center gap-5">
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-white font-bold text-2xl border-2 border-[#f47920] flex-shrink-0">
+                {fullName?.[0]?.toUpperCase()}
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-neutral-900">{fullName}</h1>
+                {patient?.mrn && (
+                  <p className="text-sm text-neutral-600">({patient.mrn})</p>
+                )}
+                <div className="flex items-center gap-2 mt-2">
+                  {age && <span className="text-base text-neutral-700">{age} Yrs · Female</span>}
+                  <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg">New</span>
+                  <span className="px-3 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-lg flex items-center gap-1">
+                    <Check className="w-3 h-3" /> Paid
+                  </span>
+                </div>
               </div>
             </div>
+            <div className="flex flex-col gap-2 flex-shrink-0">
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button className="px-6 py-3 border border-neutral-400 text-neutral-900 font-medium rounded-full hover:bg-neutral-50 transition-colors">
-              Prev. Patient
-            </button>
-            <button className="px-6 py-3 border border-neutral-400 text-neutral-900 font-medium rounded-full hover:bg-neutral-50 transition-colors">
-              Next Patient
-            </button>
+
+          {/* Right — Next Activity Card */}
+          <div className="bg-white rounded-lg shadow-md p-7 flex items-center justify-between">
+            {nextAssessment ? (
+              <>
+                <div>
+                  <p className="text-neutral-500 text-sm mb-1">Next Activity</p>
+                  <h3 className="text-2xl font-bold text-neutral-900">{nextAssessment.disease_name}</h3>
+                  <span className="inline-block mt-2 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg">Basic 2/7</span>
+                </div>
+                <button className="px-6 py-3 bg-orange-500 text-white font-medium rounded-full hover:bg-orange-600 transition-colors flex items-center gap-2 flex-shrink-0">
+                  ▶ Start
+                </button>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center w-full py-4 text-center">
+                <p className="text-neutral-500 text-sm">No pending activity</p>
+                <p className="text-neutral-400 text-xs mt-1">Assign an assessment to get started</p>
+              </div>
+            )}
           </div>
         </div>
-
-        {/* Next Activity Card */}
-        {nextAssessment && (
-          <div className="bg-white rounded-lg shadow-md p-6 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div>
-                <p className="text-neutral-600 text-sm">Next Activity</p>
-                <h3 className="text-2xl font-bold text-neutral-900">{nextAssessment.disease_name}</h3>
-                <span className="inline-block mt-1 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg">Basic 2/7</span>
-              </div>
-            </div>
-            <button className="px-6 py-3 bg-orange-500 text-white font-medium rounded-full hover:bg-orange-600 transition-colors flex items-center gap-2">
-              ▶ Start
-            </button>
-          </div>
-        )}
 
         {/* Assessment Tabs and Content */}
         <div className="space-y-6">
@@ -198,7 +206,7 @@ export default function DoctorPatientDetailPage() {
                 <ChevronRight className="w-5 h-5 -rotate-90 text-neutral-600" />
               </div>
               <div className="flex-1 overflow-y-auto space-y-0">
-                {ASSESSMENT_SECTIONS.map((section) => (
+                {buildSections(anamnesisRecord?.status ?? null).map((section) => (
                   <button
                     key={section.id}
                     onClick={() => setSelectedSection(section.id)}
@@ -229,8 +237,21 @@ export default function DoctorPatientDetailPage() {
             {/* Right Content - Assessment Details */}
             <div className="flex-1 bg-white rounded-lg shadow-md p-8 overflow-y-auto">
               {selectedSection === "anamnesis" ? (
-                // Anamnesis Form
-                <AnamnesisForm patient={patient || undefined} patientId={id} />
+                <AnamnesisForm
+                  patient={patient || undefined}
+                  patientId={id}
+                  mode="doctor"
+                  initialRecord={anamnesisRecord}
+                  onSubmitted={() => setAnamnesisRecord((prev) => prev ? { ...prev, status: "completed" } : prev)}
+                />
+              ) : selectedSection === "brain-mapping" ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mb-4">
+                    <span className="text-2xl">🧠</span>
+                  </div>
+                  <h2 className="text-xl font-bold text-neutral-700 mb-2">Brain Mapping</h2>
+                  <p className="text-sm text-neutral-400">Yet to be implemented</p>
+                </div>
               ) : (
                 // PRS View - Show Completed Assessments
                 <div className="space-y-6">

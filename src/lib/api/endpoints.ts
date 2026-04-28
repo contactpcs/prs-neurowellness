@@ -89,4 +89,13 @@ export const ENDPOINTS = {
     RESOLVE_ALERT: (id: string) => `/prs/alerts/${id}/resolve`,
     SCORE_HISTORY: (patientId: string) => `/prs/history/${patientId}`,
   },
+  // ─── Anamnesis ───
+  ANAMNESIS: {
+    QUESTIONS:        "/anamnesis/questions",
+    START:            "/anamnesis/start",
+    SAVE_RESPONSE:    "/anamnesis/save-response",
+    SUBMIT:           "/anamnesis/submit",
+    ME:               "/anamnesis/me",
+    FOR_PATIENT:      (patientId: string) => `/anamnesis/patient/${patientId}`,
+  },
 } as const;
