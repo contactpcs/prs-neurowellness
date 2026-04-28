@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/hooks";
 import { useSidebar } from "@/contexts/SidebarContext";
 import {
   LayoutDashboard, Users, ClipboardList,
-  UserCircle, LogOut, Brain, ChevronLeft, ChevronRight,
+  UserCircle, LogOut, Brain, ChevronLeft, Menu,
 } from "lucide-react";
 
 const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React.ElementType }>> = {
@@ -41,36 +41,35 @@ export function Sidebar() {
       isCollapsed ? "w-16" : "w-64",
     )}>
       {/* Logo + toggle */}
-      <div className="h-16 flex items-center border-b border-blue-700 flex-shrink-0 relative px-4">
-        {!isCollapsed && (
-          <Link href="/" className="flex items-center gap-3 flex-1 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center flex-shrink-0">
-              <Brain className="h-4 w-4 text-white" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-white leading-tight">NeuroWellness</p>
-              <p className="text-[10px] font-semibold text-blue-300 uppercase tracking-widest leading-tight">PRS</p>
-            </div>
-          </Link>
+      <div className="h-16 border-b border-blue-700 flex-shrink-0 flex items-center">
+        {!isCollapsed ? (
+          <div className="flex items-center gap-2 w-full px-4">
+            <Link href="/" className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center flex-shrink-0">
+                <Brain className="h-4 w-4 text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-white leading-tight">NeuroWellness</p>
+                <p className="text-[10px] font-semibold text-blue-300 uppercase tracking-widest leading-tight">PRS</p>
+              </div>
+            </Link>
+            <button
+              onClick={() => setIsCollapsed(true)}
+              className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-white/10 transition-colors flex-shrink-0 text-white"
+              title="Collapse sidebar"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setIsCollapsed(false)}
+            className="w-full h-full flex items-center justify-center hover:bg-white/10 transition-colors text-white"
+            title="Expand sidebar"
+          >
+            <Menu className="h-6 w-6" />
+          </button>
         )}
-        {isCollapsed && (
-          <Link href="/" className="flex items-center justify-center w-full">
-            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center flex-shrink-0">
-              <Brain className="h-4 w-4 text-white" />
-            </div>
-          </Link>
-        )}
-        <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className={cn(
-            "absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-blue-600 border border-blue-500 flex items-center justify-center hover:bg-blue-500 transition-colors z-50",
-          )}
-        >
-          {isCollapsed
-            ? <ChevronRight className="h-3 w-3 text-white" />
-            : <ChevronLeft className="h-3 w-3 text-white" />
-          }
-        </button>
       </div>
 
       {/* Navigation */}

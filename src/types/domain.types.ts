@@ -177,3 +177,37 @@ export interface PatientScoreInstance {
   overall_severity?: string;
   scale_results: ScoreSummaryItem[];
 }
+
+// ─── Anamnesis ────────────────────────────────────────────────────
+
+export interface AnamnesisRecord {
+  anamnesis_id: string;
+  patient_id: string;
+  submitted_by: string | null;
+  taken_by: string;
+  status: "in_progress" | "completed";
+  completed_at: string | null;
+  chief_complaint: string | null;
+  main_symptoms: string | null;
+  initial_symptoms: string | null;
+  diagnosis_related: boolean | null;
+  diagnosis_details: string | null;
+  symptoms_start: string | null;
+  symptoms_duration: string | null;
+  symptoms_frequency: string | null;
+  symptoms_intensity: string | null;
+  symptoms_progression: string | null;
+  secondary_symptoms: string[] | null;
+  secondary_symptoms_details: string | null;
+  has_operations: boolean | null;
+  operations_details: string | null;
+  previous_treatments: string | null;
+  current_medications: string | null;
+  has_brain_mri: boolean | null;
+  mri_details: string | null;
+  other_scans: string | null;
+  has_neuromodulation: boolean | null;
+  neuromodulation_details: string | null;
+  created_at: string;
+  updated_at: string;
+}

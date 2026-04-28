@@ -9,7 +9,8 @@ import { AnamnesisForm } from "@/components/assessment/AnamnesisForm";
 import { doctorsService } from "@/lib/api/services/doctors.service";
 import { permissionsService } from "@/lib/api/services/permissions.service";
 import { scoresService } from "@/lib/api/services/scores.service";
-import type { PatientDetail, Permission, AssessmentInstance } from "@/types/domain.types";
+import { anamnesisService } from "@/lib/api/services/anamnesis.service";
+import type { PatientDetail, Permission, AssessmentInstance, AnamnesisRecord } from "@/types/domain.types";
 
 function statusClass(status: Permission["status"]): string {
   switch (status) {
@@ -25,14 +26,16 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
-const ASSESSMENT_SECTIONS = [
-  { id: "anamnesis", name: "Anamnesis", status: "done" },
-  { id: "brain-mapping", name: "Brain Mapping", status: "start" },
-  { id: "prs", name: "PRS", status: "start" },
-  { id: "notes", name: "Doctor's Notes", status: null },
-  { id: "treatment-plan", name: "Treatment Plan", status: "locked" },
-  { id: "final-report", name: "Final Report", status: "locked" },
-];
+function buildSections(anamnesisStatus: "in_progress" | "completed" | null) {
+  return [
+    { id: "anamnesis", name: "Anamnesis", status: anamnesisStatus === "completed" ? "done" : anamnesisStatus === "in_progress" ? "start" : null },
+    { id: "brain-mapping", name: "Brain Mapping", status: "start" },
+    { id: "prs", name: "PRS", status: "start" },
+    { id: "notes", name: "Doctor's Notes", status: null },
+    { id: "treatment-plan", name: "Treatment Plan", status: "locked" },
+    { id: "final-report", name: "Final Report", status: "locked" },
+  ];
+}
 
 export default function DoctorPatientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -42,6 +45,7 @@ export default function DoctorPatientDetailPage() {
   const [assessments, setAssessments] = useState<Permission[]>([]);
   const [scoreInstances, setScoreInstances] = useState<AssessmentInstance[]>([]);
   const [totalAssessments, setTotalAssessments] = useState(0);
+  const [anamnesisRecord, setAnamnesisRecord] = useState<AnamnesisRecord | null | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedSection, setSelectedSection] = useState("anamnesis");
   const [selectedAssessmentTab, setSelectedAssessmentTab] = useState(0);
@@ -51,10 +55,11 @@ export default function DoctorPatientDetailPage() {
 
     (async () => {
       try {
-        const [patientData, permissionsData, scoresSummary] = await Promise.all([
+        const [patientData, permissionsData, scoresSummary, anamnesis] = await Promise.all([
           doctorsService.getPatient(id),
           permissionsService.getPatientPermissions(id),
           scoresService.getPatientScoresSummary(id).catch(() => ({ instances: [], total: 0, diseases: 0 })),
+          anamnesisService.getForPatient(id).catch(() => null),
         ]);
 
         if (cancelled) return;
@@ -62,6 +67,7 @@ export default function DoctorPatientDetailPage() {
         setAssessments(permissionsData.permissions ?? []);
         setScoreInstances(scoresSummary.instances ?? []);
         setTotalAssessments(scoresSummary.total ?? 0);
+        setAnamnesisRecord(anamnesis ?? null);
       } catch {
         if (cancelled) return;
       } finally {
@@ -200,7 +206,7 @@ export default function DoctorPatientDetailPage() {
                 <ChevronRight className="w-5 h-5 -rotate-90 text-neutral-600" />
               </div>
               <div className="flex-1 overflow-y-auto space-y-0">
-                {ASSESSMENT_SECTIONS.map((section) => (
+                {buildSections(anamnesisRecord?.status ?? null).map((section) => (
                   <button
                     key={section.id}
                     onClick={() => setSelectedSection(section.id)}
@@ -231,8 +237,21 @@ export default function DoctorPatientDetailPage() {
             {/* Right Content - Assessment Details */}
             <div className="flex-1 bg-white rounded-lg shadow-md p-8 overflow-y-auto">
               {selectedSection === "anamnesis" ? (
-                // Anamnesis Form
-                <AnamnesisForm patient={patient || undefined} patientId={id} />
+                <AnamnesisForm
+                  patient={patient || undefined}
+                  patientId={id}
+                  mode="doctor"
+                  initialRecord={anamnesisRecord}
+                  onSubmitted={() => setAnamnesisRecord((prev) => prev ? { ...prev, status: "completed" } : prev)}
+                />
+              ) : selectedSection === "brain-mapping" ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mb-4">
+                    <span className="text-2xl">🧠</span>
+                  </div>
+                  <h2 className="text-xl font-bold text-neutral-700 mb-2">Brain Mapping</h2>
+                  <p className="text-sm text-neutral-400">Yet to be implemented</p>
+                </div>
               ) : (
                 // PRS View - Show Completed Assessments
                 <div className="space-y-6">
