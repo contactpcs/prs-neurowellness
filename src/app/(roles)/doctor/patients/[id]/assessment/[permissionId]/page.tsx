@@ -2,18 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Send, SkipForward, UserCheck, Mic, MicOff, RotateCcw } from "lucide-react";
-import { AssessmentSkeleton, Button, ProgressBar } from "@/components/ui";
-import { QuestionRenderer } from "@/components/questionnaire/QuestionRenderer";
-import { ProgressSidebar } from "@/components/questionnaire/ProgressSidebar";
-import { STTBar } from "@/components/questionnaire/STTBar";
+import { AssessmentSkeleton } from "@/components/ui";
+import { AssessmentUI } from "@/components/assessment/AssessmentUI";
 import { useAssessmentSTT } from "@/lib/hooks/useAssessmentSTT";
 import { permissionsService } from "@/lib/api/services/permissions.service";
 import { prsAssessmentService } from "@/lib/api/services/prsAssessment.service";
 import type { ScaleQuestion, QuestionOption } from "@/types/prs.types";
 import type { PrsAssessmentQuestion, PrsAssessmentScaleResult } from "@/lib/api/services/prsAssessment.service";
 
-// ─── Type helpers ───────────────────────────────────────────────────────────
+// ─── Type helpers ─────────────────────────────────────────────────────────────
 
 type LoadedScale = {
   scale_id: string;
@@ -24,7 +21,7 @@ type LoadedScale = {
   question_required: boolean[];
 };
 
-// ─── Conversion helpers ──────────────────────────────────────────────────────
+// ─── Conversion helpers ───────────────────────────────────────────────────────
 
 function mapAnswerType(raw: string): ScaleQuestion["type"] {
   switch (raw) {
@@ -79,7 +76,7 @@ function toPrsScaleQuestion(q: PrsAssessmentQuestion): ScaleQuestion {
   };
 }
 
-// ─── Page ────────────────────────────────────────────────────────────────────
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DoctorOnBehalfAssessmentPage() {
   const { id: patientId, permissionId } = useParams<{ id: string; permissionId: string }>();
@@ -153,13 +150,8 @@ export default function DoctorOnBehalfAssessmentPage() {
               (s) => !alreadyCompleted.has(s.scale_id),
             );
             if (firstIncompleteIdx >= 0) {
-              const scale = loadedScales[firstIncompleteIdx];
-              const answered = restoredResponses[scale.scale_id] ?? {};
-              const firstUnanswered = scale.question_ids.findIndex(
-                (_, idx) => answered[String(idx)] === undefined,
-              );
               setCurrentScaleIndex(firstIncompleteIdx);
-              setCurrentQuestionIndex(firstUnanswered >= 0 ? firstUnanswered : 0);
+              setCurrentQuestionIndex(0);
             }
           } catch {
             // If restoring saved responses fails, continue from the beginning
@@ -167,7 +159,8 @@ export default function DoctorOnBehalfAssessmentPage() {
         }
       } catch (e: unknown) {
         const msg =
-          (e as { response?: { data?: { message?: string; detail?: string } } })?.response?.data?.message ??
+          (e as { response?: { data?: { message?: string; detail?: string } } })?.response?.data
+            ?.message ??
           (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
           (e as { message?: string })?.message ??
           "Failed to load assessment";
@@ -178,43 +171,34 @@ export default function DoctorOnBehalfAssessmentPage() {
     })();
   }, [patientId, permissionId]);
 
-  // ─── Derived state ──────────────────────────────────────────────────────
+  // ─── Derived state ────────────────────────────────────────────────────────
   const currentScale = scales[currentScaleIndex];
   const questions = currentScale?.questions ?? [];
   const currentQuestion = questions[currentQuestionIndex];
   const totalQuestions = questions.length;
-  const currentValue = responses[currentScale?.scale_id]?.[String(currentQuestionIndex)];
-  const isCurrentRequired = currentScale?.question_required[currentQuestionIndex] ?? true;
-  const isLastQuestion = currentQuestionIndex >= totalQuestions - 1;
   const isFirstScale = currentScaleIndex === 0;
   const isLastScale = currentScaleIndex >= scales.length - 1;
   const questionKey = `${currentScaleIndex}-${currentQuestionIndex}`;
 
-  const sidebarScales = scales.map((s) => ({
-    scale_id: s.scale_id,
-    short_name: typeof s.scale_name === "string" ? s.scale_name : s.scale_id,
-  }));
+  // ─── Handlers ─────────────────────────────────────────────────────────────
 
-  // ─── Handlers ────────────────────────────────────────────────────────────
-
-  const handleAnswer = useCallback((questionIndex: number, value: number | string) => {
-    const scaleId = currentScale?.scale_id;
-    if (!scaleId) return;
-    setResponses((prev) => ({
-      ...prev,
-      [scaleId]: { ...(prev[scaleId] ?? {}), [String(questionIndex)]: value },
-    }));
-    const questionId = currentScale.question_ids[questionIndex];
-    if (questionId) {
-      prsAssessmentService
-        .saveResponse(currentScale.instance_id, scaleId, questionIndex, questionId, value)
-        .catch(() => {});
-    }
-  }, [currentScale]);
-
-  const handleNext = useCallback(() => {
-    setCurrentQuestionIndex((i) => i + 1);
-  }, []);
+  const handleAnswer = useCallback(
+    (questionIndex: number, value: number | string) => {
+      const scaleId = currentScale?.scale_id;
+      if (!scaleId) return;
+      setResponses((prev) => ({
+        ...prev,
+        [scaleId]: { ...(prev[scaleId] ?? {}), [String(questionIndex)]: value },
+      }));
+      const questionId = currentScale.question_ids[questionIndex];
+      if (questionId) {
+        prsAssessmentService
+          .saveResponse(currentScale.instance_id, scaleId, questionIndex, questionId, value)
+          .catch(() => {});
+      }
+    },
+    [currentScale],
+  );
 
   const handleAutoAdvance = useCallback(() => {
     setCurrentQuestionIndex((prev) => {
@@ -224,12 +208,9 @@ export default function DoctorOnBehalfAssessmentPage() {
   }, [totalQuestions]);
 
   const handlePrev = () => {
-    if (currentQuestionIndex > 0) {
-      setCurrentQuestionIndex((i) => i - 1);
-    } else if (!isFirstScale) {
-      const prevScale = scales[currentScaleIndex - 1];
+    if (!isFirstScale) {
       setCurrentScaleIndex((i) => i - 1);
-      setCurrentQuestionIndex(prevScale.questions.length - 1);
+      setCurrentQuestionIndex(0);
     }
   };
 
@@ -252,15 +233,17 @@ export default function DoctorOnBehalfAssessmentPage() {
     setIsSubmitting(true);
     try {
       const scaleResponses = responses[currentScale.scale_id] ?? {};
-      await prsAssessmentService.submitAssessment(currentScale.instance_id, currentScale.scale_id, scaleResponses);
+      await prsAssessmentService.submitAssessment(
+        currentScale.instance_id,
+        currentScale.scale_id,
+        scaleResponses,
+      );
       const newCompleted = new Set(completedScaleIds).add(currentScale.scale_id);
       setCompletedScaleIds(newCompleted);
       if (isLastScale) {
         const skipped = scales.filter((s) => !newCompleted.has(s.scale_id));
         await Promise.all(
-          skipped.map((s) =>
-            prsAssessmentService.submitAssessment(s.instance_id, s.scale_id, {})
-          )
+          skipped.map((s) => prsAssessmentService.submitAssessment(s.instance_id, s.scale_id, {})),
         );
         router.push(`/doctor/patients/${patientId}`);
       } else {
@@ -269,7 +252,8 @@ export default function DoctorOnBehalfAssessmentPage() {
       }
     } catch (e: unknown) {
       const msg =
-        (e as { response?: { data?: { message?: string; detail?: string } } })?.response?.data?.message ??
+        (e as { response?: { data?: { message?: string; detail?: string } } })?.response?.data
+          ?.message ??
         (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
         (e as { message?: string })?.message ??
         "Failed to submit";
@@ -279,7 +263,7 @@ export default function DoctorOnBehalfAssessmentPage() {
     }
   };
 
-  // ─── STT ─────────────────────────────────────────────────────────────────
+  // ─── STT ──────────────────────────────────────────────────────────────────
   const { phase, transcript, matchedLabel, hint, isSupported } = useAssessmentSTT({
     questionKey,
     question: currentQuestion,
@@ -294,132 +278,55 @@ export default function DoctorOnBehalfAssessmentPage() {
 
   if (loadError) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 gap-4">
+      <div className="flex flex-col items-center justify-center h-screen gap-4">
         <p className="text-red-600 text-sm">{loadError}</p>
-        <Button variant="outline" onClick={() => router.back()}>Go Back</Button>
       </div>
     );
   }
 
-  if (!currentScale || !currentQuestion) return <AssessmentSkeleton />;
+  if (!currentScale) return <AssessmentSkeleton />;
+
+  const scalesWithMetadata = scales.map((scale) => ({
+    scale_id: scale.scale_id,
+    scale_name: scale.scale_name,
+    short_name: scale.scale_name,
+    disease_type: "CLINICAL ASSESSMENT",
+    description: "A standardized measure of health-related quality of life",
+    instructions: "Under each heading, please tick the ONE box that best describes your health TODAY.",
+    estimated_duration: "5 min",
+  }));
+
+  const questionsAnswered = Object.keys(responses[currentScale.scale_id] ?? {}).length;
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] -mx-6 -mb-6">
-      {/* Scale sidebar */}
-      <ProgressSidebar
-        scales={sidebarScales}
-        currentIndex={currentScaleIndex}
-        completedScaleIds={completedScaleIds}
-        responses={responses}
-        onNavigate={(idx) => {
-          setCurrentScaleIndex(idx);
-          setCurrentQuestionIndex(0);
-        }}
-      />
-
-      {/* Main area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="bg-white border-b px-6 py-4">
-          {isResumed && (
-            <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-1.5 mb-3 w-fit">
-              <RotateCcw className="h-3.5 w-3.5" />
-              Resuming from where you left off
-            </div>
-          )}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium flex items-center gap-1.5">
-                <UserCheck className="h-3.5 w-3.5" />
-                Taking on Behalf of Patient
-              </div>
-              <h2 className="text-lg font-semibold text-neutral-900">{currentScale.scale_name}</h2>
-            </div>
-            <div className="flex items-center gap-3">
-              {isSupported && (
-                <Button
-                  size="sm"
-                  variant={sttEnabled ? "danger" : "outline"}
-                  onClick={() => setSttEnabled((e) => !e)}
-                >
-                  {sttEnabled ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                  {sttEnabled ? "Mic On" : "Use Voice"}
-                </Button>
-              )}
-              <ProgressBar value={currentQuestionIndex + 1} max={totalQuestions} className="w-32" />
-            </div>
-          </div>
-          <p className="text-sm text-neutral-500 mt-1">
-            Scale {currentScaleIndex + 1} of {scales.length}
-            {" · "}Question {currentQuestionIndex + 1} of {totalQuestions}
-            {!isCurrentRequired && (
-              <span className="ml-2 text-xs text-neutral-400">(optional)</span>
-            )}
-          </p>
-        </div>
-
-        {/* STT status bar */}
-        {sttEnabled && (
-          <STTBar
-            phase={phase}
-            transcript={transcript}
-            matchedLabel={matchedLabel}
-            hint={hint}
-          />
-        )}
-
-        {/* Question */}
-        <div className="flex-1 overflow-y-auto p-8">
-          <div className="max-w-2xl mx-auto">
-            <QuestionRenderer
-              question={currentQuestion}
-              scaleId={currentScale.scale_id}
-              value={currentValue}
-              onAnswer={handleAnswer}
-              questionNumber={currentQuestionIndex + 1}
-              totalQuestions={totalQuestions}
-            />
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="bg-white border-t px-6 py-4 flex items-center justify-between">
-          <Button
-            variant="outline"
-            onClick={handlePrev}
-            disabled={isFirstScale && currentQuestionIndex === 0}
-          >
-            <ChevronLeft className="h-4 w-4" /> Previous
-          </Button>
-
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handleSkipSection}>
-              <SkipForward className="h-4 w-4" />
-              Skip Section
-            </Button>
-
-            {!isCurrentRequired && (
-              <Button variant="outline" size="sm" onClick={() => isLastQuestion ? handleSubmitScale() : handleNext()}>
-                Skip Question
-              </Button>
-            )}
-
-            {isLastQuestion ? (
-              <Button onClick={handleSubmitScale} isLoading={isSubmitting}>
-                <Send className="h-4 w-4" />
-                {isLastScale ? "Submit Assessment" : "Submit & Next Scale"}
-              </Button>
-            ) : (
-              <Button
-                onClick={handleNext}
-                disabled={isCurrentRequired && currentValue === undefined}
-              >
-                Next <ChevronRight className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+    <AssessmentUI
+      scales={scalesWithMetadata}
+      currentScaleIndex={currentScaleIndex}
+      currentQuestionIndex={currentQuestionIndex}
+      completedScaleIds={completedScaleIds}
+      questions={questions}
+      responses={responses}
+      totalScales={scales.length}
+      isFirstScale={isFirstScale}
+      isLastScale={isLastScale}
+      questionsAnswered={questionsAnswered}
+      isResumed={isResumed}
+      onAnswer={handleAnswer}
+      onPrev={handlePrev}
+      onSkipSection={handleSkipSection}
+      onSubmitScale={handleSubmitScale}
+      onNavigateScale={(idx) => {
+        setCurrentScaleIndex(idx);
+        setCurrentQuestionIndex(0);
+      }}
+      sttEnabled={sttEnabled}
+      onToggleStt={setSttEnabled}
+      sttPhase={phase}
+      sttTranscript={transcript}
+      sttMatchedLabel={matchedLabel}
+      sttHint={hint}
+      isSttsupported={isSupported}
+      isSubmitting={isSubmitting}
+    />
   );
 }
