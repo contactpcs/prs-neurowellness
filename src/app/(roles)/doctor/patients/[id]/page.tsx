@@ -27,7 +27,6 @@ function formatDate(iso: string) {
 
 const ASSESSMENT_SECTIONS = [
   { id: "anamnesis", name: "Anamnesis", status: "done" },
-  { id: "fnon", name: "FNON Checklist", status: "done" },
   { id: "brain-mapping", name: "Brain Mapping", status: "start" },
   { id: "prs", name: "PRS", status: "start" },
   { id: "notes", name: "Doctor's Notes", status: null },
@@ -44,7 +43,7 @@ export default function DoctorPatientDetailPage() {
   const [scoreInstances, setScoreInstances] = useState<AssessmentInstance[]>([]);
   const [totalAssessments, setTotalAssessments] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedSection, setSelectedSection] = useState("fnon");
+  const [selectedSection, setSelectedSection] = useState("anamnesis");
   const [selectedAssessmentTab, setSelectedAssessmentTab] = useState(0);
 
   useEffect(() => {
@@ -232,7 +231,7 @@ export default function DoctorPatientDetailPage() {
               {selectedSection === "anamnesis" ? (
                 // Anamnesis Form
                 <AnamnesisForm patient={patient || undefined} patientId={id} />
-              ) : selectedSection === "prs" ? (
+              ) : (
                 // PRS View - Show Completed Assessments
                 <div className="space-y-6">
                   <div className="flex items-center justify-between">
@@ -401,54 +400,6 @@ export default function DoctorPatientDetailPage() {
                     </div>
                   )}
                 </div>
-              ) : (
-                // FNON/Default View - Show Assessment Details
-                <>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h2 className="text-2xl font-bold text-neutral-900 mb-2">FNON Checklist</h2>
-                      <div className="flex items-center gap-2 text-neutral-600">
-                        <Check className="w-5 h-5 text-green-600" />
-                        <span>completed on 24 Jan, 2026</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button className="px-5 py-3 border border-neutral-400 text-neutral-900 font-medium rounded-full hover:bg-neutral-50 transition-colors">
-                        View Detailed Report
-                      </button>
-                      <button className="px-5 py-3 border border-neutral-400 text-neutral-900 font-medium rounded-full hover:bg-neutral-50 transition-colors">
-                        Edit Report
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Metrics */}
-                  <div className="grid grid-cols-4 gap-4">
-                    {[
-                      { label: "FNON Score", value: "32" },
-                      { label: "Improvement", value: "+20%" },
-                      { label: "Duration", value: "45 mins" },
-                      { label: "Completed by", value: "Dr. James" },
-                    ].map((metric) => (
-                      <div key={metric.label} className="bg-blue-50 rounded-lg p-4">
-                        <p className="text-neutral-600 text-sm mb-1">{metric.label}</p>
-                        <p className="text-xl font-bold text-neutral-900">{metric.value}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Tests Performed */}
-                  <div>
-                    <h3 className="font-semibold text-neutral-900 mb-4">Tests Performed</h3>
-                    <div className="flex flex-wrap gap-3">
-                      {["Crossword", "Toe Touch", "Walking", "Sudoku", "Balance Test"].map((test) => (
-                        <span key={test} className="px-4 py-2 bg-blue-50 text-blue-700 text-sm font-medium rounded-lg">
-                          {test}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </>
               )}
             </div>
           </div>
