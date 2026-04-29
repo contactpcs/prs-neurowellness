@@ -7,3 +7,4 @@ export { staffService } from "./staff.service";
 export { notificationsService } from "./notifications.service";
 export { permissionsService } from "./permissions.service";
 export { scoresService } from "./scores.service";
+export { doctorNotesService } from "./doctorNotes.service";
