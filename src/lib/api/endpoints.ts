@@ -98,4 +98,9 @@ export const ENDPOINTS = {
     ME:               "/anamnesis/me",
     FOR_PATIENT:      (patientId: string) => `/anamnesis/patient/${patientId}`,
   },
+
+  // ─── Doctor Notes ───
+  DOCTOR_NOTES: {
+    FOR_PATIENT: (patientId: string) => `/doctor-notes/patient/${patientId}`,
+  },
 } as const;

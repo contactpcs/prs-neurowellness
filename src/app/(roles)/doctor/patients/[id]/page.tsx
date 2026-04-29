@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2 } from "lucide-react";
+import { ChevronRight, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save } from "lucide-react";
 import { PatientDetailSkeleton, Button } from "@/components/ui";
 import { AnamnesisForm } from "@/components/assessment/AnamnesisForm";
 import { doctorsService } from "@/lib/api/services/doctors.service";
 import { permissionsService } from "@/lib/api/services/permissions.service";
 import { scoresService } from "@/lib/api/services/scores.service";
 import { anamnesisService } from "@/lib/api/services/anamnesis.service";
+import { doctorNotesService, type DoctorNote } from "@/lib/api/services/doctorNotes.service";
 import type { PatientDetail, Permission, AssessmentInstance, AnamnesisRecord } from "@/types/domain.types";
 
 function statusClass(status: Permission["status"]): string {
@@ -26,12 +27,15 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
-function buildSections(anamnesisStatus: "in_progress" | "completed" | null) {
+function buildSections(
+  anamnesisStatus: "in_progress" | "completed" | null,
+  hasDoctorNote: boolean,
+) {
   return [
     { id: "anamnesis", name: "Anamnesis", status: anamnesisStatus === "completed" ? "done" : anamnesisStatus === "in_progress" ? "start" : null },
     { id: "brain-mapping", name: "Brain Mapping", status: "start" },
     { id: "prs", name: "PRS", status: "start" },
-    { id: "notes", name: "Doctor's Notes", status: null },
+    { id: "notes", name: "Doctor's Notes", status: hasDoctorNote ? "done" : null },
     { id: "treatment-plan", name: "Treatment Plan", status: "locked" },
     { id: "final-report", name: "Final Report", status: "locked" },
   ];
@@ -49,17 +53,23 @@ export default function DoctorPatientDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedSection, setSelectedSection] = useState("anamnesis");
   const [selectedAssessmentTab, setSelectedAssessmentTab] = useState(0);
+  const [doctorNote, setDoctorNote] = useState<DoctorNote | null>(null);
+  const [noteText, setNoteText] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
+  const [noteSavedAt, setNoteSavedAt] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       try {
-        const [patientData, permissionsData, scoresSummary, anamnesis] = await Promise.all([
+        const [patientData, permissionsData, scoresSummary, anamnesis, note] = await Promise.all([
           doctorsService.getPatient(id),
           permissionsService.getPatientPermissions(id),
           scoresService.getPatientScoresSummary(id).catch(() => ({ instances: [], total: 0, diseases: 0 })),
           anamnesisService.getForPatient(id).catch(() => null),
+          doctorNotesService.getForPatient(id).catch(() => null),
         ]);
 
         if (cancelled) return;
@@ -68,6 +78,9 @@ export default function DoctorPatientDetailPage() {
         setScoreInstances(scoresSummary.instances ?? []);
         setTotalAssessments(scoresSummary.total ?? 0);
         setAnamnesisRecord(anamnesis ?? null);
+        setDoctorNote(note ?? null);
+        setNoteText(note?.note_text ?? "");
+        setNoteSavedAt(note?.updated_at ?? null);
       } catch {
         if (cancelled) return;
       } finally {
@@ -77,6 +90,22 @@ export default function DoctorPatientDetailPage() {
 
     return () => { cancelled = true; };
   }, [id]);
+
+  const handleSaveNote = async () => {
+    setNoteSaving(true);
+    setNoteError(null);
+    try {
+      const saved = await doctorNotesService.upsertForPatient(id, noteText);
+      setDoctorNote(saved ?? null);
+      if (saved?.note_text != null) setNoteText(saved.note_text);
+      setNoteSavedAt(saved?.updated_at ?? new Date().toISOString());
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save note";
+      setNoteError(message);
+    } finally {
+      setNoteSaving(false);
+    }
+  };
 
   if (isLoading) return <PatientDetailSkeleton />;
 
@@ -206,7 +235,7 @@ export default function DoctorPatientDetailPage() {
                 <ChevronRight className="w-5 h-5 -rotate-90 text-neutral-600" />
               </div>
               <div className="flex-1 overflow-y-auto space-y-0">
-                {buildSections(anamnesisRecord?.status ?? null).map((section) => (
+                {buildSections(anamnesisRecord?.status ?? null, !!doctorNote?.note_text).map((section) => (
                   <button
                     key={section.id}
                     onClick={() => setSelectedSection(section.id)}
@@ -251,6 +280,58 @@ export default function DoctorPatientDetailPage() {
                   </div>
                   <h2 className="text-xl font-bold text-neutral-700 mb-2">Brain Mapping</h2>
                   <p className="text-sm text-neutral-400">Yet to be implemented</p>
+                </div>
+              ) : selectedSection === "notes" ? (
+                <div className="space-y-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h2 className="text-2xl font-bold text-neutral-900 mb-1">Doctor's Notes</h2>
+                      <p className="text-neutral-600 text-sm">
+                        Private notes for {fullName}. Only you can view and edit these.
+                      </p>
+                    </div>
+                    {noteSavedAt && (
+                      <span className="text-xs text-neutral-500 mt-2">
+                        Last saved {formatDate(noteSavedAt)}
+                      </span>
+                    )}
+                  </div>
+
+                  <textarea
+                    value={noteText}
+                    onChange={(e) => setNoteText(e.target.value)}
+                    placeholder="Type your clinical notes here..."
+                    className="w-full min-h-[320px] resize-y border border-neutral-200 rounded-lg p-4 text-sm text-neutral-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-colors"
+                  />
+
+                  {noteError && (
+                    <p className="text-sm text-red-600">{noteError}</p>
+                  )}
+
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-neutral-500">
+                      {noteText.length} character{noteText.length === 1 ? "" : "s"}
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setNoteText(doctorNote?.note_text ?? "")}
+                        disabled={noteSaving || noteText === (doctorNote?.note_text ?? "")}
+                        className="px-4 py-2 border border-neutral-300 text-neutral-700 font-medium rounded-lg hover:bg-neutral-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Reset
+                      </button>
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onClick={handleSaveNote}
+                        disabled={noteSaving || noteText === (doctorNote?.note_text ?? "")}
+                      >
+                        <Save className="h-4 w-4" />
+                        {noteSaving ? "Saving..." : "Save Note"}
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 // PRS View - Show Completed Assessments
