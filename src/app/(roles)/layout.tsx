@@ -9,7 +9,6 @@ function RolesLayoutInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-neutral-50">
       <Sidebar />
-      <Header />
       <main className={`${isCollapsed ? "ml-16" : "ml-64"} pt-16 p-6 transition-all duration-200`}>
         {children}
       </main>
