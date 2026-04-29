@@ -13,6 +13,11 @@ export interface PatientListItem {
   condition?: string;
   status?: string;
   assigned_at?: string;
+  last_prs?: {
+    disease_id?: string;
+    disease_name?: string;
+    completed_at?: string;
+  } | null;
 }
 
 export interface PatientDetail extends PatientListItem {

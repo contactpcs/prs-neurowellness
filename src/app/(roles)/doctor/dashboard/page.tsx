@@ -83,46 +83,58 @@ export default function DoctorDashboard() {
 
             <div className="bg-white rounded-2xl border border-neutral-200 shadow-md p-6 flex-1 overflow-y-auto">
               <div className="space-y-5">
-              {recentPatients.map((patient) => (
-                <Link
-                  key={patient.id}
-                  href={`/doctor/patients/${patient.id}`}
-                  className="flex items-center gap-4 hover:bg-neutral-50 -mx-6 px-6 py-4 rounded-xl transition-colors group"
-                >
-                  {/* Avatar */}
-                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-bold text-lg flex-shrink-0 shadow-md">
-                    {patient.first_name?.[0]?.toUpperCase()}{patient.last_name?.[0]?.toUpperCase()}
-                  </div>
+              {recentPatients.map((patient) => {
+                const lastPrs = patient.last_prs;
+                const lastPrsDate = lastPrs?.completed_at
+                  ? new Date(lastPrs.completed_at).toLocaleDateString("en-US", {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    })
+                  : null;
+                return (
+                  <Link
+                    key={patient.id}
+                    href={`/doctor/patients/${patient.id}`}
+                    className="flex items-center gap-4 hover:bg-neutral-50 -mx-6 px-6 py-4 rounded-xl transition-colors group"
+                  >
+                    {/* Avatar — placeholder image keyed by patient id for stable per-patient image */}
+                    <img
+                      src={`https://i.pravatar.cc/150?u=${encodeURIComponent(patient.id)}`}
+                      alt={`${patient.first_name} ${patient.last_name}`}
+                      className="w-16 h-16 rounded-full object-cover flex-shrink-0 shadow-md bg-neutral-200"
+                    />
 
-                  {/* Patient Info */}
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-base font-semibold text-neutral-900">
-                        {patient.first_name} {patient.last_name}
-                      </span>
-                      {patient.mrn && (
-                        <span className="text-sm text-neutral-500 font-medium">
-                          ({patient.mrn})
+                    {/* Patient Info */}
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base font-semibold text-neutral-900">
+                          {patient.first_name} {patient.last_name}
                         </span>
+                        {patient.mrn && (
+                          <span className="text-sm text-neutral-500 font-medium">
+                            ({patient.mrn})
+                          </span>
+                        )}
+                      </div>
+                      {lastPrs?.disease_name ? (
+                        <p className="text-sm text-neutral-600 mt-0.5">
+                          Last PRS: <span className="font-medium text-neutral-800">{lastPrs.disease_name}</span>
+                          {lastPrsDate && <span className="text-neutral-500"> · {lastPrsDate}</span>}
+                        </p>
+                      ) : (
+                        <p className="text-sm text-neutral-400 italic mt-0.5">No PRS completed yet</p>
+                      )}
+                      {patient.condition && (
+                        <p className="text-sm text-neutral-500 mt-0.5">{patient.condition}</p>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-neutral-600">
-                      {patient.date_of_birth && (
-                        <span>
-                          {new Date().getFullYear() - new Date(patient.date_of_birth).getFullYear()} Yrs
-                        </span>
-                      )}
-                      {patient.date_of_birth && patient.condition && (
-                        <span className="w-1 h-1 rounded-full bg-neutral-400" />
-                      )}
-                      {patient.condition && <span>{patient.condition}</span>}
-                    </div>
-                  </div>
 
-                  {/* Status Badges */}
-                  <StatusBadges patient={patient} />
-                </Link>
-              ))}
+                    {/* Status Badges */}
+                    <StatusBadges patient={patient} />
+                  </Link>
+                );
+              })}
               </div>
             </div>
             </div>

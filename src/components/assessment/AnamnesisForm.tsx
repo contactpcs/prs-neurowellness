@@ -55,7 +55,7 @@ function hydrateResponses(record: AnamnesisRecord): ResponseMap {
 }
 
 const SEC_ICON: Record<number, string> = {
-  1: "📋", 2: "⚡", 3: "📝", 4: "🔪", 5: "💊", 6: "💉", 7: "🧠", 8: "⚡",
+  1: "", 2: "", 3: "", 4: "", 5: "", 6: "", 7: "", 8: "",
 };
 
 // ── question field ────────────────────────────────────────────────────────────
