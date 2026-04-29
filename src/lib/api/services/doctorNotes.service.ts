@@ -30,4 +30,9 @@ export const doctorNotesService = {
     });
     return unwrap<DoctorNote>(data);
   },
+
+  async getMyNotes(): Promise<DoctorNote[]> {
+    const { data } = await apiClient.get(ENDPOINTS.DOCTOR_NOTES.ME);
+    return unwrap<DoctorNote[]>(data) ?? [];
+  },
 };
