@@ -20,9 +20,11 @@ export const doctorsService = {
       const parts = fullName.trim().split(/\s+/);
       return {
         id: p.id as string,
+        full_name: fullName,
         first_name: parts[0] ?? "",
         last_name: parts.slice(1).join(" "),
         email: (profile.email as string) ?? "",
+        last_prs: (p.last_prs as PatientListItem["last_prs"]) ?? null,
       } as PatientListItem;
     });
     return { patients, total };
