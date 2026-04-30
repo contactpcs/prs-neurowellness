@@ -8,6 +8,23 @@ import { PageLoader } from "@/components/ui";
 import { doctorsService } from "@/lib/api/services";
 import type { PatientListItem } from "@/types/domain.types";
 
+const AVATAR_URLS = [
+  "https://i.pravatar.cc/400?img=44",
+  "https://i.pravatar.cc/400?img=59",
+  "https://i.pravatar.cc/400?img=12",
+  "https://i.pravatar.cc/400?img=17",
+  "https://i.pravatar.cc/400?img=8",
+  "https://i.pravatar.cc/400?img=60",
+  "https://i.pravatar.cc/400?img=13",
+  "https://i.pravatar.cc/400?img=4",
+  "https://i.pravatar.cc/400?img=65",
+  "https://i.pravatar.cc/400?img=63",
+];
+
+const getAvatarUrl = (index: number) => {
+  return AVATAR_URLS[index % AVATAR_URLS.length];
+};
+
 export default function DoctorDashboard() {
   const { user } = useAuth();
   const [patients, setPatients] = useState<PatientListItem[]>([]);
@@ -83,7 +100,7 @@ export default function DoctorDashboard() {
 
             <div className="bg-white rounded-2xl border border-neutral-200 shadow-md p-6 flex-1 overflow-y-auto">
               <div className="space-y-5">
-              {recentPatients.map((patient) => {
+              {recentPatients.map((patient, index) => {
                 const lastPrs = patient.last_prs;
                 const lastPrsDate = lastPrs?.completed_at
                   ? new Date(lastPrs.completed_at).toLocaleDateString("en-US", {
@@ -98,9 +115,9 @@ export default function DoctorDashboard() {
                     href={`/doctor/patients/${patient.id}`}
                     className="flex items-center gap-4 hover:bg-neutral-50 -mx-6 px-6 py-4 rounded-xl transition-colors group"
                   >
-                    {/* Avatar — placeholder image keyed by patient id for stable per-patient image */}
+                    {/* Avatar — one of the provided images, rotated by patient index */}
                     <img
-                      src={`https://i.pravatar.cc/150?u=${encodeURIComponent(patient.id)}`}
+                      src={getAvatarUrl(index)}
                       alt={`${patient.first_name} ${patient.last_name}`}
                       className="w-16 h-16 rounded-full object-cover flex-shrink-0 shadow-md bg-neutral-200"
                     />
