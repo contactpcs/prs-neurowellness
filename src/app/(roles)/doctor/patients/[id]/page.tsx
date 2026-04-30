@@ -187,7 +187,10 @@ export default function DoctorPatientDetailPage() {
                   <h3 className="text-2xl font-bold text-neutral-900">{nextAssessment.disease_name}</h3>
                   <span className="inline-block mt-2 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg">Basic 2/7</span>
                 </div>
-                <button className="px-6 py-3 bg-orange-500 text-white font-medium rounded-full hover:bg-orange-600 transition-colors flex items-center gap-2 flex-shrink-0">
+                <button 
+                  onClick={() => router.push(`/doctor/patients/${id}/assessment/${nextAssessment.permission_id}`)}
+                  className="px-6 py-3 bg-orange-500 text-white font-medium rounded-full hover:bg-orange-600 transition-colors flex items-center gap-2 flex-shrink-0"
+                >
                   ▶ Start
                 </button>
               </>
@@ -462,9 +465,6 @@ export default function DoctorPatientDetailPage() {
                                   <BarChart2 className="w-4 h-4" /> View Detailed Report
                                 </button>
                               )}
-                              <button className="px-5 py-2 border border-neutral-400 text-neutral-900 font-medium rounded-lg hover:bg-neutral-50 transition-colors text-sm">
-                                Edit Report
-                              </button>
                             </div>
                           </div>
                         );

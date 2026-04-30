@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/hooks";
 import { useSidebar } from "@/contexts/SidebarContext";
 import {
   LayoutDashboard, Users, ClipboardList,
-  UserCircle, LogOut, Brain, ChevronLeft, Menu,
+  UserCircle, LogOut, Brain, ChevronLeft, Menu, Calendar,
 } from "lucide-react";
 
 const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React.ElementType }>> = {
@@ -18,6 +18,8 @@ const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React
   ],
   doctor: [
     { label: "Dashboard", href: "/doctor/dashboard", icon: LayoutDashboard },
+    { label: "Patients",  href: "/doctor/patients",  icon: Users },
+    { label: "Schedule",  href: "/doctor/schedule",  icon: Calendar },
   ],
   clinical_assistant: [
     { label: "Dashboard", href: "/clinical-assistant/dashboard", icon: LayoutDashboard },
