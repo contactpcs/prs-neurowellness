@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
 import { CheckCircle, Lock, AlertCircle, Stethoscope, Loader2 } from "lucide-react";
 import { anamnesisService } from "@/lib/api/services/anamnesis.service";
+import { AnamnesisReadOnlyView } from "@/components/assessment/AnamnesisReadOnlyView";
 import type { AnamnesisQuestion } from "@/lib/api/services/anamnesis.service";
 import type { AnamnesisRecord, PatientDetail } from "@/types/domain.types";
 
@@ -173,6 +174,7 @@ export function AnamnesisForm({ patientId, patient, mode, initialRecord, onSubmi
   const [questions,   setQuestions]   = useState<AnamnesisQuestion[]>([]);
   const [sections,    setSections]    = useState<ReturnType<typeof groupBySection>>([]);
   const [responses,   setResponses]   = useState<ResponseMap>({});
+  const [record,      setRecord]      = useState<AnamnesisRecord | null>(initialRecord ?? null);
   const [anamnesisId, setAnamnesisId] = useState<string | null>(initialRecord?.anamnesis_id ?? null);
   const [meta,        setMeta]        = useState<{ completed_at: string | null; taken_by: string } | null>(
     initialRecord ? { completed_at: initialRecord.completed_at, taken_by: initialRecord.taken_by } : null
@@ -212,6 +214,7 @@ export function AnamnesisForm({ patientId, patient, mode, initialRecord, onSubmi
         setSections(groupBySection(qs));
 
         if (record) {
+          setRecord(record);
           setAnamnesisId(record.anamnesis_id);
           setMeta({ completed_at: record.completed_at, taken_by: record.taken_by });
           setResponses(hydrateResponses(record));
@@ -381,6 +384,11 @@ export function AnamnesisForm({ patientId, patient, mode, initialRecord, onSubmi
   const readOnly  = recordState === "completed" || (mode === "doctor" && !isFillingOnBehalf);
   const completed = recordState === "completed";
 
+  // Show read-only summary view when completed
+  if (completed && record) {
+    return <AnamnesisReadOnlyView record={record} questions={questions} takenBy={meta?.taken_by} />;
+  }
+
   return (
     <div className="space-y-5">
 
@@ -399,38 +407,6 @@ export function AnamnesisForm({ patientId, patient, mode, initialRecord, onSubmi
           <p className="text-xs text-neutral-500 mt-0.5">Patient Symptoms &amp; Medical History</p>
         </div>
       </div>
-
-      {/* Completed banner */}
-      {completed && (
-        <div className="flex items-center gap-2.5 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-700 font-medium">
-          <CheckCircle className="w-4 h-4 flex-shrink-0" />
-          Anamnesis submitted on {fmt(meta?.completed_at)} — this record is now read-only.
-        </div>
-      )}
-
-      {/* Meta row */}
-      {completed && meta && (
-        <div className="bg-white rounded-xl border border-neutral-200 shadow-sm px-5 py-4">
-          <div className="flex gap-8 flex-wrap text-sm">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Completed On</span>
-              <span className="font-semibold text-neutral-900">{fmt(meta.completed_at)}</span>
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Filled By</span>
-              <span className="font-semibold text-neutral-900">
-                {meta.taken_by === "doctor_on_behalf" ? "Doctor (on behalf)" : "Patient"}
-              </span>
-            </div>
-            {patient && (
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">Patient</span>
-                <span className="font-semibold text-neutral-900">{patient.full_name}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Read-only notice (doctor in_progress) */}
       {readOnly && !completed && (
