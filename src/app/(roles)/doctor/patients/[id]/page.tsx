@@ -270,7 +270,6 @@ export default function DoctorPatientDetailPage() {
             <div className="flex-1 bg-white rounded-lg shadow-md p-8 overflow-y-auto">
               {selectedSection === "anamnesis" ? (
                 <AnamnesisForm
-                  patient={patient || undefined}
                   patientId={id}
                   mode="doctor"
                   initialRecord={anamnesisRecord}

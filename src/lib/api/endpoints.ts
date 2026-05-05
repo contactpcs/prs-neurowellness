@@ -3,8 +3,14 @@ export const ENDPOINTS = {
   AUTH: {
     LOGIN: "/auth/login",
     REGISTER: "/auth/register",
-    ME: "/auth/login",
+    ME: "/auth/login",        // GET /auth/login returns current user
     SYNC_PROFILE: "/auth/sync-profile",
+    CLINICS: "/auth/clinics", // GET — list available clinics for registration
+  },
+
+  // ─── Users ───
+  USERS: {
+    PROFILE: "/users/profile",
   },
 
   // ─── Doctors ───
@@ -12,7 +18,9 @@ export const ENDPOINTS = {
     DASHBOARD: "/doctors/dashboard",
     PATIENTS: "/doctors/patients",
     PATIENT: (patientId: string) => `/doctors/patients/${patientId}`,
-    PATIENT_RESULT: (patientId: string, instanceId: string) => `/doctors/patients/${patientId}/results?instance_id=${encodeURIComponent(instanceId)}`,
+    PATIENT_RESULTS: (patientId: string) => `/doctors/patients/${patientId}/results`,
+    PATIENT_RESULT: (patientId: string, instanceId: string) =>
+      `/doctors/patients/${patientId}/results?instance_id=${encodeURIComponent(instanceId)}`,
     GRANT_ASSESSMENT: (patientId: string) => `/doctors/patients/${patientId}/grant-assessment`,
     AVAILABILITY: "/doctors/availability",
   },
@@ -22,15 +30,40 @@ export const ENDPOINTS = {
     DASHBOARD: "/patients/dashboard",
     MY_DOCTOR: "/patients/my-doctor",
     MY_ASSESSMENTS: "/patients/my-assessments",
+    MY_SCORES: "/patients/my-scores",
   },
 
   // ─── Staff ───
   STAFF: {
     DASHBOARD: "/staff/dashboard",
     PATIENTS: "/staff/patients",
+    PATIENTS_PENDING: "/staff/patients/pending",
+    REGISTER_PATIENT: "/staff/patients/register",
     PATIENT: (patientId: string) => `/staff/patients/${patientId}`,
+    APPROVE_PATIENT: (patientId: string) => `/staff/patients/${patientId}/approve`,
+    REJECT_PATIENT: (patientId: string) => `/staff/patients/${patientId}/reject`,
     DOCTORS: "/staff/doctors",
     ALLOCATE: (patientId: string) => `/staff/patients/${patientId}/allocate`,
+  },
+
+  // ─── Admin ───
+  ADMIN: {
+    CLINICS_BOOTSTRAP: "/admin/clinics/create", // POST — X-Bootstrap-Key header required
+    DASHBOARD: "/admin/dashboard",
+    CLINICS: "/admin/clinics",
+    CLINIC: (id: string) => `/admin/clinics/${id}`,
+    DEACTIVATE_CLINIC: (id: string) => `/admin/clinics/${id}/deactivate`,
+    ACTIVATE_CLINIC: (id: string) => `/admin/clinics/${id}/activate`,
+    STAFF: "/admin/staff",
+    STAFF_MEMBER: (id: string) => `/admin/staff/${id}`,
+    REGISTER_STAFF: "/admin/staff/register",
+    DEACTIVATE_STAFF: (id: string) => `/admin/staff/${id}/deactivate`,
+    REACTIVATE_STAFF: (id: string) => `/admin/staff/${id}/reactivate`,
+    DELETE_STAFF: (id: string) => `/admin/staff/${id}`,
+    PATIENTS: "/admin/patients",
+    APPROVE_PATIENT: (id: string) => `/admin/patients/${id}/approve`,
+    REJECT_PATIENT: (id: string) => `/admin/patients/${id}/reject`,
+    DELETE_PATIENT: (id: string) => `/admin/patients/${id}`,
   },
 
   // ─── Notifications ───
@@ -60,48 +93,30 @@ export const ENDPOINTS = {
     ASSESSMENT_START: "/prs/assessment/start",
     ASSESSMENT_SUBMIT: "/prs/assessment/submit",
     ASSESSMENT_SAVE_RESPONSE: "/prs/assessment/save-response",
-    ASSESSMENT_RESPONSES: (instanceId: string) => `/prs/assessment/responses?instance_id=${encodeURIComponent(instanceId)}`,
+    ASSESSMENT_RESPONSES: (instanceId: string) =>
+      `/prs/assessment/responses?instance_id=${encodeURIComponent(instanceId)}`,
     // Scores
     MY_SCORES: "/prs/scores/me",
     MY_SCORES_SUMMARY: "/prs/scores/me/summary",
     INSTANCE_SCORE: (instanceId: string) => `/prs/scores/instance/${instanceId}`,
     PATIENT_SCORES: (patientId: string) => `/prs/scores/patient/${patientId}`,
     PATIENT_SCORES_SUMMARY: (patientId: string) => `/prs/scores/patient/${patientId}/summary`,
-    // Sessions (legacy — kept for existing session-based flows)
-    SESSIONS: "/prs/sessions",
-    MY_SESSIONS: "/prs/sessions/my",
-    PATIENT_SESSIONS: (patientId: string) => `/prs/sessions/patient/${patientId}`,
-    SESSION: (id: string) => `/prs/sessions/${id}`,
-    START_SESSION: (id: string) => `/prs/sessions/${id}/start`,
-    CANCEL_SESSION: (id: string) => `/prs/sessions/${id}/cancel`,
-    SESSION_RESPONSES: (sessionId: string) => `/prs/sessions/${sessionId}/responses`,
-    AUTO_SAVE: (sessionId: string, scaleId: string) =>
-      `/prs/sessions/${sessionId}/responses/${scaleId}/auto-save`,
-    SUBMIT_RESPONSE: (sessionId: string, scaleId: string) =>
-      `/prs/sessions/${sessionId}/responses/${scaleId}/submit`,
-    CLINICIAN_RATING: (sessionId: string, scaleId: string) =>
-      `/prs/sessions/${sessionId}/responses/${scaleId}/clinician-rating`,
-    CONSENT: (sessionId: string) => `/prs/sessions/${sessionId}/consent`,
-    CONSENTS: (sessionId: string) => `/prs/sessions/${sessionId}/consents`,
-    MY_ALERTS: "/prs/alerts/my",
-    PATIENT_ALERTS: (patientId: string) => `/prs/alerts/patient/${patientId}`,
-    ACKNOWLEDGE_ALERT: (id: string) => `/prs/alerts/${id}/acknowledge`,
-    RESOLVE_ALERT: (id: string) => `/prs/alerts/${id}/resolve`,
-    SCORE_HISTORY: (patientId: string) => `/prs/history/${patientId}`,
   },
+
   // ─── Anamnesis ───
   ANAMNESIS: {
-    QUESTIONS:        "/anamnesis/questions",
-    START:            "/anamnesis/start",
-    SAVE_RESPONSE:    "/anamnesis/save-response",
-    SUBMIT:           "/anamnesis/submit",
-    ME:               "/anamnesis/me",
-    FOR_PATIENT:      (patientId: string) => `/anamnesis/patient/${patientId}`,
+    QUESTIONS:     "/anamnesis/questions",
+    START:         "/anamnesis/start",
+    SAVE_RESPONSE: "/anamnesis/save-response",
+    SUBMIT:        "/anamnesis/submit",
+    ME:            "/anamnesis/me",
+    FOR_PATIENT:   (patientId: string) => `/anamnesis/patient/${patientId}`,
   },
 
   // ─── Doctor Notes ───
   DOCTOR_NOTES: {
-    FOR_PATIENT: (patientId: string) => `/doctor-notes/patient/${patientId}`,
-    ME: "/doctor-notes/me",
+    FOR_PATIENT: (patientId: string) => `/notes/patient/${patientId}`,
+    ME: "/notes/me",
+    UPSERT: (patientId: string) => `/notes/patient/${patientId}`, // PUT
   },
 } as const;

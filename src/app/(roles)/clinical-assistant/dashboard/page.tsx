@@ -2,27 +2,20 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Users, AlertTriangle, ClipboardCheck, Activity } from "lucide-react";
+import { Users, ClipboardCheck, Activity } from "lucide-react";
 import { staffService } from "@/lib/api/services/staff.service";
-import { prsService } from "@/lib/api/services/prs.service";
 import { PageLoader, Card, CardContent, Button } from "@/components/ui";
-import { RiskAlertBanner } from "@/components/assessment";
 import type { StaffDashboard } from "@/types/domain.types";
-import type { RiskAlert } from "@/types/prs.types";
 
 export default function CADashboard() {
   const [dashboard, setDashboard] = useState<StaffDashboard | null>(null);
-  const [alerts, setAlerts] = useState<RiskAlert[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      staffService.getDashboard(),
-      prsService.getMyAlerts("active"),
-    ]).then(([dash, { alerts: a }]) => {
-      setDashboard(dash);
-      setAlerts(a);
-    }).catch(() => {}).finally(() => setIsLoading(false));
+    staffService.getDashboard()
+      .then(setDashboard)
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
   }, []);
 
   if (isLoading) return <PageLoader />;
@@ -42,12 +35,11 @@ export default function CADashboard() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
           { label: "Total Patients", value: patientCount, icon: Users, color: "text-primary-500" },
           { label: "Pending", value: pendingCount, icon: ClipboardCheck, color: "text-warning-500" },
           { label: "Upcoming Sessions", value: sessions.length, icon: Activity, color: "text-success-500" },
-          { label: "Active Alerts", value: alerts.length, icon: AlertTriangle, color: "text-danger-500" },
         ].map((stat) => (
           <Card key={stat.label}>
             <CardContent className="flex items-center gap-4">
@@ -62,13 +54,6 @@ export default function CADashboard() {
           </Card>
         ))}
       </div>
-
-      {alerts.length > 0 && (
-        <section>
-          <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide mb-3">Risk Alerts</h2>
-          <RiskAlertBanner alerts={alerts} />
-        </section>
-      )}
 
       <section>
         <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide mb-3">Upcoming Sessions</h2>

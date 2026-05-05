@@ -41,12 +41,8 @@ export function useAuth() {
   }, [dispatch, router]);
 
   const handleRegister = useCallback(async (data: RegisterData) => {
-    const result = await dispatch(register(data));
-    if (register.fulfilled.match(result)) {
-      router.push(ROUTES.LOGIN);
-    }
-    return result;
-  }, [dispatch, router]);
+    return dispatch(register(data));
+  }, [dispatch]);
 
   const handleLogout = useCallback(() => {
     dispatch(logout());

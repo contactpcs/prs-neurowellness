@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
-import { CheckCircle, Lock, AlertCircle, Stethoscope, Loader2 } from "lucide-react";
+import { CheckCircle, AlertCircle, Stethoscope, Loader2 } from "lucide-react";
 import { anamnesisService } from "@/lib/api/services/anamnesis.service";
 import { AnamnesisReadOnlyView } from "@/components/assessment/AnamnesisReadOnlyView";
 import type { AnamnesisQuestion } from "@/lib/api/services/anamnesis.service";
-import type { AnamnesisRecord, PatientDetail } from "@/types/domain.types";
+import type { AnamnesisRecord } from "@/types/domain.types";
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -15,7 +15,6 @@ type RecordState = "loading" | "no-record" | "in_progress" | "completed";
 
 interface AnamnesisFormProps {
   patientId: string;
-  patient?: PatientDetail;
   mode: "patient" | "doctor";
   initialRecord?: AnamnesisRecord | null;
   onSubmitted?: () => void;
@@ -37,11 +36,6 @@ function groupBySection(questions: AnamnesisQuestion[]) {
 function isVisible(q: AnamnesisQuestion, responses: ResponseMap): boolean {
   if (!q.depends_on_question_id) return true;
   return responses[q.depends_on_question_id]?.value === q.depends_on_value;
-}
-
-function fmt(ts: string | null | undefined) {
-  if (!ts) return "—";
-  return new Date(ts).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function hydrateResponses(record: AnamnesisRecord): ResponseMap {
@@ -170,7 +164,7 @@ function QuestionField({
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export function AnamnesisForm({ patientId, patient, mode, initialRecord, onSubmitted }: AnamnesisFormProps) {
+export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted }: AnamnesisFormProps) {
   const [questions,   setQuestions]   = useState<AnamnesisQuestion[]>([]);
   const [sections,    setSections]    = useState<ReturnType<typeof groupBySection>>([]);
   const [responses,   setResponses]   = useState<ResponseMap>({});
@@ -302,7 +296,32 @@ export function AnamnesisForm({ patientId, patient, mode, initialRecord, onSubmi
     setSubmitting(true);
     try {
       await anamnesisService.submit({ anamnesis_id: anamnesisId });
-      setMeta((prev) => ({ ...(prev ?? { taken_by: "patient" }), completed_at: new Date().toISOString() }));
+      const completedAt = new Date().toISOString();
+      setMeta((prev) => ({ ...(prev ?? { taken_by: mode === "doctor" ? "doctor_on_behalf" : "patient" }), completed_at: completedAt }));
+      // Build an updated record with all current responses so AnamnesisReadOnlyView renders them
+      setRecord((prev) => ({
+        ...(prev ?? {
+          anamnesis_id: anamnesisId,
+          patient_id: patientId,
+          submitted_by: null,
+          taken_by: mode === "doctor" ? "doctor_on_behalf" : "patient",
+          chief_complaint: null, main_symptoms: null, initial_symptoms: null,
+          diagnosis_related: null, diagnosis_details: null, symptoms_start: null,
+          symptoms_duration: null, symptoms_frequency: null, symptoms_intensity: null,
+          symptoms_progression: null, secondary_symptoms: null, secondary_symptoms_details: null,
+          has_operations: null, operations_details: null, previous_treatments: null,
+          current_medications: null, has_brain_mri: null, mri_details: null,
+          other_scans: null, has_neuromodulation: null, neuromodulation_details: null,
+          created_at: completedAt, updated_at: completedAt,
+        }),
+        status: "completed" as const,
+        completed_at: completedAt,
+        responses: Object.entries(responses).map(([question_id, r]) => ({
+          question_id,
+          response_value: r.value || null,
+          response_values: r.values.length > 0 ? r.values : null,
+        })),
+      }));
       setRecordState("completed");
       window.scrollTo({ top: 0, behavior: "smooth" });
       onSubmitted?.();
@@ -338,7 +357,6 @@ export function AnamnesisForm({ patientId, patient, mode, initialRecord, onSubmi
 
   // ── render: early states ─────────────────────────────────────────────────
 
-  // Show spinner only while the initial data is still loading
   if (recordState === "loading" && questions.length === 0) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -375,13 +393,9 @@ export function AnamnesisForm({ patientId, patient, mode, initialRecord, onSubmi
     );
   }
 
-  // Doctor filling on behalf (taken_by='doctor_on_behalf', in_progress) → editable
-  // Doctor viewing patient's own record or any completed record → read-only
-  const isFillingOnBehalf =
-    mode === "doctor" &&
-    meta?.taken_by === "doctor_on_behalf" &&
-    recordState === "in_progress";
-  const readOnly  = recordState === "completed" || (mode === "doctor" && !isFillingOnBehalf);
+  // Doctor: edit while in_progress, read-only after submit
+  // Patient: edit while in_progress, read-only after submit
+  const readOnly  = recordState === "completed";
   const completed = recordState === "completed";
 
   // Show read-only summary view when completed
@@ -407,13 +421,6 @@ export function AnamnesisForm({ patientId, patient, mode, initialRecord, onSubmi
           <p className="text-xs text-neutral-500 mt-0.5">Patient Symptoms &amp; Medical History</p>
         </div>
       </div>
-
-      {/* Read-only notice (doctor in_progress) */}
-      {readOnly && !completed && (
-        <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-4 py-2.5 text-xs text-neutral-500">
-          <Lock className="w-3.5 h-3.5 flex-shrink-0" /> Viewing in read-only mode
-        </div>
-      )}
 
       {/* Error */}
       {error && (

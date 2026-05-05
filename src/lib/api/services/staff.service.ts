@@ -2,6 +2,14 @@ import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type { StaffDashboard, PatientListItem, PatientDetail, DoctorListItem } from "@/types/domain.types";
 
+export interface RegisterPatientPayload {
+  full_name: string;
+  email: string;
+  phone?: string;
+  date_of_birth?: string;
+  gender?: string;
+}
+
 export const staffService = {
   async getDashboard(): Promise<StaffDashboard> {
     const { data } = await apiClient.get(ENDPOINTS.STAFF.DASHBOARD);
@@ -17,10 +25,34 @@ export const staffService = {
     };
   },
 
+  async getPendingPatients(params?: { page?: number; limit?: number }): Promise<{ patients: PatientListItem[]; total: number }> {
+    const { data } = await apiClient.get(ENDPOINTS.STAFF.PATIENTS_PENDING, { params });
+    const payload = data.data ?? data;
+    return {
+      patients: payload.patients ?? payload ?? [],
+      total: payload.total ?? 0,
+    };
+  },
+
+  async registerPatient(payload: RegisterPatientPayload): Promise<PatientListItem> {
+    const { data } = await apiClient.post(ENDPOINTS.STAFF.REGISTER_PATIENT, payload);
+    return data.data ?? data;
+  },
+
   async getPatient(patientId: string): Promise<PatientDetail> {
     const { data } = await apiClient.get(ENDPOINTS.STAFF.PATIENT(patientId));
     const payload = data.data ?? data;
     return payload.patient ?? payload;
+  },
+
+  async approvePatient(patientId: string): Promise<PatientDetail> {
+    const { data } = await apiClient.put(ENDPOINTS.STAFF.APPROVE_PATIENT(patientId));
+    return data.data ?? data;
+  },
+
+  async rejectPatient(patientId: string, reason?: string): Promise<PatientDetail> {
+    const { data } = await apiClient.put(ENDPOINTS.STAFF.REJECT_PATIENT(patientId), { reason });
+    return data.data ?? data;
   },
 
   async getDoctors(): Promise<{ doctors: DoctorListItem[]; total: number }> {
