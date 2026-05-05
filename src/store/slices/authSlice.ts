@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { authService } from "@/lib/api/services";
-import { STORAGE_KEYS, ROUTES } from "@/lib/constants";
+import { STORAGE_KEYS } from "@/lib/constants";
 import type { User, LoginCredentials, RegisterData } from "@/types/auth.types";
 
 function splitFullName(fullName: string | undefined): { first_name: string; last_name: string } {
@@ -73,18 +73,18 @@ export const login = createAsyncThunk(
   }
 );
 
+// Returns the clinic_name on success so the page can show a confirmation message.
 export const register = createAsyncThunk(
   "auth/register",
   async (userData: RegisterData, { rejectWithValue }) => {
     try {
-      const response = await authService.register(userData);
-      const normalizedUser = normalizeUser(response.user);
-      localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.access_token);
-      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, response.refresh_token);
-      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(normalizedUser));
-      return normalizedUser;
+      const res = await authService.register(userData);
+      return res.clinic_name ?? "";
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.detail || "Registration failed");
+      const detail = error.response?.data?.detail;
+      return rejectWithValue(
+        typeof detail === "string" ? detail : "Registration failed. Please try again."
+      );
     }
   }
 );
@@ -135,10 +135,9 @@ const authSlice = createSlice({
         state.error = action.payload as string;
       })
       .addCase(register.pending, (state) => { state.isLoading = true; state.error = null; })
-      .addCase(register.fulfilled, (state, action) => {
+      .addCase(register.fulfilled, (state) => {
+        // Registration only submits a pending request — no auth session created
         state.isLoading = false;
-        state.user = action.payload;
-        state.isAuthenticated = true;
       })
       .addCase(register.rejected, (state, action) => {
         state.isLoading = false;

@@ -185,6 +185,12 @@ export interface PatientScoreInstance {
 
 // ─── Anamnesis ────────────────────────────────────────────────────
 
+export interface AnamnesisResponse {
+  question_id: string;
+  response_value: string | null;
+  response_values: string[] | null;
+}
+
 export interface AnamnesisRecord {
   anamnesis_id: string;
   patient_id: string;
@@ -192,6 +198,7 @@ export interface AnamnesisRecord {
   taken_by: string;
   status: "in_progress" | "completed";
   completed_at: string | null;
+  responses?: AnamnesisResponse[];
   chief_complaint: string | null;
   main_symptoms: string | null;
   initial_symptoms: string | null;

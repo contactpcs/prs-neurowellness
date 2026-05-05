@@ -1,39 +1,48 @@
 import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
-import { LoginCredentials, RegisterData, AuthResponse } from "@/types/auth.types";
+import type { LoginCredentials, AuthResponse, RegisterData, RegisterResponse } from "@/types/auth.types";
 
-// Convert form data to backend format
-interface RegisterFormData {
-  first_name: string;
-  last_name: string;
-  email: string;
-  password: string;
-  phone?: string;
-  role: string;
+export interface Clinic {
+  clinic_id: string;
+  clinic_name: string;
+  city?: string;
+  state?: string;
+  address?: string;
 }
 
 export const authService = {
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
     const response = await apiClient.post(ENDPOINTS.AUTH.LOGIN, credentials);
-    // Backend wraps response in success_response, so extract the data property
     return response.data.data || response.data;
   },
 
-  async register(formData: RegisterFormData | RegisterData): Promise<AuthResponse> {
-    // Convert form data (first_name, last_name) to backend format (full_name)
-    const backendData = {
-      full_name: 'first_name' in formData ? `${formData.first_name} ${formData.last_name}`.trim() : (formData as RegisterData).full_name || '',
+  async register(formData: RegisterData): Promise<RegisterResponse> {
+    const payload = {
+      full_name: `${formData.first_name} ${formData.last_name}`.trim(),
       email: formData.email,
       password: formData.password,
-      phone: formData.phone,
-      role: formData.role,
-      city: 'city' in formData ? formData.city : undefined,
-      state: 'state' in formData ? formData.state : undefined,
-      country: 'country' in formData ? formData.country : "USA",
+      role: "patient",
+      clinic_id: formData.clinic_id,
+      phone: formData.phone || undefined,
+      date_of_birth: formData.date_of_birth || undefined,
+      gender: formData.gender || undefined,
+      city: formData.city || undefined,
+      state: formData.state || undefined,
+      country: formData.country || "India",
+      medical_history: formData.medical_history || undefined,
+      emergency_contact: formData.emergency_contact || undefined,
     };
-    
-    const response = await apiClient.post(ENDPOINTS.AUTH.REGISTER, backendData);
-    // Backend wraps response in success_response, so extract the data property
+    const response = await apiClient.post(ENDPOINTS.AUTH.REGISTER, payload);
     return response.data.data || response.data;
+  },
+
+  async getClinics(): Promise<Clinic[]> {
+    const response = await apiClient.get(ENDPOINTS.AUTH.CLINICS);
+    const payload = response.data.data ?? response.data;
+    return Array.isArray(payload) ? payload : [];
+  },
+
+  async syncProfile(data: Partial<RegisterData> & { email: string; full_name?: string }): Promise<void> {
+    await apiClient.post(ENDPOINTS.AUTH.SYNC_PROFILE, data);
   },
 };

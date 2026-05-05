@@ -20,7 +20,19 @@ export interface RegisterData {
   first_name: string;
   last_name: string;
   phone?: string;
-  role: UserRole;
+  clinic_id: string;
+  date_of_birth?: string;
+  gender?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  medical_history?: string;
+  emergency_contact?: string;
+}
+
+export interface RegisterResponse {
+  message: string;
+  clinic_name: string;
 }
 
 export interface AuthResponse {
