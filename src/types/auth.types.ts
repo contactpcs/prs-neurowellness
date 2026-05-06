@@ -1,4 +1,4 @@
-export type UserRole = "patient" | "doctor" | "clinical_assistant" | "platform_admin" | "clinical_admin";
+export type UserRole = "patient" | "doctor" | "clinical_assistant" | "receptionist" | "platform_admin" | "clinical_admin";
 
 export interface User {
   id: string;
@@ -7,6 +7,12 @@ export interface User {
   last_name: string;
   roles: UserRole[];
   permissions: string[];
+  clinic_id?: string;
+  clinic_name?: string;
+  clinic_city?: string;
+  phone?: string;
+  date_of_birth?: string;
+  gender?: string;
 }
 
 export interface LoginCredentials {

@@ -26,6 +26,12 @@ function normalizeUser(rawUser: any): User {
     last_name: rawUser?.last_name || rawUser?.lastName || nameFromFull.last_name,
     roles: roles.map((r) => String(r).toLowerCase()) as any,
     permissions: Array.isArray(rawUser?.permissions) ? rawUser.permissions : [],
+    clinic_id: rawUser?.clinic_id ?? undefined,
+    clinic_name: rawUser?.clinic_name ?? undefined,
+    clinic_city: rawUser?.clinic_city ?? undefined,
+    phone: rawUser?.phone ?? undefined,
+    date_of_birth: rawUser?.date_of_birth ?? undefined,
+    gender: rawUser?.gender ?? undefined,
   };
 }
 

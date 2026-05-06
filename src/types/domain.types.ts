@@ -13,6 +13,11 @@ export interface PatientListItem {
   condition?: string;
   status?: string;
   assigned_at?: string;
+  registered_at?: string;
+  created_at?: string;
+  clinic_id?: string;
+  clinic_name?: string;
+  clinic_city?: string;
   last_prs?: {
     disease_id?: string;
     disease_name?: string;
@@ -80,6 +85,7 @@ export interface StaffDashboard {
   recent_scores?: ScoreSummaryItem[];
   patient_count?: number;
   pending_count?: number;
+  registered_today?: number;
 }
 
 export interface DoctorListItem {

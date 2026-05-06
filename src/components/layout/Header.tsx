@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/hooks";
 import { doctorsService } from "@/lib/api/services/doctors.service";
 import { staffService } from "@/lib/api/services/staff.service";
+import { authService } from "@/lib/api/services";
 
 function useCurrentPatient(role: string) {
   const pathname = usePathname();
@@ -24,7 +25,7 @@ function useCurrentPatient(role: string) {
     const fetch =
       role === "doctor"
         ? doctorsService.getPatient(patientId)
-        : role === "clinical_assistant"
+        : (role === "clinical_assistant" || role === "receptionist")
           ? staffService.getPatient(patientId)
           : null;
 
@@ -42,15 +43,32 @@ function useCurrentPatient(role: string) {
 
 export function Header() {
   const { user } = useAuth();
+  const [clinicName, setClinicName] = useState<string | null>(null);
 
   const role = String(user?.roles?.[0] || (user as any)?.role || "").toLowerCase();
   const patientName = useCurrentPatient(role);
+
+  useEffect(() => {
+    if (!user) return;
+    const fromUser = (user as any)?.clinic_name || (user as any)?.clinic_city;
+    if (fromUser) { setClinicName(fromUser); return; }
+    const clinicId = (user as any)?.clinic_id;
+    if (!clinicId) return;
+    authService.getClinics().then((clinics) => {
+      const match = clinics.find((c) => c.clinic_id === clinicId);
+      setClinicName(match?.clinic_name || match?.city || null);
+    }).catch(() => {});
+  }, [user]);
 
   const displayName = patientName ?? `${user?.first_name ?? ""} ${user?.last_name ?? ""}`.trim();
   const displayInitial = patientName
     ? patientName[0]?.toUpperCase()
     : [user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join("").toUpperCase();
-  const displayRole = patientName ? "Patient" : role.replace("_", " ");
+
+  const baseRole = patientName ? "Patient" : role.replace("_", " ");
+  const displayRole = (!patientName && clinicName)
+    ? `${baseRole} · ${clinicName}`
+    : baseRole;
 
   return (
     <header className="fixed top-0 left-16 right-0 h-16 bg-white/95 backdrop-blur-sm border-b border-neutral-200/80 flex items-center justify-end px-4 z-30">
