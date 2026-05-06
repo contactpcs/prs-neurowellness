@@ -2,6 +2,7 @@ export const USER_ROLES = {
   PATIENT: "patient",
   DOCTOR: "doctor",
   CLINICAL_ASSISTANT: "clinical_assistant",
+  RECEPTIONIST: "receptionist",
   PLATFORM_ADMIN: "platform_admin",
   CLINICAL_ADMIN: "clinical_admin",
 } as const;
@@ -35,6 +36,7 @@ export const ROUTES = {
   PATIENT_DASHBOARD: "/patient/dashboard",
   DOCTOR_DASHBOARD: "/doctor/dashboard",
   CA_DASHBOARD: "/clinical-assistant/dashboard",
+  RECEPTIONIST_DASHBOARD: "/receptionist/dashboard",
 } as const;
 
 export const STORAGE_KEYS = {

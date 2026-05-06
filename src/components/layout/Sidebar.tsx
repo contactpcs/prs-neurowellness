@@ -1,13 +1,16 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
 import { useAuth } from "@/lib/hooks";
 import { useSidebar } from "@/contexts/SidebarContext";
+import { authService } from "@/lib/api/services";
 import {
   LayoutDashboard, Users, ClipboardList,
   UserCircle, LogOut, Brain, ChevronLeft, Menu, Calendar,
+  ClipboardCheck, MapPin,
 } from "lucide-react";
 
 const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React.ElementType }>> = {
@@ -22,8 +25,16 @@ const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React
     { label: "Schedule",  href: "/doctor/schedule",  icon: Calendar },
   ],
   clinical_assistant: [
-    { label: "Dashboard", href: "/clinical-assistant/dashboard", icon: LayoutDashboard },
-    { label: "Patients",  href: "/clinical-assistant/patients",  icon: Users },
+    { label: "Dashboard",    href: "/clinical-assistant/dashboard", icon: LayoutDashboard },
+    { label: "All Patients", href: "/clinical-assistant/patients",  icon: Users },
+    { label: "Approvals",    href: "/clinical-assistant/approvals", icon: ClipboardCheck },
+    { label: "Profile",      href: "/clinical-assistant/profile",   icon: UserCircle },
+  ],
+  receptionist: [
+    { label: "Dashboard",    href: "/receptionist/dashboard", icon: LayoutDashboard },
+    { label: "All Patients", href: "/receptionist/patients",  icon: Users },
+    { label: "Approvals",    href: "/receptionist/approvals", icon: ClipboardCheck },
+    { label: "Profile",      href: "/receptionist/profile",   icon: UserCircle },
   ],
 };
 
@@ -31,11 +42,24 @@ export function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const { isCollapsed, setIsCollapsed } = useSidebar();
+  const [clinicLabel, setClinicLabel] = useState<string | null>(null);
 
   const role     = String(user?.roles?.[0] || (user as any)?.role || "patient").toLowerCase();
   const items    = NAV_ITEMS[role] || NAV_ITEMS.patient;
   const initials = [user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join("").toUpperCase();
   const roleName = role.replace("_", " ");
+
+  useEffect(() => {
+    if (!user) return;
+    const fromUser = (user as any)?.clinic_name || (user as any)?.clinic_city;
+    if (fromUser) { setClinicLabel(fromUser); return; }
+    const clinicId = (user as any)?.clinic_id;
+    if (!clinicId) return;
+    authService.getClinics().then((clinics) => {
+      const match = clinics.find((c) => c.clinic_id === clinicId);
+      setClinicLabel(match?.clinic_name || match?.city || null);
+    }).catch(() => {});
+  }, [user]);
 
   return (
     <aside className={cn(
@@ -110,6 +134,12 @@ export function Sidebar() {
                 {user?.first_name} {user?.last_name}
               </p>
               <p className="text-xs text-blue-300 capitalize leading-tight mt-0.5">{roleName}</p>
+              {clinicLabel ? (
+                <p className="flex items-center gap-1 text-[10px] text-blue-400 leading-tight mt-0.5">
+                  <MapPin className="h-2.5 w-2.5 flex-shrink-0" />
+                  <span className="truncate">{clinicLabel}</span>
+                </p>
+              ) : null}
             </div>
           </div>
         ) : (
