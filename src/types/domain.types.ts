@@ -29,6 +29,20 @@ export interface PatientDetail extends PatientListItem {
   permissions?: Permission[];
   scores?: ScoreSummaryItem[];
   sessions?: SessionSummary[];
+  recent_sessions?: PatientSessionRecord[];
+  medical_history?: string;
+  emergency_contact?: string;
+  blood_group?: string;
+}
+
+export interface PatientSessionRecord {
+  id: string;
+  session_date?: string;
+  status?: string;
+  session_type?: string;
+  title?: string;
+  doctor_id?: string;
+  notes?: string;
 }
 
 export interface DoctorDashboard {

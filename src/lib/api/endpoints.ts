@@ -10,7 +10,7 @@ export const ENDPOINTS = {
 
   // ─── Users ───
   USERS: {
-    PROFILE: "/users/profile",
+    PROFILE: "/users/me",
   },
 
   // ─── Doctors ───

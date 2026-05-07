@@ -15,9 +15,12 @@ type StatusFilter = (typeof STATUS_FILTERS)[number];
 const EMPTY_FORM: RegisterPatientPayload = {
   full_name: "",
   email: "",
+  password: "",
   phone: "",
   date_of_birth: "",
   gender: "",
+  medical_history: "",
+  emergency_contact: "",
 };
 
 function getStatusStyle(status?: string) {
@@ -46,19 +49,26 @@ function RegisterModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.full_name.trim() || !form.email.trim()) {
-      setErr("Full name and email are required.");
+    if (!form.full_name.trim() || !form.email.trim() || !form.password.trim()) {
+      setErr("Full name, email, and password are required.");
+      return;
+    }
+    if (form.password.length < 8) {
+      setErr("Password must be at least 8 characters.");
       return;
     }
     setSaving(true);
     setErr(null);
     try {
       const patient = await staffService.registerPatient({
-        full_name:     form.full_name.trim(),
-        email:         form.email.trim(),
-        phone:         form.phone         || undefined,
-        date_of_birth: form.date_of_birth || undefined,
-        gender:        form.gender        || undefined,
+        full_name:         form.full_name.trim(),
+        email:             form.email.trim(),
+        password:          form.password,
+        phone:             form.phone             || undefined,
+        date_of_birth:     form.date_of_birth     || undefined,
+        gender:            form.gender            || undefined,
+        medical_history:   form.medical_history   || undefined,
+        emergency_contact: form.emergency_contact || undefined,
       });
       onSuccess(patient);
     } catch (e: any) {
@@ -109,6 +119,21 @@ function RegisterModal({
               />
             </div>
 
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-neutral-700 mb-1.5">
+                Initial Password <span className="text-red-500">*</span>
+              </label>
+              <Input
+                type="password"
+                placeholder="Minimum 8 characters"
+                value={form.password}
+                onChange={(e) => set("password", e.target.value)}
+                minLength={8}
+                required
+              />
+              <p className="text-xs text-neutral-500 mt-1">Share this securely with the patient — they can change it after first login.</p>
+            </div>
+
             <div>
               <label className="block text-xs font-medium text-neutral-700 mb-1.5">Phone</label>
               <Input
@@ -141,6 +166,26 @@ function RegisterModal({
                 <option value="other">Other</option>
                 <option value="prefer_not_to_say">Prefer not to say</option>
               </select>
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-neutral-700 mb-1.5">Emergency Contact</label>
+              <Input
+                placeholder="Name and phone, e.g. Anjali Sharma — +91 98765 12345"
+                value={form.emergency_contact ?? ""}
+                onChange={(e) => set("emergency_contact", e.target.value)}
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-neutral-700 mb-1.5">Medical History</label>
+              <textarea
+                rows={3}
+                placeholder="Existing conditions, allergies, medications, prior diagnoses…"
+                value={form.medical_history ?? ""}
+                onChange={(e) => set("medical_history", e.target.value)}
+                className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white text-neutral-700 resize-y"
+              />
             </div>
           </div>
 

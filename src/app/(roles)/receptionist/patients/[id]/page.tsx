@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, User, Mail, Phone, Calendar, MapPin,
   Stethoscope, CheckCircle, XCircle, Loader2, UserCheck,
+  Heart, AlertCircle, ClipboardList,
 } from "lucide-react";
 import { staffService } from "@/lib/api/services/staff.service";
 import { useStaffPatient, useClinics } from "@/lib/hooks";
@@ -284,6 +285,71 @@ export default function PatientDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Medical Information */}
+      {(patient.medical_history || patient.emergency_contact || patient.blood_group) && (
+        <Card>
+          <CardHeader><h3 className="text-sm font-semibold text-neutral-700">Medical Information</h3></CardHeader>
+          <CardContent className="space-y-4">
+            <InfoRow icon={AlertCircle} label="Emergency Contact" value={patient.emergency_contact} />
+            <InfoRow icon={Heart}       label="Blood Group"       value={patient.blood_group} />
+            {patient.medical_history && (
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <ClipboardList className="h-4 w-4 text-blue-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-neutral-400">Medical History</p>
+                  <p className="text-sm text-neutral-800 mt-0.5 whitespace-pre-wrap leading-relaxed">
+                    {patient.medical_history}
+                  </p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Session History */}
+      {patient.recent_sessions && patient.recent_sessions.length > 0 && (
+        <Card>
+          <CardHeader><h3 className="text-sm font-semibold text-neutral-700">Recent Sessions</h3></CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-50 border-b border-neutral-100">
+                  <tr className="text-left text-xs font-medium text-neutral-500 uppercase tracking-wide">
+                    <th className="px-5 py-3">Date</th>
+                    <th className="px-5 py-3">Title</th>
+                    <th className="px-5 py-3">Type</th>
+                    <th className="px-5 py-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {patient.recent_sessions.map((s) => (
+                    <tr key={s.id} className="hover:bg-neutral-50">
+                      <td className="px-5 py-3 text-neutral-700">
+                        {s.session_date
+                          ? new Date(s.session_date).toLocaleDateString("en-IN", {
+                              day: "numeric", month: "short", year: "numeric",
+                            })
+                          : "—"}
+                      </td>
+                      <td className="px-5 py-3 text-neutral-700">{s.title || "—"}</td>
+                      <td className="px-5 py-3 text-neutral-600 capitalize">{s.session_type || "—"}</td>
+                      <td className="px-5 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium border capitalize ${statusBadge(s.status)}`}>
+                          {s.status || "unknown"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Reject modal */}
       {rejectModal && (
