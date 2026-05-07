@@ -5,9 +5,12 @@ import type { StaffDashboard, PatientListItem, PatientDetail, DoctorListItem } f
 export interface RegisterPatientPayload {
   full_name: string;
   email: string;
+  password: string;
   phone?: string;
   date_of_birth?: string;
   gender?: string;
+  medical_history?: string;
+  emergency_contact?: string;
 }
 
 // ─── Normalization helpers ────────────────────────────────────────────────────
@@ -106,7 +109,14 @@ export const staffService = {
   async getPatient(patientId: string): Promise<PatientDetail> {
     const { data } = await apiClient.get(ENDPOINTS.STAFF.PATIENT(patientId));
     const payload = data.data ?? data;
-    return normalizePatient(payload.patient ?? payload) as PatientDetail;
+    const rawPatient = payload.patient ?? payload;
+    const normalized = normalizePatient(rawPatient) as PatientDetail;
+    // Preserve fields the list-shape normalizer drops (medical/clinical context).
+    normalized.medical_history   = rawPatient?.medical_history   ?? undefined;
+    normalized.emergency_contact = rawPatient?.emergency_contact ?? undefined;
+    normalized.blood_group       = rawPatient?.blood_group       ?? undefined;
+    normalized.recent_sessions   = payload.recent_sessions ?? [];
+    return normalized;
   },
 
   async approvePatient(patientId: string): Promise<PatientDetail> {

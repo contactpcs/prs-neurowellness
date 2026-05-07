@@ -92,8 +92,8 @@ function matchTranscript(
     for (const word of words) {
       const num = parseFloat(word);
       if (!isNaN(num)) return { value: num, label: String(num) };
-      if (WORD_TO_NUM[word] !== undefined)
-        return { value: WORD_TO_NUM[word], label: String(WORD_TO_NUM[word]) };
+      if (WORD_TO_INDEX[word] !== undefined)
+        return { value: WORD_TO_INDEX[word], label: String(WORD_TO_INDEX[word]) };
     }
     return null;
   }
@@ -145,7 +145,7 @@ export function useAssessmentSTT({
   const questionRef = useRef(question);
   const onAnswerRef = useRef(onAnswer);
   const onAutoAdvanceRef = useRef(onAutoAdvance);
-  const recRef = useRef<SpeechRecognition | null>(null);
+  const recRef = useRef<any>(null);
   const recRunning = useRef(false);
   const advTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const retryTimerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -184,7 +184,7 @@ export function useAssessmentSTT({
   // ─── One-time recognition setup ────────────────────────────────────────
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const SR: typeof SpeechRecognition =
+    const SR: any =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return;
 
@@ -195,7 +195,7 @@ export function useAssessmentSTT({
 
     rec.onstart = () => { recRunning.current = true; };
 
-    rec.onresult = (event) => {
+    rec.onresult = (event: any) => {
       let interim = "";
       let finalText = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -239,7 +239,7 @@ export function useAssessmentSTT({
       }
     };
 
-    rec.onerror = (event) => {
+    rec.onerror = (event: any) => {
       const error = (event as any).error;
       // Transient errors — let onend restart automatically
       if (error === "no-speech" || error === "network" || error === "aborted") return;

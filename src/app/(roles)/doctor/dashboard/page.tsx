@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { Search, X, Users, HelpCircle, Bell } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { useDoctorPatients } from "@/lib/hooks";
 import { PageLoader } from "@/components/ui";
-import { doctorsService } from "@/lib/api/services";
 import type { PatientListItem } from "@/types/domain.types";
 
 const AVATAR_URLS = [
@@ -27,15 +27,8 @@ const getAvatarUrl = (index: number) => {
 
 export default function DoctorDashboard() {
   const { user } = useAuth();
-  const [patients, setPatients] = useState<PatientListItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { patients, isLoading } = useDoctorPatients();
   const [searchQuery, setSearchQuery] = useState("");
-
-  useEffect(() => {
-    doctorsService.getPatients().then(({ patients: p }) => {
-      setPatients(p);
-    }).catch(() => {}).finally(() => setIsLoading(false));
-  }, []);
 
   const filtered = patients.filter((p) => {
     const q = searchQuery.toLowerCase();

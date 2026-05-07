@@ -3,30 +3,28 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { prsService } from "@/lib/api/services";
+import { useScales } from "@/lib/hooks";
 import { PageLoader, Card, CardContent } from "@/components/ui";
 import { SeverityBadge } from "@/components/assessment";
 import { formatDate } from "@/lib/utils/format";
-import type { ScoreHistory, Scale } from "@/types/prs.types";
+import type { ScoreHistory } from "@/types/prs.types";
 
 export default function TrendsPage() {
   const { patientId } = useParams<{ patientId: string }>();
   const [history, setHistory] = useState<ScoreHistory[]>([]);
-  const [scales, setScales] = useState<Record<string, Scale>>({});
-  const [isLoading, setIsLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  // Scales come from the cached catalog — no need to refetch when navigating
+  // between trends pages for different patients.
+  const { scalesById: scales } = useScales();
 
   useEffect(() => {
-    Promise.all([
-      prsService.getScoreHistory(patientId),
-      prsService.getScales(),
-    ]).then(([{ history: h }, { scales: all }]) => {
-      setHistory(h);
-      const map: Record<string, Scale> = {};
-      all.forEach((s) => { map[s.scale_id] = s; });
-      setScales(map);
-    }).finally(() => setIsLoading(false));
+    setHistoryLoading(true);
+    prsService.getScoreHistory(patientId)
+      .then(({ history: h }) => setHistory(h))
+      .finally(() => setHistoryLoading(false));
   }, [patientId]);
 
-  if (isLoading) return <PageLoader />;
+  if (historyLoading) return <PageLoader />;
 
   // Group history by scale_id
   const grouped = history.reduce<Record<string, ScoreHistory[]>>((acc, h) => {

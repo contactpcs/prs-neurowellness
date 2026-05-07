@@ -1,6 +1,14 @@
 export { useAuth } from "./useAuth";
 export { useSessions } from "./useSessions";
 export { useQuestionnaire } from "./useQuestionnaire";
+export { useScales, useClinics } from "./useCatalog";
+export { useStaffDashboard, useStaffPatients, useStaffPendingPatients, useStaffPatient } from "./useStaff";
+export { useDoctorPatients, useDoctorPatient, usePatientResult, usePatientPermissions, useMyAlerts } from "./useDoctor";
+export { usePatientDashboard, useMyDoctor, useMyAssessments } from "./usePatient";
+export { useMyScores, useMyScoresSummary, useInstanceScore, usePatientScores, usePatientScoresSummary } from "./useScores";
+export { useAnamnesisQuestions, useMyAnamnesis, usePatientAnamnesis } from "./useAnamnesis";
+export { useNotifications } from "./useNotifications";
+export { useMyDoctorNotes, usePatientNote } from "./useDoctorNotes";
 export { useVoiceMode } from "./useVoiceMode";
 export { useTTS } from "./useTTS";
 export { useAssessmentSTT } from "./useAssessmentSTT";

@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { ChevronRight, AlertTriangle, User } from "lucide-react";
-import { doctorsService, type InstanceScoreDetail } from "@/lib/api/services/doctors.service";
+import { usePatientResult } from "@/lib/hooks";
 import { PageLoader, Card, CardContent } from "@/components/ui";
 
 function severityColor(level?: string) {
@@ -18,29 +17,14 @@ function severityColor(level?: string) {
 }
 
 export default function DoctorPatientResultPage() {
-  const { id: patientId } = useParams<{ id: string }>();
-  const searchParams = useSearchParams();
-  const instanceId = searchParams.get("instance_id") || "";
+  const { id: patientId, instanceId } = useParams<{ id: string; instanceId: string }>();
   const router = useRouter();
-  const [detail, setDetail] = useState<InstanceScoreDetail | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    if (!instanceId) {
-      setError(true);
-      setIsLoading(false);
-      return;
-    }
-    doctorsService.getPatientResult(patientId, instanceId)
-      .then(setDetail)
-      .catch(() => setError(true))
-      .finally(() => setIsLoading(false));
-  }, [patientId, instanceId]);
+  const detail = usePatientResult(patientId, instanceId);
+  const isLoading = !detail;
 
   if (isLoading) return <PageLoader />;
 
-  if (error || !detail) {
+  if (!detail) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#f7f6f2] to-[#f4f0ef] flex items-center justify-center">
         <p className="text-neutral-500">Could not load assessment results.</p>
@@ -122,7 +106,7 @@ export default function DoctorPatientResultPage() {
               Scale-by-Scale Breakdown
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {scale_results.map((sr) => (
+              {scale_results.map((sr: any) => (
                 <Card key={sr.scale_result_id ?? sr.scale_id}>
                   <CardContent className="space-y-3">
                     <div className="flex items-start justify-between gap-2">

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { AlertTriangle, Check, Shield } from "lucide-react";
 import { prsService } from "@/lib/api/services";
 import { useAuth } from "@/lib/hooks";
+import { useMyAlerts } from "@/lib/hooks";
 import { PageLoader, Button, Card, CardContent, Modal } from "@/components/ui";
 import { SeverityBadge } from "@/components/assessment";
 import { formatDateTime } from "@/lib/utils/format";
@@ -11,21 +12,12 @@ import type { RiskAlert } from "@/types/prs.types";
 
 export default function AlertsPage() {
   const { isDoctor } = useAuth();
-  const [alerts, setAlerts] = useState<RiskAlert[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { alerts, isLoading } = useMyAlerts();
   const [resolveId, setResolveId] = useState<string | null>(null);
   const [resolveNotes, setResolveNotes] = useState("");
 
-  const loadAlerts = () => {
-    setIsLoading(true);
-    prsService.getMyAlerts().then(({ alerts: a }) => setAlerts(a)).finally(() => setIsLoading(false));
-  };
-
-  useEffect(() => { loadAlerts(); }, []);
-
   const handleAcknowledge = async (alertId: string) => {
     await prsService.acknowledgeAlert(alertId);
-    loadAlerts();
   };
 
   const handleResolve = async () => {
@@ -33,7 +25,6 @@ export default function AlertsPage() {
     await prsService.resolveAlert(resolveId, resolveNotes);
     setResolveId(null);
     setResolveNotes("");
-    loadAlerts();
   };
 
   if (isLoading) return <PageLoader />;

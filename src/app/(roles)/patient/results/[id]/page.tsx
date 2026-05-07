@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronRight, AlertTriangle } from "lucide-react";
-import { scoresService, type InstanceScoreDetail } from "@/lib/api/services/scores.service";
+import { useInstanceScore } from "@/lib/hooks";
 import { PageLoader, Card, CardContent } from "@/components/ui";
 
 function severityColor(level?: string) {
@@ -20,20 +19,11 @@ function severityColor(level?: string) {
 export default function PatientResultDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const [detail, setDetail] = useState<InstanceScoreDetail | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    scoresService.getInstanceScore(id)
-      .then(setDetail)
-      .catch(() => setError(true))
-      .finally(() => setIsLoading(false));
-  }, [id]);
+  const { detail, isLoading } = useInstanceScore(id);
 
   if (isLoading) return <PageLoader />;
 
-  if (error || !detail) {
+  if (!detail) {
     return (
       <div className="max-w-2xl mx-auto text-center py-16">
         <p className="text-neutral-500">Could not load assessment results.</p>
@@ -100,7 +90,7 @@ export default function PatientResultDetailPage() {
             Scale Breakdown
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {scale_results.map((sr) => (
+            {scale_results.map((sr: any) => (
               <Card key={sr.scale_result_id ?? sr.scale_id}>
                 <CardContent className="space-y-3">
                   <div className="flex items-start justify-between gap-2">

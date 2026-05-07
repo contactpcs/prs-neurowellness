@@ -1,22 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
 import { Input, Card, PatientListSkeleton } from "@/components/ui";
-import { doctorsService } from "@/lib/api/services";
-import type { PatientListItem } from "@/types/domain.types";
+import { useDoctorPatients } from "@/lib/hooks";
 
 export default function DoctorPatientsPage() {
-  const [patients, setPatients] = useState<PatientListItem[]>([]);
+  const { patients, isLoading } = useDoctorPatients();
   const [search, setSearch] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    doctorsService.getPatients().then(({ patients: p }) => {
-      setPatients(p);
-    }).catch(() => {}).finally(() => setIsLoading(false));
-  }, []);
 
   const filtered = patients.filter((p) =>
     `${p.first_name} ${p.last_name} ${p.email} ${p.mrn || ""}`.toLowerCase().includes(search.toLowerCase())

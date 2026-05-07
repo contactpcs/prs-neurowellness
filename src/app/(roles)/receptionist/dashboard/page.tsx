@@ -1,12 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Users, ClipboardCheck, UserPlus, ArrowRight, Clock, CheckCircle } from "lucide-react";
-import { staffService } from "@/lib/api/services/staff.service";
+import { useAuth, useStaffDashboard, useStaffPendingPatients, useStaffPatients } from "@/lib/hooks";
 import { PageLoader, Card, CardContent, Button } from "@/components/ui";
-import { useAuth } from "@/lib/hooks";
-import type { StaffDashboard, PatientListItem } from "@/types/domain.types";
+import type { PatientListItem } from "@/types/domain.types";
 
 function isSameDay(dateStr?: string): boolean {
   if (!dateStr) return false;
@@ -17,37 +15,20 @@ function isSameDay(dateStr?: string): boolean {
 
 export default function ReceptionistDashboard() {
   const { user } = useAuth();
-  const [dashboard, setDashboard]       = useState<StaffDashboard | null>(null);
-  const [pending, setPending]           = useState<PatientListItem[]>([]);
-  const [registeredToday, setRegisteredToday] = useState(0);
-  const [isLoading, setIsLoading]       = useState(true);
-  const [error, setError]               = useState(false);
+  const { dashboard, isLoading: dashLoading } = useStaffDashboard();
+  const { pending, isLoading: pendingLoading } = useStaffPendingPatients();
+  const { patients, isLoading: patientsLoading } = useStaffPatients();
 
-  useEffect(() => {
-    Promise.all([
-      staffService.getDashboard(),
-      staffService.getPendingPatients(),
-      staffService.getPatients(),
-    ])
-      .then(([dash, { patients: pendingList }, { patients: allPatients }]) => {
-        setDashboard(dash);
-        setPending(pendingList);
-        // prefer backend value; fall back to client-side filter
-        const todayCount =
-          (dash as any).registered_today ??
-          allPatients.filter((p) =>
-            isSameDay(p.registered_at ?? p.created_at ?? p.assigned_at)
-          ).length;
-        setRegisteredToday(todayCount);
-      })
-      .catch(() => setError(true))
-      .finally(() => setIsLoading(false));
-  }, []);
-
-  if (isLoading) return <PageLoader />;
-
-  const totalPatients = dashboard?.patient_count ?? 0;
+  // Dashboard stats come from the server, or derive client-side from cached lists.
+  const totalPatients = dashboard?.patient_count ?? patients.length;
   const pendingCount  = dashboard?.pending_count ?? pending.length;
+  const registeredToday = (() => {
+    if (dashboard?.registered_today) return dashboard.registered_today;
+    return patients.filter((p) => isSameDay(p.registered_at ?? p.created_at ?? p.assigned_at)).length;
+  })();
+
+  const isLoading = dashLoading || pendingLoading || patientsLoading;
+  if (isLoading) return <PageLoader />;
 
   const stats = [
     { label: "Total Patients",    value: totalPatients,  icon: Users,         color: "text-blue-600",  bg: "bg-blue-50",  href: "/receptionist/patients"  },
@@ -67,12 +48,6 @@ export default function ReceptionistDashboard() {
           <Button><ClipboardCheck className="h-4 w-4 mr-1.5" />Pending Approvals</Button>
         </Link>
       </div>
-
-      {error && (
-        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
-          Could not load dashboard data. Please refresh.
-        </div>
-      )}
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -143,3 +118,4 @@ export default function ReceptionistDashboard() {
     </div>
   );
 }
+
