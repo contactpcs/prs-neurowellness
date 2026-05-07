@@ -101,6 +101,29 @@ export const ENDPOINTS = {
     INSTANCE_SCORE: (instanceId: string) => `/prs/scores/instance/${instanceId}`,
     PATIENT_SCORES: (patientId: string) => `/prs/scores/patient/${patientId}`,
     PATIENT_SCORES_SUMMARY: (patientId: string) => `/prs/scores/patient/${patientId}/summary`,
+    // Sessions
+    SESSIONS: "/prs/sessions/",
+    MY_SESSIONS: "/prs/sessions/my",
+    PATIENT_SESSIONS: (patientId: string) => `/prs/sessions/patient/${patientId}`,
+    SESSION: (sessionId: string) => `/prs/sessions/${sessionId}`,
+    START_SESSION: (sessionId: string) => `/prs/sessions/${sessionId}/start`,
+    CANCEL_SESSION: (sessionId: string) => `/prs/sessions/${sessionId}/cancel`,
+    // Responses
+    AUTO_SAVE: (sessionId: string, scaleId: string) =>
+      `/prs/sessions/${sessionId}/scales/${scaleId}/auto-save`,
+    SUBMIT_RESPONSE: (sessionId: string, scaleId: string) =>
+      `/prs/sessions/${sessionId}/scales/${scaleId}/submit`,
+    CLINICIAN_RATING: (sessionId: string, scaleId: string) =>
+      `/prs/sessions/${sessionId}/scales/${scaleId}/clinician-rating`,
+    // Consent
+    CONSENT: (sessionId: string) => `/prs/sessions/${sessionId}/consent`,
+    // Alerts
+    MY_ALERTS: "/prs/alerts/my",
+    PATIENT_ALERTS: (patientId: string) => `/prs/alerts/patient/${patientId}`,
+    ACKNOWLEDGE_ALERT: (alertId: string) => `/prs/alerts/${alertId}/acknowledge`,
+    RESOLVE_ALERT: (alertId: string) => `/prs/alerts/${alertId}/resolve`,
+    // Score history
+    SCORE_HISTORY: (patientId: string) => `/prs/scores/patient/${patientId}/history`,
   },
 
   // ─── Anamnesis ───

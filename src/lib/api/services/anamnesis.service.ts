@@ -165,7 +165,7 @@ export const anamnesisService = {
       status: "in_progress",
       taken_by: "patient",
       responses: [],
-    } as AnamnesisRecord;
+    } as any;
   },
 
   async submit(payload: AnamnesisSubmitPayload): Promise<AnamnesisRecord> {

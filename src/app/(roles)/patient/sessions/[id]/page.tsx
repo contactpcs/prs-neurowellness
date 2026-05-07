@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Clock, FileText, ArrowRight } from "lucide-react";
-import { useSessions } from "@/lib/hooks";
-import { prsService } from "@/lib/api/services";
+import { Clock, ArrowRight } from "lucide-react";
+import { useSessions, useScales } from "@/lib/hooks";
 import { PageLoader, Button, Card, CardContent } from "@/components/ui";
 import type { Scale } from "@/types/prs.types";
 
@@ -12,20 +11,18 @@ export default function SessionOverview() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { currentSession, loadSession } = useSessions();
-  const [scales, setScales] = useState<Scale[]>([]);
+  const { scalesById } = useScales();
 
   useEffect(() => { loadSession(id); }, [id, loadSession]);
 
-  useEffect(() => {
-    if (currentSession?.resolved_scale_ids) {
-      prsService.getScales().then(({ scales: allScales }) => {
-        const ordered = currentSession.resolved_scale_ids
-          .map(sid => allScales.find(s => s.scale_id === sid))
-          .filter(Boolean) as Scale[];
-        setScales(ordered);
-      });
-    }
-  }, [currentSession]);
+  // Resolve the session's ordered scale list against the cached catalog. Memoized
+  // so the array identity is stable across re-renders that don't change inputs.
+  const scales = useMemo<Scale[]>(() => {
+    if (!currentSession?.resolved_scale_ids) return [];
+    return currentSession.resolved_scale_ids
+      .map((sid) => scalesById[sid])
+      .filter(Boolean) as Scale[];
+  }, [currentSession, scalesById]);
 
   if (!currentSession) return <PageLoader />;
 

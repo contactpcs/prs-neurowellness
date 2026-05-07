@@ -7,7 +7,7 @@ import {
   Stethoscope, CheckCircle, XCircle, Loader2, UserCheck,
 } from "lucide-react";
 import { staffService } from "@/lib/api/services/staff.service";
-import { authService } from "@/lib/api/services";
+import { useStaffPatient, useClinics } from "@/lib/hooks";
 import { Card, CardHeader, CardContent, PageLoader } from "@/components/ui";
 import type { PatientDetail, DoctorListItem } from "@/types/domain.types";
 
@@ -39,9 +39,7 @@ export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
 
-  const [patient, setPatient]         = useState<PatientDetail | null>(null);
   const [doctors, setDoctors]         = useState<DoctorListItem[]>([]);
-  const [resolvedClinic, setResolvedClinic] = useState<string | null>(null);
   const [isLoading, setIsLoading]     = useState(true);
   const [selectedDoctor, setSelectedDoctor] = useState("");
   const [allocating, setAllocating]   = useState(false);
@@ -51,23 +49,23 @@ export default function PatientDetailPage() {
   const [rejectReason, setRejectReason] = useState("");
   const [toast, setToast]             = useState<{ msg: string; ok: boolean } | null>(null);
 
+  // Patient from cache, doctors fresh (less critical to cache), clinics from catalog.
+  const patient = useStaffPatient(id);
+  const { clinics } = useClinics();
+
+  // Resolve clinic name reactively.
+  const resolvedClinic: string | null = (() => {
+    if (!patient?.clinic_id) return null;
+    const match = clinics.find((c) => c.clinic_id === patient.clinic_id);
+    return match?.clinic_name || match?.city || null;
+  })();
+
   useEffect(() => {
-    Promise.all([
-      staffService.getPatient(id),
-      staffService.getDoctors(),
-      authService.getClinics(),
-    ])
-      .then(([p, { doctors: d }, clinics]) => {
-        setPatient(p);
-        setDoctors(d);
-        if (p.clinic_id) {
-          const match = clinics.find((c) => c.clinic_id === p.clinic_id);
-          setResolvedClinic(match?.clinic_name || match?.city || null);
-        }
-      })
+    staffService.getDoctors()
+      .then(({ doctors: d }) => setDoctors(d))
       .catch(() => {})
       .finally(() => setIsLoading(false));
-  }, [id]);
+  }, []);
 
   const showToast = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
@@ -91,8 +89,7 @@ export default function PatientDetailPage() {
   const handleApprove = async () => {
     setActionLoading("approve");
     try {
-      const updated = await staffService.approvePatient(id);
-      setPatient((p) => p ? { ...p, status: (updated as any).status ?? "active" } : p);
+      await staffService.approvePatient(id);
       showToast("Patient approved successfully.", true);
     } catch {
       showToast("Failed to approve patient.", false);
@@ -105,7 +102,6 @@ export default function PatientDetailPage() {
     setActionLoading("reject");
     try {
       await staffService.rejectPatient(id, rejectReason || undefined);
-      setPatient((p) => p ? { ...p, status: "inactive" } : p);
       setRejectModal(false);
       showToast("Patient registration rejected.", true);
     } catch {

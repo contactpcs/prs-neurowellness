@@ -4,11 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Search, MapPin, UserPlus, X, ChevronRight, Loader2, Users } from "lucide-react";
 import { staffService } from "@/lib/api/services/staff.service";
-import { authService } from "@/lib/api/services";
 import type { RegisterPatientPayload } from "@/lib/api/services/staff.service";
+import { useStaffPatients, useClinics } from "@/lib/hooks";
 import { Input, Card, PageLoader, Button } from "@/components/ui";
 import type { PatientListItem } from "@/types/domain.types";
-import type { Clinic } from "@/lib/api/services/auth.service";
 
 const STATUS_FILTERS = ["all", "approved", "pending", "rejected"] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
@@ -170,25 +169,13 @@ function RegisterModal({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function ReceptionistPatientsPage() {
-  const [patients, setPatients]         = useState<PatientListItem[]>([]);
-  const [clinics, setClinics]           = useState<Clinic[]>([]);
   const [search, setSearch]             = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [isLoading, setIsLoading]       = useState(true);
   const [showModal, setShowModal]       = useState(false);
+  const { patients, isLoading: patientsLoading } = useStaffPatients();
+  const { clinics, isLoading: clinicsLoading } = useClinics();
 
-  useEffect(() => {
-    Promise.all([
-      staffService.getPatients({ limit: 100 }),
-      authService.getClinics(),
-    ])
-      .then(([{ patients: p }, cl]) => {
-        setPatients(p);
-        setClinics(cl);
-      })
-      .catch(() => {})
-      .finally(() => setIsLoading(false));
-  }, []);
+  const isLoading = patientsLoading || clinicsLoading;
 
   function clinicName(clinicId?: string): string | null {
     if (!clinicId) return null;
@@ -205,7 +192,6 @@ export default function ReceptionistPatientsPage() {
   });
 
   const handleRegistered = (newPatient: PatientListItem) => {
-    setPatients((prev) => [newPatient, ...prev]);
     setShowModal(false);
   };
 

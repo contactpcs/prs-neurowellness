@@ -7,14 +7,17 @@ import {
   ChevronRight, AlertTriangle,
   Search, Bell, User, BookOpen, Brain, CheckSquare, FileText, Lock, Hand, Phone, Check, PlayCircle,
 } from "lucide-react";
-import { patientsService } from "@/lib/api/services/patients.service";
-import { anamnesisService } from "@/lib/api/services/anamnesis.service";
-import { scoresService } from "@/lib/api/services/scores.service";
-import { doctorNotesService, type DoctorNote } from "@/lib/api/services/doctorNotes.service";
+import {
+  usePatientDashboard,
+  useMyAssessments,
+  useMyAnamnesis,
+  useMyScoresSummary,
+  useMyDoctorNotes,
+} from "@/lib/hooks";
+import type { DoctorNote } from "@/lib/api/services/doctorNotes.service";
 import { PatientDashboardSkeleton } from "@/components/ui";
 import { AnamnesisForm } from "@/components/assessment/AnamnesisForm";
 import type {
-  PatientDashboard,
   AssessmentPermission,
   AnamnesisRecord,
   AssessmentInstance,
@@ -28,38 +31,26 @@ function formatDate(iso?: string | null): string {
 }
 
 export default function PatientDashboard() {
-  const [dashboard, setDashboard]   = useState<PatientDashboard | null>(null);
-  const [assessments, setAssessments] = useState<AssessmentPermission[]>([]);
-  const [anamnesisRecord, setAnamnesisRecord] = useState<AnamnesisRecord | null | undefined>(undefined);
-  const [scoreInstances, setScoreInstances] = useState<AssessmentInstance[]>([]);
-  const [totalAssessments, setTotalAssessments] = useState(0);
-  const [doctorNotes, setDoctorNotes] = useState<DoctorNote[]>([]);
-  const [isLoading, setIsLoading]   = useState(true);
+  const { dashboard, isLoading: dashLoading } = usePatientDashboard();
+  const { assessments, isLoading: assessLoading } = useMyAssessments();
+  const { record: anamnesisRecord, isLoading: anamnesisLoading } = useMyAnamnesis();
+  const { summary, isLoading: scoresLoading } = useMyScoresSummary();
+  const { notes: doctorNotes, isLoading: notesLoading } = useMyDoctorNotes();
+
+  const isLoading = dashLoading || assessLoading;
+
+  const scoreInstances = summary?.instances ?? [];
+  const totalAssessments = summary?.total ?? 0;
+
   const [selectedAssessment, setSelectedAssessment] = useState<AssessmentPermission | null>(null);
   const [selectedSection, setSelectedSection] = useState<SectionId | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      patientsService.getDashboard(),
-      patientsService.getMyAssessments(),
-      anamnesisService.getMyAnamnesis().catch(() => null),
-      scoresService.getMyScoresSummary().catch(() => ({ instances: [], total: 0, diseases: 0 })),
-      doctorNotesService.getMyNotes().catch(() => []),
-    ])
-      .then(([dash, { permissions }, anamnesis, scores, notes]) => {
-        setDashboard(dash);
-        setAssessments(permissions);
-        setAnamnesisRecord(anamnesis ?? null);
-        setScoreInstances(scores.instances ?? []);
-        setTotalAssessments(scores.total ?? 0);
-        setDoctorNotes(notes ?? []);
-        // Set first completed assessment as default
-        const firstCompleted = permissions.find((a) => a.status === "completed");
-        if (firstCompleted) setSelectedAssessment(firstCompleted);
-      })
-      .catch(() => {})
-      .finally(() => setIsLoading(false));
-  }, []);
+    if (!selectedAssessment && assessments.length > 0) {
+      const firstCompleted = assessments.find((a) => a.status === "completed");
+      if (firstCompleted) setSelectedAssessment(firstCompleted);
+    }
+  }, [assessments, selectedAssessment]);
 
   if (isLoading) return <PatientDashboardSkeleton />;
 
@@ -232,7 +223,7 @@ export default function PatientDashboard() {
         {/* Right Content */}
         <div className="flex-1 bg-white rounded-lg shadow-sm p-8 min-h-[24rem]">
           {selectedSection === "anamnesis" ? (
-            <PatientAnamnesisView record={anamnesisRecord} />
+            <PatientAnamnesisView record={anamnesisLoading ? undefined : anamnesisRecord} />
           ) : selectedSection === "brain-mapping" ? (
             <PlaceholderView
               icon="🧠"

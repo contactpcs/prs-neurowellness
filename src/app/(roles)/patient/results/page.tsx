@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CheckCircle, ChevronRight, Activity } from "lucide-react";
-import { scoresService } from "@/lib/api/services/scores.service";
+import { useMyScores } from "@/lib/hooks";
 import { PageLoader, Card, CardContent } from "@/components/ui";
-import type { AssessmentInstance } from "@/types/domain.types";
 
 function severityColor(level?: string) {
   switch (level?.toLowerCase()) {
@@ -19,15 +17,7 @@ function severityColor(level?: string) {
 }
 
 export default function PatientResultsPage() {
-  const [instances, setInstances] = useState<AssessmentInstance[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    scoresService.getMyScores()
-      .then(({ instances: list }) => setInstances(list))
-      .catch(() => {})
-      .finally(() => setIsLoading(false));
-  }, []);
+  const { scores: instances, isLoading } = useMyScores();
 
   if (isLoading) return <PageLoader />;
 

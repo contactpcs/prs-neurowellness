@@ -1,28 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Play, FileText } from "lucide-react";
-import { useSessions } from "@/lib/hooks";
-import { prsService } from "@/lib/api/services";
-import { PageLoader, Button, Card, CardContent } from "@/components/ui";
+import { useSessions, useScales } from "@/lib/hooks";
+import { PageLoader, Button } from "@/components/ui";
 import { RiskAlertBanner, ScaleResultCard } from "@/components/assessment";
-import type { Scale } from "@/types/prs.types";
 
 export default function CASessionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { currentSession, loadSession } = useSessions();
-  const [scales, setScales] = useState<Record<string, Scale>>({});
+  const { scalesById: scales } = useScales();
 
   useEffect(() => { loadSession(id); }, [id, loadSession]);
-  useEffect(() => {
-    prsService.getScales().then(({ scales: all }) => {
-      const map: Record<string, Scale> = {};
-      all.forEach((s) => { map[s.scale_id] = s; });
-      setScales(map);
-    });
-  }, []);
 
   if (!currentSession) return <PageLoader />;
 

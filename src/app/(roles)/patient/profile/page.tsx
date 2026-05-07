@@ -1,28 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useAuth } from "@/lib/hooks";
-import { patientsService } from "@/lib/api/services/patients.service";
+import { useAuth, useMyDoctor } from "@/lib/hooks";
 import { Card, CardContent, PageLoader } from "@/components/ui";
 import { ROLE_LABELS } from "@/lib/constants";
 
 export default function PatientProfilePage() {
   const { user } = useAuth();
-  const [doctor, setDoctor] = useState<{
-    id: string;
-    first_name: string;
-    last_name: string;
-    specialization?: string;
-    phone?: string;
-  } | null>(null);
-  const [isDoctorLoading, setIsDoctorLoading] = useState(true);
-
-  useEffect(() => {
-    patientsService.getMyDoctor()
-      .then(setDoctor)
-      .catch(() => {})
-      .finally(() => setIsDoctorLoading(false));
-  }, []);
+  const { doctor, isLoading: isDoctorLoading } = useMyDoctor();
 
   return (
     <div className="max-w-lg mx-auto space-y-6">

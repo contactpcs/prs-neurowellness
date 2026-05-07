@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
 import { CheckCircle, Loader2, Building2, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui";
-import { useAuth } from "@/lib/hooks";
-import { authService, type Clinic } from "@/lib/api/services/auth.service";
+import { useAuth, useClinics } from "@/lib/hooks";
 import { register as registerThunk } from "@/store/slices/authSlice";
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
@@ -79,8 +78,9 @@ function FieldError({ msg }: { msg?: string }) {
 
 export default function RegisterPage() {
   const { isLoading, error, clearError, register } = useAuth();
-  const [clinics, setClinics]             = useState<Clinic[]>([]);
-  const [clinicsLoading, setClinicsLoading] = useState(true);
+  // Clinics come from the shared catalog cache — first visit fetches once,
+  // subsequent renders (e.g. after a client-side navigation back) are instant.
+  const { clinics, isLoading: clinicsLoading } = useClinics();
   const [successClinic, setSuccessClinic]   = useState<string | null>(null);
 
   const {
@@ -95,14 +95,6 @@ export default function RegisterPage() {
 
   const selectedClinicId = watch("clinic_id");
   const selectedClinic   = clinics.find((c) => c.clinic_id === selectedClinicId);
-
-  useEffect(() => {
-    authService
-      .getClinics()
-      .then(setClinics)
-      .catch(() => setClinics([]))
-      .finally(() => setClinicsLoading(false));
-  }, []);
 
   const onSubmit = async (data: RegisterFormData) => {
     clearError();

@@ -6,12 +6,17 @@ import Link from "next/link";
 import { ChevronRight, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save } from "lucide-react";
 import { PatientDetailSkeleton, Button } from "@/components/ui";
 import { AnamnesisForm } from "@/components/assessment/AnamnesisForm";
-import { doctorsService } from "@/lib/api/services/doctors.service";
-import { permissionsService } from "@/lib/api/services/permissions.service";
-import { scoresService } from "@/lib/api/services/scores.service";
-import { anamnesisService } from "@/lib/api/services/anamnesis.service";
-import { doctorNotesService, type DoctorNote } from "@/lib/api/services/doctorNotes.service";
-import type { PatientDetail, Permission, AssessmentInstance, AnamnesisRecord } from "@/types/domain.types";
+import {
+  useDoctorPatient,
+  usePatientPermissions,
+  usePatientScoresSummary,
+  usePatientAnamnesis,
+  usePatientNote,
+} from "@/lib/hooks";
+import { useAppDispatch } from "@/store/hooks";
+import { invalidatePatientAnamnesis } from "@/store/slices/anamnesisSlice";
+import type { DoctorNote } from "@/lib/api/services/doctorNotes.service";
+import type { Permission, AssessmentInstance, AnamnesisRecord } from "@/types/domain.types";
 
 function statusClass(status: Permission["status"]): string {
   switch (status) {
@@ -45,58 +50,35 @@ export default function DoctorPatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
 
-  const [patient, setPatient] = useState<PatientDetail | null>(null);
-  const [assessments, setAssessments] = useState<Permission[]>([]);
-  const [scoreInstances, setScoreInstances] = useState<AssessmentInstance[]>([]);
-  const [totalAssessments, setTotalAssessments] = useState(0);
-  const [anamnesisRecord, setAnamnesisRecord] = useState<AnamnesisRecord | null | undefined>(undefined);
-  const [isLoading, setIsLoading] = useState(true);
+  const dispatch = useAppDispatch();
+  const patient = useDoctorPatient(id);
+  const assessments = usePatientPermissions(id);
+  const { instances: scoreInstances, total: totalAssessments } = usePatientScoresSummary(id);
+  const { record: anamnesisRecord, isLoading: anamnesisLoading } = usePatientAnamnesis(id);
+  const { note: doctorNote, isLoading: noteLoading, save: saveNote } = usePatientNote(id);
+
+  const isLoading = !patient;
+
   const [selectedSection, setSelectedSection] = useState("anamnesis");
   const [selectedAssessmentTab, setSelectedAssessmentTab] = useState(0);
-  const [doctorNote, setDoctorNote] = useState<DoctorNote | null>(null);
   const [noteText, setNoteText] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
   const [noteSavedAt, setNoteSavedAt] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const [patientData, permissionsData, scoresSummary, anamnesis, note] = await Promise.all([
-          doctorsService.getPatient(id),
-          permissionsService.getPatientPermissions(id),
-          scoresService.getPatientScoresSummary(id).catch(() => ({ instances: [], total: 0, diseases: 0 })),
-          anamnesisService.getForPatient(id).catch(() => null),
-          doctorNotesService.getForPatient(id).catch(() => null),
-        ]);
-
-        if (cancelled) return;
-        setPatient(patientData);
-        setAssessments(permissionsData.permissions ?? []);
-        setScoreInstances(scoresSummary.instances ?? []);
-        setTotalAssessments(scoresSummary.total ?? 0);
-        setAnamnesisRecord(anamnesis ?? null);
-        setDoctorNote(note ?? null);
-        setNoteText(note?.note_text ?? "");
-        setNoteSavedAt(note?.updated_at ?? null);
-      } catch {
-        if (cancelled) return;
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [id]);
+    if (doctorNote) {
+      setNoteText(doctorNote.note_text ?? "");
+      setNoteSavedAt(doctorNote.updated_at ?? null);
+    }
+  }, [doctorNote]);
 
   const handleSaveNote = async () => {
     setNoteSaving(true);
     setNoteError(null);
     try {
-      const saved = await doctorNotesService.upsertForPatient(id, noteText);
-      setDoctorNote(saved ?? null);
+      const result = await saveNote(noteText);
+      const saved = (result as any)?.payload?.note as DoctorNote | undefined;
       if (saved?.note_text != null) setNoteText(saved.note_text);
       setNoteSavedAt(saved?.updated_at ?? new Date().toISOString());
     } catch (err) {
@@ -114,9 +96,9 @@ export default function DoctorPatientDetailPage() {
     ? new Date().getFullYear() - new Date(patient.date_of_birth).getFullYear()
     : null;
 
-  const nextAssessment = assessments.find(a => a.status === "granted");
-  const completedAssessments = assessments.filter(a => a.status === "completed");
-  const pendingAssessments = assessments.filter(a => a.status === "granted");
+  const nextAssessment = (assessments as Permission[]).find((a: Permission) => a.status === "granted");
+  const completedAssessments = (assessments as Permission[]).filter((a: Permission) => a.status === "completed");
+  const pendingAssessments = (assessments as Permission[]).filter((a: Permission) => a.status === "granted");
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-neutral-100 to-neutral-50">
@@ -273,7 +255,7 @@ export default function DoctorPatientDetailPage() {
                   patientId={id}
                   mode="doctor"
                   initialRecord={anamnesisRecord}
-                  onSubmitted={() => setAnamnesisRecord((prev) => prev ? { ...prev, status: "completed" } : prev)}
+                  onSubmitted={() => dispatch(invalidatePatientAnamnesis(id))}
                 />
               ) : selectedSection === "brain-mapping" ? (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
