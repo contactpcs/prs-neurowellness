@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ClipboardList,
   ChevronRight, AlertTriangle,
@@ -25,6 +26,12 @@ import type {
 
 type SectionId = "anamnesis" | "brain-mapping" | "prs" | "notes" | "treatment-plan" | "final-report";
 
+const VALID_SECTIONS: SectionId[] = ["anamnesis", "brain-mapping", "prs", "notes", "treatment-plan", "final-report"];
+
+function isSectionId(v: string | null): v is SectionId {
+  return v !== null && (VALID_SECTIONS as string[]).includes(v);
+}
+
 function formatDate(iso?: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
@@ -42,8 +49,25 @@ export default function PatientDashboard() {
   const scoreInstances = summary?.instances ?? [];
   const totalAssessments = summary?.total ?? 0;
 
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [selectedAssessment, setSelectedAssessment] = useState<AssessmentPermission | null>(null);
-  const [selectedSection, setSelectedSection] = useState<SectionId | null>(null);
+
+  const sectionParam = searchParams.get("section");
+  const selectedSection: SectionId | null = isSectionId(sectionParam) ? sectionParam : null;
+
+  const setSelectedSection = useCallback(
+    (s: SectionId | null) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (s) params.set("section", s);
+      else params.delete("section");
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
 
   useEffect(() => {
     if (!selectedAssessment && assessments.length > 0) {

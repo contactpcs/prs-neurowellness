@@ -7,6 +7,17 @@ import { AssessmentUI } from "@/components/assessment/AssessmentUI";
 import { useAssessmentSTT } from "@/lib/hooks/useAssessmentSTT";
 import { patientsService } from "@/lib/api/services/patients.service";
 import { prsAssessmentService } from "@/lib/api/services/prsAssessment.service";
+import { useAppDispatch } from "@/store/hooks";
+import {
+  invalidateDashboard,
+  invalidateMyAssessments,
+  fetchMyAssessments,
+  fetchPatientDashboard,
+} from "@/store/slices/patientsSlice";
+import {
+  invalidateMyScores,
+  fetchMyScoresSummary,
+} from "@/store/slices/scoresSlice";
 import type { ScaleQuestion, QuestionOption } from "@/types/prs.types";
 import type { PrsAssessmentQuestion, PrsAssessmentScaleResult } from "@/lib/api/services/prsAssessment.service";
 
@@ -81,6 +92,7 @@ function toPrsScaleQuestion(q: PrsAssessmentQuestion): ScaleQuestion {
 export default function PatientAssessmentPage() {
   const { permissionId } = useParams<{ permissionId: string }>();
   const router = useRouter();
+  const dispatch = useAppDispatch();
 
   const [scales, setScales] = useState<LoadedScale[]>([]);
   const [currentScaleIndex, setCurrentScaleIndex] = useState(0);
@@ -244,7 +256,16 @@ export default function PatientAssessmentPage() {
         await Promise.all(
           skipped.map((s) => prsAssessmentService.submitAssessment(s.instance_id, s.scale_id, {})),
         );
-        router.push("/patient/dashboard");
+        dispatch(invalidateMyAssessments());
+        dispatch(invalidateMyScores());
+        dispatch(invalidateDashboard());
+        await Promise.all([
+          dispatch(fetchMyAssessments()),
+          dispatch(fetchMyScoresSummary()),
+          dispatch(fetchPatientDashboard()),
+        ]);
+        router.push("/patient/dashboard?section=prs");
+        router.refresh();
       } else {
         setCurrentScaleIndex((i) => i + 1);
         setCurrentQuestionIndex(0);

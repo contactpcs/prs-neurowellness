@@ -7,10 +7,14 @@ import { doctorsService } from "@/lib/api/services";
 import { Button, Input, Card, CardContent, PageLoader } from "@/components/ui";
 import { ConditionSelector } from "@/components/assessment";
 import { Clock, ChevronLeft } from "lucide-react";
+import { useAppDispatch } from "@/store/hooks";
+import { invalidatePatientPermissions, fetchPatientPermissions } from "@/store/slices/permissionsSlice";
+import { invalidateDoctorPatients, fetchDoctorPatients, fetchDoctorPatient } from "@/store/slices/doctorsSlice";
 
 export default function AssignAssessmentPage() {
   const { id: patientId } = useParams<{ id: string }>();
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const { conditions, currentCondition, loadConditions, loadConditionDetail, resetConditionDetail } = useSessions();
   const [selectedCondition, setSelectedCondition] = useState<string | null>(null);
   const [mode, setMode] = useState<"self" | "clinician_administered" | "voice">("self");
@@ -43,7 +47,15 @@ export default function AssignAssessmentPage() {
       await doctorsService.grantAssessment(patientId, {
         disease_id: selectedCondition,
       });
-      router.push(`/doctor/patients/${patientId}`);
+      dispatch(invalidatePatientPermissions(patientId));
+      dispatch(invalidateDoctorPatients());
+      await Promise.all([
+        dispatch(fetchPatientPermissions(patientId)),
+        dispatch(fetchDoctorPatient(patientId)),
+        dispatch(fetchDoctorPatients()),
+      ]);
+      router.push(`/doctor/patients/${patientId}?section=prs`);
+      router.refresh();
     } catch (err) {
       console.error("Assign error:", err);
     } finally {
@@ -55,7 +67,7 @@ export default function AssignAssessmentPage() {
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
         <button
-          onClick={() => router.push(`/doctor/patients/${patientId}`)}
+          onClick={() => router.push(`/doctor/patients/${patientId}?section=prs`)}
           className="flex items-center gap-1.5 text-sm font-medium text-neutral-600 hover:text-neutral-900 transition-colors"
         >
           <ChevronLeft className="w-4 h-4" />

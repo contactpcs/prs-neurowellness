@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ChevronRight, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save } from "lucide-react";
 import { PatientDetailSkeleton, Button } from "@/components/ui";
@@ -49,6 +49,8 @@ function buildSections(
 export default function DoctorPatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const dispatch = useAppDispatch();
   const patient = useDoctorPatient(id);
@@ -59,8 +61,31 @@ export default function DoctorPatientDetailPage() {
 
   const isLoading = !patient;
 
-  const [selectedSection, setSelectedSection] = useState("anamnesis");
-  const [selectedAssessmentTab, setSelectedAssessmentTab] = useState(0);
+  const selectedSection = searchParams.get("section") ?? "anamnesis";
+  const tabParam = parseInt(searchParams.get("tab") ?? "0", 10);
+  const selectedAssessmentTab = Number.isFinite(tabParam) && tabParam >= 0 ? tabParam : 0;
+
+  const updateQuery = useCallback(
+    (updates: Record<string, string | null>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      for (const [k, v] of Object.entries(updates)) {
+        if (v === null || v === "") params.delete(k);
+        else params.set(k, v);
+      }
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
+
+  const setSelectedSection = useCallback(
+    (s: string) => updateQuery({ section: s === "anamnesis" ? null : s }),
+    [updateQuery],
+  );
+  const setSelectedAssessmentTab = useCallback(
+    (idx: number) => updateQuery({ tab: idx === 0 ? null : String(idx) }),
+    [updateQuery],
+  );
   const [noteText, setNoteText] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);

@@ -7,6 +7,10 @@ import { AssessmentUI } from "@/components/assessment/AssessmentUI";
 import { useAssessmentSTT } from "@/lib/hooks/useAssessmentSTT";
 import { permissionsService } from "@/lib/api/services/permissions.service";
 import { prsAssessmentService } from "@/lib/api/services/prsAssessment.service";
+import { useAppDispatch } from "@/store/hooks";
+import { invalidatePatientPermissions, fetchPatientPermissions } from "@/store/slices/permissionsSlice";
+import { invalidatePatientScores, fetchPatientScoresSummary } from "@/store/slices/scoresSlice";
+import { invalidateDoctorPatients, fetchDoctorPatient } from "@/store/slices/doctorsSlice";
 import type { ScaleQuestion, QuestionOption } from "@/types/prs.types";
 import type { PrsAssessmentQuestion, PrsAssessmentScaleResult } from "@/lib/api/services/prsAssessment.service";
 
@@ -81,6 +85,7 @@ function toPrsScaleQuestion(q: PrsAssessmentQuestion): ScaleQuestion {
 export default function DoctorOnBehalfAssessmentPage() {
   const { id: patientId, permissionId } = useParams<{ id: string; permissionId: string }>();
   const router = useRouter();
+  const dispatch = useAppDispatch();
 
   const [scales, setScales] = useState<LoadedScale[]>([]);
   const [currentScaleIndex, setCurrentScaleIndex] = useState(0);
@@ -245,7 +250,16 @@ export default function DoctorOnBehalfAssessmentPage() {
         await Promise.all(
           skipped.map((s) => prsAssessmentService.submitAssessment(s.instance_id, s.scale_id, {})),
         );
-        router.push(`/doctor/patients/${patientId}`);
+        dispatch(invalidatePatientPermissions(patientId));
+        dispatch(invalidatePatientScores(patientId));
+        dispatch(invalidateDoctorPatients());
+        await Promise.all([
+          dispatch(fetchPatientPermissions(patientId)),
+          dispatch(fetchPatientScoresSummary(patientId)),
+          dispatch(fetchDoctorPatient(patientId)),
+        ]);
+        router.push(`/doctor/patients/${patientId}?section=prs`);
+        router.refresh();
       } else {
         setCurrentScaleIndex((i) => i + 1);
         setCurrentQuestionIndex(0);
