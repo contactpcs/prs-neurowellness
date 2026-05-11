@@ -23,14 +23,12 @@ export const authService = {
       password: formData.password,
       role: "patient",
       clinic_id: formData.clinic_id,
-      phone: formData.phone || undefined,
-      date_of_birth: formData.date_of_birth || undefined,
-      gender: formData.gender || undefined,
-      city: formData.city || undefined,
-      state: formData.state || undefined,
+      phone: formData.phone,
+      date_of_birth: formData.date_of_birth,
+      gender: formData.gender,
+      city: formData.city,
+      state: formData.state,
       country: formData.country || "India",
-      medical_history: formData.medical_history || undefined,
-      emergency_contact: formData.emergency_contact || undefined,
     };
     const response = await apiClient.post(ENDPOINTS.AUTH.REGISTER, payload);
     return response.data.data || response.data;

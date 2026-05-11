@@ -7,10 +7,12 @@ import {
   Phone, Calendar, Clock, ChevronRight, Loader2,
 } from "lucide-react";
 import { staffService } from "@/lib/api/services/staff.service";
+import { useAuth } from "@/lib/hooks";
 import { Input, Card, CardContent, PageLoader } from "@/components/ui";
 import type { PatientListItem } from "@/types/domain.types";
 
 export default function ReceptionistApprovalsPage() {
+  const { user } = useAuth();
   const [patients, setPatients]           = useState<PatientListItem[]>([]);
   const [search, setSearch]               = useState("");
   const [isLoading, setIsLoading]         = useState(true);
@@ -81,6 +83,9 @@ export default function ReceptionistApprovalsPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-neutral-900">Self Registration Approvals</h1>
+        {user?.clinic_name && (
+          <p className="text-xs font-medium text-blue-600 mt-0.5">{user.clinic_name}</p>
+        )}
         <p className="text-sm text-neutral-500 mt-0.5">
           {patients.length} pending {patients.length === 1 ? "request" : "requests"} — review and approve or reject
         </p>

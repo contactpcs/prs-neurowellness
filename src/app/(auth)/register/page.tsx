@@ -13,18 +13,16 @@ import { register as registerThunk } from "@/store/slices/authSlice";
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
 const registerSchema = z.object({
-  first_name:        z.string().min(1, "First name is required"),
-  last_name:         z.string().min(1, "Last name is required"),
-  email:             z.string().email("Please enter a valid email"),
-  password:          z.string().min(8, "Password must be at least 8 characters"),
-  clinic_id:         z.string().min(1, "Please select your clinic"),
-  phone:             z.string().optional(),
-  date_of_birth:     z.string().optional(),
-  gender:            z.string().optional(),
-  city:              z.string().optional(),
-  state:             z.string().optional(),
-  emergency_contact: z.string().optional(),
-  medical_history:   z.string().optional(),
+  first_name:    z.string().min(1, "First name is required"),
+  last_name:     z.string().min(1, "Last name is required"),
+  email:         z.string().email("Please enter a valid email"),
+  password:      z.string().min(8, "Password must be at least 8 characters"),
+  phone:         z.string().min(1, "Phone is required"),
+  date_of_birth: z.string().min(1, "Date of birth is required"),
+  gender:        z.string().min(1, "Gender is required"),
+  city:          z.string().min(1, "City is required"),
+  state:         z.string().min(1, "State is required"),
+  clinic_id:     z.string().min(1, "Please select your clinic"),
 });
 
 type RegisterFormData = z.infer<typeof registerSchema>;
@@ -76,6 +74,41 @@ function FieldError({ msg }: { msg?: string }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+// ─── Smart clinic filter helper ───────────────────────────────────────────────
+function getFilteredClinics(allClinics: any[], userCity?: string, userState?: string) {
+  if (!allClinics.length) return allClinics;
+
+  const userCityLower = userCity?.toLowerCase().trim() || "";
+  const userStateLower = userState?.toLowerCase().trim() || "";
+
+  if (!userCityLower && !userStateLower) {
+    return allClinics;
+  }
+
+  // 1. Try to match by city (if user city is provided)
+  if (userCityLower) {
+    const cityClinics = allClinics.filter(
+      (c) => c.city?.toLowerCase().trim() === userCityLower
+    );
+    if (cityClinics.length > 0) {
+      return cityClinics;
+    }
+  }
+
+  // 2. Try to match by state (if user state is provided and no city match)
+  if (userStateLower) {
+    const stateClinics = allClinics.filter(
+      (c) => c.state?.toLowerCase().trim() === userStateLower
+    );
+    if (stateClinics.length > 0) {
+      return stateClinics;
+    }
+  }
+
+  // 3. Return all clinics if no matches
+  return allClinics;
+}
+
 export default function RegisterPage() {
   const { isLoading, error, clearError, register } = useAuth();
   // Clinics come from the shared catalog cache — first visit fetches once,
@@ -94,7 +127,12 @@ export default function RegisterPage() {
   });
 
   const selectedClinicId = watch("clinic_id");
-  const selectedClinic   = clinics.find((c) => c.clinic_id === selectedClinicId);
+  const userCity = watch("city");
+  const userState = watch("state");
+  const selectedClinic = clinics.find((c) => c.clinic_id === selectedClinicId);
+
+  // Smart clinic filtering based on user location
+  const filteredClinics = getFilteredClinics(clinics, userCity, userState);
 
   const onSubmit = async (data: RegisterFormData) => {
     clearError();
@@ -158,40 +196,6 @@ export default function RegisterPage() {
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 
-        {/* ── Clinic ─────────────────────────────────────────────────────── */}
-        <div>
-          <FieldLabel htmlFor="clinic_id" text="Clinic" required />
-          {clinicsLoading ? (
-            <div className="flex items-center gap-2 h-10 px-3.5 border border-neutral-300 rounded-lg text-sm text-neutral-400">
-              <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
-              Loading clinics…
-            </div>
-          ) : (
-            <div className="relative">
-              <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
-              <select
-                id="clinic_id"
-                {...field("clinic_id")}
-                className={`w-full pl-9 pr-9 py-2.5 border rounded-lg text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 hover:border-neutral-400 transition-all ${errors.clinic_id ? "border-danger-400" : "border-neutral-300"} text-neutral-900`}
-              >
-                <option value="">Select your clinic…</option>
-                {clinics.map((c) => (
-                  <option key={c.clinic_id} value={c.clinic_id}>
-                    {c.clinic_name}{c.city ? ` — ${c.city}` : ""}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
-            </div>
-          )}
-          <FieldError msg={errors.clinic_id?.message} />
-          {selectedClinic?.address && (
-            <p className="mt-1 text-xs text-neutral-400">
-              {selectedClinic.address}{selectedClinic.state ? `, ${selectedClinic.state}` : ""}
-            </p>
-          )}
-        </div>
-
         {/* ── Name ───────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -248,35 +252,37 @@ export default function RegisterPage() {
 
         {/* ── Phone ──────────────────────────────────────────────────────── */}
         <div>
-          <FieldLabel htmlFor="phone" text="Phone" optional />
+          <FieldLabel htmlFor="phone" text="Phone" required />
           <input
             id="phone"
             type="tel"
             placeholder="+91 98765 43210"
             autoComplete="tel"
             {...field("phone")}
-            className={inputCls}
+            className={errors.phone ? inputErrCls : inputCls}
           />
+          <FieldError msg={errors.phone?.message} />
         </div>
 
         {/* ── Date of birth + Gender ─────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <FieldLabel htmlFor="date_of_birth" text="Date of birth" optional />
+            <FieldLabel htmlFor="date_of_birth" text="Date of birth" required />
             <input
               id="date_of_birth"
               type="date"
               {...field("date_of_birth")}
-              className={inputCls}
+              className={errors.date_of_birth ? inputErrCls : inputCls}
             />
+            <FieldError msg={errors.date_of_birth?.message} />
           </div>
           <div>
-            <FieldLabel htmlFor="gender" text="Gender" optional />
+            <FieldLabel htmlFor="gender" text="Gender" required />
             <div className="relative">
               <select
                 id="gender"
                 {...field("gender")}
-                className={`${inputCls} appearance-none pr-9`}
+                className={`${errors.gender ? inputErrCls : inputCls} appearance-none pr-9`}
               >
                 {GENDER_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -284,52 +290,66 @@ export default function RegisterPage() {
               </select>
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
             </div>
+            <FieldError msg={errors.gender?.message} />
           </div>
         </div>
 
         {/* ── City + State ───────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <FieldLabel htmlFor="city" text="City" optional />
+            <FieldLabel htmlFor="city" text="City" required />
             <input
               id="city"
               placeholder="Mumbai"
               {...field("city")}
-              className={inputCls}
+              className={errors.city ? inputErrCls : inputCls}
             />
+            <FieldError msg={errors.city?.message} />
           </div>
           <div>
-            <FieldLabel htmlFor="state" text="State" optional />
+            <FieldLabel htmlFor="state" text="State" required />
             <input
               id="state"
               placeholder="Maharashtra"
               {...field("state")}
-              className={inputCls}
+              className={errors.state ? inputErrCls : inputCls}
             />
+            <FieldError msg={errors.state?.message} />
           </div>
         </div>
 
-        {/* ── Emergency contact ──────────────────────────────────────────── */}
+        {/* ── Clinic (after city/state for smart filtering) ─────────────── */}
         <div>
-          <FieldLabel htmlFor="emergency_contact" text="Emergency contact" optional />
-          <input
-            id="emergency_contact"
-            placeholder="Name · Phone number"
-            {...field("emergency_contact")}
-            className={inputCls}
-          />
-        </div>
-
-        {/* ── Medical history ────────────────────────────────────────────── */}
-        <div>
-          <FieldLabel htmlFor="medical_history" text="Relevant medical history" optional />
-          <textarea
-            id="medical_history"
-            rows={3}
-            placeholder="e.g. previous diagnoses, ongoing treatments…"
-            {...field("medical_history")}
-            className="w-full rounded-lg border border-neutral-300 bg-white px-3.5 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 resize-none transition-all focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 hover:border-neutral-400"
-          />
+          <FieldLabel htmlFor="clinic_id" text="Clinic" required />
+          {clinicsLoading ? (
+            <div className="flex items-center gap-2 h-10 px-3.5 border border-neutral-300 rounded-lg text-sm text-neutral-400">
+              <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
+              Loading clinics…
+            </div>
+          ) : (
+            <div className="relative">
+              <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
+              <select
+                id="clinic_id"
+                {...field("clinic_id")}
+                className={`w-full pl-9 pr-9 py-2.5 border rounded-lg text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 hover:border-neutral-400 transition-all ${errors.clinic_id ? "border-danger-400" : "border-neutral-300"} text-neutral-900`}
+              >
+                <option value="">Select your clinic…</option>
+                {filteredClinics.map((c) => (
+                  <option key={c.clinic_id} value={c.clinic_id}>
+                    {c.clinic_name}{c.city ? ` — ${c.city}` : ""}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
+            </div>
+          )}
+          <FieldError msg={errors.clinic_id?.message} />
+          {selectedClinic?.address && (
+            <p className="mt-1 text-xs text-neutral-400">
+              {selectedClinic.address}{selectedClinic.state ? `, ${selectedClinic.state}` : ""}
+            </p>
+          )}
         </div>
 
         {/* ── Submit ─────────────────────────────────────────────────────── */}
