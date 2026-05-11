@@ -6,11 +6,9 @@ export interface RegisterPatientPayload {
   full_name: string;
   email: string;
   password: string;
-  phone?: string;
-  date_of_birth?: string;
-  gender?: string;
-  medical_history?: string;
-  emergency_contact?: string;
+  phone: string;
+  date_of_birth: string;
+  gender: string;
 }
 
 // ─── Normalization helpers ────────────────────────────────────────────────────

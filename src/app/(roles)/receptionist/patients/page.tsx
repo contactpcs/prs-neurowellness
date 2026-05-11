@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { Search, MapPin, UserPlus, X, ChevronRight, Loader2, Users } from "lucide-react";
+import { Search, MapPin, UserPlus, X, ChevronRight, Loader2, Users, ClipboardCheck } from "lucide-react";
 import { staffService } from "@/lib/api/services/staff.service";
 import type { RegisterPatientPayload } from "@/lib/api/services/staff.service";
 import { useStaffPatients, useClinics } from "@/lib/hooks";
 import { Input, Card, PageLoader, Button } from "@/components/ui";
 import type { PatientListItem } from "@/types/domain.types";
 
-const STATUS_FILTERS = ["all", "approved", "pending", "rejected"] as const;
+// "pending" is intentionally excluded — pending patients appear only in the Approvals tab
+const STATUS_FILTERS = ["all", "approved", "rejected"] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
 
 const EMPTY_FORM: RegisterPatientPayload = {
@@ -19,8 +20,6 @@ const EMPTY_FORM: RegisterPatientPayload = {
   phone: "",
   date_of_birth: "",
   gender: "",
-  medical_history: "",
-  emergency_contact: "",
 };
 
 function getStatusStyle(status?: string) {
@@ -53,6 +52,10 @@ function RegisterModal({
       setErr("Full name, email, and password are required.");
       return;
     }
+    if (!form.phone.trim() || !form.date_of_birth || !form.gender) {
+      setErr("Phone, date of birth, and gender are required.");
+      return;
+    }
     if (form.password.length < 8) {
       setErr("Password must be at least 8 characters.");
       return;
@@ -61,14 +64,12 @@ function RegisterModal({
     setErr(null);
     try {
       const patient = await staffService.registerPatient({
-        full_name:         form.full_name.trim(),
-        email:             form.email.trim(),
-        password:          form.password,
-        phone:             form.phone             || undefined,
-        date_of_birth:     form.date_of_birth     || undefined,
-        gender:            form.gender            || undefined,
-        medical_history:   form.medical_history   || undefined,
-        emergency_contact: form.emergency_contact || undefined,
+        full_name: form.full_name.trim(),
+        email: form.email.trim(),
+        password: form.password,
+        phone: form.phone,
+        date_of_birth: form.date_of_birth,
+        gender: form.gender,
       });
       onSuccess(patient);
     } catch (e: any) {
@@ -135,30 +136,33 @@ function RegisterModal({
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-neutral-700 mb-1.5">Phone</label>
+              <label className="block text-xs font-medium text-neutral-700 mb-1.5">Phone <span className="text-red-500">*</span></label>
               <Input
                 type="tel"
                 placeholder="+91 98765 43210"
-                value={form.phone ?? ""}
+                value={form.phone}
                 onChange={(e) => set("phone", e.target.value)}
+                required
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-neutral-700 mb-1.5">Date of Birth</label>
+              <label className="block text-xs font-medium text-neutral-700 mb-1.5">Date of Birth <span className="text-red-500">*</span></label>
               <Input
                 type="date"
-                value={form.date_of_birth ?? ""}
+                value={form.date_of_birth}
                 onChange={(e) => set("date_of_birth", e.target.value)}
+                required
               />
             </div>
 
             <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-neutral-700 mb-1.5">Gender</label>
+              <label className="block text-xs font-medium text-neutral-700 mb-1.5">Gender <span className="text-red-500">*</span></label>
               <select
-                value={form.gender ?? ""}
+                value={form.gender}
                 onChange={(e) => set("gender", e.target.value)}
                 className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white text-neutral-700"
+                required
               >
                 <option value="">Select gender</option>
                 <option value="male">Male</option>
@@ -166,26 +170,6 @@ function RegisterModal({
                 <option value="other">Other</option>
                 <option value="prefer_not_to_say">Prefer not to say</option>
               </select>
-            </div>
-
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-neutral-700 mb-1.5">Emergency Contact</label>
-              <Input
-                placeholder="Name and phone, e.g. Anjali Sharma — +91 98765 12345"
-                value={form.emergency_contact ?? ""}
-                onChange={(e) => set("emergency_contact", e.target.value)}
-              />
-            </div>
-
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-neutral-700 mb-1.5">Medical History</label>
-              <textarea
-                rows={3}
-                placeholder="Existing conditions, allergies, medications, prior diagnoses…"
-                value={form.medical_history ?? ""}
-                onChange={(e) => set("medical_history", e.target.value)}
-                className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white text-neutral-700 resize-y"
-              />
             </div>
           </div>
 
@@ -229,6 +213,8 @@ export default function ReceptionistPatientsPage() {
   }
 
   const filtered = patients.filter((p) => {
+    // Pending patients are exclusively shown in the Approvals tab — never in this list
+    if ((p.status ?? "").toLowerCase() === "pending") return false;
     const clinic = clinicName(p.clinic_id) ?? p.clinic_name ?? p.clinic_city ?? "";
     const haystack = `${p.full_name} ${p.email} ${p.phone ?? ""} ${p.mrn ?? ""} ${clinic}`.toLowerCase();
     const matchSearch = haystack.includes(search.toLowerCase());
@@ -236,7 +222,7 @@ export default function ReceptionistPatientsPage() {
     return matchSearch && matchStatus;
   });
 
-  const handleRegistered = (newPatient: PatientListItem) => {
+  const handleRegistered = (_patient: PatientListItem) => {
     setShowModal(false);
   };
 

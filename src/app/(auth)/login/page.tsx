@@ -26,7 +26,15 @@ export default function LoginPage() {
       </div>
 
       {error && (
-        <div className="mb-5 bg-danger-50 border border-danger-100 text-danger-700 px-4 py-3 rounded-lg text-sm">
+        <div
+          className={`mb-5 px-4 py-3 rounded-lg text-sm border ${
+            error === "You will be able to log in once your account is approved."
+              ? "bg-amber-50 border-amber-200 text-amber-800"
+              : error === "Your account has been rejected. Please contact reception."
+              ? "bg-orange-50 border-orange-200 text-orange-800"
+              : "bg-danger-50 border-danger-100 text-danger-700"
+          }`}
+        >
           {error}
         </div>
       )}
