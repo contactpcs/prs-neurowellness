@@ -5,6 +5,9 @@ import { Button } from "@/components/ui";
 import { CheckCircle, AlertCircle, Stethoscope, Loader2 } from "lucide-react";
 import { anamnesisService } from "@/lib/api/services/anamnesis.service";
 import { AnamnesisReadOnlyView } from "@/components/assessment/AnamnesisReadOnlyView";
+import { useAppDispatch } from "@/store/hooks";
+import { invalidateMyAnamnesis, invalidatePatientAnamnesis } from "@/store/slices/anamnesisSlice";
+import { invalidateDashboard } from "@/store/slices/patientsSlice";
 import type { AnamnesisQuestion } from "@/lib/api/services/anamnesis.service";
 import type { AnamnesisRecord } from "@/types/domain.types";
 
@@ -165,6 +168,7 @@ function QuestionField({
 // ── main component ────────────────────────────────────────────────────────────
 
 export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted }: AnamnesisFormProps) {
+  const dispatch = useAppDispatch();
   const [questions,   setQuestions]   = useState<AnamnesisQuestion[]>([]);
   const [sections,    setSections]    = useState<ReturnType<typeof groupBySection>>([]);
   const [responses,   setResponses]   = useState<ResponseMap>({});
@@ -323,6 +327,12 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted }: A
         })),
       }));
       setRecordState("completed");
+      if (mode === "patient") {
+        dispatch(invalidateMyAnamnesis());
+        dispatch(invalidateDashboard());
+      } else {
+        dispatch(invalidatePatientAnamnesis(patientId));
+      }
       window.scrollTo({ top: 0, behavior: "smooth" });
       onSubmitted?.();
     } catch (e: unknown) {
