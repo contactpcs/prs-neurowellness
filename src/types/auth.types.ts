@@ -10,9 +10,40 @@ export interface User {
   clinic_id?: string;
   clinic_name?: string;
   clinic_city?: string;
+  
+  // Contact & Location
   phone?: string;
+  address_line1?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  pincode?: string;
+  primary_language?: string;
+  
+  // Medical
   date_of_birth?: string;
   gender?: string;
+  blood_group?: string;
+  known_allergies?: string;
+  medical_history?: string;
+  current_medications?: string;
+  
+  // Emergency Contact
+  emergency_contact?: string;
+  
+  // Insurance
+  insurance_provider?: string;
+  policy_number?: string;
+  
+  // Personal
+  occupation?: string;
+  marital_status?: string;
+  referred_by?: string;
+  
+  // System Fields
+  mrn?: string;
+  approval_status?: string;
+  registered_at?: string;
 }
 
 export interface LoginCredentials {
@@ -25,15 +56,13 @@ export interface RegisterData {
   password: string;
   first_name: string;
   last_name: string;
-  phone?: string;
+  phone: string;
   clinic_id: string;
-  date_of_birth?: string;
-  gender?: string;
-  city?: string;
-  state?: string;
+  date_of_birth: string;
+  gender: string;
+  city: string;
+  state: string;
   country?: string;
-  medical_history?: string;
-  emergency_contact?: string;
 }
 
 export interface RegisterResponse {

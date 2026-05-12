@@ -8,12 +8,16 @@ import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/tool
 import { staffService } from "@/lib/api/services";
 import type { PatientListItem, PatientDetail, StaffDashboard } from "@/types/domain.types";
 import type { RootState } from "../store";
+import { login, logout } from "./authSlice";
 
 const STAFF_TTL_MS = 5 * 60 * 1000; // 5 min — patient lists change more than static refs but less than session data
 
 type LoadStatus = "idle" | "loading" | "succeeded" | "failed";
 
 interface StaffState {
+  /** Tracks which clinic the cached data belongs to. */
+  activeClinicId: string | null;
+
   dashboard: StaffDashboard | null;
   dashboardStatus: LoadStatus;
   dashboardLoadedAt: number | null;
@@ -35,6 +39,8 @@ interface StaffState {
 }
 
 const initialState: StaffState = {
+  activeClinicId: null,
+
   dashboard: null,
   dashboardStatus: "idle",
   dashboardLoadedAt: null,
@@ -88,7 +94,10 @@ export const fetchPatients = createAsyncThunk<
   },
   {
     condition: (_, { getState }) => {
-      const { patientsStatus, patientsLoadedAt } = getState().staff;
+      const { patientsStatus, patientsLoadedAt, activeClinicId } = getState().staff;
+      const currentClinicId = getState().auth.user?.clinic_id ?? null;
+      // Bypass cache if the clinic changed (different receptionist logged in)
+      if (activeClinicId !== null && activeClinicId !== currentClinicId) return true;
       if (patientsStatus === "loading") return false;
       if (patientsStatus === "succeeded" && isFresh(patientsLoadedAt)) return false;
       return true;
@@ -108,7 +117,10 @@ export const fetchPendingPatients = createAsyncThunk<
   },
   {
     condition: (_, { getState }) => {
-      const { pendingStatus, pendingLoadedAt } = getState().staff;
+      const { pendingStatus, pendingLoadedAt, activeClinicId } = getState().staff;
+      const currentClinicId = getState().auth.user?.clinic_id ?? null;
+      // Bypass cache if the clinic changed
+      if (activeClinicId !== null && activeClinicId !== currentClinicId) return true;
       if (pendingStatus === "loading") return false;
       if (pendingStatus === "succeeded" && isFresh(pendingLoadedAt)) return false;
       return true;
@@ -161,6 +173,10 @@ const staffSlice = createSlice({
         state.patientsStatus = "succeeded";
         state.patients = action.payload;
         state.patientsLoadedAt = Date.now();
+        // Record which clinic this cache belongs to (derived from the first patient's clinic_id)
+        if (action.payload.length > 0 && action.payload[0].clinic_id) {
+          state.activeClinicId = action.payload[0].clinic_id;
+        }
       })
       .addCase(fetchPatients.rejected, (state, action) => {
         state.patientsStatus = "failed";
@@ -190,7 +206,12 @@ const staffSlice = createSlice({
       .addCase(fetchPatient.rejected, (state, action) => {
         state.patientDetailStatus = "failed";
         state.patientDetailError = action.error.message ?? "Failed to load patient";
-      });
+      })
+      // Flush all cached staff data when a new user logs in or the current user logs out.
+      // This prevents a receptionist from one clinic seeing another clinic's patient data
+      // if they share a browser session within the cache TTL window.
+      .addCase(login.fulfilled, () => initialState)
+      .addCase(logout, () => initialState);
   },
 });
 

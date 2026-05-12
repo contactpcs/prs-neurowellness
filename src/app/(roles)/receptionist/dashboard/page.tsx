@@ -42,6 +42,9 @@ export default function ReceptionistDashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">Welcome, {user?.first_name}</h1>
+          {user?.clinic_name && (
+            <p className="text-xs font-medium text-blue-600 mt-0.5">{user.clinic_name}</p>
+          )}
           <p className="text-sm text-neutral-500 mt-0.5">Here&apos;s what needs your attention today.</p>
         </div>
         <Link href="/receptionist/approvals">
