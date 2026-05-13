@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -37,7 +37,15 @@ function formatDate(iso?: string | null): string {
   return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
-export default function PatientDashboard() {
+export default function PatientDashboardPage() {
+  return (
+    <Suspense fallback={<PatientDashboardSkeleton />}>
+      <PatientDashboard />
+    </Suspense>
+  );
+}
+
+function PatientDashboard() {
   const { dashboard, isLoading: dashLoading } = usePatientDashboard();
   const { assessments, isLoading: assessLoading } = useMyAssessments();
   const { record: anamnesisRecord, isLoading: anamnesisLoading } = useMyAnamnesis();
