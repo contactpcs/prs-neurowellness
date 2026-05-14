@@ -37,6 +37,7 @@ export const ROUTES = {
   DOCTOR_DASHBOARD: "/doctor/dashboard",
   CA_DASHBOARD: "/clinical-assistant/dashboard",
   RECEPTIONIST_DASHBOARD: "/receptionist/dashboard",
+  ADMIN_DASHBOARD: "/admin/dashboard",
 } as const;
 
 export const STORAGE_KEYS = {

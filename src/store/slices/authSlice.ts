@@ -40,6 +40,7 @@ interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isRestoring: boolean; // true while restoreSession is in-flight on page load
   error: string | null;
 }
 
@@ -47,6 +48,7 @@ const initialState: AuthState = {
   user: null,
   isAuthenticated: false,
   isLoading: false,
+  isRestoring: true, // start true — session restore runs immediately on mount
   error: null,
 };
 
@@ -169,9 +171,17 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.error = action.payload as string;
       })
+      .addCase(restoreSession.pending, (state) => {
+        state.isRestoring = true;
+      })
       .addCase(restoreSession.fulfilled, (state, action) => {
+        state.isRestoring = false;
         state.user = action.payload;
         state.isAuthenticated = true;
+      })
+      .addCase(restoreSession.rejected, (state) => {
+        state.isRestoring = false;
+        // No session in localStorage — user must log in
       });
   },
 });
