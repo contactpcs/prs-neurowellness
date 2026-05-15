@@ -20,6 +20,8 @@ const EMPTY_FORM: RegisterPatientPayload = {
   phone: "",
   date_of_birth: "",
   gender: "",
+  city: "",
+  state: "",
 };
 
 function getStatusStyle(status?: string) {
@@ -56,6 +58,10 @@ function RegisterModal({
       setErr("Phone, date of birth, and gender are required.");
       return;
     }
+    if (!form.city.trim() || !form.state.trim()) {
+      setErr("City and state are required.");
+      return;
+    }
     if (form.password.length < 8) {
       setErr("Password must be at least 8 characters.");
       return;
@@ -67,9 +73,11 @@ function RegisterModal({
         full_name: form.full_name.trim(),
         email: form.email.trim(),
         password: form.password,
-        phone: form.phone,
+        phone: form.phone.trim(),
         date_of_birth: form.date_of_birth,
         gender: form.gender,
+        city: form.city.trim(),
+        state: form.state.trim(),
       });
       onSuccess(patient);
     } catch (e: any) {
@@ -152,6 +160,26 @@ function RegisterModal({
                 type="date"
                 value={form.date_of_birth}
                 onChange={(e) => set("date_of_birth", e.target.value)}
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-neutral-700 mb-1.5">City <span className="text-red-500">*</span></label>
+              <Input
+                placeholder="e.g. Mumbai"
+                value={form.city}
+                onChange={(e) => set("city", e.target.value)}
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-neutral-700 mb-1.5">State <span className="text-red-500">*</span></label>
+              <Input
+                placeholder="e.g. Maharashtra"
+                value={form.state}
+                onChange={(e) => set("state", e.target.value)}
                 required
               />
             </div>

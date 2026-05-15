@@ -9,6 +9,9 @@ export interface RegisterPatientPayload {
   phone: string;
   date_of_birth: string;
   gender: string;
+  city: string;
+  state: string;
+  country?: string;
 }
 
 // ─── Normalization helpers ────────────────────────────────────────────────────
