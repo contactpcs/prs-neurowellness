@@ -23,6 +23,8 @@ interface DoctorsState {
   patientDetailError: string | null;
 
   results: Record<string, any>;
+  resultsStatus: Record<string, LoadStatus>;
+  resultsError: Record<string, string | null>;
 }
 
 const initialState: DoctorsState = {
@@ -36,6 +38,8 @@ const initialState: DoctorsState = {
   patientDetailError: null,
 
   results: {},
+  resultsStatus: {},
+  resultsError: {},
 };
 
 function isFresh(loadedAt: number | null): boolean {
@@ -118,12 +122,24 @@ const doctorsSlice = createSlice({
         state.patientDetailStatus = "failed";
         state.patientDetailError = action.error.message ?? "Failed to load patient";
       })
+      .addCase(fetchPatientResult.pending, (state, action) => {
+        const key = action.meta.arg.instanceId;
+        state.resultsStatus[key] = "loading";
+        state.resultsError[key] = null;
+      })
       .addCase(
         fetchPatientResult.fulfilled,
-        (state, action: PayloadAction<any>) => {
-          state.results[action.payload.instance_id || "current"] = action.payload;
+        (state, action: PayloadAction<any, string, { arg: { patientId: string; instanceId: string } }>) => {
+          const key = action.meta.arg.instanceId;
+          state.results[key] = action.payload;
+          state.resultsStatus[key] = "succeeded";
         }
-      );
+      )
+      .addCase(fetchPatientResult.rejected, (state, action) => {
+        const key = action.meta.arg.instanceId;
+        state.resultsStatus[key] = "failed";
+        state.resultsError[key] = action.error.message ?? "Failed to load result";
+      });
   },
 });
 
@@ -134,3 +150,7 @@ export const selectDoctorPatients  = (s: RootState) => s.doctors.patients;
 export const selectDoctorPatientsStatus = (s: RootState) => s.doctors.patientsStatus;
 export const selectDoctorPatientDetail = (s: RootState) => s.doctors.patientDetail;
 export const selectPatientResults = (s: RootState) => s.doctors.results;
+export const selectPatientResultStatus = (instanceId: string) => (s: RootState) =>
+  s.doctors.resultsStatus[instanceId] ?? "idle";
+export const selectPatientResultError = (instanceId: string) => (s: RootState) =>
+  s.doctors.resultsError[instanceId] ?? null;
