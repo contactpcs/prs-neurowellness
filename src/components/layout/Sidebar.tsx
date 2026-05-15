@@ -10,7 +10,7 @@ import { authService } from "@/lib/api/services";
 import {
   LayoutDashboard, Users, ClipboardList,
   UserCircle, LogOut, Brain, ChevronLeft, Menu, Calendar,
-  ClipboardCheck, MapPin,
+  ClipboardCheck, MapPin, Building2, UserCog, Settings,
 } from "lucide-react";
 
 const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React.ElementType }>> = {
@@ -36,6 +36,20 @@ const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React
     { label: "Approvals",    href: "/receptionist/approvals", icon: ClipboardCheck },
     { label: "Profile",      href: "/receptionist/profile",   icon: UserCircle },
   ],
+  platform_admin: [
+    { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
+    { label: "Patients",  href: "/admin/patients",  icon: Users },
+    { label: "Staff",     href: "/admin/staff",     icon: UserCog },
+    { label: "Clinics",   href: "/admin/clinics",   icon: Building2 },
+    { label: "Settings",  href: "/admin/settings",  icon: Settings },
+  ],
+  clinical_admin: [
+    { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
+    { label: "Patients",  href: "/admin/patients",  icon: Users },
+    { label: "Staff",     href: "/admin/staff",     icon: UserCog },
+    { label: "Clinics",   href: "/admin/clinics",   icon: Building2 },
+    { label: "Settings",  href: "/admin/settings",  icon: Settings },
+  ],
 };
 
 export function Sidebar() {
@@ -44,10 +58,21 @@ export function Sidebar() {
   const { isCollapsed, setIsCollapsed } = useSidebar();
   const [clinicLabel, setClinicLabel] = useState<string | null>(null);
 
-  const role     = String(user?.roles?.[0] || (user as any)?.role || "patient").toLowerCase();
-  const items    = NAV_ITEMS[role] || NAV_ITEMS.patient;
+  // Detect admin role first (backend may return "admin", "platform_admin", or "clinical_admin")
+  const rawRoles: string[] = user?.roles ?? [];
+  const isAdmin = rawRoles.some(
+    (r) =>
+      r === "platform_admin" ||
+      r === "clinical_admin" ||
+      String(r).toLowerCase().includes("admin")
+  );
+  const primaryRole = isAdmin
+    ? "platform_admin"
+    : String(rawRoles[0] || (user as any)?.role || "patient").toLowerCase();
+  const role  = primaryRole;
+  const items = NAV_ITEMS[role] || NAV_ITEMS.patient;
   const initials = [user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join("").toUpperCase();
-  const roleName = role.replace("_", " ");
+  const roleName = isAdmin ? "Admin" : role.replace(/_/g, " ");
 
   useEffect(() => {
     if (!user) return;

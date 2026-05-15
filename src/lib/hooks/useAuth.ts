@@ -11,22 +11,32 @@ import type { LoginCredentials, RegisterData } from "@/types/auth.types";
 export function useAuth() {
   const dispatch = useDispatch<AppDispatch>();
   const router = useRouter();
-  const { user, isAuthenticated, isLoading, error } = useSelector((s: RootState) => s.auth);
+  const { user, isAuthenticated, isLoading, isRestoring, error } = useSelector((s: RootState) => s.auth);
 
   const handleLogin = useCallback(async (credentials: LoginCredentials) => {
     const result = await dispatch(login(credentials));
     if (login.fulfilled.match(result)) {
       const roles = result.payload?.roles || [];
-      if (roles.includes(USER_ROLES.PATIENT)) {
+
+      // Check admin first — backend may return platform_admin, clinical_admin, or "admin"
+      const isAdmin = roles.some(
+        (r: string) =>
+          r === USER_ROLES.PLATFORM_ADMIN ||
+          r === USER_ROLES.CLINICAL_ADMIN ||
+          String(r).toLowerCase().includes("admin")
+      );
+
+      if (isAdmin) {
+        router.push(ROUTES.ADMIN_DASHBOARD);
+      } else if (roles.includes(USER_ROLES.PATIENT)) {
         router.push(ROUTES.PATIENT_DASHBOARD);
       } else if (roles.includes(USER_ROLES.DOCTOR)) {
         router.push(ROUTES.DOCTOR_DASHBOARD);
-      } else if (roles.includes(USER_ROLES.CLINICAL_ASSISTANT)) {
-        router.push(ROUTES.CA_DASHBOARD);
       } else if (roles.includes(USER_ROLES.RECEPTIONIST)) {
         router.push(ROUTES.RECEPTIONIST_DASHBOARD);
+      } else if (roles.includes(USER_ROLES.CLINICAL_ASSISTANT)) {
+        router.push(ROUTES.CA_DASHBOARD);
       } else {
-        // platform_admin, clinical_admin, or any other staff role → CA dashboard
         router.push(ROUTES.CA_DASHBOARD);
       }
     }
@@ -47,7 +57,7 @@ export function useAuth() {
   }, [dispatch]);
 
   return {
-    user, isAuthenticated, isLoading, error,
+    user, isAuthenticated, isLoading, isRestoring, error,
     login: handleLogin,
     register: handleRegister,
     logout: handleLogout,
@@ -58,5 +68,11 @@ export function useAuth() {
     isPatient: user?.roles?.includes(USER_ROLES.PATIENT) ?? false,
     isClinicalAssistant: user?.roles?.includes(USER_ROLES.CLINICAL_ASSISTANT) ?? false,
     isReceptionist: user?.roles?.includes(USER_ROLES.RECEPTIONIST) ?? false,
+    isAdmin: (user?.roles ?? []).some(
+      (r) =>
+        r === USER_ROLES.PLATFORM_ADMIN ||
+        r === USER_ROLES.CLINICAL_ADMIN ||
+        String(r).toLowerCase().includes("admin")
+    ),
   };
 }
