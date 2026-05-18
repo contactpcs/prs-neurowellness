@@ -1,6 +1,6 @@
 import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
-import type { LoginCredentials, AuthResponse, RegisterData, RegisterResponse } from "@/types/auth.types";
+import type { LoginCredentials, AuthResponse, RegisterData, RegisterResponse, ConsentFormItem } from "@/types/auth.types";
 
 export interface Clinic {
   clinic_id: string;
@@ -29,9 +29,15 @@ export const authService = {
       city: formData.city,
       state: formData.state,
       country: formData.country || "India",
+      consent_responses: formData.consent_responses || [],
     };
     const response = await apiClient.post(ENDPOINTS.AUTH.REGISTER, payload);
     return response.data.data || response.data;
+  },
+
+  async getConsentForms(): Promise<ConsentFormItem[]> {
+    const response = await apiClient.get(ENDPOINTS.CONSENT.FORMS);
+    return response.data.data || [];
   },
 
   async getClinics(): Promise<Clinic[]> {
