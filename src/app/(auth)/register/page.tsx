@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -9,6 +9,8 @@ import { CheckCircle, Loader2, Building2, ChevronDown, Shield, X } from "lucide-
 import { Button } from "@/components/ui";
 import { useAuth, useClinics } from "@/lib/hooks";
 import { register as registerThunk } from "@/store/slices/authSlice";
+import { authService } from "@/lib/api/services/auth.service";
+import type { ConsentFormItem, ConsentResponseItem } from "@/types/auth.types";
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -102,13 +104,6 @@ function getFilteredClinics(allClinics: any[], userCity?: string, userState?: st
 
 // ─── Consent modal ────────────────────────────────────────────────────────────
 
-const REQUIRED_CONSENTS = [
-  "I have read and understood the information above.",
-  "I consent to the collection, storage, and processing of my personal and health information for the purposes described.",
-  "I confirm I am at least 18 years old, or my parent/legal guardian is providing consent on my behalf.",
-  "I understand I can withdraw this consent at any time by contacting my clinic, subject to medical-record retention requirements.",
-];
-
 function ConsentModal({
   isOpen,
   onClose,
@@ -117,15 +112,42 @@ function ConsentModal({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onAccept: (analyticsOptIn: boolean) => void;
+  onAccept: (responses: ConsentResponseItem[]) => void;
   isLoading: boolean;
 }) {
-  const [checked, setChecked] = useState([false, false, false, false]);
-  const [analytics, setAnalytics] = useState(false);
+  const [apiForms, setApiForms] = useState<ConsentFormItem[]>([]);
+  const [formsLoading, setFormsLoading] = useState(false);
+  const [formsError, setFormsError] = useState("");
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
 
-  const allRequired = checked.every(Boolean);
-  const toggle = (i: number) =>
-    setChecked((prev) => prev.map((v, idx) => (idx === i ? !v : v)));
+  useEffect(() => {
+    if (!isOpen) return;
+    setFormsLoading(true);
+    setFormsError("");
+    authService.getConsentForms()
+      .then((forms) => {
+        setApiForms(forms);
+        const init: Record<string, boolean> = {};
+        forms.forEach((f) => { init[f.consent_form_id] = false; });
+        setChecked(init);
+      })
+      .catch(() => setFormsError("Failed to load consent forms. Please close and try again."))
+      .finally(() => setFormsLoading(false));
+  }, [isOpen]);
+
+  const requiredForms = apiForms.filter((f) => f.is_required);
+  const allRequired = apiForms.length > 0 && requiredForms.every((f) => checked[f.consent_form_id]);
+
+  const toggle = (id: string) =>
+    setChecked((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  const handleAccept = () => {
+    const responses: ConsentResponseItem[] = apiForms.map((f) => ({
+      consent_form_id: f.consent_form_id,
+      response: !!checked[f.consent_form_id],
+    }));
+    onAccept(responses);
+  };
 
   if (!isOpen) return null;
 
@@ -213,8 +235,6 @@ function ConsentModal({
             </p>
           </section>
 
-          
-
           {/* 4 */}
           <section>
             <h4 className="font-semibold text-neutral-900 mb-2">4. Your rights</h4>
@@ -264,56 +284,71 @@ function ConsentModal({
             </p>
           </section>
 
-          {/* ── Required checkboxes ─────────────────────────────────────────── */}
+          {/* ── Consent form checkboxes (API-driven) ────────────────────────── */}
           <div className="border-t border-neutral-200 pt-5">
-            <p className="font-semibold text-neutral-900 mb-1">
-              Required acknowledgments
-            </p>
+            <p className="font-semibold text-neutral-900 mb-1">Required consent forms</p>
             <p className="text-xs text-neutral-400 mb-4">
-              All four boxes must be ticked before you can submit your registration.
+              All required forms must be accepted before you can submit your registration.
             </p>
-            <div className="space-y-3">
-              {REQUIRED_CONSENTS.map((label, i) => (
-                <label
-                  key={i}
-                  className="flex items-start gap-3 cursor-pointer group"
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked[i]}
-                    onChange={() => toggle(i)}
-                    className="mt-0.5 w-4 h-4 flex-shrink-0 rounded border-neutral-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
-                  />
-                  <span className="text-neutral-700 leading-snug text-sm group-hover:text-neutral-900 transition-colors">
-                    {label}
-                  </span>
-                </label>
-              ))}
-            </div>
+
+            {formsLoading && (
+              <div className="flex items-center gap-2 text-sm text-neutral-400">
+                <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
+                Loading consent forms…
+              </div>
+            )}
+
+            {formsError && (
+              <p className="text-sm text-danger-600 bg-danger-50 border border-danger-100 rounded-lg px-3 py-2">
+                {formsError}
+              </p>
+            )}
+
+            {!formsLoading && !formsError && (
+              <div className="space-y-3">
+                {apiForms.map((f) => (
+                  <label
+                    key={f.consent_form_id}
+                    className="flex items-start gap-3 cursor-pointer group"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!checked[f.consent_form_id]}
+                      onChange={() => toggle(f.consent_form_id)}
+                      className="mt-0.5 w-4 h-4 flex-shrink-0 rounded border-neutral-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                    />
+                    <span className="text-neutral-700 leading-snug text-sm group-hover:text-neutral-900 transition-colors">
+                      I have read and accept the{" "}
+                      <strong className="text-neutral-900">{f.consent_form_name}</strong>
+                      {f.is_required && (
+                        <span className="ml-1.5 text-xs font-semibold text-danger-600 bg-danger-50 px-1.5 py-0.5 rounded">
+                          Required
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
         {/* Footer */}
-        <div className="border-t border-neutral-200 px-6 py-4 flex items-center justify-between gap-3 flex-shrink-0 rounded-b-xl bg-neutral-50">
-          <p className="text-xs text-neutral-400">
-            
-          </p>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onClose}
-              className="text-sm text-neutral-600 hover:text-neutral-900 transition-colors px-3 py-2 rounded-lg hover:bg-neutral-100"
-            >
-              Cancel
-            </button>
-            <Button
-              onClick={() => onAccept(analytics)}
-              disabled={!allRequired}
-              isLoading={isLoading}
-              size="sm"
-            >
-              Submit Registration
-            </Button>
-          </div>
+        <div className="border-t border-neutral-200 px-6 py-4 flex items-center justify-end gap-3 flex-shrink-0 rounded-b-xl bg-neutral-50">
+          <button
+            onClick={onClose}
+            className="text-sm text-neutral-600 hover:text-neutral-900 transition-colors px-3 py-2 rounded-lg hover:bg-neutral-100"
+          >
+            Cancel
+          </button>
+          <Button
+            onClick={handleAccept}
+            disabled={!allRequired || formsLoading || !!formsError}
+            isLoading={isLoading}
+            size="sm"
+          >
+            Submit Registration
+          </Button>
         </div>
       </div>
     </div>
@@ -352,10 +387,10 @@ export default function RegisterPage() {
     setShowConsent(true);
   };
 
-  // Called from inside the consent modal after all checkboxes are ticked
-  const handleConsentAccepted = async (_analyticsOptIn: boolean) => {
+  // Called from inside the consent modal after all required forms are accepted
+  const handleConsentAccepted = async (consentResponses: ConsentResponseItem[]) => {
     if (!pendingData) return;
-    const result = await register(pendingData);
+    const result = await register({ ...pendingData, consent_responses: consentResponses });
     if (registerThunk.fulfilled.match(result)) {
       setShowConsent(false);
       setSuccessClinic(

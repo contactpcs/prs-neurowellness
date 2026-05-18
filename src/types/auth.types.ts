@@ -51,6 +51,18 @@ export interface LoginCredentials {
   password: string;
 }
 
+export interface ConsentFormItem {
+  consent_form_id: string;
+  consent_form_name: string;
+  is_required: boolean;
+  created_at?: string;
+}
+
+export interface ConsentResponseItem {
+  consent_form_id: string;
+  response: boolean;
+}
+
 export interface RegisterData {
   email: string;
   password: string;
@@ -63,6 +75,7 @@ export interface RegisterData {
   city: string;
   state: string;
   country?: string;
+  consent_responses?: ConsentResponseItem[];
 }
 
 export interface RegisterResponse {

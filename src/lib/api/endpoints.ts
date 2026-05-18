@@ -8,6 +8,12 @@ export const ENDPOINTS = {
     CLINICS: "/auth/clinics", // GET — list available clinics for registration
   },
 
+  // ─── Consent ───
+  CONSENT: {
+    FORMS: "/consent/forms",       // GET — public, no auth
+    RESPONSES: "/consent/responses", // POST — public, no auth
+  },
+
   // ─── Users ───
   USERS: {
     PROFILE: "/users/me",
