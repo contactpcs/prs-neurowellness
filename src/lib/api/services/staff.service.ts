@@ -1,6 +1,7 @@
 import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type { StaffDashboard, PatientListItem, PatientDetail, DoctorListItem } from "@/types/domain.types";
+import type { ConsentResponseItem } from "@/types/auth.types";
 
 export interface RegisterPatientPayload {
   full_name: string;
@@ -12,6 +13,7 @@ export interface RegisterPatientPayload {
   city: string;
   state: string;
   country?: string;
+  consent_responses?: ConsentResponseItem[];
 }
 
 // ─── Normalization helpers ────────────────────────────────────────────────────
