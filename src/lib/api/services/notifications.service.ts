@@ -3,8 +3,8 @@ import { ENDPOINTS } from "../endpoints";
 import type { Notification } from "@/types/domain.types";
 
 export const notificationsService = {
-  async getNotifications(): Promise<{ notifications: Notification[]; total: number; unread_count: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.NOTIFICATIONS.LIST);
+  async getNotifications(params?: { skip?: number; limit?: number }): Promise<{ notifications: Notification[]; total: number; unread_count: number }> {
+    const { data } = await apiClient.get(ENDPOINTS.NOTIFICATIONS.LIST, { params });
     const payload = data.data ?? data;
     return {
       notifications: payload.notifications ?? payload ?? [],

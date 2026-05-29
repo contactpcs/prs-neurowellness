@@ -13,7 +13,7 @@ function RolesLayoutInner({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, isRestoring } = useAuth();
   const router = useRouter();
 
-  const waiting = isRestoring || isLoading;
+  const waiting = isRestoring;
 
   useEffect(() => {
     if (waiting) return;

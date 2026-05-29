@@ -34,15 +34,18 @@ function isFresh(loadedAt: number | null): boolean {
   return loadedAt !== null && Date.now() - loadedAt < TTL_MS;
 }
 
+type NotificationQueryParams = { skip?: number; limit?: number };
+
 export const fetchNotifications = createAsyncThunk<
   { notifications: Notification[]; total: number; unread_count: number },
-  void,
+  NotificationQueryParams | undefined,
   { state: RootState }
 >(
   "notifications/fetch",
-  async () => notificationsService.getNotifications(),
+  async (params) => notificationsService.getNotifications(params),
   {
-    condition: (_, { getState }) => {
+    condition: (params, { getState }) => {
+      if (params?.skip !== undefined || params?.limit !== undefined) return true;
       const { status, loadedAt } = getState().notifications;
       if (status === "loading") return false;
       if (status === "succeeded" && isFresh(loadedAt)) return false;

@@ -7,6 +7,7 @@ import {
   fetchDoctorPatient,
   fetchPatientResult,
   selectDoctorPatients,
+  selectDoctorPatientsTotal,
   selectDoctorPatientsStatus,
   selectDoctorPatientDetail,
   selectPatientResults,
@@ -21,16 +22,19 @@ import {
   selectAlertsStatus,
 } from "@/store/slices/alertsSlice";
 
-export function useDoctorPatients() {
+export function useDoctorPatients(params?: { page?: number; limit?: number; search?: string }) {
   const dispatch = useAppDispatch();
   const patients = useAppSelector(selectDoctorPatients);
+  const total    = useAppSelector(selectDoctorPatientsTotal);
   const status   = useAppSelector(selectDoctorPatientsStatus);
+  const { page, limit, search } = params ?? {};
 
   useEffect(() => {
-    dispatch(fetchDoctorPatients());
-  }, [dispatch]);
+    dispatch(fetchDoctorPatients(params));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, page, limit, search]);
 
-  return { patients, isLoading: status === "loading", isReady: status === "succeeded" };
+  return { patients, total, isLoading: status === "loading", isReady: status === "succeeded" };
 }
 
 export function useDoctorPatient(id: string) {

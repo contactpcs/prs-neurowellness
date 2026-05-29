@@ -84,15 +84,17 @@ export function useAdminClinics() {
 
 export function useAdminStaff() {
   const [staff, setStaff] = useState<AdminStaffMember[]>([]);
+  const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetch = useCallback(async (params?: { clinic_id?: string; role?: string; search?: string }) => {
+  const fetch = useCallback(async (params?: { clinic_id?: string; role?: string; search?: string; skip?: number; limit?: number }) => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await adminService.getStaff(params);
-      setStaff(data);
+      const { staff: list, total: count } = await adminService.getStaff(params);
+      setStaff(list);
+      setTotal(count);
     } catch (e: any) {
       setError(e?.response?.data?.detail || "Failed to load staff");
     } finally {
@@ -128,22 +130,24 @@ export function useAdminStaff() {
     setStaff((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
-  return { staff, isLoading, error, fetch, registerStaff, updateStaff, toggleStaff, deleteStaff };
+  return { staff, total, isLoading, error, fetch, registerStaff, updateStaff, toggleStaff, deleteStaff };
 }
 
 // ─── Patients ─────────────────────────────────────────────────────
 
 export function useAdminPatients() {
   const [patients, setPatients] = useState<AdminPatient[]>([]);
+  const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetch = useCallback(async (params?: { clinic_id?: string; status?: string; search?: string }) => {
+  const fetch = useCallback(async (params?: { clinic_id?: string; status?: string; search?: string; skip?: number; limit?: number }) => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await adminService.getPatients(params);
-      setPatients(data);
+      const { patients: list, total: count } = await adminService.getPatients(params);
+      setPatients(list);
+      setTotal(count);
     } catch (e: any) {
       setError(e?.response?.data?.detail || "Failed to load patients");
     } finally {
@@ -170,5 +174,5 @@ export function useAdminPatients() {
     setPatients((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
-  return { patients, isLoading, error, fetch, approvePatient, rejectPatient, deletePatient };
+  return { patients, total, isLoading, error, fetch, approvePatient, rejectPatient, deletePatient };
 }

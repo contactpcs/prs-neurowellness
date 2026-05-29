@@ -1,15 +1,16 @@
 "use client";
 
 import { useCallback } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { useSelector } from "react-redux";
 import { useRouter } from "next/navigation";
-import type { RootState, AppDispatch } from "@/store/store";
+import type { RootState } from "@/store/store";
+import { useAppDispatch } from "@/store/hooks";
 import { login, register, logout, restoreSession, clearError } from "@/store/slices/authSlice";
 import { ROUTES, USER_ROLES } from "@/lib/constants";
 import type { LoginCredentials, RegisterData } from "@/types/auth.types";
 
 export function useAuth() {
-  const dispatch = useDispatch<AppDispatch>();
+  const dispatch = useAppDispatch();
   const router = useRouter();
   const { user, isAuthenticated, isLoading, isRestoring, error } = useSelector((s: RootState) => s.auth);
 

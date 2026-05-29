@@ -48,10 +48,11 @@ export const adminService = {
   },
 
   // ─── Staff ────────────────────────────────────────────────────────
-  async getStaff(params?: { clinic_id?: string; role?: string; search?: string }): Promise<AdminStaffMember[]> {
+  async getStaff(params?: { clinic_id?: string; role?: string; search?: string; skip?: number; limit?: number }): Promise<{ staff: AdminStaffMember[]; total: number }> {
     const res = await apiClient.get(ENDPOINTS.ADMIN.STAFF, { params });
     const payload = res.data.data ?? res.data;
-    return Array.isArray(payload) ? payload : [];
+    const list: AdminStaffMember[] = Array.isArray(payload) ? payload : (payload?.staff ?? payload?.items ?? []);
+    return { staff: list, total: res.data.meta?.total ?? payload?.total ?? list.length };
   },
 
   async getStaffMember(id: string): Promise<AdminStaffMember> {
@@ -82,10 +83,11 @@ export const adminService = {
   },
 
   // ─── Patients ────────────────────────────────────────────────────
-  async getPatients(params?: { clinic_id?: string; status?: string; search?: string }): Promise<AdminPatient[]> {
+  async getPatients(params?: { clinic_id?: string; status?: string; search?: string; skip?: number; limit?: number }): Promise<{ patients: AdminPatient[]; total: number }> {
     const res = await apiClient.get(ENDPOINTS.ADMIN.PATIENTS, { params });
     const payload = res.data.data ?? res.data;
-    return Array.isArray(payload) ? payload : [];
+    const list: AdminPatient[] = Array.isArray(payload) ? payload : (payload?.patients ?? payload?.items ?? []);
+    return { patients: list, total: res.data.meta?.total ?? payload?.total ?? list.length };
   },
 
   async approvePatient(id: string): Promise<void> {

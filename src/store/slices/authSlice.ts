@@ -56,15 +56,12 @@ export const login = createAsyncThunk(
   "auth/login",
   async (credentials: LoginCredentials, { rejectWithValue }) => {
     try {
-      console.log("Attempting login with:", credentials.email);
       const response = await authService.login(credentials);
-      console.log("Login response:", response);
-      
+
       if (!response.user) {
-        console.error("No user in response:", response);
         return rejectWithValue("User data missing from response");
       }
-      
+
       const normalizedUser = normalizeUser(response.user);
 
       // Enforce approval gate for patients
@@ -82,12 +79,9 @@ export const login = createAsyncThunk(
       localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, response.refresh_token);
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(normalizedUser));
 
-      console.log("Login successful, returning user:", normalizedUser);
       return normalizedUser;
     } catch (error: any) {
-      console.error("Login error:", error);
       const rawDetail = error.response?.data?.detail || error.message || "Login failed";
-      // Normalize backend approval-status errors to canonical UI messages
       const lower = String(rawDetail).toLowerCase();
       let errorMessage = rawDetail;
       if (lower.includes("pending") || lower.includes("not approved") || lower.includes("awaiting approval")) {
@@ -95,7 +89,6 @@ export const login = createAsyncThunk(
       } else if (lower.includes("rejected") || lower.includes("account denied")) {
         errorMessage = "Your account has been rejected. Please contact reception.";
       }
-      console.error("Error message:", errorMessage);
       return rejectWithValue(errorMessage);
     }
   }
