@@ -5,8 +5,13 @@ import { useParams, useRouter } from "next/navigation";
 import { useQuestionnaire, useSessions } from "@/lib/hooks";
 import { useAssessmentSTT } from "@/lib/hooks/useAssessmentSTT";
 import { prsService } from "@/lib/api/services";
+import dynamic from "next/dynamic";
 import { PageLoader } from "@/components/ui";
-import { AssessmentUI } from "@/components/assessment/AssessmentUI";
+
+const AssessmentUI = dynamic(
+  () => import("@/components/assessment/AssessmentUI").then((m) => ({ default: m.AssessmentUI })),
+  { loading: () => <PageLoader />, ssr: false },
+);
 import type { ScaleDefinition } from "@/types/prs.types";
 
 export default function QuestionnairePage() {

@@ -24,7 +24,7 @@ apiClient.interceptors.response.use(
       localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
       localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
       localStorage.removeItem(STORAGE_KEYS.USER);
-      window.location.href = "/login";
+      window.dispatchEvent(new CustomEvent("auth:unauthorized"));
     }
     return Promise.reject(error);
   }

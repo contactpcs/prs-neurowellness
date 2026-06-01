@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
@@ -52,7 +52,7 @@ const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React
   ],
 };
 
-export function Sidebar() {
+function SidebarInner() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const { isCollapsed, setIsCollapsed } = useSidebar();
@@ -189,3 +189,5 @@ export function Sidebar() {
     </aside>
   );
 }
+
+export const Sidebar = memo(SidebarInner);

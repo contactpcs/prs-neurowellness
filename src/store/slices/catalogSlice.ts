@@ -3,7 +3,7 @@
  * backend treats as semi-immutable. Thunks here use `condition` to skip the fetch
  * when fresh data is already in the store, eliminating redundant network calls.
  */
-import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/toolkit";
+import { createSlice, createAsyncThunk, createSelector, type PayloadAction } from "@reduxjs/toolkit";
 import { prsService, authService } from "@/lib/api/services";
 import type { Scale, ConditionBattery } from "@/types/prs.types";
 import type { Clinic } from "@/lib/api/services/auth.service";
@@ -185,12 +185,14 @@ const catalogSlice = createSlice({
 export const { invalidateScales, invalidateConditions, invalidateClinics } = catalogSlice.actions;
 export default catalogSlice.reducer;
 
-// ─── Selectors (memoization-friendly: stable refs from the slice itself) ─────
+// ─── Selectors ───────────────────────────────────────────────────────────────
 
-export const selectScales        = (s: RootState) => s.catalog.scales;
-export const selectScalesById    = (s: RootState) => s.catalog.scalesById;
-export const selectScalesStatus  = (s: RootState) => s.catalog.scalesStatus;
-export const selectConditions    = (s: RootState) => s.catalog.conditions;
-export const selectConditionsStatus = (s: RootState) => s.catalog.conditionsStatus;
-export const selectClinics       = (s: RootState) => s.catalog.clinics;
-export const selectClinicsStatus = (s: RootState) => s.catalog.clinicsStatus;
+const selectCatalog = (s: RootState) => s.catalog;
+
+export const selectScales        = createSelector(selectCatalog, (c) => c.scales);
+export const selectScalesById    = createSelector(selectCatalog, (c) => c.scalesById);
+export const selectScalesStatus  = createSelector(selectCatalog, (c) => c.scalesStatus);
+export const selectConditions    = createSelector(selectCatalog, (c) => c.conditions);
+export const selectConditionsStatus = createSelector(selectCatalog, (c) => c.conditionsStatus);
+export const selectClinics       = createSelector(selectCatalog, (c) => c.clinics);
+export const selectClinicsStatus = createSelector(selectCatalog, (c) => c.clinicsStatus);

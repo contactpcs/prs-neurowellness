@@ -1,8 +1,14 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/hooks";
-import { AnamnesisForm } from "@/components/assessment/AnamnesisForm";
+import { PageLoader } from "@/components/ui";
+
+const AnamnesisForm = dynamic(
+  () => import("@/components/assessment/AnamnesisForm").then((m) => ({ default: m.AnamnesisForm })),
+  { loading: () => <PageLoader />, ssr: false },
+);
 
 export default function PatientAnamnesisPage() {
   const { user } = useAuth();

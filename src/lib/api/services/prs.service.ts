@@ -177,13 +177,13 @@ export const prsService = {
     return data;
   },
 
-  async getMySessions(): Promise<{ sessions: AssessmentSession[]; total: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.MY_SESSIONS);
+  async getMySessions(params?: { skip?: number; limit?: number }): Promise<{ sessions: AssessmentSession[]; total: number }> {
+    const { data } = await apiClient.get(ENDPOINTS.PRS.MY_SESSIONS, { params });
     return data;
   },
 
-  async getPatientSessions(patientId: string): Promise<{ sessions: AssessmentSession[]; total: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.PATIENT_SESSIONS(patientId));
+  async getPatientSessions(patientId: string, params?: { skip?: number; limit?: number }): Promise<{ sessions: AssessmentSession[]; total: number }> {
+    const { data } = await apiClient.get(ENDPOINTS.PRS.PATIENT_SESSIONS(patientId), { params });
     return data;
   },
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/hooks";
 import { doctorsService } from "@/lib/api/services/doctors.service";
@@ -41,7 +41,7 @@ function useCurrentPatient(role: string) {
   return patientName;
 }
 
-export function Header() {
+function HeaderInner() {
   const { user } = useAuth();
   const [clinicName, setClinicName] = useState<string | null>(null);
 
@@ -86,3 +86,5 @@ export function Header() {
     </header>
   );
 }
+
+export const Header = memo(HeaderInner);
