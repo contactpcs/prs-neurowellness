@@ -203,6 +203,73 @@ export interface PatientScoreInstance {
   scale_results: ScoreSummaryItem[];
 }
 
+// ─── Schedule ─────────────────────────────────────────────────────
+
+export interface WeeklyScheduleRow {
+  schedule_id?: string;
+  doctor_id?: string;
+  clinic_id?: string;
+  day_of_week: number;   // DB: Sun=0, Mon=1, ..., Sat=6
+  start_time: string;    // "HH:MM:SS"
+  end_time: string;
+  slot_duration_minutes: number;
+  break_start?: string | null;
+  break_end?: string | null;
+  is_active: boolean;
+  effective_from?: string | null;
+  effective_until?: string | null;
+}
+
+export interface ScheduleOverride {
+  override_id: string;
+  doctor_id?: string;
+  clinic_id?: string;
+  override_date: string;
+  is_available: boolean;
+  start_time?: string | null;
+  end_time?: string | null;
+  reason?: string | null;
+}
+
+export interface AvailabilitySlot {
+  date: string;
+  start_time: string;
+  end_time: string;
+  is_available: boolean;
+}
+
+// ─── Appointments ─────────────────────────────────────────────────
+
+export type AppointmentStatus =
+  | "scheduled" | "confirmed" | "checked_in" | "in_progress"
+  | "completed" | "cancelled" | "no_show" | "rescheduled";
+
+export type AppointmentType =
+  | "consultation" | "follow_up" | "assessment" | "emergency" | "video";
+
+export interface Appointment {
+  appointment_id: string;
+  clinic_id: string;
+  patient_id: string;
+  patient_name?: string;
+  doctor_id: string;
+  doctor_name?: string;
+  appointment_date: string;
+  start_time: string;
+  end_time: string;
+  start_at: string;
+  end_at: string;
+  status: AppointmentStatus;
+  appointment_type: AppointmentType;
+  reason?: string;
+  notes?: string;
+  patient_complaint?: string;
+  booked_by: string;
+  booked_by_role: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // ─── Anamnesis ────────────────────────────────────────────────────
 
 export interface AnamnesisResponse {

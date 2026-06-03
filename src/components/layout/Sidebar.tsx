@@ -87,12 +87,15 @@ function SidebarInner() {
   }, [user]);
 
   return (
-    <aside className={cn(
-      "fixed left-0 top-0 h-full bg-blue-800 flex flex-col z-40 transition-all duration-200",
-      isCollapsed ? "w-16" : "w-64",
-    )}>
+    <aside
+      className={cn(
+        "fixed left-0 top-0 h-full flex flex-col z-40 transition-all duration-200",
+        isCollapsed ? "w-16" : "w-64",
+      )}
+      style={{ background: "linear-gradient(180deg, #00A1E4 0%, #17749B 100%)" }}
+    >
       {/* Logo + toggle */}
-      <div className="h-16 border-b border-blue-700 flex-shrink-0 flex items-center">
+      <div className="h-16 border-b border-white/20 flex-shrink-0 flex items-center">
         {!isCollapsed ? (
           <div className="flex items-center gap-2 w-full px-4">
             <Link href="/" className="flex items-center gap-2 flex-1 min-w-0">
@@ -148,7 +151,7 @@ function SidebarInner() {
       </nav>
 
       {/* User section */}
-      <div className="border-t border-blue-700 px-2 py-3 flex-shrink-0">
+      <div className="border-t border-white/20 px-2 py-3 flex-shrink-0">
         {!isCollapsed ? (
           <div className="flex items-center gap-3 px-3 py-2 rounded-lg mb-1">
             <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
