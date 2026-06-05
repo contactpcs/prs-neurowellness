@@ -17,6 +17,7 @@ import { useAppDispatch } from "@/store/hooks";
 import { invalidatePatientAnamnesis } from "@/store/slices/anamnesisSlice";
 import type { DoctorNote } from "@/lib/api/services/doctorNotes.service";
 import type { Permission, AssessmentInstance, AnamnesisRecord } from "@/types/domain.types";
+import { EEGReportList, EEGUploadForm, NEDFUploadForm } from "@/components/eeg";
 
 function statusClass(status: Permission["status"]): string {
   switch (status) {
@@ -86,6 +87,9 @@ export default function DoctorPatientDetailPage() {
     (idx: number) => updateQuery({ tab: idx === 0 ? null : String(idx) }),
     [updateQuery],
   );
+  const [eegRefreshKey, setEegRefreshKey] = useState(0);
+  const [showEegUpload, setShowEegUpload] = useState(false);
+  const [eegUploadTab, setEegUploadTab] = useState<"nedf" | "pdf">("nedf");
   const [noteText, setNoteText] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -97,6 +101,20 @@ export default function DoctorPatientDetailPage() {
       setNoteSavedAt(doctorNote.updated_at ?? null);
     }
   }, [doctorNote]);
+
+  // Auto-expand upload panel when user returns to brain-mapping and a job is still running
+  useEffect(() => {
+    if (selectedSection !== "brain-mapping") return;
+    const saved = localStorage.getItem(`eeg_analysis_job_${id}`);
+    if (!saved) return;
+    try {
+      const { status } = JSON.parse(saved) as { status: string };
+      if (status !== "done" && status !== "failed") {
+        setShowEegUpload(true);
+        setEegUploadTab("nedf");
+      }
+    } catch {}
+  }, [selectedSection, id]);
 
   const handleSaveNote = async () => {
     setNoteSaving(true);
@@ -283,12 +301,61 @@ export default function DoctorPatientDetailPage() {
                   onSubmitted={() => dispatch(invalidatePatientAnamnesis(id))}
                 />
               ) : selectedSection === "brain-mapping" ? (
-                <div className="flex flex-col items-center justify-center py-20 text-center">
-                  <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mb-4">
-                    <span className="text-2xl">🧠</span>
+                <div className="space-y-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-2xl font-bold text-neutral-900">Brain Mapping</h2>
+                      <p className="text-sm text-neutral-500">EEG analysis and connectivity reports</p>
+                    </div>
+                    <button
+                      onClick={() => setShowEegUpload((v) => !v)}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                    >
+                      {showEegUpload ? "Cancel" : "Upload / Analyze"}
+                    </button>
                   </div>
-                  <h2 className="text-xl font-bold text-neutral-700 mb-2">Brain Mapping</h2>
-                  <p className="text-sm text-neutral-400">Yet to be implemented</p>
+
+                  {showEegUpload && (
+                    <div className="space-y-3">
+                      {/* Tab switcher */}
+                      <div className="flex gap-1 bg-neutral-100 rounded-lg p-1 w-fit">
+                        <button
+                          onClick={() => setEegUploadTab("nedf")}
+                          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                            eegUploadTab === "nedf"
+                              ? "bg-white text-neutral-900 shadow-sm"
+                              : "text-neutral-500 hover:text-neutral-700"
+                          }`}
+                        >
+                          .nedf / .edf
+                        </button>
+                        <button
+                          onClick={() => setEegUploadTab("pdf")}
+                          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                            eegUploadTab === "pdf"
+                              ? "bg-white text-neutral-900 shadow-sm"
+                              : "text-neutral-500 hover:text-neutral-700"
+                          }`}
+                        >
+                          PDF report
+                        </button>
+                      </div>
+
+                      {eegUploadTab === "nedf" ? (
+                        <NEDFUploadForm
+                          patientId={id}
+                          onComplete={() => { setEegRefreshKey((k) => k + 1); setShowEegUpload(false); }}
+                        />
+                      ) : (
+                        <EEGUploadForm
+                          patientId={id}
+                          onUploaded={() => { setEegRefreshKey((k) => k + 1); setShowEegUpload(false); }}
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  <EEGReportList patientId={id} canDelete refreshTrigger={eegRefreshKey} />
                 </div>
               ) : selectedSection === "notes" ? (
                 <div className="space-y-4">
