@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save } from "lucide-react";
+import { ChevronRight, ChevronLeft, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save } from "lucide-react";
 import { PatientDetailSkeleton, Button } from "@/components/ui";
 import { AnamnesisForm } from "@/components/assessment/AnamnesisForm";
 import {
   useDoctorPatient,
+  useDoctorPatients,
   usePatientPermissions,
   usePatientScoresSummary,
   usePatientAnamnesis,
@@ -42,6 +43,7 @@ function buildSections(
     { id: "brain-mapping", name: "Brain Mapping", status: "start" },
     { id: "prs", name: "PRS", status: "start" },
     { id: "notes", name: "Doctor's Notes", status: hasDoctorNote ? "done" : null },
+    { id: "medical-history", name: "Medical History", status: "link" },
     { id: "treatment-plan", name: "Treatment Plan", status: "locked" },
     { id: "final-report", name: "Final Report", status: "locked" },
   ];
@@ -55,6 +57,7 @@ export default function DoctorPatientDetailPage() {
 
   const dispatch = useAppDispatch();
   const patient = useDoctorPatient(id);
+  const { patients: patientList } = useDoctorPatients();
   const assessments = usePatientPermissions(id);
   const { instances: scoreInstances, total: totalAssessments } = usePatientScoresSummary(id);
   const { record: anamnesisRecord, isLoading: anamnesisLoading } = usePatientAnamnesis(id);
@@ -135,6 +138,10 @@ export default function DoctorPatientDetailPage() {
   if (isLoading) return <PatientDetailSkeleton />;
 
   const fullName = patient?.full_name || "Patient";
+  const currentIdx = patientList.findIndex((p) => p.id === id);
+  const prevPatient = currentIdx > 0 ? patientList[currentIdx - 1] : null;
+  const nextPatient = currentIdx >= 0 && currentIdx < patientList.length - 1 ? patientList[currentIdx + 1] : null;
+
   const age = patient?.date_of_birth
     ? new Date().getFullYear() - new Date(patient.date_of_birth).getFullYear()
     : null;
@@ -199,7 +206,23 @@ export default function DoctorPatientDetailPage() {
                 </div>
               </div>
             </div>
-            <div className="flex flex-col gap-2 flex-shrink-0">
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <button
+                onClick={() => prevPatient && router.push(`/doctor/patients/${prevPatient.id}`)}
+                disabled={!prevPatient}
+                className="px-5 py-2.5 bg-neutral-800 text-white text-sm font-medium rounded-full hover:bg-neutral-700 transition-colors flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+                title={prevPatient?.full_name ?? ""}
+              >
+                <ChevronLeft className="w-4 h-4" /> Prev
+              </button>
+              <button
+                onClick={() => nextPatient && router.push(`/doctor/patients/${nextPatient.id}`)}
+                disabled={!nextPatient}
+                className="px-5 py-2.5 bg-neutral-800 text-white text-sm font-medium rounded-full hover:bg-neutral-700 transition-colors flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+                title={nextPatient?.full_name ?? ""}
+              >
+                Next <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           </div>
 
@@ -263,28 +286,41 @@ export default function DoctorPatientDetailPage() {
                 <ChevronRight className="w-5 h-5 -rotate-90 text-neutral-600" />
               </div>
               <div className="flex-1 overflow-y-auto space-y-0">
-                {buildSections(anamnesisRecord?.status ?? null, !!doctorNote?.note_text).map((section) => (
-                  <button
-                    key={section.id}
-                    onClick={() => setSelectedSection(section.id)}
-                    className={`w-full px-4 py-4 text-left transition-colors border-l-4 flex items-center justify-between ${
-                      selectedSection === section.id
-                        ? "bg-blue-50 border-l-blue-500 text-blue-700"
-                        : "bg-white border-l-transparent text-neutral-700 hover:bg-neutral-50"
-                    }`}
-                  >
-                    <span className="font-medium">{section.name}</span>
-                    {section.status === "done" && (
-                      <span className="px-2 py-1 bg-green-50 text-green-700 text-xs font-medium rounded">Done</span>
-                    )}
-                    {section.status === "start" && (
-                      <span className="px-2 py-1 bg-orange-50 text-orange-600 text-xs font-medium rounded">Start</span>
-                    )}
-                    {section.status === "locked" && (
-                      <Lock className="w-4 h-4 text-neutral-400" />
-                    )}
-                  </button>
-                ))}
+                {buildSections(anamnesisRecord?.status ?? null, !!doctorNote?.note_text).map((section) => {
+                  if (section.id === "medical-history") {
+                    return (
+                      <Link
+                        key="medical-history"
+                        href={`/doctor/patients/${id}/history`}
+                        className="w-full px-4 py-4 text-left transition-colors border-l-4 flex items-center justify-between bg-white border-l-transparent text-neutral-700 hover:bg-neutral-50"
+                      >
+                        <span className="font-medium">{section.name}</span>
+                      </Link>
+                    );
+                  }
+                  return (
+                    <button
+                      key={section.id}
+                      onClick={() => setSelectedSection(section.id)}
+                      className={`w-full px-4 py-4 text-left transition-colors border-l-4 flex items-center justify-between ${
+                        selectedSection === section.id
+                          ? "bg-blue-50 border-l-blue-500 text-blue-700"
+                          : "bg-white border-l-transparent text-neutral-700 hover:bg-neutral-50"
+                      }`}
+                    >
+                      <span className="font-medium">{section.name}</span>
+                      {section.status === "done" && (
+                        <span className="px-2 py-1 bg-green-50 text-green-700 text-xs font-medium rounded">Done</span>
+                      )}
+                      {section.status === "start" && (
+                        <span className="px-2 py-1 bg-orange-50 text-orange-600 text-xs font-medium rounded">Start</span>
+                      )}
+                      {section.status === "locked" && (
+                        <Lock className="w-4 h-4 text-neutral-400" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
               <div className="border-t border-neutral-200 p-4">
                 <h3 className="font-semibold text-neutral-900">Treatment Sessions</h3>

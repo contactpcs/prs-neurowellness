@@ -142,6 +142,25 @@ export const ENDPOINTS = {
     FOR_PATIENT:   (patientId: string) => `/anamnesis/patient/${patientId}`,
   },
 
+  // ─── Schedule ───
+  SCHEDULE: {
+    MY:            "/schedule/my",
+    ADD_OVERRIDE:  "/schedule/my/overrides",
+    DELETE_OVERRIDE: (id: string) => `/schedule/my/overrides/${id}`,
+    SLOTS:         (doctorId: string) => `/schedule/doctor/${doctorId}/slots`,
+    DOCTOR:        (doctorId: string) => `/schedule/doctor/${doctorId}`,
+  },
+
+  // ─── Appointments ───
+  APPOINTMENTS: {
+    LIST:     "/appointments",
+    UPCOMING: "/appointments/upcoming",
+    TODAY:    "/appointments/today",
+    GET:      (id: string) => `/appointments/${id}`,
+    CONFIRM:  (id: string) => `/appointments/${id}/confirm`,
+    CANCEL:   (id: string) => `/appointments/${id}/cancel`,
+  },
+
   // ─── Doctor Notes ───
   DOCTOR_NOTES: {
     FOR_PATIENT: (patientId: string) => `/notes/patient/${patientId}`,

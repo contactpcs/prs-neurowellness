@@ -68,7 +68,8 @@ const config: Config = {
         sans: ["Inter", "system-ui", "sans-serif"],
       },
       backgroundImage: {
-        "brand-gradient": "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)",
+        "brand-gradient":   "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)",
+        "brand-gradient-v": "linear-gradient(180deg, #00A1E4 0%, #17749B 100%)",
       },
       boxShadow: {
         xs: "0 1px 2px 0 rgb(0 0 0 / 0.04)",
