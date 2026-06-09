@@ -3,9 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Edit2, Check, X, AlertCircle } from "lucide-react";
 import { Card, CardContent, PageLoader } from "@/components/ui";
-import { ROLE_LABELS } from "@/lib/constants";
 import { usersService } from "@/lib/api/services/users.service";
-import { useAuth } from "@/lib/hooks";
 import { useAppDispatch } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
 
@@ -26,10 +24,12 @@ function computeAge(dob?: string): number | null {
 function buildDiff(
   current: Record<string, string>,
   original: Record<string, string>,
-): Record<string, string> {
-  const diff: Record<string, string> = {};
+): Record<string, string | number> {
+  const diff: Record<string, string | number> = {};
   for (const [k, v] of Object.entries(current)) {
-    if (v !== (original[k] ?? "")) diff[k] = v;
+    if (v !== (original[k] ?? "")) {
+      diff[k] = k === "years_of_experience" ? Number(v) || 0 : v;
+    }
   }
   return diff;
 }
@@ -39,14 +39,9 @@ const EMPTY_FORM = {
   date_of_birth: "", gender: "",
   government_id: "", id_type: "", language_pref: "",
   address_line1: "", city: "", state: "", country: "", pincode: "",
-  blood_group: "", allergies: "", emergency_contact: "",
-  occupation: "", marital_status: "",
-  insurance_provider: "", insurance_policy: "",
+  specialisation: "", hospital: "", years_of_experience: "",
 };
-
 type FormState = typeof EMPTY_FORM;
-
-// ─── shared UI ────────────────────────────────────────────────────
 
 const inputCls =
   "w-full rounded-lg border border-neutral-300 bg-white px-3.5 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 hover:border-neutral-400";
@@ -63,8 +58,7 @@ function Field({ label, value }: { label: string; value?: string | null }) {
 
 // ─── component ────────────────────────────────────────────────────
 
-export default function PatientProfilePage() {
-  const { user } = useAuth();
+export default function DoctorProfilePage() {
   const dispatch = useAppDispatch();
 
   const [profileRaw, setProfileRaw] = useState<Record<string, unknown> | null>(null);
@@ -77,32 +71,28 @@ export default function PatientProfilePage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const originalRef = useRef<FormState>(EMPTY_FORM);
 
-  // ── pre-fill from API on mount ────────────────────────────────────
+  // ── pre-fill on mount ─────────────────────────────────────────────
 
   useEffect(() => {
     usersService.getProfile()
       .then((data) => {
         setProfileRaw(data as unknown as Record<string, unknown>);
         const filled: FormState = {
-          first_name:       (data.first_name       as string) ?? "",
-          last_name:        (data.last_name        as string) ?? "",
-          date_of_birth:    (data.date_of_birth    as string) ?? "",
-          gender:           (data.gender           as string) ?? "",
-          government_id:    (data.government_id    as string) ?? "",
-          id_type:          (data.id_type          as string) ?? "",
-          language_pref:    ((data.language_pref ?? data.primary_language) as string) ?? "",
-          address_line1:    (data.address_line1    as string) ?? "",
-          city:             (data.city             as string) ?? "",
-          state:            (data.state            as string) ?? "",
-          country:          (data.country          as string) ?? "",
-          pincode:          (data.pincode          as string) ?? "",
-          blood_group:      (data.blood_group      as string) ?? "",
-          allergies:        ((data.allergies ?? data.known_allergies) as string) ?? "",
-          emergency_contact:(data.emergency_contact as string) ?? "",
-          occupation:       (data.occupation       as string) ?? "",
-          marital_status:   (data.marital_status   as string) ?? "",
-          insurance_provider:(data.insurance_provider as string) ?? "",
-          insurance_policy: ((data.insurance_policy ?? data.policy_number) as string) ?? "",
+          first_name:          (data.first_name        as string) ?? "",
+          last_name:           (data.last_name         as string) ?? "",
+          date_of_birth:       (data.date_of_birth     as string) ?? "",
+          gender:              (data.gender            as string) ?? "",
+          government_id:       (data.government_id     as string) ?? "",
+          id_type:             (data.id_type           as string) ?? "",
+          language_pref:       ((data.language_pref ?? data.primary_language) as string) ?? "",
+          address_line1:       (data.address_line1     as string) ?? "",
+          city:                (data.city              as string) ?? "",
+          state:               (data.state             as string) ?? "",
+          country:             (data.country           as string) ?? "",
+          pincode:             (data.pincode           as string) ?? "",
+          specialisation:      (data.specialisation    as string) ?? "",
+          hospital:            (data.hospital          as string) ?? "",
+          years_of_experience: String(data.years_of_experience ?? ""),
         };
         setForm(filled);
         originalRef.current = filled;
@@ -125,36 +115,33 @@ export default function PatientProfilePage() {
     try {
       const updated = await usersService.updateProfile(diff);
       const freshFilled: FormState = {
-        first_name:        (updated.first_name        as string) ?? "",
-        last_name:         (updated.last_name         as string) ?? "",
-        date_of_birth:     (updated.date_of_birth     as string) ?? "",
-        gender:            (updated.gender            as string) ?? "",
-        government_id:     (updated.government_id     as string) ?? "",
-        id_type:           (updated.id_type           as string) ?? "",
-        language_pref:     ((updated.language_pref ?? updated.primary_language) as string) ?? "",
-        address_line1:     (updated.address_line1     as string) ?? "",
-        city:              (updated.city              as string) ?? "",
-        state:             (updated.state             as string) ?? "",
-        country:           (updated.country           as string) ?? "",
-        pincode:           (updated.pincode           as string) ?? "",
-        blood_group:       (updated.blood_group       as string) ?? "",
-        allergies:         ((updated.allergies ?? updated.known_allergies) as string) ?? "",
-        emergency_contact: (updated.emergency_contact as string) ?? "",
-        occupation:        (updated.occupation        as string) ?? "",
-        marital_status:    (updated.marital_status    as string) ?? "",
-        insurance_provider:(updated.insurance_provider as string) ?? "",
-        insurance_policy:  ((updated.insurance_policy ?? updated.policy_number) as string) ?? "",
+        first_name:          (updated.first_name        as string) ?? "",
+        last_name:           (updated.last_name         as string) ?? "",
+        date_of_birth:       (updated.date_of_birth     as string) ?? "",
+        gender:              (updated.gender            as string) ?? "",
+        government_id:       (updated.government_id     as string) ?? "",
+        id_type:             (updated.id_type           as string) ?? "",
+        language_pref:       ((updated.language_pref ?? updated.primary_language) as string) ?? "",
+        address_line1:       (updated.address_line1     as string) ?? "",
+        city:                (updated.city              as string) ?? "",
+        state:               (updated.state             as string) ?? "",
+        country:             (updated.country           as string) ?? "",
+        pincode:             (updated.pincode           as string) ?? "",
+        specialisation:      (updated.specialisation    as string) ?? "",
+        hospital:            (updated.hospital          as string) ?? "",
+        years_of_experience: String(updated.years_of_experience ?? ""),
       };
       setForm(freshFilled);
       originalRef.current = freshFilled;
       setProfileRaw(updated as unknown as Record<string, unknown>);
       dispatch(updateUserInStore({
-        first_name: updated.first_name,
-        last_name:  updated.last_name,
-        full_name:  updated.full_name,
-        city:       updated.city,
-        gender:     updated.gender,
-        date_of_birth: updated.date_of_birth,
+        first_name:     updated.first_name,
+        last_name:      updated.last_name,
+        full_name:      updated.full_name,
+        specialisation: updated.specialisation,
+        city:           updated.city,
+        gender:         updated.gender,
+        date_of_birth:  updated.date_of_birth,
       }));
       setSaveSuccess(true);
       setIsEditing(false);
@@ -170,8 +157,6 @@ export default function PatientProfilePage() {
     setSaveError(null);
     setIsEditing(false);
   };
-
-  // ── render ────────────────────────────────────────────────────────
 
   if (!profileRaw && !fetchError) return <PageLoader />;
 
@@ -230,34 +215,12 @@ export default function PatientProfilePage() {
             </div>
           )}
           <Field label="Email" value={profileRaw?.email as string} />
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className={labelCls}>Phone</p>
-              <p className="text-sm text-neutral-700 mt-1">
-                {(profileRaw?.phone as string) || "Not provided"}
-                <span className="text-xs text-neutral-400 ml-2">Contact support to change</span>
-              </p>
-            </div>
-            <div>
-              <p className={labelCls}>Role</p>
-              <p className="text-sm text-neutral-700 mt-1 capitalize">
-                {ROLE_LABELS[user?.roles?.[0] || "patient"]}
-              </p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="MRN"             value={(profileRaw?.mrn as string) || "Not assigned"} />
-            <div>
-              <p className={labelCls}>Approval Status</p>
-              <p className={`text-sm mt-1 font-medium ${
-                profileRaw?.approval_status === "approved" ? "text-green-600" :
-                profileRaw?.approval_status === "pending"  ? "text-amber-600" : "text-red-600"
-              }`}>
-                {profileRaw?.approval_status
-                  ? String(profileRaw.approval_status).charAt(0).toUpperCase() + String(profileRaw.approval_status).slice(1)
-                  : "—"}
-              </p>
-            </div>
+          <div>
+            <p className={labelCls}>Phone</p>
+            <p className="text-sm text-neutral-700 mt-1">
+              {(profileRaw?.phone as string) || "Not provided"}
+              <span className="text-xs text-neutral-400 ml-2">Contact support to change</span>
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -286,25 +249,6 @@ export default function PatientProfilePage() {
                     <option value="other">Other</option>
                     <option value="prefer_not_to_say">Prefer not to say</option>
                   </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={`${labelCls} block mb-1.5`}>Marital Status</label>
-                  <select className={inputCls} value={form.marital_status}
-                    onChange={(e) => set("marital_status", e.target.value)}>
-                    <option value="">Select</option>
-                    <option value="single">Single</option>
-                    <option value="married">Married</option>
-                    <option value="divorced">Divorced</option>
-                    <option value="widowed">Widowed</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label className={`${labelCls} block mb-1.5`}>Occupation</label>
-                  <input className={inputCls} value={form.occupation}
-                    onChange={(e) => set("occupation", e.target.value)} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -354,11 +298,7 @@ export default function PatientProfilePage() {
                 <Field label="Gender" value={form.gender} />
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Marital Status" value={form.marital_status} />
-                <Field label="Occupation"     value={form.occupation} />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="ID Type"      value={form.id_type} />
+                <Field label="ID Type"       value={form.id_type} />
                 <Field label="Government ID" value={form.government_id} />
               </div>
               <Field label="Language Preference" value={form.language_pref} />
@@ -407,7 +347,7 @@ export default function PatientProfilePage() {
             </>
           ) : (
             <>
-              <Field label="Address"  value={form.address_line1} />
+              <Field label="Address" value={form.address_line1} />
               <div className="grid grid-cols-2 gap-4">
                 <Field label="City"    value={form.city}    />
                 <Field label="State"   value={form.state}   />
@@ -421,70 +361,37 @@ export default function PatientProfilePage() {
         </CardContent>
       </Card>
 
-      {/* ── Medical (patient-only) ── */}
+      {/* ── Professional (doctor-only) ── */}
       <Card>
         <div className="px-6 py-4 border-b border-neutral-100">
-          <h2 className="text-sm font-semibold text-neutral-900">Medical Information</h2>
+          <h2 className="text-sm font-semibold text-neutral-900">Professional Information</h2>
         </div>
         <CardContent className="space-y-4 pt-4">
           {isEditing ? (
             <>
               <div>
-                <label className={`${labelCls} block mb-1.5`}>Blood Group</label>
-                <select className={inputCls} value={form.blood_group}
-                  onChange={(e) => set("blood_group", e.target.value)}>
-                  <option value="">Select</option>
-                  {["A+","A-","B+","B-","AB+","AB-","O+","O-","unknown"].map((g) => (
-                    <option key={g} value={g}>{g}</option>
-                  ))}
-                </select>
+                <label className={`${labelCls} block mb-1.5`}>Specialisation</label>
+                <input className={inputCls} value={form.specialisation}
+                  placeholder="e.g. Psychiatry, Neurology…"
+                  onChange={(e) => set("specialisation", e.target.value)} />
               </div>
               <div>
-                <label className={`${labelCls} block mb-1.5`}>Allergies</label>
-                <textarea rows={2} className={`${inputCls} resize-none`} value={form.allergies}
-                  onChange={(e) => set("allergies", e.target.value)}
-                  placeholder="e.g. Penicillin, Peanuts…" />
+                <label className={`${labelCls} block mb-1.5`}>Hospital / Clinic</label>
+                <input className={inputCls} value={form.hospital}
+                  onChange={(e) => set("hospital", e.target.value)} />
               </div>
               <div>
-                <label className={`${labelCls} block mb-1.5`}>Emergency Contact</label>
-                <input className={inputCls} value={form.emergency_contact}
-                  onChange={(e) => set("emergency_contact", e.target.value)}
-                  placeholder="Name - Phone number" />
+                <label className={`${labelCls} block mb-1.5`}>Years of Experience</label>
+                <input type="number" min="0" max="60" className={inputCls}
+                  value={form.years_of_experience}
+                  onChange={(e) => set("years_of_experience", e.target.value)} />
               </div>
             </>
           ) : (
             <>
-              <Field label="Blood Group"       value={form.blood_group} />
-              <Field label="Allergies"         value={form.allergies} />
-              <Field label="Emergency Contact" value={form.emergency_contact} />
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* ── Insurance (patient-only) ── */}
-      <Card>
-        <div className="px-6 py-4 border-b border-neutral-100">
-          <h2 className="text-sm font-semibold text-neutral-900">Insurance</h2>
-        </div>
-        <CardContent className="space-y-4 pt-4">
-          {isEditing ? (
-            <>
-              <div>
-                <label className={`${labelCls} block mb-1.5`}>Insurance Provider</label>
-                <input className={inputCls} value={form.insurance_provider}
-                  onChange={(e) => set("insurance_provider", e.target.value)} />
-              </div>
-              <div>
-                <label className={`${labelCls} block mb-1.5`}>Policy Number</label>
-                <input className={inputCls} value={form.insurance_policy}
-                  onChange={(e) => set("insurance_policy", e.target.value)} />
-              </div>
-            </>
-          ) : (
-            <>
-              <Field label="Insurance Provider" value={form.insurance_provider} />
-              <Field label="Policy Number"      value={form.insurance_policy}    />
+              <Field label="Specialisation"      value={form.specialisation} />
+              <Field label="Hospital / Clinic"   value={form.hospital} />
+              <Field label="Years of Experience" value={form.years_of_experience} />
             </>
           )}
         </CardContent>

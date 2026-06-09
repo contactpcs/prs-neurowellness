@@ -4,12 +4,33 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import {
   Search, ChevronLeft, ChevronRight, CalendarDays, Phone, MessageSquare,
+  Users, UserPlus, Clock, TrendingUp, TrendingDown,
 } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
 import { BookingModal } from "@/components/appointments/BookingModal";
 import type { Appointment, AvailabilitySlot } from "@/types/domain.types";
+
+// ─── KPI types ────────────────────────────────────────────────────
+interface KpiStats {
+  todayAppts: number;
+  yesterdayAppts: number;
+  totalPatients: number;
+  newPatients30d: number;
+  newPatientsPrev30d: number;
+  pendingToday: number;
+  pendingYesterday: number;
+}
+
+const ACTIVE_STATUSES = new Set(["scheduled", "confirmed", "checked_in", "in_progress"]);
+
+function pctChange(current: number, prev: number) {
+  if (prev === 0 && current === 0) return { label: "0% from yesterday", up: true };
+  if (prev === 0) return { label: "+100% from yesterday", up: true };
+  const pct = Math.round(((current - prev) / prev) * 100);
+  return { label: `${pct >= 0 ? "+" : ""}${pct}% from yesterday`, up: pct >= 0 };
+}
 
 // ─── types ────────────────────────────────────────────────────────
 
@@ -125,6 +146,7 @@ export default function DoctorDashboard() {
   const [bookingSlot,  setBookingSlot]  = useState<AvailabilitySlot | null>(null);
   const [ghost, setGhost] = useState<{ colIdx: number; top: number; height: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [kpiStats, setKpiStats] = useState<KpiStats | null>(null);
 
   // ── fetch range per view ──────────────────────────────────────────
 
@@ -163,6 +185,49 @@ export default function DoctorDashboard() {
     fetchAppointments(fetchRange.from, fetchRange.to);
     fetchSlots(fetchRange.from, fetchRange.to);
   }, [fetchRange, fetchAppointments, fetchSlots]);
+
+  useEffect(() => {
+    const yesterdayStr = toDateStr(addDays(today, -1));
+    const thirtyDaysAgo = toDateStr(addDays(today, -30));
+    const sixtyDaysAgo = toDateStr(addDays(today, -60));
+
+    Promise.all([
+      apiClient.get(ENDPOINTS.APPOINTMENTS.TODAY).catch(() => ({ data: { data: [] } })),
+      apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, {
+        params: { date_from: yesterdayStr, date_to: yesterdayStr, limit: 200 },
+      }).catch(() => ({ data: { data: [] } })),
+      apiClient.get(ENDPOINTS.DOCTORS.DASHBOARD).catch(() => ({ data: { data: {} } })),
+      apiClient.get(ENDPOINTS.DOCTORS.PATIENTS, { params: { limit: 200 } }).catch(() => ({ data: { data: [] } })),
+    ]).then(([todayRes, yesterdayRes, dashRes, patientsRes]) => {
+      const todayAppts: Appointment[] = todayRes.data?.data ?? [];
+      const yesterdayAppts: Appointment[] = yesterdayRes.data?.data ?? [];
+      const dashData = dashRes.data?.data ?? {};
+      const patientsList: { created_at?: string }[] = patientsRes.data?.data ?? [];
+
+      const totalPatients: number = dashData.patients_summary?.total ?? patientsList.length;
+      const todayStr2 = toDateStr(today);
+      const newPatients30d = patientsList.filter((p) => {
+        if (!p.created_at) return false;
+        const d = p.created_at.slice(0, 10);
+        return d >= thirtyDaysAgo && d <= todayStr2;
+      }).length;
+      const newPatientsPrev30d = patientsList.filter((p) => {
+        if (!p.created_at) return false;
+        const d = p.created_at.slice(0, 10);
+        return d >= sixtyDaysAgo && d < thirtyDaysAgo;
+      }).length;
+
+      setKpiStats({
+        todayAppts: todayAppts.length,
+        yesterdayAppts: yesterdayAppts.length,
+        totalPatients,
+        newPatients30d,
+        newPatientsPrev30d,
+        pendingToday: todayAppts.filter((a) => ACTIVE_STATUSES.has(a.status)).length,
+        pendingYesterday: yesterdayAppts.filter((a) => ACTIVE_STATUSES.has(a.status)).length,
+      });
+    });
+  }, [today]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── navigation ────────────────────────────────────────────────────
 
@@ -372,6 +437,60 @@ export default function DoctorDashboard() {
             <span>Today, {todayDisplay}</span>
           </div>
         </div>
+      </div>
+
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {[
+          {
+            icon: CalendarDays,
+            label: "Today's Appointments",
+            value: kpiStats?.todayAppts ?? "—",
+            change: kpiStats ? pctChange(kpiStats.todayAppts, kpiStats.yesterdayAppts) : null,
+          },
+          {
+            icon: Users,
+            label: "Total Patients",
+            value: kpiStats?.totalPatients ?? "—",
+            change: kpiStats ? pctChange(kpiStats.newPatients30d, kpiStats.newPatientsPrev30d) : null,
+          },
+          {
+            icon: UserPlus,
+            label: "New Patients",
+            value: kpiStats?.newPatients30d ?? "—",
+            change: kpiStats ? pctChange(kpiStats.newPatients30d, kpiStats.newPatientsPrev30d) : null,
+          },
+          {
+            icon: Clock,
+            label: "Pending Appointments",
+            value: kpiStats?.pendingToday ?? "—",
+            change: kpiStats ? pctChange(kpiStats.pendingToday, kpiStats.pendingYesterday) : null,
+          },
+        ].map(({ icon: Icon, label, value, change }) => (
+          <div
+            key={label}
+            className="rounded-xl px-4 py-3 flex flex-col gap-1.5"
+            style={{ background: BRAND }}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-white/80">{label}</span>
+              <div className="w-7 h-7 rounded-full flex items-center justify-center bg-white/15">
+                <Icon className="w-3.5 h-3.5 text-white" />
+              </div>
+            </div>
+            <div className="text-2xl font-bold text-white">{value}</div>
+            {change ? (
+              <div className="flex items-center gap-1 text-[11px] text-white/80">
+                {change.up
+                  ? <TrendingUp className="w-3 h-3 text-green-300" />
+                  : <TrendingDown className="w-3 h-3 text-red-300" />}
+                <span>{change.label}</span>
+              </div>
+            ) : (
+              <div className="text-[11px] text-white/40">Loading…</div>
+            )}
+          </div>
+        ))}
       </div>
 
       {/* calendar */}

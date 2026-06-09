@@ -23,6 +23,7 @@ const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React
     { label: "Dashboard", href: "/doctor/dashboard", icon: LayoutDashboard },
     { label: "Patients",  href: "/doctor/patients",  icon: Users },
     { label: "Schedule",  href: "/doctor/schedule",  icon: Calendar },
+    { label: "Profile",   href: "/doctor/profile",   icon: UserCircle },
   ],
   clinical_assistant: [
     { label: "Dashboard",    href: "/clinical-assistant/dashboard", icon: LayoutDashboard },
