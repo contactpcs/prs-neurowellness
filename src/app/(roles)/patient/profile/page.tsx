@@ -97,12 +97,12 @@ export default function PatientProfilePage() {
           country:          (data.country          as string) ?? "",
           pincode:          (data.pincode          as string) ?? "",
           blood_group:      (data.blood_group      as string) ?? "",
-          allergies:        ((data.allergies ?? data.known_allergies) as string) ?? "",
+          allergies:        (data.known_allergies as string) ?? "",
           emergency_contact:(data.emergency_contact as string) ?? "",
           occupation:       (data.occupation       as string) ?? "",
           marital_status:   (data.marital_status   as string) ?? "",
           insurance_provider:(data.insurance_provider as string) ?? "",
-          insurance_policy: ((data.insurance_policy ?? data.policy_number) as string) ?? "",
+          insurance_policy: (data.policy_number as string) ?? "",
         };
         setForm(filled);
         originalRef.current = filled;
@@ -138,12 +138,12 @@ export default function PatientProfilePage() {
         country:           (updated.country           as string) ?? "",
         pincode:           (updated.pincode           as string) ?? "",
         blood_group:       (updated.blood_group       as string) ?? "",
-        allergies:         ((updated.allergies ?? updated.known_allergies) as string) ?? "",
+        allergies:         (updated.known_allergies as string) ?? "",
         emergency_contact: (updated.emergency_contact as string) ?? "",
         occupation:        (updated.occupation        as string) ?? "",
         marital_status:    (updated.marital_status    as string) ?? "",
         insurance_provider:(updated.insurance_provider as string) ?? "",
-        insurance_policy:  ((updated.insurance_policy ?? updated.policy_number) as string) ?? "",
+        insurance_policy:  (updated.policy_number as string) ?? "",
       };
       setForm(freshFilled);
       originalRef.current = freshFilled;
