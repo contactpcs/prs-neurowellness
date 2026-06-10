@@ -163,9 +163,9 @@ export const ENDPOINTS = {
 
   // ─── Doctor Notes ───
   DOCTOR_NOTES: {
-    FOR_PATIENT: (patientId: string) => `/notes/patient/${patientId}`,
-    ME: "/notes/me",
-    UPSERT: (patientId: string) => `/notes/patient/${patientId}`, // PUT
+    FOR_PATIENT: (patientId: string) => `/doctor-notes/patient/${patientId}`,
+    ME: "/doctor-notes/me",
+    UPSERT: (patientId: string) => `/doctor-notes/patient/${patientId}`, // PUT
   },
 
   // ─── EEG Reports ───
