@@ -40,6 +40,17 @@ export interface User {
   marital_status?: string;
   referred_by?: string;
   
+  // Identity
+  full_name?: string;
+  government_id?: string;
+  id_type?: string;
+  language_pref?: string;
+
+  // Doctor-specific
+  specialisation?: string;
+  hospital?: string;
+  years_of_experience?: number;
+
   // System Fields
   mrn?: string;
   approval_status?: string;

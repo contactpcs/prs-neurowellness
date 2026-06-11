@@ -129,6 +129,14 @@ const authSlice = createSlice({
   name: "auth",
   initialState,
   reducers: {
+    updateUserInStore: (state, action: { payload: Partial<User> }) => {
+      if (state.user) {
+        state.user = { ...state.user, ...action.payload };
+        if (typeof window !== "undefined") {
+          localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(state.user));
+        }
+      }
+    },
     logout: (state) => {
       state.user = null;
       state.isAuthenticated = false;
@@ -179,5 +187,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { logout, clearError } = authSlice.actions;
+export const { logout, clearError, updateUserInStore } = authSlice.actions;
 export default authSlice.reducer;

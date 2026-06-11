@@ -7,4 +7,9 @@ export const usersService = {
     const { data } = await apiClient.get(ENDPOINTS.USERS.PROFILE);
     return data.data ?? data;
   },
+
+  async updateProfile(payload: Record<string, unknown>): Promise<User> {
+    await apiClient.put(ENDPOINTS.USERS.PROFILE, payload);
+    return usersService.getProfile();
+  },
 };
