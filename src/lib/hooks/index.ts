@@ -1,4 +1,6 @@
 export { useAuth } from "./useAuth";
+export { useAppointmentRequests, usePendingRequests, useSubmitAppointmentRequest } from "./useAppointmentRequests";
+export { useAppointments, useTodayAppointments, useUpcomingAppointments, useAppointmentDetail } from "./useAppointments";
 export { useSessions } from "./useSessions";
 export { useQuestionnaire } from "./useQuestionnaire";
 export { useScales, useClinics } from "./useCatalog";

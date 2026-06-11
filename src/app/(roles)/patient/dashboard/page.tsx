@@ -159,9 +159,12 @@ function PatientDashboard() {
               <PlayCircle className="w-4 h-4" /> Start
             </Link>
           ) : (
-            <button className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2 rounded-full text-sm font-medium flex-shrink-0">
+            <Link
+              href="/patient/appointments/request"
+              className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2 rounded-full text-sm font-medium flex-shrink-0 inline-flex items-center"
+            >
               Book Appointment
-            </button>
+            </Link>
           )}
         </div>
 

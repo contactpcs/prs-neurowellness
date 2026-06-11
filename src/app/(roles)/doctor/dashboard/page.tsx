@@ -165,7 +165,7 @@ export default function DoctorDashboard() {
   const fetchAppointments = useCallback(async (from: Date, to: Date) => {
     try {
       const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, {
-        params: { date_from: toDateStr(from), date_to: toDateStr(to), limit: 200 },
+        params: { date_from: toDateStr(from), date_to: toDateStr(to), limit: 100 },
       });
       setAppointments(data.data ?? []);
     } catch { setAppointments([]); }
@@ -194,10 +194,10 @@ export default function DoctorDashboard() {
     Promise.all([
       apiClient.get(ENDPOINTS.APPOINTMENTS.TODAY).catch(() => ({ data: { data: [] } })),
       apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, {
-        params: { date_from: yesterdayStr, date_to: yesterdayStr, limit: 200 },
+        params: { date_from: yesterdayStr, date_to: yesterdayStr, limit: 100 },
       }).catch(() => ({ data: { data: [] } })),
       apiClient.get(ENDPOINTS.DOCTORS.DASHBOARD).catch(() => ({ data: { data: {} } })),
-      apiClient.get(ENDPOINTS.DOCTORS.PATIENTS, { params: { limit: 200 } }).catch(() => ({ data: { data: [] } })),
+      apiClient.get(ENDPOINTS.DOCTORS.PATIENTS, { params: { limit: 100 } }).catch(() => ({ data: { data: [] } })),
     ]).then(([todayRes, yesterdayRes, dashRes, patientsRes]) => {
       const todayAppts: Appointment[] = todayRes.data?.data ?? [];
       const yesterdayAppts: Appointment[] = yesterdayRes.data?.data ?? [];
