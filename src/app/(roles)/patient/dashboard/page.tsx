@@ -116,9 +116,9 @@ function PatientDashboard() {
   );
 
   return (
-    <div className="w-full bg-gray-50 min-h-screen">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="px-6 pt-0 pb-3 flex items-center justify-between">
+      <div className="pb-3 flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-gray-900">Welcome back, {firstName}!</h1>
           <p className="text-xs text-gray-500 mt-0.5">Here's your wellness summary for today.</p>
@@ -148,30 +148,15 @@ function PatientDashboard() {
               </span>
             )}
           </div>
-          {pendingAssessments.length > 0 ? (
-            <Link
-              href={`/patient/assessment/${pendingAssessments[0].permission_id}`}
-              className="inline-flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-5 py-2 rounded-full text-sm font-medium flex-shrink-0"
-            >
-              <PlayCircle className="w-4 h-4" /> Start
-            </Link>
-          ) : (
-            <Link
-              href="/patient/appointments/request"
-              className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2 rounded-full text-sm font-medium flex-shrink-0 inline-flex items-center"
-            >
-              Book Appointment
-            </Link>
-          )}
         </div>
       </div>
 
-      <div className="px-6 pb-6 space-y-3">
+      <div className="pb-6 space-y-3">
         {/* Hero Banner */}
         {(nextAppt || pendingAssessments.length > 0) && (
           <div
             className="rounded-xl overflow-hidden"
-            style={{ background: "linear-gradient(135deg, #0ea5e9 0%, #0284c7 50%, #1e5a8c 100%)" }}
+            style={{ background: "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)" }}
           >
             <div className="px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -219,11 +204,11 @@ function PatientDashboard() {
                 )}
                 {doctor && (
                   <div className="bg-white/10 rounded-lg px-4 py-2.5 flex items-center gap-2 text-white">
-                    <div className="w-8 h-8 rounded-full bg-white/30 flex items-center justify-center font-bold text-xs">
-                      {doctor.first_name?.[0]}{doctor.last_name?.[0]}
+                    <div className="w-8 h-8 rounded-full bg-white/80 flex items-center justify-center">
+                      <User className="w-4 h-4 text-blue-500" />
                     </div>
                     <div>
-                      <p className="text-[10px] text-blue-100">Your clinician</p>
+                      <p className="text-[10px] text-blue-100">Your Doctor</p>
                       <p className="font-semibold text-xs">{doctor.full_name}</p>
                     </div>
                     <ChevronRight className="w-3.5 h-3.5 text-blue-200" />
@@ -243,14 +228,14 @@ function PatientDashboard() {
             sub={totalPlannedAppts > 0 ? `of ${totalPlannedAppts} planned` : "No sessions yet"}
           />
           <StatCard
-            icon={<TrendingUp className="w-4 h-4 text-blue-500" />}
+            icon={<TrendingUp className="w-4 h-4 text-orange-500" />}
             label="Treatment progress"
             value={`${treatmentPct}%`}
             sub="On track"
             highlight
           />
           <StatCard
-            icon={<ClipboardList className="w-4 h-4 text-blue-500" />}
+            icon={<ClipboardList className="w-4 h-4 text-orange-500" />}
             label="PRS assessment"
             value={
               scoreInstances.length > 0 ? `${prsProgress}%`
@@ -274,7 +259,7 @@ function PatientDashboard() {
         {/* Action Cards */}
         <div className="grid grid-cols-3 gap-3">
           {/* Profile completion */}
-          <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+          <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex flex-col">
             <div className="flex items-center justify-between mb-2">
               <User className="w-4 h-4 text-blue-500" />
               <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
@@ -297,10 +282,10 @@ function PatientDashboard() {
                     <span>{remainingFields} fields remaining</span>
                   </div>
                   <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-500 rounded-full" style={{ width: `${profilePct}%` }} />
+                    <div className="h-full bg-orange-500 rounded-full" style={{ width: `${profilePct}%` }} />
                   </div>
                 </div>
-                <Link href="/patient/profile" className="mt-2.5 flex items-center gap-0.5 text-xs font-medium text-gray-900 hover:text-blue-600">
+                <Link href="/patient/profile" className="mt-auto pt-2.5 flex items-center gap-0.5 text-xs font-medium text-gray-900 hover:text-blue-600">
                   Complete now <ChevronRight className="w-3.5 h-3.5" />
                 </Link>
               </>
@@ -308,7 +293,7 @@ function PatientDashboard() {
           </div>
 
           {/* Consent / pending assessment */}
-          <div className={`bg-white rounded-xl p-4 border shadow-sm ${
+          <div className={`bg-white rounded-xl p-4 border shadow-sm flex flex-col ${
             pendingAssessments.length > 0 ? "border-blue-200" : "border-gray-100"
           }`}>
             <div className="flex items-center justify-between mb-2">
@@ -334,7 +319,7 @@ function PatientDashboard() {
             {pendingAssessments.length > 0 && (
               <Link
                 href={`/patient/consent/${pendingAssessments[0].permission_id}`}
-                className="mt-3 w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium"
+                className="mt-auto w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium"
                 style={{ background: "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)" }}
               >
                 Review &amp; sign <ChevronRight className="w-3.5 h-3.5" />
@@ -343,10 +328,10 @@ function PatientDashboard() {
           </div>
 
           {/* Book appointment */}
-          <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+          <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex flex-col">
             <div className="flex items-center justify-between mb-2">
-              <Calendar className="w-4 h-4 text-blue-500" />
-              <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
+              <Calendar className="w-4 h-4 text-orange-500" />
+              <span className="text-[10px] font-medium text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-full">
                 Quick action
               </span>
             </div>
@@ -355,10 +340,10 @@ function PatientDashboard() {
               Book your next session or consultation{doctor ? ` with Dr. ${doctor.last_name}` : ""} using our AI-powered smart scheduler.
             </p>
             <div className="mt-2 flex items-center gap-1 text-[10px] text-gray-500">
-              <Zap className="w-3 h-3 text-blue-400" />
+              <Zap className="w-3 h-3 text-orange-400" />
               NW Assistant can find the best available slot for you.
             </div>
-            <button className="mt-3 w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium" style={{ background: "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)" }}>
+            <button className="mt-auto w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium" style={{ background: "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)" }}>
               <Zap className="w-3.5 h-3.5" /> Book appointment
             </button>
           </div>
@@ -413,13 +398,13 @@ function PatientDashboard() {
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100">
                 <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide flex items-center gap-1">
-                  <User className="w-3 h-3" /> Your assigned clinician
+                  <User className="w-3 h-3" /> Your assigned Doctor
                 </p>
               </div>
               <div className="px-4 py-3">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                    {doctor.first_name?.[0]}{doctor.last_name?.[0]}
+                  <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <User className="w-5 h-5 text-blue-400" />
                   </div>
                   <div>
                     <p className="text-sm font-bold text-gray-900">{doctor.full_name}</p>
@@ -517,14 +502,14 @@ function StatCard({ icon, label, value, sub, highlight }: {
 }) {
   return (
     <div className={`bg-white rounded-xl p-4 border shadow-sm ${
-      highlight ? "border-blue-200 ring-1 ring-blue-100" : "border-gray-100"
+      highlight ? "border-gray-200" : "border-gray-100"
     }`}>
       <div className="flex items-center gap-1.5 mb-1.5">
         {icon}
-        <p className="text-xs text-gray-500">{label}</p>
+        <p className="text-sm text-gray-500">{label}</p>
       </div>
-      <p className="text-2xl font-bold text-gray-900">{value}</p>
-      {sub && <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>}
+      <p className="text-xl font-[750] text-gray-700">{value}</p>
+      {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
     </div>
   );
 }
@@ -556,7 +541,7 @@ function ProgressBar({ label, value, max, showCount, maxDisplay, unit }: {
         </span>
       </div>
       <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+        <div className="h-full bg-orange-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
