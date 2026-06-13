@@ -1,5 +1,6 @@
 import { configureStore } from "@reduxjs/toolkit";
 import authReducer from "./slices/authSlice";
+import appointmentsReducer from "./slices/appointmentsSlice";
 import sessionReducer from "./slices/sessionSlice";
 import questionnaireReducer from "./slices/questionnaireSlice";
 import catalogReducer from "./slices/catalogSlice";
@@ -12,10 +13,12 @@ import scoresReducer from "./slices/scoresSlice";
 import anamnesisReducer from "./slices/anamnesisSlice";
 import notificationsReducer from "./slices/notificationsSlice";
 import doctorNotesReducer from "./slices/doctorNotesSlice";
+import appointmentRequestsReducer from "./slices/appointmentRequestsSlice";
 
 export const store = configureStore({
   reducer: {
     auth: authReducer,
+    appointments: appointmentsReducer,
     session: sessionReducer,
     questionnaire: questionnaireReducer,
     catalog: catalogReducer,
@@ -28,6 +31,7 @@ export const store = configureStore({
     anamnesis: anamnesisReducer,
     notifications: notificationsReducer,
     doctorNotes: doctorNotesReducer,
+    appointmentRequests: appointmentRequestsReducer,
   },
 });
 

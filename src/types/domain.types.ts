@@ -270,6 +270,32 @@ export interface Appointment {
   updated_at: string;
 }
 
+// ─── Appointment Requests ────────────────────────────────────────
+
+export type AppointmentRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+export type TimeWindow = "any" | "morning" | "afternoon" | "evening";
+export type Urgency = "normal" | "urgent" | "emergency";
+
+export interface AppointmentRequest {
+  request_id: string;
+  patient_id: string;
+  doctor_id: string;
+  clinic_id: string;
+  patient_name?: string;
+  doctor_name?: string;
+  preferred_date_1: string;
+  preferred_date_2?: string | null;
+  preferred_date_3?: string | null;
+  preferred_time_window: TimeWindow;
+  patient_complaint: string;
+  urgency: Urgency;
+  reason?: string | null;
+  status: AppointmentRequestStatus;
+  review_notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // ─── Anamnesis ────────────────────────────────────────────────────
 
 export interface AnamnesisResponse {

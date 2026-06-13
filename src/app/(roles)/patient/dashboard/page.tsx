@@ -148,6 +148,21 @@ function PatientDashboard() {
               </span>
             )}
           </div>
+          {pendingAssessments.length > 0 ? (
+            <Link
+              href={`/patient/assessment/${pendingAssessments[0].permission_id}`}
+              className="inline-flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-5 py-2 rounded-full text-sm font-medium flex-shrink-0"
+            >
+              <PlayCircle className="w-4 h-4" /> Start
+            </Link>
+          ) : (
+            <Link
+              href="/patient/appointments/request"
+              className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2 rounded-full text-sm font-medium flex-shrink-0 inline-flex items-center"
+            >
+              Book Appointment
+            </Link>
+          )}
         </div>
       </div>
 
