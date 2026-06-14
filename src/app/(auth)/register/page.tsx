@@ -410,7 +410,7 @@ export default function RegisterPage() {
         </div>
         <div>
           <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">
-            Registration submitted!
+            Registration Submitted!
           </h2>
           <p className="text-sm text-neutral-500 mt-2 leading-relaxed">
             Your account has been submitted to{" "}
