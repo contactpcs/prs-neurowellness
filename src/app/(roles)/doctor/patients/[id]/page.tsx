@@ -251,7 +251,7 @@ export default function DoctorPatientDetailPage() {
         {/* Assessment Tabs and Content */}
         <div className="space-y-6">
           {/* Tabs */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto pb-1 scrollbar-none">
             <div className="px-4 py-2 bg-neutral-900 text-white font-medium rounded-lg text-sm">
               Today's Activity
             </div>
@@ -275,9 +275,9 @@ export default function DoctorPatientDetailPage() {
           </div>
 
           {/* Main Content Area */}
-          <div className="flex gap-6 min-h-96">
+          <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 min-h-96">
             {/* Left Sidebar - Assessment Sections */}
-            <div className="w-80 bg-white rounded-lg shadow-md overflow-hidden flex flex-col">
+            <div className="w-full lg:w-72 xl:w-80 bg-white rounded-lg shadow-md overflow-hidden flex flex-col">
               <div className="border-b border-neutral-200 p-4 flex items-center justify-between">
                 <h3 className="font-semibold text-neutral-900">Basic</h3>
                 <ChevronRight className="w-5 h-5 -rotate-90 text-neutral-600" />
@@ -325,7 +325,7 @@ export default function DoctorPatientDetailPage() {
             </div>
 
             {/* Right Content - Assessment Details */}
-            <div className="flex-1 bg-white rounded-lg shadow-md p-8 overflow-y-auto">
+            <div className="flex-1 bg-white rounded-lg shadow-md p-4 sm:p-8 overflow-y-auto">
               {selectedSection === "anamnesis" ? (
                 <AnamnesisForm
                   patientId={id}

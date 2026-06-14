@@ -34,17 +34,16 @@ export const eegService = {
   },
 
   async downloadReport(reportId: string, filename = "eeg_report.pdf"): Promise<void> {
-    const res = await apiClient.get(ENDPOINTS.EEG.DOWNLOAD(reportId), {
-      responseType: "blob",
-    });
-    const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+    const res = await apiClient.get(ENDPOINTS.EEG.DOWNLOAD(reportId));
+    const presignedUrl: string = res.data.url;
     const a = document.createElement("a");
-    a.href = url;
+    a.href = presignedUrl;
     a.download = filename;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   },
 
   async deleteReport(reportId: string): Promise<void> {
