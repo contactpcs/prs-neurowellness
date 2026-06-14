@@ -224,7 +224,11 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted }: A
       })
       .catch(() => {
         if (cancelled) return;
-        setError("Failed to load anamnesis. Please refresh.");
+        // For doctor view, treat any load failure as "not started yet" —
+        // the Start on Behalf button will surface any real errors when clicked.
+        if (mode !== "doctor") {
+          setError("Failed to load anamnesis. Please refresh.");
+        }
         setRecordState("no-record");
       });
 
@@ -382,10 +386,10 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted }: A
           <Stethoscope className="w-7 h-7 text-neutral-400" />
         </div>
         <div>
-          <p className="font-semibold text-neutral-800">No anamnesis record found</p>
-          <p className="text-sm text-neutral-500 mt-1">The patient has not yet completed their medical history intake.</p>
+          <p className="font-semibold text-neutral-800">Anamnesis not started</p>
+          <p className="text-sm text-neutral-500 mt-1">The patient has not yet begun their medical history intake. You can start it on their behalf.</p>
         </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-red-600 max-w-xs">{error}</p>}
         <Button onClick={handleStartOnBehalf}>
           <Stethoscope className="w-4 h-4" /> Start on Patient's Behalf
         </Button>

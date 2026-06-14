@@ -90,6 +90,7 @@ export default function DoctorPatientDetailPage() {
     (idx: number) => updateQuery({ tab: idx === 0 ? null : String(idx) }),
     [updateQuery],
   );
+  const [basicOpen, setBasicOpen] = useState(true);
   const [eegRefreshKey, setEegRefreshKey] = useState(0);
   const [showEegUpload, setShowEegUpload] = useState(false);
   const [eegUploadTab, setEegUploadTab] = useState<"nedf" | "pdf">("nedf");
@@ -278,11 +279,14 @@ export default function DoctorPatientDetailPage() {
           <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 min-h-96">
             {/* Left Sidebar - Assessment Sections */}
             <div className="w-full lg:w-72 xl:w-80 bg-white rounded-lg shadow-md overflow-hidden flex flex-col">
-              <div className="border-b border-neutral-200 p-4 flex items-center justify-between">
+              <button
+                onClick={() => setBasicOpen((o) => !o)}
+                className="border-b border-neutral-200 p-4 flex items-center justify-between w-full text-left hover:bg-neutral-50 transition-colors"
+              >
                 <h3 className="font-semibold text-neutral-900">Basic</h3>
-                <ChevronRight className="w-5 h-5 -rotate-90 text-neutral-600" />
-              </div>
-              <div className="flex-1 overflow-y-auto space-y-0">
+                <ChevronRight className={`w-5 h-5 text-neutral-600 transition-transform duration-150 ${basicOpen ? "-rotate-90" : "rotate-0"}`} />
+              </button>
+              <div className={`overflow-y-auto space-y-0 transition-all duration-150 ${basicOpen ? "flex-1" : "hidden"}`}>
                 {buildSections(anamnesisRecord?.status ?? null, !!doctorNote?.note_text).map((section) => {
                   if (section.id === "medical-history") {
                     return (
