@@ -34,7 +34,7 @@ function RolesLayoutInner({ children }: { children: React.ReactNode }) {
       <Header />
       <SocketInit />
       <main
-        className={`pt-14 p-4 sm:p-6 transition-all duration-200 ${
+        className={`pt-14 md:pt-0 p-4 sm:p-6 transition-all duration-200 ${
           isCollapsed ? "md:ml-16" : "md:ml-64"
         }`}
       >
