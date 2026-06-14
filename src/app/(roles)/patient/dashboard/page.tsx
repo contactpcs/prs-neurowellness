@@ -85,8 +85,9 @@ function PatientDashboard() {
   const fullName = profile?.full_name ?? "";
   const firstName = fullName ? fullName.split(" ")[0] : "User";
 
-  const pendingAssessments = assessments.filter((a) => a.status === "granted");
+  const pendingAssessments   = assessments.filter((a) => a.status === "granted");
   const completedAssessments = assessments.filter((a) => a.status === "completed");
+  const hasAnyAssessments    = assessments.length > 0;
   const scoreInstances = summary?.instances ?? [];
 
   const upcomingAppts = appointments
@@ -297,16 +298,26 @@ function PatientDashboard() {
             <div className="flex items-center justify-between mb-2">
               <FileText className="w-4 h-4 text-blue-500" />
               <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                pendingAssessments.length > 0 ? "text-red-600 bg-red-50" : "text-green-700 bg-green-50"
+                pendingAssessments.length > 0
+                  ? "text-red-600 bg-red-50"
+                  : hasAnyAssessments
+                    ? "text-green-700 bg-green-50"
+                    : "text-neutral-500 bg-neutral-100"
               }`}>
-                {pendingAssessments.length > 0 ? "Action needed" : "Up to date"}
+                {pendingAssessments.length > 0
+                  ? "Action needed"
+                  : hasAnyAssessments
+                    ? "Up to date"
+                    : "Not assigned"}
               </span>
             </div>
             <h3 className="text-sm font-semibold text-gray-900">Sign medical consent form</h3>
             <p className="text-xs text-gray-500 mt-1 leading-relaxed">
               {pendingAssessments.length > 0
                 ? "Required before your next assessment session. Review the treatment consent document and sign digitally."
-                : "All consent forms are up to date."}
+                : hasAnyAssessments
+                  ? "All consent forms are up to date."
+                  : "No assessments assigned yet. Your doctor will assign one when ready."}
             </p>
             {pendingAssessments.length > 0 && nextAppt && (
               <div className="mt-2 flex items-center gap-1.5 text-[10px] text-orange-600 bg-orange-50 rounded-lg px-2.5 py-1.5">

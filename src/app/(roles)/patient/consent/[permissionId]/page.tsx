@@ -41,10 +41,14 @@ export default function PatientConsentPage() {
   const [agreed, setAgreed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleContinue = async () => {
-    if (!agreed) return;
+  const handleContinue = () => {
+    if (!agreed || isSubmitting || !permissionId) return;
     setIsSubmitting(true);
-    router.push(`/patient/assessment/${permissionId}`);
+    try {
+      router.push(`/patient/assessment/${permissionId}`);
+    } catch {
+      setIsSubmitting(false);
+    }
   };
 
   return (

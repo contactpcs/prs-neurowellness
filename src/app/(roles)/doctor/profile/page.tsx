@@ -8,8 +8,7 @@ import {
 } from "lucide-react";
 import { PageLoader } from "@/components/ui";
 import { usersService } from "@/lib/api/services/users.service";
-import { useAuth } from "@/lib/hooks";
-import { useAppDispatch } from "@/store/hooks";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
@@ -74,7 +73,7 @@ const labelCls = "text-[10px] font-semibold text-neutral-400 uppercase tracking-
 // ─── component ────────────────────────────────────────────────────
 
 export default function DoctorProfilePage() {
-  const { user } = useAuth();
+  const user     = useAppSelector((s) => s.auth.user);
   const dispatch = useAppDispatch();
 
   const [profileRaw, setProfileRaw] = useState<Record<string, unknown> | null>(null);
