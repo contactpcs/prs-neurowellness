@@ -17,7 +17,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
               <Brain className="h-5 w-5 text-white" />
             </div>
             <div>
-              <p className="text-white font-bold text-base leading-tight">NeuroWellness</p>
+              <p className="text-white font-bold text-base leading-tight">Anava</p>
               <p className="text-white/60 text-[10px] font-semibold uppercase tracking-widest leading-tight">PRS</p>
             </div>
           </div>
@@ -55,7 +55,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
 
           {/* Footer */}
           <p className="text-white/40 text-xs">
-            © {new Date().getFullYear()} NeuroWellness. All rights reserved.
+            © {new Date().getFullYear()} Anava. All rights reserved.
           </p>
         </div>
       </div>
@@ -68,7 +68,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             <div className="w-8 h-8 rounded-lg bg-brand-gradient flex items-center justify-center">
               <Brain className="h-4 w-4 text-white" />
             </div>
-            <span className="font-bold text-accent-dark">NeuroWellness PRS</span>
+            <span className="font-bold text-accent-dark">Anava PRS</span>
           </div>
 
           <div className="bg-white rounded-2xl shadow-card border border-neutral-200/80 p-8">

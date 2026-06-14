@@ -283,7 +283,7 @@ export default function AppointmentDetailPage() {
   const cfg = STATUS_CONFIG[status];
 
   return (
-    <div className="min-h-screen bg-neutral-50">
+    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900">
       {/* Back nav */}
       <Link
         href="/doctor/appointments"

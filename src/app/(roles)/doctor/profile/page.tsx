@@ -1,13 +1,37 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Edit2, Check, X, AlertCircle } from "lucide-react";
+import { Edit2, Check, X, AlertCircle, CalendarDays, Users, UserPlus, Clock } from "lucide-react";
 import { Card, CardContent, PageLoader } from "@/components/ui";
 import { usersService } from "@/lib/api/services/users.service";
 import { useAppDispatch } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
+import apiClient from "@/lib/api/client";
+import { ENDPOINTS } from "@/lib/api/endpoints";
+import type { Appointment } from "@/types/domain.types";
+
+// ─── KPI types ────────────────────────────────────────────────────
+interface KpiStats {
+  todayAppts: number;
+  totalPatients: number;
+  newPatients30d: number;
+  pendingToday: number;
+}
+
+const ACTIVE_STATUSES = new Set(["scheduled", "confirmed", "checked_in", "in_progress"]);
+const BRAND = "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)";
 
 // ─── helpers ──────────────────────────────────────────────────────
+
+function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function addDays(d: Date, n: number): Date {
+  const r = new Date(d);
+  r.setDate(r.getDate() + n);
+  return r;
+}
 
 function computeAge(dob?: string): number | null {
   if (!dob) return null;
@@ -67,9 +91,42 @@ export default function DoctorProfilePage() {
   const [isSaving,  setIsSaving]      = useState(false);
   const [saveError, setSaveError]     = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [kpiStats, setKpiStats]       = useState<KpiStats | null>(null);
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const originalRef = useRef<FormState>(EMPTY_FORM);
+
+  // ── KPI fetch ────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const today = new Date();
+    const thirtyDaysAgo = toDateStr(addDays(today, -30));
+
+    Promise.all([
+      apiClient.get(ENDPOINTS.APPOINTMENTS.TODAY).catch(() => ({ data: { data: [] } })),
+      apiClient.get(ENDPOINTS.DOCTORS.DASHBOARD).catch(() => ({ data: { data: {} } })),
+      apiClient.get(ENDPOINTS.DOCTORS.PATIENTS, { params: { limit: 100 } }).catch(() => ({ data: { data: [] } })),
+    ]).then(([todayRes, dashRes, patientsRes]) => {
+      const todayAppts: Appointment[] = todayRes.data?.data ?? [];
+      const dashData = dashRes.data?.data ?? {};
+      const patientsList: { created_at?: string }[] = patientsRes.data?.data ?? [];
+
+      const totalPatients: number = dashData.patients_summary?.total ?? patientsList.length;
+      const todayStr = toDateStr(today);
+      const newPatients30d = patientsList.filter((p) => {
+        if (!p.created_at) return false;
+        const d = p.created_at.slice(0, 10);
+        return d >= thirtyDaysAgo && d <= todayStr;
+      }).length;
+
+      setKpiStats({
+        todayAppts: todayAppts.length,
+        totalPatients,
+        newPatients30d,
+        pendingToday: todayAppts.filter((a) => ACTIVE_STATUSES.has(a.status)).length,
+      });
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── pre-fill on mount ─────────────────────────────────────────────
 
@@ -164,6 +221,30 @@ export default function DoctorProfilePage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
+      {/* ── KPI cards ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { icon: CalendarDays, label: "Today's Appointments",  value: kpiStats?.todayAppts    ?? "—" },
+          { icon: Users,        label: "Total Patients",        value: kpiStats?.totalPatients  ?? "—" },
+          { icon: UserPlus,     label: "New Patients",          value: kpiStats?.newPatients30d ?? "—" },
+          { icon: Clock,        label: "Pending Appointments",  value: kpiStats?.pendingToday   ?? "—" },
+        ].map(({ icon: Icon, label, value }) => (
+          <div
+            key={label}
+            className="rounded-xl px-4 py-3 flex flex-col gap-1.5"
+            style={{ background: BRAND }}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-white/80">{label}</span>
+              <div className="w-7 h-7 rounded-full flex items-center justify-center bg-white/15">
+                <Icon className="w-3.5 h-3.5 text-white" />
+              </div>
+            </div>
+            <div className="text-2xl font-bold text-white">{value}</div>
+          </div>
+        ))}
+      </div>
+
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-neutral-900">Profile Settings</h1>
         <div className="flex items-center gap-3">

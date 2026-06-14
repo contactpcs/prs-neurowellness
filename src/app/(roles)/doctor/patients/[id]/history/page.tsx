@@ -198,7 +198,7 @@ export default function PatientHistoryPage() {
   // ── render ────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-neutral-100 to-neutral-50">
+    <div className="min-h-screen bg-gradient-to-b from-neutral-100 to-neutral-50 dark:from-neutral-900 dark:to-neutral-950">
 
       {/* Top nav */}
       <div className="bg-white border-b border-neutral-200 px-8 py-4">

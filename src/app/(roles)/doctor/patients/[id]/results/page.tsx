@@ -29,7 +29,7 @@ export default function DoctorPatientResultPage() {
 
   if (!instanceId || error || !detail) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#f7f6f2] to-[#f4f0ef] flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-[#f7f6f2] to-[#f4f0ef] dark:from-neutral-900 dark:to-neutral-900 flex items-center justify-center">
         <p className="text-neutral-500">Could not load assessment results.</p>
       </div>
     );
@@ -39,7 +39,7 @@ export default function DoctorPatientResultPage() {
   const overallResult = disease_result;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#f7f6f2] to-[#f4f0ef]">
+    <div className="min-h-screen bg-gradient-to-br from-[#f7f6f2] to-[#f4f0ef] dark:from-neutral-900 dark:to-neutral-900">
       {/* Sub-header */}
       <div className="bg-white border-b border-neutral-200">
         <div className="max-w-full px-8 py-4 flex items-center justify-between">

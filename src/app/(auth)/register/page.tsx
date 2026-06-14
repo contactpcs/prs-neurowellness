@@ -166,7 +166,7 @@ function ConsentModal({
               <h3 className="text-base font-semibold text-neutral-900 leading-tight">
                 Data Privacy Consent
               </h3>
-              <p className="text-xs text-neutral-400 mt-0.5">NeuroWellness</p>
+              <p className="text-xs text-neutral-400 mt-0.5">Anava</p>
             </div>
           </div>
           <button
@@ -182,7 +182,7 @@ function ConsentModal({
 
           <p className="text-neutral-500 text-xs leading-relaxed bg-neutral-50 border border-neutral-200 rounded-lg px-4 py-3">
             By creating an account on the{" "}
-            <strong className="text-neutral-700">NeuroWellness </strong>, you
+            <strong className="text-neutral-700">Anava</strong>, you
             acknowledge and agree to the following. Please read carefully before
             submitting your registration.
           </p>
@@ -439,7 +439,7 @@ export default function RegisterPage() {
         <div className="mb-6">
           <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">Create account</h2>
           <p className="text-sm text-neutral-500 mt-1">
-            Patient self-registration — NeuroWellness PRS
+            Patient self-registration — Anava PRS
           </p>
         </div>
 

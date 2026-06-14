@@ -95,7 +95,7 @@ function ConsentModal({
             </div>
             <div>
               <h3 className="text-base font-semibold text-neutral-900 leading-tight">Data Privacy Consent</h3>
-              <p className="text-xs text-neutral-400 mt-0.5">NeuroWellness — patient must consent before registration</p>
+              <p className="text-xs text-neutral-400 mt-0.5">Anava — patient must consent before registration</p>
             </div>
           </div>
           <button
@@ -109,7 +109,7 @@ function ConsentModal({
         {/* Scrollable body */}
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5 text-sm">
           <p className="text-neutral-500 text-xs leading-relaxed bg-neutral-50 border border-neutral-200 rounded-lg px-4 py-3">
-            By creating an account on the <strong className="text-neutral-700">NeuroWellness</strong>,
+            By creating an account on the <strong className="text-neutral-700">Anava</strong>,
             the patient acknowledges and agrees to the following. Please read to the patient carefully before submitting.
           </p>
 

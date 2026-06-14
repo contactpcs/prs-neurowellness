@@ -22,7 +22,7 @@ export default function LoginPage() {
     <div>
       <div className="mb-7">
         <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">Welcome back</h2>
-        <p className="text-sm text-neutral-500 mt-1.5">Sign in to your NeuroWellness PRS account</p>
+        <p className="text-sm text-neutral-500 mt-1.5">Sign in to your Anava PRS account</p>
       </div>
 
       {error && (

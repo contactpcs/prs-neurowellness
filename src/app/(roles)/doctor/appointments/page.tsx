@@ -227,7 +227,7 @@ export default function DoctorAppointmentsPage() {
   const todayAppts = apptByDate[todayStr] ?? [];
 
   return (
-    <div className="min-h-screen bg-neutral-50">
+    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900">
       {/* Header */}
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>

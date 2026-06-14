@@ -116,7 +116,7 @@ function PatientDashboard() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-neutral-900">
       {/* Header */}
       <div className="pb-3 flex items-center justify-between gap-2">
         <div className="min-w-0">
@@ -170,7 +170,7 @@ function PatientDashboard() {
                         Your next session is in {daysToNext} day{daysToNext !== 1 ? "s" : ""}
                       </h2>
                       <p className="text-blue-100 mt-0.5 text-xs">
-                        {nextAppt.appointment_type?.replace(/_/g, " ")} · NeuroWellness Clinic
+                        {nextAppt.appointment_type?.replace(/_/g, " ")} · Anava Clinic
                       </p>
                     </>
                   ) : (
@@ -341,9 +341,9 @@ function PatientDashboard() {
               <Zap className="w-3 h-3 text-orange-400" />
               NW Assistant can find the best available slot for you.
             </div>
-            <button className="mt-auto w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium" style={{ background: "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)" }}>
+            <Link href="/patient/appointments/request" className="mt-auto w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium hover:opacity-90 transition-opacity" style={{ background: "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)" }}>
               <Zap className="w-3.5 h-3.5" /> Book appointment
-            </button>
+            </Link>
           </div>
         </div>
 

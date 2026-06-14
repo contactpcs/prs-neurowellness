@@ -323,9 +323,7 @@ export default function DoctorPatientDetailPage() {
                   );
                 })}
               </div>
-              <div className="border-t border-neutral-200 p-4">
-                <h3 className="font-semibold text-neutral-900">Treatment Sessions</h3>
-              </div>
+             
             </div>
 
             {/* Right Content - Assessment Details */}

@@ -130,7 +130,7 @@ function SidebarInner() {
                 <Brain className="h-4 w-4 text-white" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-bold text-white leading-tight">NeuroWellness</p>
+                <p className="text-sm font-bold text-white leading-tight">Anava</p>
                 <p className="text-[10px] font-semibold text-blue-300 uppercase tracking-widest leading-tight">PRS</p>
               </div>
             </Link>

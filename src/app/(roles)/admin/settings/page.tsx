@@ -194,7 +194,7 @@ export default function AdminSettingsPage() {
       />
 
       <p className="text-xs text-neutral-400 text-center">
-        NeuroWellness PRS · Admin Panel · v1.0.0
+        Anava PRS · Admin Panel · v1.0.0
       </p>
     </div>
   );

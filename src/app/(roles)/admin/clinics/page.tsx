@@ -87,7 +87,7 @@ function ClinicForm({ initial, onSubmit, onClose, isEdit }: ClinicFormProps) {
         <Input
           value={form.clinic_name}
           onChange={(e) => set("clinic_name", e.target.value)}
-          placeholder="e.g. NeuroWellness Mumbai"
+          placeholder="e.g. Anava Mumbai"
           required
         />
       </div>
