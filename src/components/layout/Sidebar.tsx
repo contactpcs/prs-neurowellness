@@ -131,9 +131,9 @@ function SidebarInner() {
               </div>
             </Link>
             <button
-              onClick={() => setIsCollapsed(true)}
+              onClick={() => isMobileOpen ? setIsMobileOpen(false) : setIsCollapsed(true)}
               className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-white/10 transition-colors flex-shrink-0 text-white"
-              title="Collapse sidebar"
+              title={isMobileOpen ? "Close menu" : "Collapse sidebar"}
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
@@ -158,6 +158,7 @@ function SidebarInner() {
               key={item.href}
               href={item.href}
               title={isCollapsed ? item.label : undefined}
+              onClick={() => setIsMobileOpen(false)}
               className={cn(
                 "flex items-center rounded-lg text-sm font-medium transition-colors border-l-2",
                 isCollapsed ? "justify-center px-2 py-2.5" : "gap-3 px-3 py-2.5",
