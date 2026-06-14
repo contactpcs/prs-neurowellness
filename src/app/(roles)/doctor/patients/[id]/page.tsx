@@ -195,31 +195,36 @@ export default function DoctorPatientDetailPage() {
                 {patient?.mrn && (
                   <p className="text-sm text-neutral-600">({patient.mrn})</p>
                 )}
-                <div className="flex items-center gap-2 mt-2">
-                  {age && <span className="text-base text-neutral-700">{age} Yrs · Female</span>}
-                  <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg">New</span>
-                  <span className="px-3 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-lg flex items-center gap-1">
-                    <Check className="w-3 h-3" /> Paid
-                  </span>
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  {age && (
+                    <span className="text-base text-neutral-700">
+                      {age} Yrs{patient?.gender ? ` · ${patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1)}` : ""}
+                    </span>
+                  )}
+                  {patient?.approval_status && (
+                    <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg capitalize">
+                      {patient.approval_status}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="flex items-center gap-1.5 flex-shrink-0">
               <button
                 onClick={() => prevPatient && router.push(`/doctor/patients/${prevPatient.id}`)}
                 disabled={!prevPatient}
-                className="px-5 py-2.5 bg-neutral-800 text-white text-sm font-medium rounded-full hover:bg-neutral-700 transition-colors flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="px-3 py-1.5 bg-neutral-800 text-white text-xs font-medium rounded-full hover:bg-neutral-700 transition-colors flex items-center gap-1 disabled:opacity-30 disabled:cursor-not-allowed"
                 title={prevPatient?.full_name ?? ""}
               >
-                <ChevronLeft className="w-4 h-4" /> Prev
+                <ChevronLeft className="w-3.5 h-3.5" /> Prev
               </button>
               <button
                 onClick={() => nextPatient && router.push(`/doctor/patients/${nextPatient.id}`)}
                 disabled={!nextPatient}
-                className="px-5 py-2.5 bg-neutral-800 text-white text-sm font-medium rounded-full hover:bg-neutral-700 transition-colors flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="px-3 py-1.5 bg-neutral-800 text-white text-xs font-medium rounded-full hover:bg-neutral-700 transition-colors flex items-center gap-1 disabled:opacity-30 disabled:cursor-not-allowed"
                 title={nextPatient?.full_name ?? ""}
               >
-                Next <ChevronRight className="w-4 h-4" />
+                Next <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>

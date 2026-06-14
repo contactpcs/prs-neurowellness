@@ -12,6 +12,7 @@ export interface PatientListItem {
   gender?: string;
   condition?: string;
   status?: string;
+  approval_status?: string;
   assigned_at?: string;
   registered_at?: string;
   created_at?: string;

@@ -394,7 +394,7 @@ export default function DoctorDashboard() {
                   </div>
                   <div className="flex flex-col items-end gap-2 flex-shrink-0">
                     <p className="text-xl font-bold text-neutral-900 leading-none">{fmt12(appt.start_time)}</p>
-                    <Link href={`/doctor/patients/${appt.patient_id}`}>
+                    <Link href={`/doctor/appointments/${appt.appointment_id}`}>
                       <button
                         className="px-4 py-1.5 rounded-lg text-white text-xs font-semibold hover:opacity-90 transition-opacity"
                         style={{ background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)" }}

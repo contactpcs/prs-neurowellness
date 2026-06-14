@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Edit2, Check, X, AlertCircle } from "lucide-react";
-import { Card, CardContent, PageLoader } from "@/components/ui";
-import { ROLE_LABELS } from "@/lib/constants";
+import {
+  User, ShoppingBag, CreditCard, Bell, Settings,
+  Check, X, AlertCircle, Plus, Stethoscope, Edit2,
+} from "lucide-react";
+import { PageLoader } from "@/components/ui";
 import { usersService } from "@/lib/api/services/users.service";
-import { useAuth } from "@/lib/hooks";
-import { useAppDispatch } from "@/store/hooks";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
+import { fetchMyDoctor, selectMyDoctor } from "@/store/slices/patientsSlice";
 
 // ─── helpers ──────────────────────────────────────────────────────
 
@@ -35,82 +37,121 @@ function buildDiff(
 }
 
 const EMPTY_FORM = {
-  first_name: "", last_name: "",
+  full_name: "",
   date_of_birth: "", gender: "",
   government_id: "", id_type: "", language_pref: "",
   address_line1: "", city: "", state: "", country: "", pincode: "",
   blood_group: "", allergies: "", emergency_contact: "",
   occupation: "", marital_status: "",
   insurance_provider: "", insurance_policy: "",
+  weight_kg: "", height_ft: "", height_in: "",
 };
 
 type FormState = typeof EMPTY_FORM;
+type TabId = "overview" | "purchases" | "payments" | "notifications" | "settings";
 
-// ─── shared UI ────────────────────────────────────────────────────
+// ─── styles ───────────────────────────────────────────────────────
 
+const BRAND_PRIMARY = "#00A1E4";
+const BRAND = "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)";
 const inputCls =
-  "w-full rounded-lg border border-neutral-300 bg-white px-3.5 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 hover:border-neutral-400";
-const labelCls = "text-xs text-neutral-500 uppercase font-semibold tracking-wide";
+  "w-full rounded-lg border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 transition-all focus:outline-none focus:ring-2 focus:border-sky-400 hover:border-neutral-300";
+const labelCls = "text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-1.5 block";
 
-function Field({ label, value }: { label: string; value?: string | null }) {
+function FieldInput({
+  label, value, onChange, type = "text", placeholder, readOnly,
+}: {
+  label: string; value: string; onChange: (v: string) => void;
+  type?: string; placeholder?: string; readOnly?: boolean;
+}) {
   return (
     <div>
-      <p className={labelCls}>{label}</p>
-      <p className="text-sm text-neutral-700 mt-1">{value || "Not provided"}</p>
+      <label className={labelCls}>{label}</label>
+      <input
+        type={type}
+        className={readOnly ? `${inputCls} bg-neutral-50 cursor-default` : inputCls}
+        value={value}
+        placeholder={placeholder}
+        readOnly={readOnly}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
   );
 }
 
+// read-only display row (label → value table style)
+function InfoRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex items-start justify-between py-2.5 gap-4 border-b border-neutral-100 last:border-b-0">
+      <span className="text-sm text-neutral-400 flex-shrink-0 w-40">{label}</span>
+      <span className="text-sm font-semibold text-neutral-900 text-right">{value || "—"}</span>
+    </div>
+  );
+}
+
+const TABS: { id: TabId; label: string; Icon: React.ElementType }[] = [
+  { id: "overview",      label: "Overview",      Icon: User        },
+  { id: "purchases",     label: "Purchases",     Icon: ShoppingBag },
+  { id: "payments",      label: "Payments",      Icon: CreditCard  },
+  { id: "notifications", label: "Notifications", Icon: Bell        },
+  { id: "settings",      label: "Settings",      Icon: Settings    },
+];
+
 // ─── component ────────────────────────────────────────────────────
 
 export default function PatientProfilePage() {
-  const { user } = useAuth();
-  const dispatch = useAppDispatch();
+  const dispatch   = useAppDispatch();
+  const myDoctor   = useAppSelector(selectMyDoctor);
 
-  const [profileRaw, setProfileRaw] = useState<Record<string, unknown> | null>(null);
-  const [fetchError, setFetchError]   = useState<string | null>(null);
-  const [isEditing, setIsEditing]     = useState(false);
-  const [isSaving,  setIsSaving]      = useState(false);
-  const [saveError, setSaveError]     = useState<string | null>(null);
+  const [profileRaw,  setProfileRaw]  = useState<Record<string, unknown> | null>(null);
+  const [fetchError,  setFetchError]  = useState<string | null>(null);
+  const [isEditing,   setIsEditing]   = useState(false);
+  const [isSaving,    setIsSaving]    = useState(false);
+  const [saveError,   setSaveError]   = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [activeTab,   setActiveTab]   = useState<TabId>("overview");
+  const [settings,    setSettings]    = useState({
+    emailReminders: true, weeklyReport: true, shareData: true, darkMode: false,
+  });
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const originalRef = useRef<FormState>(EMPTY_FORM);
-
-  // ── pre-fill from API on mount ────────────────────────────────────
+  const originalRef     = useRef<FormState>(EMPTY_FORM);
 
   useEffect(() => {
+    dispatch(fetchMyDoctor());
     usersService.getProfile()
-      .then((data) => {
-        setProfileRaw(data as unknown as Record<string, unknown>);
+      .then((rawResp) => {
+        // API returns { patient: {...}, permissions: [...], ... }
+        const d: any = (rawResp as any).patient ?? rawResp;
+        setProfileRaw(d as Record<string, unknown>);
         const filled: FormState = {
-          first_name:       (data.first_name       as string) ?? "",
-          last_name:        (data.last_name        as string) ?? "",
-          date_of_birth:    (data.date_of_birth    as string) ?? "",
-          gender:           (data.gender           as string) ?? "",
-          government_id:    (data.government_id    as string) ?? "",
-          id_type:          (data.id_type          as string) ?? "",
-          language_pref:    ((data.language_pref ?? data.primary_language) as string) ?? "",
-          address_line1:    (data.address_line1    as string) ?? "",
-          city:             (data.city             as string) ?? "",
-          state:            (data.state            as string) ?? "",
-          country:          (data.country          as string) ?? "",
-          pincode:          (data.pincode          as string) ?? "",
-          blood_group:      (data.blood_group      as string) ?? "",
-          allergies:        (data.known_allergies as string) ?? "",
-          emergency_contact:(data.emergency_contact as string) ?? "",
-          occupation:       (data.occupation       as string) ?? "",
-          marital_status:   (data.marital_status   as string) ?? "",
-          insurance_provider:(data.insurance_provider as string) ?? "",
-          insurance_policy: (data.policy_number as string) ?? "",
+          full_name:         (d.full_name      as string) ?? `${d.first_name ?? ""} ${d.last_name ?? ""}`.trim(),
+          date_of_birth:     (d.date_of_birth  as string) ?? "",
+          gender:            (d.gender         as string) ?? "",
+          government_id:     (d.government_id  as string) ?? "",
+          id_type:           (d.id_type        as string) ?? "",
+          language_pref:     ((d.language_pref ?? d.primary_language) as string) ?? "",
+          address_line1:     (d.address_line1  as string) ?? "",
+          city:              (d.city           as string) ?? "",
+          state:             (d.state          as string) ?? "",
+          country:           (d.country        as string) ?? "",
+          pincode:           (d.pincode        as string) ?? "",
+          blood_group:       (d.blood_group    as string) ?? "",
+          allergies:         (d.known_allergies as string) ?? "",
+          emergency_contact: (d.emergency_contact as string) ?? "",
+          occupation:        (d.occupation     as string) ?? "",
+          marital_status:    (d.marital_status as string) ?? "",
+          insurance_provider:(d.insurance_provider as string) ?? "",
+          insurance_policy:  (d.policy_number  as string) ?? "",
+          weight_kg:         (d.weight_kg      as string) ?? "",
+          height_ft:         (d.height_ft      as string) ?? "",
+          height_in:         (d.height_in      as string) ?? "",
         };
         setForm(filled);
         originalRef.current = filled;
       })
       .catch(() => setFetchError("Failed to load profile"));
-  }, []);
-
-  // ── handlers ─────────────────────────────────────────────────────
+  }, [dispatch]);
 
   const set = (field: keyof FormState, value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -118,399 +159,356 @@ export default function PatientProfilePage() {
   const handleSave = async () => {
     const diff = buildDiff(form, originalRef.current);
     if (!Object.keys(diff).length) { setIsEditing(false); return; }
-
-    setIsSaving(true);
-    setSaveError(null);
-    setSaveSuccess(false);
+    setIsSaving(true); setSaveError(null); setSaveSuccess(false);
     try {
-      const updated = await usersService.updateProfile(diff);
+      const rawUpdated = await usersService.updateProfile(diff);
+      const u: any = (rawUpdated as any).patient ?? rawUpdated;
       const freshFilled: FormState = {
-        first_name:        (updated.first_name        as string) ?? "",
-        last_name:         (updated.last_name         as string) ?? "",
-        date_of_birth:     (updated.date_of_birth     as string) ?? "",
-        gender:            (updated.gender            as string) ?? "",
-        government_id:     (updated.government_id     as string) ?? "",
-        id_type:           (updated.id_type           as string) ?? "",
-        language_pref:     ((updated.language_pref ?? updated.primary_language) as string) ?? "",
-        address_line1:     (updated.address_line1     as string) ?? "",
-        city:              (updated.city              as string) ?? "",
-        state:             (updated.state             as string) ?? "",
-        country:           (updated.country           as string) ?? "",
-        pincode:           (updated.pincode           as string) ?? "",
-        blood_group:       (updated.blood_group       as string) ?? "",
-        allergies:         (updated.known_allergies as string) ?? "",
-        emergency_contact: (updated.emergency_contact as string) ?? "",
-        occupation:        (updated.occupation        as string) ?? "",
-        marital_status:    (updated.marital_status    as string) ?? "",
-        insurance_provider:(updated.insurance_provider as string) ?? "",
-        insurance_policy:  (updated.policy_number as string) ?? "",
+        full_name:         (u.full_name      as string) ?? `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim(),
+        date_of_birth:     (u.date_of_birth  as string) ?? "",
+        gender:            (u.gender         as string) ?? "",
+        government_id:     (u.government_id  as string) ?? "",
+        id_type:           (u.id_type        as string) ?? "",
+        language_pref:     ((u.language_pref ?? u.primary_language) as string) ?? "",
+        address_line1:     (u.address_line1  as string) ?? "",
+        city:              (u.city           as string) ?? "",
+        state:             (u.state          as string) ?? "",
+        country:           (u.country        as string) ?? "",
+        pincode:           (u.pincode        as string) ?? "",
+        blood_group:       (u.blood_group    as string) ?? "",
+        allergies:         (u.known_allergies as string) ?? "",
+        emergency_contact: (u.emergency_contact as string) ?? "",
+        occupation:        (u.occupation     as string) ?? "",
+        marital_status:    (u.marital_status as string) ?? "",
+        insurance_provider:(u.insurance_provider as string) ?? "",
+        insurance_policy:  (u.policy_number  as string) ?? "",
+        weight_kg:         (u.weight_kg      as string) ?? "",
+        height_ft:         (u.height_ft      as string) ?? "",
+        height_in:         (u.height_in      as string) ?? "",
       };
       setForm(freshFilled);
       originalRef.current = freshFilled;
-      setProfileRaw(updated as unknown as Record<string, unknown>);
+      setProfileRaw(u as Record<string, unknown>);
       dispatch(updateUserInStore({
-        first_name: updated.first_name,
-        last_name:  updated.last_name,
-        full_name:  updated.full_name,
-        city:       updated.city,
-        gender:     updated.gender,
-        date_of_birth: updated.date_of_birth,
+        full_name:     u.full_name,
+        first_name:    u.first_name,
+        last_name:     u.last_name,
+        city:          u.city,
+        gender:        u.gender,
+        date_of_birth: u.date_of_birth,
       }));
       setSaveSuccess(true);
       setIsEditing(false);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Failed to save profile");
-    } finally {
-      setIsSaving(false);
-    }
+    } finally { setIsSaving(false); }
   };
 
-  const handleCancel = () => {
-    setForm(originalRef.current);
-    setSaveError(null);
-    setIsEditing(false);
-  };
-
-  // ── render ────────────────────────────────────────────────────────
+  const handleCancel = () => { setForm(originalRef.current); setSaveError(null); setIsEditing(false); };
 
   if (!profileRaw && !fetchError) return <PageLoader />;
 
-  const age = computeAge(form.date_of_birth);
+  const age         = computeAge(form.date_of_birth);
+  const mrn         = (profileRaw?.mrn as string) || "—";
+  const status      = (profileRaw?.approval_status as string) || "active";
+  const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
+  const email       = (profileRaw?.email as string) ?? "";
+  const phone       = (profileRaw?.phone as string) ?? "";
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">Profile Settings</h1>
-        <div className="flex items-center gap-3">
-          {saveSuccess && !isEditing && (
-            <span className="flex items-center gap-1.5 text-sm text-green-600 font-medium">
-              <Check className="w-4 h-4" /> Saved
-            </span>
-          )}
-          {!isEditing && (
-            <button
-              onClick={() => { setSaveSuccess(false); setIsEditing(true); }}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition-colors text-sm font-medium"
-            >
-              <Edit2 className="w-4 h-4" /> Edit Profile
-            </button>
-          )}
+    <div className="max-w-4xl mx-auto space-y-5">
+      {/* ── Header card ── */}
+      <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-sky-50 via-blue-50/60 to-sky-50 p-6">
+        <div className="flex items-center gap-5">
+          <div className="w-16 h-16 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: BRAND }}>
+            <User className="w-8 h-8 text-white" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-neutral-900 leading-tight truncate">{form.full_name || "—"}</h1>
+            
+          </div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 mt-6 pt-5 border-t border-blue-100">
+          <div>
+            <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-1">Country</p>
+            <p className="text-sm font-semibold text-neutral-800">{form.country || "—"}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-1">Age</p>
+            <p className="text-sm font-semibold text-neutral-800">{age ?? "—"}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-1">Plan</p>
+            <p className="text-sm font-semibold" style={{ color: BRAND_PRIMARY }}>Standard</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-1">Status</p>
+            <p className="text-sm font-semibold capitalize" style={{ color: BRAND_PRIMARY }}>{statusLabel}</p>
+          </div>
         </div>
       </div>
 
-      {fetchError && (
-        <div className="flex items-center gap-2 p-4 bg-red-50 text-red-700 rounded-lg text-sm">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" /> {fetchError}
+      {/* ── Tabs ── */}
+      <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
+        <div className="flex border-b border-neutral-100 overflow-x-auto">
+          {TABS.map(({ id, label, Icon }) => {
+            const active = activeTab === id;
+            return (
+              <button key={id} onClick={() => setActiveTab(id)}
+                className={`flex items-center gap-2 px-5 py-4 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px flex-shrink-0 ${
+                  active ? "text-neutral-900 border-sky-500" : "text-neutral-500 border-transparent hover:text-neutral-700"
+                }`}>
+                <Icon className="w-4 h-4" />
+                {label}
+              </button>
+            );
+          })}
         </div>
-      )}
 
-      {/* ── Basic Information ── */}
-      <Card>
-        <div className="px-6 py-4 border-b border-neutral-100">
-          <h2 className="text-sm font-semibold text-neutral-900">Basic Information</h2>
-        </div>
-        <CardContent className="space-y-4 pt-4">
-          {isEditing ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className={`${labelCls} block mb-1.5`}>First Name</label>
-                <input className={inputCls} value={form.first_name}
-                  onChange={(e) => set("first_name", e.target.value)} />
+        {/* ── Overview ── */}
+        {activeTab === "overview" && (
+          <div className="p-6">
+            {fetchError && (
+              <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg text-sm mb-5">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" /> {fetchError}
               </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Left — Personal Information */}
               <div>
-                <label className={`${labelCls} block mb-1.5`}>Last Name</label>
-                <input className={inputCls} value={form.last_name}
-                  onChange={(e) => set("last_name", e.target.value)} />
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-base font-bold text-neutral-900">Personal Information</h2>
+                  {!isEditing && (
+                    <button
+                      onClick={() => { setSaveSuccess(false); setIsEditing(true); }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold hover:opacity-90 transition-opacity"
+                      style={{ background: BRAND }}
+                    >
+                      <Edit2 className="w-3.5 h-3.5" /> Edit
+                    </button>
+                  )}
+                </div>
+
+                {isEditing ? (
+                  <div className="space-y-3">
+                    <FieldInput label="Full Name"     value={form.full_name}     onChange={(v) => set("full_name", v)} />
+                    <FieldInput label="Date of Birth" value={form.date_of_birth} onChange={(v) => set("date_of_birth", v)} type="date" />
+                    <FieldInput label="Address"       value={form.address_line1} onChange={(v) => set("address_line1", v)} placeholder="Street address" />
+                    <FieldInput label="Country"       value={form.country}       onChange={(v) => set("country", v)} />
+                    <div className="grid grid-cols-2 gap-3">
+                      <FieldInput label="City"    value={form.city}    onChange={(v) => set("city", v)} />
+                      <FieldInput label="State"   value={form.state}   onChange={(v) => set("state", v)} />
+                    </div>
+                    <FieldInput label="Pincode"   value={form.pincode}  onChange={(v) => set("pincode", v)} />
+                    <div>
+                      <label className={labelCls}>Gender</label>
+                      <select className={inputCls} value={form.gender} onChange={(e) => set("gender", e.target.value)}>
+                        <option value="">Select</option>
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        <option value="other">Other</option>
+                        <option value="prefer_not_to_say">Prefer not to say</option>
+                      </select>
+                    </div>
+                    <FieldInput label="Occupation"   value={form.occupation}   onChange={(v) => set("occupation", v)} />
+                    <FieldInput label="Language"     value={form.language_pref} onChange={(v) => set("language_pref", v)} />
+
+                    {saveError && (
+                      <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
+                        <AlertCircle className="w-4 h-4 flex-shrink-0" /> {saveError}
+                      </div>
+                    )}
+                    <div className="flex gap-2 pt-1">
+                      <button onClick={handleSave} disabled={isSaving}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50 hover:opacity-90 transition-opacity"
+                        style={{ background: BRAND }}>
+                        <Check className="w-3.5 h-3.5" /> {isSaving ? "Saving…" : "Save"}
+                      </button>
+                      <button onClick={handleCancel} disabled={isSaving}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-neutral-100 text-neutral-700 text-sm font-semibold hover:bg-neutral-200 transition-colors">
+                        <X className="w-3.5 h-3.5" /> Cancel
+                      </button>
+                    </div>
+                    {saveSuccess && (
+                      <span className="flex items-center gap-1.5 text-sm text-green-600 font-medium">
+                        <Check className="w-4 h-4" /> Saved
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <InfoRow label="Full Name"    value={form.full_name} />
+                    <InfoRow label="Email"        value={email} />
+                    <InfoRow label="Phone"        value={phone} />
+                    <InfoRow label="Date of Birth" value={form.date_of_birth} />
+                    <InfoRow label="Gender"       value={form.gender} />
+                    <InfoRow label="Address"      value={form.address_line1} />
+                    <InfoRow label="City"         value={form.city} />
+                    <InfoRow label="State"        value={form.state} />
+                    <InfoRow label="Country"      value={form.country} />
+                    <InfoRow label="Pincode"      value={form.pincode} />
+                    <InfoRow label="Occupation"   value={form.occupation} />
+                    <InfoRow label="Language"     value={form.language_pref} />
+                  </div>
+                )}
               </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="First Name" value={form.first_name} />
-              <Field label="Last Name"  value={form.last_name}  />
-            </div>
-          )}
-          <Field label="Email" value={profileRaw?.email as string} />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <p className={labelCls}>Phone</p>
-              <p className="text-sm text-neutral-700 mt-1">
-                {(profileRaw?.phone as string) || "Not provided"}
-                <span className="text-xs text-neutral-400 ml-2">Contact support to change</span>
-              </p>
-            </div>
-            <div>
-              <p className={labelCls}>Role</p>
-              <p className="text-sm text-neutral-700 mt-1 capitalize">
-                {ROLE_LABELS[user?.roles?.[0] || "patient"]}
-              </p>
+
+              {/* Right — Medical Information + Care Team */}
+              <div className="space-y-6">
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-base font-bold text-neutral-900">Medical Information</h2>
+                  </div>
+
+                  {isEditing ? (
+                    <div className="space-y-3">
+                      <FieldInput label="Weight (KG)"        value={form.weight_kg}         onChange={(v) => set("weight_kg", v)}         placeholder="e.g., 72" />
+                      <div>
+                        <label className={labelCls}>Height</label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <input className={inputCls} value={form.height_ft} placeholder="Feet (e.g., 5)"   onChange={(e) => set("height_ft", e.target.value)} />
+                          <input className={inputCls} value={form.height_in} placeholder="Inches (e.g., 10)" onChange={(e) => set("height_in", e.target.value)} />
+                        </div>
+                      </div>
+                      <FieldInput label="Blood Group"        value={form.blood_group}        onChange={(v) => set("blood_group", v)}        placeholder="e.g., O+" />
+                      <FieldInput label="Allergies"          value={form.allergies}          onChange={(v) => set("allergies", v)}          placeholder="e.g., Penicillin" />
+                      <FieldInput label="Emergency Contact"  value={form.emergency_contact}  onChange={(v) => set("emergency_contact", v)}  placeholder="Name — Phone" />
+                      <FieldInput label="Insurance Provider" value={form.insurance_provider} onChange={(v) => set("insurance_provider", v)} />
+                      <FieldInput label="Policy Number"      value={form.insurance_policy}   onChange={(v) => set("insurance_policy", v)} />
+                    </div>
+                  ) : (
+                    <div>
+                      <InfoRow label="Weight (KG)"        value={form.weight_kg ? `${form.weight_kg} kg` : null} />
+                      <InfoRow label="Height"             value={form.height_ft ? `${form.height_ft}′ ${form.height_in || "0"}″` : null} />
+                      <InfoRow label="Blood Group"        value={form.blood_group} />
+                      <InfoRow label="Allergies"          value={form.allergies} />
+                      <InfoRow label="Emergency Contact"  value={form.emergency_contact} />
+                      <InfoRow label="Insurance Provider" value={form.insurance_provider} />
+                      <InfoRow label="Policy Number"      value={form.insurance_policy} />
+                    </div>
+                  )}
+                </div>
+
+                {/* Primary Care Team */}
+                <div>
+                  <h2 className="text-base font-bold text-neutral-900 mb-3">Primary Care Team</h2>
+                  {myDoctor ? (
+                    <div className="rounded-xl border border-neutral-200 p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="w-9 h-9 rounded-full bg-sky-100 flex items-center justify-center flex-shrink-0">
+                          <Stethoscope className="w-4 h-4" style={{ color: BRAND_PRIMARY }} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-neutral-900">
+                            Dr. {myDoctor.first_name} {myDoctor.last_name}
+                          </p>
+                          {myDoctor.specialization && (
+                            <p className="text-xs text-neutral-500 mt-0.5">{myDoctor.specialization}</p>
+                          )}
+                          <span className="inline-block mt-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                            style={{ color: BRAND_PRIMARY, background: "#EFF9FF" }}>
+                            Primary
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-neutral-200 p-4 text-sm text-neutral-400 text-center">
+                      No doctor assigned yet
+                    </div>
+                  )}
+                  <button className="mt-2 text-sm font-medium flex items-center gap-1" style={{ color: BRAND_PRIMARY }}>
+                    <Plus className="w-3.5 h-3.5" /> Add Provider
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="MRN"             value={(profileRaw?.mrn as string) || "Not assigned"} />
-            <div>
-              <p className={labelCls}>Approval Status</p>
-              <p className={`text-sm mt-1 font-medium ${
-                profileRaw?.approval_status === "approved" ? "text-green-600" :
-                profileRaw?.approval_status === "pending"  ? "text-amber-600" : "text-red-600"
-              }`}>
-                {profileRaw?.approval_status
-                  ? String(profileRaw.approval_status).charAt(0).toUpperCase() + String(profileRaw.approval_status).slice(1)
-                  : "—"}
-              </p>
+        )}
+
+        {/* ── Purchases ── */}
+        {activeTab === "purchases" && (
+          <div className="p-6">
+            <h2 className="text-base font-bold text-neutral-900 mb-5">Purchase History</h2>
+            <div className="rounded-xl border border-dashed border-neutral-200 py-14 text-center text-sm text-neutral-400">
+              No purchase history available
             </div>
           </div>
-        </CardContent>
-      </Card>
+        )}
 
-      {/* ── Personal Details ── */}
-      <Card>
-        <div className="px-6 py-4 border-b border-neutral-100">
-          <h2 className="text-sm font-semibold text-neutral-900">Personal Details</h2>
-        </div>
-        <CardContent className="space-y-4 pt-4">
-          {isEditing ? (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className={`${labelCls} block mb-1.5`}>Date of Birth</label>
-                  <input type="date" className={inputCls} value={form.date_of_birth}
-                    onChange={(e) => set("date_of_birth", e.target.value)} />
-                </div>
-                <div>
-                  <label className={`${labelCls} block mb-1.5`}>Gender</label>
-                  <select className={inputCls} value={form.gender}
-                    onChange={(e) => set("gender", e.target.value)}>
-                    <option value="">Select</option>
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="other">Other</option>
-                    <option value="prefer_not_to_say">Prefer not to say</option>
-                  </select>
-                </div>
+        {/* ── Payments ── */}
+        {activeTab === "payments" && (
+          <div className="p-6">
+            <h2 className="text-base font-bold text-neutral-900 mb-5">Payment & Billing</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+              <div className="rounded-xl border-l-4 border border-neutral-200 p-4" style={{ borderLeftColor: BRAND_PRIMARY }}>
+                <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-1">Current Plan</p>
+                <p className="text-lg font-bold text-neutral-900">Standard</p>
+                <p className="text-xs text-neutral-500 mt-0.5">Clinical Assessment Platform</p>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className={`${labelCls} block mb-1.5`}>Marital Status</label>
-                  <select className={inputCls} value={form.marital_status}
-                    onChange={(e) => set("marital_status", e.target.value)}>
-                    <option value="">Select</option>
-                    <option value="single">Single</option>
-                    <option value="married">Married</option>
-                    <option value="divorced">Divorced</option>
-                    <option value="widowed">Widowed</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label className={`${labelCls} block mb-1.5`}>Occupation</label>
-                  <input className={inputCls} value={form.occupation}
-                    onChange={(e) => set("occupation", e.target.value)} />
-                </div>
+              <div className="rounded-xl border-l-4 border border-neutral-200 p-4" style={{ borderLeftColor: BRAND_PRIMARY }}>
+                <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-1">Balance</p>
+                <p className="text-lg font-bold" style={{ color: BRAND_PRIMARY }}>—</p>
+                <p className="text-xs text-neutral-500 mt-0.5">Contact your clinic for billing</p>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className={`${labelCls} block mb-1.5`}>ID Type</label>
-                  <select className={inputCls} value={form.id_type}
-                    onChange={(e) => set("id_type", e.target.value)}>
-                    <option value="">Select</option>
-                    <option value="aadhar">Aadhar</option>
-                    <option value="pan">PAN</option>
-                    <option value="passport">Passport</option>
-                    <option value="voter_id">Voter ID</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label className={`${labelCls} block mb-1.5`}>Government ID</label>
-                  <input className={inputCls} value={form.government_id}
-                    onChange={(e) => set("government_id", e.target.value)} />
-                </div>
-              </div>
-              <div>
-                <label className={`${labelCls} block mb-1.5`}>Language Preference</label>
-                <select className={inputCls} value={form.language_pref}
-                  onChange={(e) => set("language_pref", e.target.value)}>
-                  <option value="">Select</option>
-                  <option value="en">English</option>
-                  <option value="hi">Hindi</option>
-                  <option value="te">Telugu</option>
-                  <option value="ta">Tamil</option>
-                  <option value="mr">Marathi</option>
-                  <option value="kn">Kannada</option>
-                  <option value="ml">Malayalam</option>
-                </select>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <p className={labelCls}>Date of Birth</p>
-                  <p className="text-sm text-neutral-700 mt-1">
-                    {form.date_of_birth || "Not provided"}
-                    {age !== null && <span className="text-neutral-400 ml-2">({age} yrs)</span>}
-                  </p>
-                </div>
-                <Field label="Gender" value={form.gender} />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label="Marital Status" value={form.marital_status} />
-                <Field label="Occupation"     value={form.occupation} />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label="ID Type"      value={form.id_type} />
-                <Field label="Government ID" value={form.government_id} />
-              </div>
-              <Field label="Language Preference" value={form.language_pref} />
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* ── Contact & Location ── */}
-      <Card>
-        <div className="px-6 py-4 border-b border-neutral-100">
-          <h2 className="text-sm font-semibold text-neutral-900">Contact & Location</h2>
-        </div>
-        <CardContent className="space-y-4 pt-4">
-          {isEditing ? (
-            <>
-              <div>
-                <label className={`${labelCls} block mb-1.5`}>Address Line 1</label>
-                <input className={inputCls} value={form.address_line1}
-                  onChange={(e) => set("address_line1", e.target.value)} />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className={`${labelCls} block mb-1.5`}>City</label>
-                  <input className={inputCls} value={form.city}
-                    onChange={(e) => set("city", e.target.value)} />
-                </div>
-                <div>
-                  <label className={`${labelCls} block mb-1.5`}>State</label>
-                  <input className={inputCls} value={form.state}
-                    onChange={(e) => set("state", e.target.value)} />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className={`${labelCls} block mb-1.5`}>Country</label>
-                  <input className={inputCls} value={form.country}
-                    onChange={(e) => set("country", e.target.value)} />
-                </div>
-                <div>
-                  <label className={`${labelCls} block mb-1.5`}>Pincode</label>
-                  <input className={inputCls} value={form.pincode}
-                    onChange={(e) => set("pincode", e.target.value)} />
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              <Field label="Address"  value={form.address_line1} />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label="City"    value={form.city}    />
-                <Field label="State"   value={form.state}   />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label="Country" value={form.country} />
-                <Field label="Pincode" value={form.pincode} />
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* ── Medical (patient-only) ── */}
-      <Card>
-        <div className="px-6 py-4 border-b border-neutral-100">
-          <h2 className="text-sm font-semibold text-neutral-900">Medical Information</h2>
-        </div>
-        <CardContent className="space-y-4 pt-4">
-          {isEditing ? (
-            <>
-              <div>
-                <label className={`${labelCls} block mb-1.5`}>Blood Group</label>
-                <select className={inputCls} value={form.blood_group}
-                  onChange={(e) => set("blood_group", e.target.value)}>
-                  <option value="">Select</option>
-                  {["A+","A-","B+","B-","AB+","AB-","O+","O-","unknown"].map((g) => (
-                    <option key={g} value={g}>{g}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={`${labelCls} block mb-1.5`}>Allergies</label>
-                <textarea rows={2} className={`${inputCls} resize-none`} value={form.allergies}
-                  onChange={(e) => set("allergies", e.target.value)}
-                  placeholder="e.g. Penicillin, Peanuts…" />
-              </div>
-              <div>
-                <label className={`${labelCls} block mb-1.5`}>Emergency Contact</label>
-                <input className={inputCls} value={form.emergency_contact}
-                  onChange={(e) => set("emergency_contact", e.target.value)}
-                  placeholder="Name - Phone number" />
-              </div>
-            </>
-          ) : (
-            <>
-              <Field label="Blood Group"       value={form.blood_group} />
-              <Field label="Allergies"         value={form.allergies} />
-              <Field label="Emergency Contact" value={form.emergency_contact} />
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* ── Insurance (patient-only) ── */}
-      <Card>
-        <div className="px-6 py-4 border-b border-neutral-100">
-          <h2 className="text-sm font-semibold text-neutral-900">Insurance</h2>
-        </div>
-        <CardContent className="space-y-4 pt-4">
-          {isEditing ? (
-            <>
-              <div>
-                <label className={`${labelCls} block mb-1.5`}>Insurance Provider</label>
-                <input className={inputCls} value={form.insurance_provider}
-                  onChange={(e) => set("insurance_provider", e.target.value)} />
-              </div>
-              <div>
-                <label className={`${labelCls} block mb-1.5`}>Policy Number</label>
-                <input className={inputCls} value={form.insurance_policy}
-                  onChange={(e) => set("insurance_policy", e.target.value)} />
-              </div>
-            </>
-          ) : (
-            <>
-              <Field label="Insurance Provider" value={form.insurance_provider} />
-              <Field label="Policy Number"      value={form.insurance_policy}    />
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* ── Save / Cancel ── */}
-      {isEditing && (
-        <div className="sticky bottom-0 bg-white pt-4 space-y-3">
-          {saveError && (
-            <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" /> {saveError}
             </div>
-          )}
-          <div className="flex gap-3">
-            <button onClick={handleSave} disabled={isSaving}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white font-medium text-sm hover:bg-blue-700 disabled:opacity-50 transition-colors">
-              <Check className="w-4 h-4" />
-              {isSaving ? "Saving…" : "Save Changes"}
-            </button>
-            <button onClick={handleCancel} disabled={isSaving}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-neutral-100 text-neutral-700 font-medium text-sm hover:bg-neutral-200 disabled:opacity-50 transition-colors">
-              <X className="w-4 h-4" /> Cancel
+            <div className="rounded-xl border border-neutral-200 overflow-hidden">
+              <div className="grid grid-cols-4 px-4 py-3 bg-neutral-50 border-b border-neutral-100 text-[11px] font-semibold text-neutral-400 uppercase tracking-wide">
+                <span>Date</span><span>Description</span><span>Amount</span><span>Status</span>
+              </div>
+              <div className="py-10 text-center text-sm text-neutral-400">No payment records</div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Notifications ── */}
+        {activeTab === "notifications" && (
+          <div className="p-6">
+            <h2 className="text-base font-bold text-neutral-900 mb-5">Notification History</h2>
+            <div className="rounded-xl border border-dashed border-neutral-200 py-14 text-center text-sm text-neutral-400">
+              No notifications
+            </div>
+          </div>
+        )}
+
+        {/* ── Settings ── */}
+        {activeTab === "settings" && (
+          <div className="p-6">
+            <h2 className="text-base font-bold text-neutral-900 mb-5">Preferences & Settings</h2>
+            <div className="space-y-3">
+              {([
+                { key: "emailReminders", label: "Email Reminders",         desc: "Get appointment and health notifications" },
+                { key: "weeklyReport",   label: "Weekly Report",           desc: "Receive health summaries every Monday"    },
+                { key: "shareData",      label: "Share Data with Provider", desc: "Allow care team to access your metrics"  },
+                { key: "darkMode",       label: "Dark Mode",               desc: "Enable dark theme (beta)"                },
+              ] as const).map(({ key, label, desc }) => (
+                <div key={key} className="flex items-center justify-between p-4 rounded-xl border border-neutral-200 hover:border-neutral-300 transition-colors">
+                  <div>
+                    <p className="text-sm font-semibold text-neutral-900">{label}</p>
+                    <p className="text-xs text-neutral-400 mt-0.5">{desc}</p>
+                  </div>
+                  <button
+                    onClick={() => setSettings((prev) => ({ ...prev, [key]: !prev[key] }))}
+                    className="w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors"
+                    style={settings[key]
+                      ? { background: BRAND_PRIMARY, borderColor: BRAND_PRIMARY }
+                      : { background: "#fff", borderColor: "#d1d5db" }}
+                  >
+                    {settings[key] && <Check className="w-3 h-3 text-white" />}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              className="mt-5 w-full py-3 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+              style={{ background: BRAND }}
+            >
+              Save Settings
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
