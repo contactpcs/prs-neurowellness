@@ -24,6 +24,11 @@ export const doctorsService = {
         first_name: parts[0] ?? "",
         last_name: parts.slice(1).join(" "),
         email: (profile.email as string) ?? "",
+        phone: (profile.phone as string) ?? undefined,
+        mrn: (p.mrn as string) ?? undefined,
+        date_of_birth: (profile.date_of_birth as string) ?? undefined,
+        gender: (profile.gender as string) ?? undefined,
+        status: (p.status as string) ?? undefined,
         last_prs: (p.last_prs as PatientListItem["last_prs"]) ?? null,
       } as PatientListItem;
     });

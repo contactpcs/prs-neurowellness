@@ -9,33 +9,37 @@ import { useSidebar } from "@/contexts/SidebarContext";
 import { authService } from "@/lib/api/services";
 import {
   LayoutDashboard, Users, ClipboardList,
-  UserCircle, LogOut, Brain, ChevronLeft, Menu, Calendar,
+  UserCircle, LogOut, Brain, ChevronLeft, Menu, Calendar, CalendarDays,
   ClipboardCheck, MapPin, Building2, UserCog, Settings,
 } from "lucide-react";
 
 const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React.ElementType }>> = {
   patient: [
-    { label: "Dashboard",  href: "/patient/dashboard", icon: LayoutDashboard },
-    { label: "My Results", href: "/patient/results",   icon: ClipboardList },
-    { label: "Profile",    href: "/patient/profile",   icon: UserCircle },
+    { label: "Dashboard",    href: "/patient/dashboard",    icon: LayoutDashboard },
+    { label: "Appointments", href: "/patient/appointments", icon: CalendarDays },
+    { label: "My Results",   href: "/patient/results",      icon: ClipboardList },
+    { label: "Profile",      href: "/patient/profile",      icon: UserCircle },
   ],
   doctor: [
-    { label: "Dashboard", href: "/doctor/dashboard", icon: LayoutDashboard },
-    { label: "Patients",  href: "/doctor/patients",  icon: Users },
-    { label: "Schedule",  href: "/doctor/schedule",  icon: Calendar },
-    { label: "Profile",   href: "/doctor/profile",   icon: UserCircle },
+    { label: "Dashboard",    href: "/doctor/dashboard",    icon: LayoutDashboard },
+    { label: "Appointments", href: "/doctor/appointments", icon: CalendarDays },
+    { label: "Patients",     href: "/doctor/patients",     icon: Users },
+    { label: "Schedule",     href: "/doctor/schedule",     icon: Calendar },
+    { label: "Profile",      href: "/doctor/profile",      icon: UserCircle },
   ],
   clinical_assistant: [
-    { label: "Dashboard",    href: "/clinical-assistant/dashboard", icon: LayoutDashboard },
-    { label: "All Patients", href: "/clinical-assistant/patients",  icon: Users },
-    { label: "Approvals",    href: "/clinical-assistant/approvals", icon: ClipboardCheck },
-    { label: "Profile",      href: "/clinical-assistant/profile",   icon: UserCircle },
+    { label: "Dashboard",   href: "/clinical-assistant/dashboard",            icon: LayoutDashboard },
+    { label: "Appt. Reqs.", href: "/clinical-assistant/appointment-requests", icon: CalendarDays },
+    { label: "All Patients",href: "/clinical-assistant/patients",             icon: Users },
+    { label: "Approvals",   href: "/clinical-assistant/approvals",            icon: ClipboardCheck },
+    { label: "Profile",     href: "/clinical-assistant/profile",              icon: UserCircle },
   ],
   receptionist: [
-    { label: "Dashboard",    href: "/receptionist/dashboard", icon: LayoutDashboard },
-    { label: "All Patients", href: "/receptionist/patients",  icon: Users },
-    { label: "Approvals",    href: "/receptionist/approvals", icon: ClipboardCheck },
-    { label: "Profile",      href: "/receptionist/profile",   icon: UserCircle },
+    { label: "Dashboard",   href: "/receptionist/dashboard",            icon: LayoutDashboard },
+    { label: "Appt. Reqs.", href: "/receptionist/appointment-requests", icon: CalendarDays },
+    { label: "All Patients",href: "/receptionist/patients",             icon: Users },
+    { label: "Approvals",   href: "/receptionist/approvals",            icon: ClipboardCheck },
+    { label: "Profile",     href: "/receptionist/profile",              icon: UserCircle },
   ],
   platform_admin: [
     { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
@@ -56,7 +60,7 @@ const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React
 function SidebarInner() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
-  const { isCollapsed, setIsCollapsed } = useSidebar();
+  const { isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen } = useSidebar();
   const [clinicLabel, setClinicLabel] = useState<string | null>(null);
 
   // Detect admin role first (backend may return "admin", "platform_admin", or "clinical_admin")
@@ -76,6 +80,12 @@ function SidebarInner() {
   const roleName = isAdmin ? "Admin" : role.replace(/_/g, " ");
 
   useEffect(() => {
+    if (/\/patients\/[^/]+/.test(pathname)) {
+      setIsCollapsed(true);
+    }
+  }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     if (!user) return;
     const fromUser = (user as any)?.clinic_name || (user as any)?.clinic_city;
     if (fromUser) { setClinicLabel(fromUser); return; }
@@ -88,10 +98,33 @@ function SidebarInner() {
   }, [user]);
 
   return (
+    <>
+      {/* Mobile backdrop */}
+      {isMobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-30 md:hidden"
+          onClick={() => setIsMobileOpen(false)}
+        />
+      )}
+      {/* Mobile hamburger — only visible when sidebar is closed */}
+      {!isMobileOpen && (
+        <button
+          className="fixed top-3 left-3 z-50 md:hidden p-2 rounded-lg text-white shadow-lg"
+          style={{ background: "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)" }}
+          onClick={() => setIsMobileOpen(true)}
+          aria-label="Open menu"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+      )}
     <aside
       className={cn(
         "fixed left-0 top-0 h-full flex flex-col z-40 transition-all duration-200",
-        isCollapsed ? "w-16" : "w-64",
+        // Desktop: width toggle
+        isCollapsed ? "md:w-16" : "md:w-64",
+        // Mobile: always full width, slide in/out
+        "w-64",
+        isMobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
       )}
       style={{ background: "linear-gradient(180deg, #00A1E4 0%, #17749B 100%)" }}
     >
@@ -191,6 +224,7 @@ function SidebarInner() {
         </button>
       </div>
     </aside>
+    </>
   );
 }
 

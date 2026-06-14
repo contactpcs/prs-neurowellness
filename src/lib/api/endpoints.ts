@@ -153,12 +153,30 @@ export const ENDPOINTS = {
 
   // ─── Appointments ───
   APPOINTMENTS: {
-    LIST:     "/appointments",
-    UPCOMING: "/appointments/upcoming",
-    TODAY:    "/appointments/today",
-    GET:      (id: string) => `/appointments/${id}`,
-    CONFIRM:  (id: string) => `/appointments/${id}/confirm`,
-    CANCEL:   (id: string) => `/appointments/${id}/cancel`,
+    LIST:               "/appointments",
+    UPCOMING:           "/appointments/upcoming",
+    TODAY:              "/appointments/today",
+    GET:                (id: string) => `/appointments/${id}`,
+    UPDATE:             (id: string) => `/appointments/${id}`,
+    HISTORY:            (id: string) => `/appointments/${id}/history`,
+    CONFIRM:            (id: string) => `/appointments/${id}/confirm`,
+    CHECK_IN:           (id: string) => `/appointments/${id}/check-in`,
+    START:              (id: string) => `/appointments/${id}/start`,
+    COMPLETE:           (id: string) => `/appointments/${id}/complete`,
+    CANCEL:             (id: string) => `/appointments/${id}/cancel`,
+    RESCHEDULE:         (id: string) => `/appointments/${id}/reschedule`,
+    NO_SHOW:            (id: string) => `/appointments/${id}/no-show`,
+    REQUEST_RESCHEDULE: (id: string) => `/appointments/${id}/request-reschedule`,
+  },
+
+  // ─── Appointment Requests ───
+  APPOINTMENT_REQUESTS: {
+    LIST:    "/appointment-requests",
+    CREATE:  "/appointment-requests",
+    GET:     (id: string) => `/appointment-requests/${id}`,
+    APPROVE: (id: string) => `/appointment-requests/${id}/approve`,
+    REJECT:  (id: string) => `/appointment-requests/${id}/reject`,
+    CANCEL:  (id: string) => `/appointment-requests/${id}/cancel`,
   },
 
   // ─── Doctor Notes ───

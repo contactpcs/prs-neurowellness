@@ -1,4 +1,5 @@
 export { authService } from "./auth.service";
+export { appointmentsService } from "./appointments.service";
 export { prsService } from "./prs.service";
 export { prsAssessmentService } from "./prsAssessment.service";
 export { doctorsService } from "./doctors.service";
