@@ -153,41 +153,38 @@ export default function DoctorPatientDetailPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-neutral-100 to-neutral-50">
       {/* Top Header with Navigation */}
-      <div className="bg-white border-b border-neutral-200 px-8 py-4">
-        <div className="flex items-center justify-between">
+      <div className="bg-white border-b border-neutral-200 px-4 sm:px-8 py-3">
+        <div className="flex items-center justify-between gap-3">
           <button
             onClick={() => router.back()}
-            className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900 transition-colors text-sm font-medium"
+            className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900 transition-colors text-sm font-medium flex-shrink-0"
           >
             <ChevronRight className="w-5 h-5 -scale-x-100" />
-            back to Search
+            <span className="hidden sm:inline">back to Search</span>
           </button>
-          <div className="flex items-center gap-4">
-            <div className="relative w-96 bg-white border border-neutral-200 rounded-full flex items-center px-6 py-3 shadow-sm">
+          <div className="flex items-center gap-2 flex-1 justify-end min-w-0">
+            <div className="relative flex-1 max-w-xs bg-white border border-neutral-200 rounded-full flex items-center px-4 py-2 shadow-sm hidden sm:flex">
               <input
                 type="text"
-                placeholder="Search patients, schedule, courses, equipments, etc"
+                placeholder="Search patients..."
                 className="flex-1 bg-transparent outline-none text-sm text-neutral-600 placeholder:text-neutral-400"
               />
             </div>
-            <button className="w-12 h-12 rounded-full bg-white hover:bg-neutral-50 flex items-center justify-center transition-colors shadow-sm border border-neutral-200">
-              <HelpCircle className="w-5 h-5 text-neutral-600" />
+            <button className="w-9 h-9 rounded-full bg-white hover:bg-neutral-50 flex items-center justify-center transition-colors shadow-sm border border-neutral-200 flex-shrink-0">
+              <HelpCircle className="w-4 h-4 text-neutral-600" />
             </button>
-            <button className="relative w-12 h-12 rounded-full bg-white hover:bg-neutral-50 flex items-center justify-center transition-colors shadow-sm border border-neutral-200">
-              <Bell className="w-5 h-5 text-neutral-600" />
-              <div className="absolute -top-1 -right-1 w-6 h-6 bg-primary-500 rounded-full flex items-center justify-center">
-                <span className="text-white text-xs font-bold">3</span>
-              </div>
+            <button className="relative w-9 h-9 rounded-full bg-white hover:bg-neutral-50 flex items-center justify-center transition-colors shadow-sm border border-neutral-200 flex-shrink-0">
+              <Bell className="w-4 h-4 text-neutral-600" />
             </button>
           </div>
         </div>
       </div>
 
-      <div className="px-8 py-8 space-y-6">
+      <div className="px-4 sm:px-8 py-4 sm:py-8 space-y-4 sm:space-y-6">
         {/* Patient info + Next Activity — two side-by-side cards */}
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
           {/* Left — Patient Name Card */}
-          <div className="bg-white rounded-lg shadow-md p-7 flex items-center justify-between">
+          <div className="bg-white rounded-lg shadow-md p-4 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-5">
               <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-white font-bold text-2xl border-2 border-[#f47920] flex-shrink-0">
                 {fullName?.[0]?.toUpperCase()}
@@ -227,7 +224,7 @@ export default function DoctorPatientDetailPage() {
           </div>
 
           {/* Right — Next Activity Card */}
-          <div className="bg-white rounded-lg shadow-md p-7 flex items-center justify-between">
+          <div className="bg-white rounded-lg shadow-md p-4 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             {nextAssessment ? (
               <>
                 <div>
@@ -461,7 +458,7 @@ export default function DoctorPatientDetailPage() {
                   </div>
 
                   {/* Summary Stats */}
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="bg-blue-50 rounded-lg p-4">
                       <p className="text-neutral-600 text-sm mb-1">Total Assessments</p>
                       <p className="text-2xl font-bold text-neutral-900">{totalAssessments || assessments.length}</p>
@@ -500,7 +497,7 @@ export default function DoctorPatientDetailPage() {
 
                             {/* Score results */}
                             {result && (
-                              <div className="grid grid-cols-3 gap-3">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                 {result.disease_score != null && (
                                   <div className="bg-neutral-50 rounded-lg p-3">
                                     <p className="text-xs text-neutral-500 mb-0.5">Overall Score</p>

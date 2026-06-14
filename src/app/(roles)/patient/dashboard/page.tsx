@@ -118,24 +118,24 @@ function PatientDashboard() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="pb-3 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-bold text-gray-900">Welcome back, {firstName}!</h1>
-          <p className="text-xs text-gray-500 mt-0.5">Here's your wellness summary for today.</p>
+      <div className="pb-3 flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="text-lg font-bold text-gray-900 truncate">Welcome back, {firstName}!</h1>
+          <p className="text-xs text-gray-500 mt-0.5 hidden sm:block">Here's your wellness summary for today.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="relative hidden sm:block">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
             <input
               type="text"
               placeholder="Search appointments, reports..."
-              className="pl-8 pr-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs w-60 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="pl-8 pr-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs w-48 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <button className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-700">
+          <button className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-700">
             <Calendar className="w-3.5 h-3.5 text-blue-500" />
             {new Date().toLocaleDateString("en-US", {
-              weekday: "short", month: "short", day: "numeric", year: "numeric",
+              month: "short", day: "numeric",
             })}
           </button>
           <div className="relative">
@@ -158,7 +158,7 @@ function PatientDashboard() {
             className="rounded-xl overflow-hidden"
             style={{ background: "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)" }}
           >
-            <div className="px-6 py-4 flex items-center justify-between">
+            <div className="px-4 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
                   {firstName.slice(0, 2).toUpperCase()}
@@ -185,33 +185,31 @@ function PatientDashboard() {
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
                 {nextAppt && (
-                  <div className="bg-white/20 rounded-lg px-4 py-2.5 text-center text-white">
+                  <div className="bg-white/20 rounded-lg px-3 py-2 text-center text-white">
                     <p className="text-[10px] font-medium text-blue-100 uppercase tracking-wide mb-0.5">
-                      Next Session
+                      Next
                     </p>
-                    <p className="text-lg font-bold leading-tight">
+                    <p className="text-base font-bold leading-tight">
                       {new Date(nextAppt.start_at).toLocaleDateString("en-US", {
                         month: "short", day: "numeric",
                       })}
                     </p>
                     <p className="text-[10px] text-blue-100 mt-0.5">
-                      {formatTime(nextAppt.start_time)} ·{" "}
-                      {nextAppt.appointment_type === "video" ? "Online" : "In-person"}
+                      {formatTime(nextAppt.start_time)}
                     </p>
                   </div>
                 )}
                 {doctor && (
-                  <div className="bg-white/10 rounded-lg px-4 py-2.5 flex items-center gap-2 text-white">
-                    <div className="w-8 h-8 rounded-full bg-white/80 flex items-center justify-center">
-                      <User className="w-4 h-4 text-blue-500" />
+                  <div className="bg-white/10 rounded-lg px-3 py-2 hidden sm:flex items-center gap-2 text-white">
+                    <div className="w-7 h-7 rounded-full bg-white/80 flex items-center justify-center flex-shrink-0">
+                      <User className="w-3.5 h-3.5 text-blue-500" />
                     </div>
                     <div>
                       <p className="text-[10px] text-blue-100">Your Doctor</p>
                       <p className="font-semibold text-xs">{doctor.full_name}</p>
                     </div>
-                    <ChevronRight className="w-3.5 h-3.5 text-blue-200" />
                   </div>
                 )}
               </div>
@@ -220,7 +218,7 @@ function PatientDashboard() {
         )}
 
         {/* Stats Row */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatCard
             icon={<CheckCircle className="w-4 h-4 text-blue-500" />}
             label="Sessions completed"
@@ -257,7 +255,7 @@ function PatientDashboard() {
         </div>
 
         {/* Action Cards */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {/* Profile completion */}
           <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex flex-col">
             <div className="flex items-center justify-between mb-2">
@@ -350,7 +348,7 @@ function PatientDashboard() {
         </div>
 
         {/* Middle row: Appointments + Clinician */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {/* Upcoming appointments */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
@@ -412,7 +410,7 @@ function PatientDashboard() {
                     {doctor.phone && <p className="text-[10px] text-gray-400">{doctor.phone}</p>}
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+                <div className="grid grid-cols-3 gap-1 mt-3 text-center">
                   <div>
                     <p className="text-base font-bold text-gray-900">{completedAppts}</p>
                     <p className="text-[10px] text-gray-500">Sessions done</p>
@@ -442,7 +440,7 @@ function PatientDashboard() {
         </div>
 
         {/* Bottom row: PRS Assessment + Treatment Progress */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <PrsAssessmentCard
             pending={pendingAssessments}
             instances={scoreInstances}

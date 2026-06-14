@@ -502,13 +502,13 @@ export default function ReceptionistPatientsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">All Patients</h1>
           <p className="text-sm text-neutral-500 mt-0.5">{patients.length} registered patients</p>
         </div>
-        <Button onClick={() => setShowModal(true)}>
-          <UserPlus className="h-4 w-4 mr-1.5" />Register Patient
+        <Button onClick={() => setShowModal(true)} className="flex-shrink-0">
+          <UserPlus className="h-4 w-4 mr-1.5" /><span className="hidden sm:inline">Register Patient</span><span className="sm:hidden">Register</span>
         </Button>
       </div>
 

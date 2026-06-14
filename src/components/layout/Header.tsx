@@ -77,14 +77,17 @@ function HeaderInner() {
 
   return (
     <header className={`fixed top-0 left-0 ${leftClass} right-0 h-14 bg-white/95 backdrop-blur-sm border-b border-neutral-200/80 flex items-center justify-between px-4 z-30 transition-all duration-200`}>
-      {/* Mobile hamburger */}
-      <button
-        className="md:hidden p-2 rounded-lg hover:bg-neutral-100 transition-colors text-neutral-600"
-        onClick={() => setIsMobileOpen(!isMobileOpen)}
-        aria-label="Toggle menu"
-      >
-        <Menu className="h-5 w-5" />
-      </button>
+      {/* Mobile: hamburger + brand title */}
+      <div className="flex items-center gap-2 md:hidden">
+        <button
+          className="p-2 rounded-lg hover:bg-neutral-100 transition-colors text-neutral-600"
+          onClick={() => setIsMobileOpen(!isMobileOpen)}
+          aria-label="Toggle menu"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <span className="text-base font-bold text-neutral-800 tracking-tight">Anava</span>
+      </div>
       <div className="hidden md:block" />
 
       <div className="flex items-center gap-2.5">

@@ -168,7 +168,7 @@ export default function DoctorSchedulePage() {
         </button>
       </div>
 
-      <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 288px" }}>
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-[1fr_288px]">
         {/* ── Slot calendar ── */}
         <div className="bg-white rounded-2xl border border-neutral-200 shadow-card overflow-hidden">
           {/* toolbar */}

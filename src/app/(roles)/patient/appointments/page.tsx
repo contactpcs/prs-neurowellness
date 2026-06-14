@@ -107,17 +107,18 @@ export default function PatientAppointmentsPage() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">My Appointments</h1>
           <p className="text-sm text-neutral-500 mt-0.5">View upcoming visits and request new appointments</p>
         </div>
         <Link
           href="/patient/appointments/request"
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex-shrink-0"
         >
           <Plus className="h-4 w-4" />
-          Request Appointment
+          <span className="hidden sm:inline">Request Appointment</span>
+          <span className="sm:hidden">Request</span>
         </Link>
       </div>
 

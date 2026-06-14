@@ -196,7 +196,7 @@ export default function DoctorProfilePage() {
         </div>
         <CardContent className="space-y-4 pt-4">
           {isEditing ? (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className={`${labelCls} block mb-1.5`}>First Name</label>
                 <input className={inputCls} value={form.first_name}
@@ -209,7 +209,7 @@ export default function DoctorProfilePage() {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label="First Name" value={form.first_name} />
               <Field label="Last Name"  value={form.last_name}  />
             </div>
@@ -233,7 +233,7 @@ export default function DoctorProfilePage() {
         <CardContent className="space-y-4 pt-4">
           {isEditing ? (
             <>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className={`${labelCls} block mb-1.5`}>Date of Birth</label>
                   <input type="date" className={inputCls} value={form.date_of_birth}
@@ -251,7 +251,7 @@ export default function DoctorProfilePage() {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className={`${labelCls} block mb-1.5`}>ID Type</label>
                   <select className={inputCls} value={form.id_type}
@@ -287,7 +287,7 @@ export default function DoctorProfilePage() {
             </>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <p className={labelCls}>Date of Birth</p>
                   <p className="text-sm text-neutral-700 mt-1">
@@ -297,7 +297,7 @@ export default function DoctorProfilePage() {
                 </div>
                 <Field label="Gender" value={form.gender} />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="ID Type"       value={form.id_type} />
                 <Field label="Government ID" value={form.government_id} />
               </div>
@@ -320,7 +320,7 @@ export default function DoctorProfilePage() {
                 <input className={inputCls} value={form.address_line1}
                   onChange={(e) => set("address_line1", e.target.value)} />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className={`${labelCls} block mb-1.5`}>City</label>
                   <input className={inputCls} value={form.city}
@@ -332,7 +332,7 @@ export default function DoctorProfilePage() {
                     onChange={(e) => set("state", e.target.value)} />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className={`${labelCls} block mb-1.5`}>Country</label>
                   <input className={inputCls} value={form.country}
@@ -348,11 +348,11 @@ export default function DoctorProfilePage() {
           ) : (
             <>
               <Field label="Address" value={form.address_line1} />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="City"    value={form.city}    />
                 <Field label="State"   value={form.state}   />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Country" value={form.country} />
                 <Field label="Pincode" value={form.pincode} />
               </div>

@@ -106,17 +106,6 @@ function SidebarInner() {
           onClick={() => setIsMobileOpen(false)}
         />
       )}
-      {/* Mobile hamburger — only visible when sidebar is closed */}
-      {!isMobileOpen && (
-        <button
-          className="fixed top-3 left-3 z-50 md:hidden p-2 rounded-lg text-white shadow-lg"
-          style={{ background: "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)" }}
-          onClick={() => setIsMobileOpen(true)}
-          aria-label="Open menu"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-      )}
     <aside
       className={cn(
         "fixed left-0 top-0 h-full flex flex-col z-40 transition-all duration-200",

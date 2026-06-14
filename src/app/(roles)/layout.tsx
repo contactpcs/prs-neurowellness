@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { Header } from "@/components/layout/Header";
 import { SocketInit } from "@/components/SocketInit";
 import { SidebarProvider, useSidebar } from "@/contexts/SidebarContext";
 import { PageLoader } from "@/components/ui";
@@ -30,9 +31,10 @@ function RolesLayoutInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-neutral-50">
       <Sidebar />
+      <Header />
       <SocketInit />
       <main
-        className={`p-4 sm:p-6 transition-all duration-200 ${
+        className={`pt-14 p-4 sm:p-6 transition-all duration-200 ${
           isCollapsed ? "md:ml-16" : "md:ml-64"
         }`}
       >

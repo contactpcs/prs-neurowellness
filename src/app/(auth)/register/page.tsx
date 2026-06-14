@@ -453,7 +453,7 @@ export default function RegisterPage() {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 
           {/* ── Name ─────────────────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <FieldLabel htmlFor="first_name" text="First name" required />
               <input
@@ -521,7 +521,7 @@ export default function RegisterPage() {
           </div>
 
           {/* ── Date of birth + Gender ───────────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <FieldLabel htmlFor="date_of_birth" text="Date of birth" required />
               <input
@@ -551,7 +551,7 @@ export default function RegisterPage() {
           </div>
 
           {/* ── City + State ─────────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <FieldLabel htmlFor="city" text="City" required />
               <input

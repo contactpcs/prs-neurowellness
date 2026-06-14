@@ -38,7 +38,7 @@ export default function ReportViewPage() {
 
       {/* Summary stats */}
       <Card>
-        <CardContent className="grid grid-cols-4 gap-4 text-center">
+        <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
           <div>
             <p className="text-2xl font-bold text-neutral-900">{currentSession.scales_completed}</p>
             <p className="text-xs text-neutral-500">Scales Completed</p>

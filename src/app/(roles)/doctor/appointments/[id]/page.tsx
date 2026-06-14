@@ -156,7 +156,7 @@ function RescheduleModal({
             ) : slots.length === 0 ? (
               <p className="text-xs text-neutral-400 py-2">No available slots on this date</p>
             ) : (
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                 {slots.map((s) => (
                   <button
                     key={s.start_time}

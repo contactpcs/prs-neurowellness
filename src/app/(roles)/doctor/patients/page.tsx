@@ -46,14 +46,14 @@ export default function DoctorPatientsPage() {
             placeholder="e.g., Alice or MRN..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 w-64"
+            className="pl-9 w-full sm:w-64"
           />
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden overflow-x-auto">
+        <table className="w-full text-sm min-w-[600px]">
           <thead>
             <tr className="border-b border-neutral-100 bg-neutral-50">
               <th className="px-6 py-3 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide">Patient Name</th>
