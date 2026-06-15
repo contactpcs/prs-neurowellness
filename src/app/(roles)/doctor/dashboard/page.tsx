@@ -217,7 +217,7 @@ export default function DoctorDashboard() {
         const dc = a.appointment_date.localeCompare(b.appointment_date);
         return dc !== 0 ? dc : a.start_time.localeCompare(b.start_time);
       })
-      .slice(0, 10);
+      .slice(0, 1);
   }, [appointments, todayStr, searchQuery]);
 
   // ── booking helpers ───────────────────────────────────────────────
@@ -363,7 +363,7 @@ export default function DoctorDashboard() {
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-[1fr_280px] mb-6">
         <div className="bg-white rounded-2xl border border-neutral-200 shadow-card overflow-hidden">
           <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100">
-            <h2 className="text-base font-semibold text-neutral-900">Next Appointments</h2>
+            <h2 className="text-base font-semibold text-neutral-900">Next Appointment</h2>
             <Link href="/doctor/appointments" className="text-sm font-medium hover:underline" style={{ color: "#00A1E4" }}>
               View all
             </Link>
@@ -371,13 +371,8 @@ export default function DoctorDashboard() {
           <div className="divide-y divide-neutral-100">
             {upcoming.length === 0 ? (
               <p className="px-6 py-10 text-center text-sm text-neutral-400">No upcoming appointments</p>
-            ) : upcoming.map((appt, idx) => (
+            ) : upcoming.map((appt) => (
               <div key={appt.appointment_id} className="px-5 py-4 hover:bg-neutral-50/60 transition-colors">
-                {idx === 0 && (
-                  <span className="inline-block text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500 mb-3">
-                    Up Next
-                  </span>
-                )}
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 mb-1.5">
