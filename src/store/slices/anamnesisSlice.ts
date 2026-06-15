@@ -83,7 +83,7 @@ export const fetchMyAnamnesis = createAsyncThunk<
 );
 
 export const fetchPatientAnamnesis = createAsyncThunk<
-  { patientId: string; record: AnamnesisRecord },
+  { patientId: string; record: AnamnesisRecord | null },
   string,
   { state: RootState }
 >(

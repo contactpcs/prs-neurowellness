@@ -178,9 +178,14 @@ export const anamnesisService = {
     return unwrap<AnamnesisRecord>(data);
   },
 
-  async getForPatient(patientId: string): Promise<AnamnesisRecord> {
-    const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.FOR_PATIENT(patientId));
-    return unwrap<AnamnesisRecord>(data);
+  async getForPatient(patientId: string): Promise<AnamnesisRecord | null> {
+    try {
+      const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.FOR_PATIENT(patientId));
+      return unwrap<AnamnesisRecord>(data);
+    } catch (err: any) {
+      if (err?.response?.status === 404) return null;
+      throw err;
+    }
   },
 };
 
