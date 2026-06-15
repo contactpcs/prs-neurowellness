@@ -1,6 +1,33 @@
-import { Brain, ShieldCheck, Activity, Users } from "lucide-react";
+"use client";
+
+import { usePathname } from "next/navigation";
+import { Brain, ShieldCheck, Activity, Users, Heart, Stethoscope, Sparkles } from "lucide-react";
+
+const BRAND_CONTENT = {
+  register: {
+    headline: <>Begin your<br />healing journey</>,
+    sub: "Personalized neuromodulation therapy, guided by expert clinicians, tracked every step of the way.",
+    features: [
+      { icon: Heart,        text: "Personalized therapy tailored to your needs" },
+      { icon: Stethoscope, text: "Guided by expert neuromodulation clinicians" },
+      { icon: Sparkles,    text: "Track your progress every step of the way" },
+    ],
+  },
+  default: {
+    headline: <>India's integrated<br />neuromodulation<br />care platform</>,
+    sub: "Unifying patient journeys, clinical workflows, and therapeutic insights in one seamless experience.",
+    features: [
+      { icon: ShieldCheck, text: "Secure & DPDP-compliant data handling" },
+      { icon: Activity,    text: "Multi-scale neurological assessments" },
+      { icon: Users,       text: "Collaborative care across clinical teams" },
+    ],
+  },
+};
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const content  = pathname.includes("/register") ? BRAND_CONTENT.register : BRAND_CONTENT.default;
+
   return (
     <div className="min-h-screen flex bg-neutral-50">
       {/* Brand panel */}
@@ -25,31 +52,21 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           {/* Headline + features */}
           <div>
             <h1 className="text-3xl xl:text-4xl font-bold text-white leading-snug mb-4">
-              Clinical assessment<br />made precise
+              {content.headline}
             </h1>
             <p className="text-white/70 text-base leading-relaxed max-w-xs">
-              A comprehensive platform for neurological and psychiatric patient rating — built for clinicians.
+              {content.sub}
             </p>
 
             <ul className="mt-8 space-y-3">
-              <li className="flex items-center gap-3">
-                <div className="w-7 h-7 rounded-lg bg-white/15 flex items-center justify-center flex-shrink-0">
-                  <ShieldCheck className="h-3.5 w-3.5 text-white" />
-                </div>
-                <span className="text-white/80 text-sm">Secure &amp; HIPAA-compliant data handling</span>
-              </li>
-              <li className="flex items-center gap-3">
-                <div className="w-7 h-7 rounded-lg bg-white/15 flex items-center justify-center flex-shrink-0">
-                  <Activity className="h-3.5 w-3.5 text-white" />
-                </div>
-                <span className="text-white/80 text-sm">Multi-scale neurological assessments</span>
-              </li>
-              <li className="flex items-center gap-3">
-                <div className="w-7 h-7 rounded-lg bg-white/15 flex items-center justify-center flex-shrink-0">
-                  <Users className="h-3.5 w-3.5 text-white" />
-                </div>
-                <span className="text-white/80 text-sm">Collaborative care across clinical teams</span>
-              </li>
+              {content.features.map(({ icon: Icon, text }) => (
+                <li key={text} className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-lg bg-white/15 flex items-center justify-center flex-shrink-0">
+                    <Icon className="h-3.5 w-3.5 text-white" />
+                  </div>
+                  <span className="text-white/80 text-sm">{text}</span>
+                </li>
+              ))}
             </ul>
           </div>
 
