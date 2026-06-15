@@ -157,7 +157,7 @@ export default function DoctorPatientDetailPage() {
       <div className="bg-white border-b border-neutral-200 px-4 sm:px-8 py-3">
         <div className="flex items-center justify-between gap-3">
           <button
-            onClick={() => router.back()}
+            onClick={() => router.push("/doctor/patients")}
             className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900 transition-colors text-sm font-medium flex-shrink-0"
           >
             <ChevronRight className="w-5 h-5 -scale-x-100" />

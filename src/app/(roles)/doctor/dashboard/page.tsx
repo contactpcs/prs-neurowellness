@@ -389,6 +389,9 @@ export default function DoctorDashboard() {
                   </div>
                   <div className="flex flex-col items-end gap-2 flex-shrink-0">
                     <p className="text-xl font-bold text-neutral-900 leading-none">{fmt12(appt.start_time)}</p>
+                    <p className="text-xs text-neutral-500 leading-none">
+                      {new Date(appt.appointment_date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                    </p>
                     <Link href={`/doctor/appointments/${appt.appointment_id}`}>
                       <button
                         className="px-4 py-1.5 rounded-lg text-white text-xs font-semibold hover:opacity-90 transition-opacity"
