@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Search, ChevronLeft, ChevronRight, CalendarDays, Phone, MessageSquare, Eye,
 } from "lucide-react";
@@ -95,6 +96,7 @@ const STATUS_DOT: Record<string, string> = {
 // ─── component ────────────────────────────────────────────────────
 
 export default function DoctorDashboard() {
+  const router   = useRouter();
   const { user } = useAuth();
   const doctorId = (user as any)?.id ?? "";
   const today    = useMemo(() => new Date(), []);
@@ -314,7 +316,7 @@ export default function DoctorDashboard() {
                 borderLeft: `3px solid ${sty.border}`,
                 color: sty.text,
               }}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); router.push(`/doctor/appointments/${appt.appointment_id}`); }}
             >
               <div className="text-[10px] font-semibold leading-tight truncate">
                 {fmt12(appt.start_time).replace(" AM","").replace(" PM","")}–{fmt12(appt.end_time).replace(" AM","").replace(" PM","")}
