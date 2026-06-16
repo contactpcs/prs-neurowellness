@@ -193,9 +193,9 @@ export const ENDPOINTS = {
     DOWNLOAD: (reportId: string) => `/eeg/reports/${reportId}/download`,
     PATIENT_REPORTS: (patientId: string) => `/eeg/reports/patient/${patientId}/reports`,
     DELETE: (reportId: string) => `/eeg/reports/${reportId}`,
-    // EEG analysis pipeline (.nedf / .edf)
-    ANALYZE: "/eeg/analysis/analyze",
-    ANALYSIS_STATUS: (jobId: string) => `/eeg/analysis/status/${jobId}`,
-    ANALYSIS_DOWNLOAD: (jobId: string, filename: string) => `/eeg/analysis/download/${jobId}/${filename}`,
+    // EEG analysis pipeline (.nedf / .edf) — served by brain_mapping service (NEXT_PUBLIC_BRAIN_MAPPING_URL)
+    ANALYZE: "/analyze",
+    ANALYSIS_STATUS: (jobId: string) => `/status/${jobId}`,
+    ANALYSIS_DOWNLOAD: (jobId: string, filename: string) => `/download/${jobId}/${filename}`,
   },
 } as const;

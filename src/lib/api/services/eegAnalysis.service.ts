@@ -1,7 +1,4 @@
-import { ENDPOINTS } from "@/lib/api/endpoints";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const PREFIX = "/api/v1";
+const BRAIN_MAPPING_URL = process.env.NEXT_PUBLIC_BRAIN_MAPPING_URL ?? "http://localhost:8001";
 
 export interface AnalysisJob {
   status: "queued" | "running" | "done" | "failed";
@@ -26,7 +23,7 @@ export const eegAnalysisService = {
     form.append("report_name", params.report_name);
     if (params.session_id) form.append("session_id", params.session_id);
 
-    const res = await fetch(`${API_BASE}${PREFIX}${ENDPOINTS.EEG.ANALYZE}`, {
+    const res = await fetch(`${BRAIN_MAPPING_URL}/analyze`, {
       method: "POST",
       body: form,
     });
@@ -39,9 +36,7 @@ export const eegAnalysisService = {
   },
 
   async getStatus(jobId: string): Promise<AnalysisJob> {
-    const res = await fetch(
-      `${API_BASE}${PREFIX}${ENDPOINTS.EEG.ANALYSIS_STATUS(jobId)}`
-    );
+    const res = await fetch(`${BRAIN_MAPPING_URL}/status/${jobId}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   },
