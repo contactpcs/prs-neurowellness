@@ -12,11 +12,14 @@ import {
   SkipForward,
   Mic,
   MicOff,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { QuestionRenderer } from "@/components/questionnaire/QuestionRenderer";
 import { ProgressSidebar } from "@/components/questionnaire/ProgressSidebar";
 import { STTBar } from "@/components/questionnaire/STTBar";
+import { useTTS } from "@/lib/hooks";
 import { cn } from "@/lib/utils/cn";
 import type { ScaleQuestion } from "@/types/prs.types";
 import type { STTPhase } from "@/lib/hooks/useAssessmentSTT";
@@ -94,6 +97,12 @@ export function AssessmentUI({
   const scaleNumber = currentScaleIndex + 1;
   const overallProgress =
     totalScales > 0 ? Math.round((completedScaleIds.size / totalScales) * 100) : 0;
+  const currentScaleResponses = currentScale ? (responses[currentScale.scale_id] ?? {}) : {};
+  const firstUnansweredIdx = questions.findIndex((_, idx) => currentScaleResponses[String(idx)] === undefined);
+  const readAloudQuestion = firstUnansweredIdx === -1
+    ? questions[questions.length - 1]
+    : questions[firstUnansweredIdx];
+  const { speak, stop, isSpeaking } = useTTS({ rate: 0.92 });
 
   const sidebarScales = scales.map((s) => ({
     scale_id: s.scale_id,
@@ -278,6 +287,31 @@ export function AssessmentUI({
                 <Info className="w-4 h-4" />
                 {questionsRemaining} question{questionsRemaining !== 1 ? "s" : ""} remaining
               </div>
+
+              {readAloudQuestion && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => isSpeaking ? stop() : speak(readAloudQuestion.label)}
+                  className={cn(
+                    isSpeaking
+                      ? "border-blue-300 text-blue-600 bg-blue-50 hover:bg-blue-100"
+                      : "border-neutral-300 text-neutral-600 hover:bg-neutral-50",
+                  )}
+                >
+                  {isSpeaking ? (
+                    <>
+                      <VolumeX className="h-4 w-4" />
+                      Stop Reading
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 className="h-4 w-4" />
+                      Read Aloud
+                    </>
+                  )}
+                </Button>
+              )}
 
               {isSttsupported && onToggleStt && (
                 <Button
