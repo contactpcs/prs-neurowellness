@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuestionnaire, useSessions } from "@/lib/hooks";
 import { useAssessmentSTT } from "@/lib/hooks/useAssessmentSTT";
@@ -24,6 +24,9 @@ export default function QuestionnairePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sttEnabled, setSttEnabled] = useState(false);
 
+  // Ref to avoid stale closures in handleAutoAdvance
+  const isSubmittingRef = useRef(false);
+
   useEffect(() => { loadSession(id); }, [id, loadSession]);
 
   useEffect(() => {
@@ -38,7 +41,7 @@ export default function QuestionnairePage() {
       const firstIncomplete = currentSession.resolved_scale_ids.findIndex((sid) => !completed.has(sid));
       questionnaire.init(id, currentSession.resolved_scale_ids, existingResponses, firstIncomplete < 0 ? 0 : firstIncomplete);
     }
-  }, [currentSession]);
+  }, [currentSession]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load current scale definition on demand
   useEffect(() => {
@@ -47,7 +50,7 @@ export default function QuestionnairePage() {
       const def = (scale as any).definition || scale;
       setScaleDefinitions((prev) => ({ ...prev, [questionnaire.currentScaleId!]: def }));
     });
-  }, [questionnaire.currentScaleId]);
+  }, [questionnaire.currentScaleId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pre-load all scale definitions for sidebar labels
   useEffect(() => {
@@ -60,9 +63,9 @@ export default function QuestionnairePage() {
         }).catch(() => {});
       }
     });
-  }, [currentSession]);
+  }, [currentSession]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── Derive state safely (before early returns so hooks order stays fixed) ─
+  // ─── Derive state (before early returns so hook order is fixed) ────────────
 
   const currentScaleId = questionnaire.currentScaleId;
   const currentDef = currentScaleId ? scaleDefinitions[currentScaleId] : undefined;
@@ -80,9 +83,46 @@ export default function QuestionnairePage() {
     [questionnaire, currentScaleId],
   );
 
+  // ─── Submit scale (useCallback so handleAutoAdvance can reference it) ──────
+  const handleSubmitScale = useCallback(async () => {
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+    try {
+      const scaleId = questionnaire.currentScaleId;
+      if (!scaleId) return;
+      const result = await questionnaire.submitCurrentScale();
+      if (result) {
+        const newCompleted = new Set(completedScaleIds).add(scaleId);
+        setCompletedScaleIds(newCompleted);
+        if (result.session_completed || questionnaire.isLastScale) {
+          const skippedIds = currentSession!.resolved_scale_ids.filter(
+            (sid) => !newCompleted.has(sid),
+          );
+          await Promise.all(skippedIds.map((sid) => prsService.submitResponse(id, sid, {})));
+          router.push(`/patient/sessions/${id}/complete`);
+        } else {
+          questionnaire.nextScale();
+        }
+      }
+    } catch (err) {
+      console.error("Submit error:", err);
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+    }
+  }, [questionnaire, completedScaleIds, currentSession, id, router]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── STT auto-advance: next question or auto-submit when scale complete ────
   const handleAutoAdvance = useCallback(() => {
-    questionnaire.nextQuestion(totalQuestions);
-  }, [questionnaire, totalQuestions]);
+    const currentResponses = questionnaire.currentResponses;
+    const allAnswered = questions.length > 0 && questions.every((_, idx) => currentResponses[String(idx)] !== undefined);
+    if (allAnswered) {
+      handleSubmitScale();
+    } else {
+      questionnaire.nextQuestion(totalQuestions);
+    }
+  }, [questionnaire, totalQuestions, questions, handleSubmitScale]);
 
   // ─── STT ──────────────────────────────────────────────────────────────────
   const { phase, transcript, matchedLabel, hint, isSupported } = useAssessmentSTT({
@@ -107,30 +147,6 @@ export default function QuestionnairePage() {
   if (!currentDef) return <PageLoader />;
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
-
-  const handleSubmitScale = async () => {
-    setIsSubmitting(true);
-    try {
-      const result = await questionnaire.submitCurrentScale();
-      if (result) {
-        const newCompleted = new Set(completedScaleIds).add(currentScaleId);
-        setCompletedScaleIds(newCompleted);
-        if (result.session_completed || questionnaire.isLastScale) {
-          const skippedIds = currentSession.resolved_scale_ids.filter(
-            (sid) => !newCompleted.has(sid),
-          );
-          await Promise.all(skippedIds.map((sid) => prsService.submitResponse(id, sid, {})));
-          router.push(`/patient/sessions/${id}/complete`);
-        } else {
-          questionnaire.nextScale();
-        }
-      }
-    } catch (err) {
-      console.error("Submit error:", err);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   const handleSkipSection = () => {
     questionnaire.clearScaleResponses(currentScaleId);

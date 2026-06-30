@@ -205,13 +205,6 @@ export default function DoctorOnBehalfAssessmentPage() {
     [currentScale],
   );
 
-  const handleAutoAdvance = useCallback(() => {
-    setCurrentQuestionIndex((prev) => {
-      if (prev < totalQuestions - 1) return prev + 1;
-      return prev;
-    });
-  }, [totalQuestions]);
-
   const handlePrev = () => {
     if (!isFirstScale) {
       setCurrentScaleIndex((i) => i - 1);
@@ -219,21 +212,7 @@ export default function DoctorOnBehalfAssessmentPage() {
     }
   };
 
-  const handleSkipSection = () => {
-    setResponses((prev) => {
-      const next = { ...prev };
-      delete next[currentScale.scale_id];
-      return next;
-    });
-    if (isLastScale) {
-      handleSubmitScale();
-    } else {
-      setCurrentScaleIndex((i) => i + 1);
-      setCurrentQuestionIndex(0);
-    }
-  };
-
-  const handleSubmitScale = async () => {
+  const handleSubmitScale = useCallback(async () => {
     if (!currentScale) return;
     setIsSubmitting(true);
     try {
@@ -275,7 +254,36 @@ export default function DoctorOnBehalfAssessmentPage() {
     } finally {
       setIsSubmitting(false);
     }
+  }, [currentScale, responses, completedScaleIds, isLastScale, scales, dispatch, patientId, router]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSkipSection = () => {
+    setResponses((prev) => {
+      const next = { ...prev };
+      delete next[currentScale.scale_id];
+      return next;
+    });
+    if (isLastScale) {
+      handleSubmitScale();
+    } else {
+      setCurrentScaleIndex((i) => i + 1);
+      setCurrentQuestionIndex(0);
+    }
   };
+
+  const handleAutoAdvance = useCallback(() => {
+    const scaleId = currentScale?.scale_id;
+    if (!scaleId) return;
+    setResponses((prev) => {
+      const scaleResponses = prev[scaleId] ?? {};
+      const allAnswered = questions.length > 0 && questions.every((_, idx) => scaleResponses[String(idx)] !== undefined);
+      if (allAnswered) {
+        setTimeout(() => handleSubmitScale(), 0);
+      } else {
+        setCurrentQuestionIndex((q) => (q < totalQuestions - 1 ? q + 1 : q));
+      }
+      return prev;
+    });
+  }, [currentScale, questions, totalQuestions, handleSubmitScale]);
 
   // ─── STT ──────────────────────────────────────────────────────────────────
   const { phase, transcript, matchedLabel, hint, isSupported } = useAssessmentSTT({
