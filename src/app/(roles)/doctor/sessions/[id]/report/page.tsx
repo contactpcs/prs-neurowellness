@@ -21,15 +21,15 @@ export default function ReportViewPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-neutral-900">Assessment Report</h1>
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-neutral-500 truncate">
             {currentSession.title} — {currentSession.completed_at ? formatDate(currentSession.completed_at) : "In Progress"}
           </p>
         </div>
         {currentSession.overall_severity && (
-          <div>
+          <div className="shrink-0 text-right">
             <p className="text-xs text-neutral-500 uppercase mb-1">Overall Severity</p>
             <SeverityBadge level={currentSession.overall_severity} label={currentSession.overall_severity} />
           </div>

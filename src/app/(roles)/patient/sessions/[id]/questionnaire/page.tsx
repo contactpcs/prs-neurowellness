@@ -35,7 +35,8 @@ export default function QuestionnairePage() {
         if (r.status === "completed") completed.add(r.scale_id);
       });
       setCompletedScaleIds(completed);
-      questionnaire.init(id, currentSession.resolved_scale_ids, existingResponses);
+      const firstIncomplete = currentSession.resolved_scale_ids.findIndex((sid) => !completed.has(sid));
+      questionnaire.init(id, currentSession.resolved_scale_ids, existingResponses, firstIncomplete < 0 ? 0 : firstIncomplete);
     }
   }, [currentSession]);
 
@@ -91,6 +92,15 @@ export default function QuestionnairePage() {
     onAnswer: handleAnswer,
     onAutoAdvance: handleAutoAdvance,
   });
+
+  // Jump to first unanswered question when enabling STT mid-session
+  useEffect(() => {
+    if (!sttEnabled) return;
+    const firstUnanswered = questions.findIndex((_, idx) => questionnaire.currentResponses[String(idx)] === undefined);
+    const target = firstUnanswered === -1 ? Math.max(0, totalQuestions - 1) : firstUnanswered;
+    questionnaire.goToQuestion(target);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sttEnabled]);
 
   // ─── Early returns (after all hooks) ──────────────────────────────────────
   if (!currentSession || !currentScaleId) return <PageLoader />;

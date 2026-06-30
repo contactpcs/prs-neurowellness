@@ -286,6 +286,16 @@ export default function DoctorOnBehalfAssessmentPage() {
     onAutoAdvance: handleAutoAdvance,
   });
 
+  // Jump to first unanswered question when enabling STT mid-session
+  useEffect(() => {
+    if (!sttEnabled) return;
+    const scaleResponses = responses[currentScale?.scale_id] ?? {};
+    const firstUnanswered = questions.findIndex((_, idx) => scaleResponses[String(idx)] === undefined);
+    const target = firstUnanswered === -1 ? Math.max(0, totalQuestions - 1) : firstUnanswered;
+    setCurrentQuestionIndex(target);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sttEnabled]);
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   if (isLoading) return <AssessmentSkeleton />;

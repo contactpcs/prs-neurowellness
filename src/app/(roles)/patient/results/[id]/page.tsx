@@ -63,7 +63,7 @@ export default function PatientResultDetailPage() {
       {overallResult && (
         <Card>
           <CardContent className="flex items-center justify-between gap-4">
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-neutral-500 uppercase tracking-wide mb-1">Overall Score</p>
               <p className="text-3xl font-bold text-neutral-900">
                 {overallResult.disease_score != null
@@ -75,7 +75,7 @@ export default function PatientResultDetailPage() {
               </p>
             </div>
             {overallResult.severity_label && (
-              <span className={`text-sm font-semibold px-3 py-1.5 rounded-full border ${severityColor(overallResult.severity_level)}`}>
+              <span className={`shrink-0 text-sm font-semibold px-3 py-1.5 rounded-full border ${severityColor(overallResult.severity_level)}`}>
                 {overallResult.severity_label}
               </span>
             )}

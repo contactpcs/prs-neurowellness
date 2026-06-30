@@ -22,12 +22,15 @@ const questionnaireSlice = createSlice({
   name: "questionnaire",
   initialState,
   reducers: {
-    initQuestionnaire: (state, action: PayloadAction<{ sessionId: string; scaleOrder: string[]; existingResponses?: Record<string, Record<string, number | string>> }>) => {
+    initQuestionnaire: (state, action: PayloadAction<{ sessionId: string; scaleOrder: string[]; existingResponses?: Record<string, Record<string, number | string>>; initialScaleIndex?: number }>) => {
       state.sessionId = action.payload.sessionId;
       state.scaleOrder = action.payload.scaleOrder;
-      state.currentScaleIndex = 0;
+      state.currentScaleIndex = action.payload.initialScaleIndex ?? 0;
       state.currentQuestionIndex = 0;
       state.responses = action.payload.existingResponses || {};
+    },
+    setCurrentQuestionIndex: (state, action: PayloadAction<number>) => {
+      state.currentQuestionIndex = action.payload;
     },
     setAnswer: (state, action: PayloadAction<{ scaleId: string; questionIndex: number; value: number | string }>) => {
       const { scaleId, questionIndex, value } = action.payload;
@@ -74,6 +77,7 @@ export const {
   initQuestionnaire, setAnswer,
   nextQuestion, prevQuestion,
   nextScale, prevScale, goToScale,
+  setCurrentQuestionIndex,
   clearScaleResponses,
   toggleVoiceMode, resetQuestionnaire,
 } = questionnaireSlice.actions;
