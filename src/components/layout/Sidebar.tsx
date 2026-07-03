@@ -10,7 +10,8 @@ import { authService } from "@/lib/api/services";
 import {
   LayoutDashboard, Users, ClipboardList,
   UserCircle, LogOut, Brain, ChevronLeft, Menu, Calendar, CalendarDays,
-  ClipboardCheck, MapPin, Building2, UserCog, Settings,
+  ClipboardCheck, MapPin, Building2, UserCog, Settings, ShieldCheck,
+  ShoppingBag, Receipt,
 } from "lucide-react";
 
 const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React.ElementType }>> = {
@@ -42,18 +43,32 @@ const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React
     { label: "Profile",     href: "/receptionist/profile",              icon: UserCircle },
   ],
   platform_admin: [
-    { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
-    { label: "Patients",  href: "/admin/patients",  icon: Users },
-    { label: "Staff",     href: "/admin/staff",     icon: UserCog },
-    { label: "Clinics",   href: "/admin/clinics",   icon: Building2 },
-    { label: "Settings",  href: "/admin/settings",  icon: Settings },
+    { label: "Dashboard",       href: "/admin/dashboard",       icon: LayoutDashboard },
+    { label: "Patients",        href: "/admin/patients",        icon: Users },
+    { label: "Staff",           href: "/admin/staff",           icon: UserCog },
+    { label: "Admins",          href: "/admin/admins",          icon: ShieldCheck },
+    { label: "Regions",         href: "/admin/regions",         icon: MapPin },
+    { label: "Clinics",         href: "/admin/clinics",         icon: Building2 },
+    { label: "Clinic Requests", href: "/admin/clinic-requests", icon: ClipboardList },
+    { label: "Settings",        href: "/admin/settings",        icon: Settings },
   ],
-  clinical_admin: [
-    { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
-    { label: "Patients",  href: "/admin/patients",  icon: Users },
-    { label: "Staff",     href: "/admin/staff",     icon: UserCog },
-    { label: "Clinics",   href: "/admin/clinics",   icon: Building2 },
-    { label: "Settings",  href: "/admin/settings",  icon: Settings },
+  regional_admin: [
+    { label: "Dashboard",       href: "/regional-admin/dashboard",       icon: LayoutDashboard },
+    { label: "Clinics",         href: "/regional-admin/clinics",         icon: Building2 },
+    { label: "Staff",           href: "/regional-admin/staff",           icon: UserCog },
+    { label: "Patients",        href: "/regional-admin/patients",        icon: Users },
+    { label: "Appointments",    href: "/regional-admin/appointments",    icon: CalendarDays },
+    { label: "Staff Approvals", href: "/regional-admin/staff-approvals", icon: ClipboardCheck },
+  ],
+  clinic_admin: [
+    { label: "Dashboard",      href: "/clinic-admin/dashboard",      icon: LayoutDashboard },
+    { label: "My Clinic",      href: "/clinic-admin/my-clinic",      icon: Building2 },
+    { label: "Staff",          href: "/clinic-admin/staff",          icon: UserCog },
+    { label: "Patients",       href: "/clinic-admin/patients",       icon: Users },
+    { label: "Appointments",   href: "/clinic-admin/appointments",   icon: CalendarDays },
+    { label: "Staff Requests", href: "/clinic-admin/staff-requests", icon: ClipboardList },
+    { label: "Store Orders",   href: "/clinic-admin/store-orders",   icon: ShoppingBag },
+    { label: "Payments",       href: "/clinic-admin/payments",       icon: Receipt },
   ],
 };
 
@@ -65,21 +80,27 @@ function SidebarInner() {
   const expanded = !isCollapsed || isMobileOpen;
   const [clinicLabel, setClinicLabel] = useState<string | null>(null);
 
-  // Detect admin role first (backend may return "admin", "platform_admin", or "clinical_admin")
-  const rawRoles: string[] = user?.roles ?? [];
-  const isAdmin = rawRoles.some(
-    (r) =>
-      r === "platform_admin" ||
-      r === "clinical_admin" ||
-      String(r).toLowerCase().includes("admin")
-  );
-  const primaryRole = isAdmin
+  // Three distinct admin tiers, exact-matched — super_admin/regional_admin/
+  // clinic_admin are separate portals now, not one collapsed "admin".
+  // platform_admin/clinical_admin are dead legacy labels this backend never
+  // actually produces; folded into isSuperAdmin for zero-cost safety in case
+  // an old stored session still carries one.
+  const rawRoles: string[] = (user?.roles ?? []).map((r) => String(r).toLowerCase());
+  const isSuperAdmin = rawRoles.includes("super_admin") || rawRoles.includes("platform_admin") || rawRoles.includes("clinical_admin");
+  const isRegionalAdmin = rawRoles.includes("regional_admin");
+  const isClinicAdmin = rawRoles.includes("clinic_admin");
+
+  const primaryRole = isSuperAdmin
     ? "platform_admin"
-    : String(rawRoles[0] || (user as any)?.role || "patient").toLowerCase();
+    : isRegionalAdmin
+      ? "regional_admin"
+      : isClinicAdmin
+        ? "clinic_admin"
+        : String(rawRoles[0] || "patient");
   const role  = primaryRole;
   const items = NAV_ITEMS[role] || NAV_ITEMS.patient;
   const initials = [user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join("").toUpperCase();
-  const roleName = isAdmin ? "Admin" : role.replace(/_/g, " ");
+  const roleName = isSuperAdmin ? "Admin" : isRegionalAdmin ? "Regional Admin" : isClinicAdmin ? "Clinic Admin" : role.replace(/_/g, " ");
 
   useEffect(() => {
     if (/\/patients\/[^/]+/.test(pathname)) {

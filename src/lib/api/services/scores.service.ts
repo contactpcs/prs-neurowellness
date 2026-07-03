@@ -1,6 +1,6 @@
 import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
-import type { AssessmentInstance, ScaleResultSummary } from "@/types/domain.types";
+import type { AssessmentInstance } from "@/types/domain.types";
 
 export type ScaleResultDetail = {
   scale_result_id: string;
@@ -42,48 +42,28 @@ export type InstanceScoreDetail = {
 };
 
 export const scoresService = {
-  async getMyScores(params?: { skip?: number; limit?: number }): Promise<{ instances: AssessmentInstance[]; total: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.MY_SCORES, { params });
-    const payload = data.data ?? data;
-    const items: AssessmentInstance[] = Array.isArray(payload) ? payload : payload?.data ?? [];
-    return {
-      instances: items,
-      total: data.meta?.total ?? items.length,
-    };
+  // NOT AVAILABLE — no list-instances-by-patient endpoint exists to build these from.
+  async getMyScores(_params?: { skip?: number; limit?: number }): Promise<{ instances: AssessmentInstance[]; total: number }> {
+    return { instances: [], total: 0 };
   },
 
   async getMyScoresSummary(): Promise<{ instances: AssessmentInstance[]; total: number; diseases: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.MY_SCORES_SUMMARY);
-    const payload = data.data ?? data;
-    return {
-      instances: (payload.latest_by_disease ?? []) as AssessmentInstance[],
-      total: payload.total_assessments ?? 0,
-      diseases: payload.diseases_assessed ?? 0,
-    };
+    return { instances: [], total: 0, diseases: 0 };
   },
 
   async getInstanceScore(instanceId: string): Promise<InstanceScoreDetail> {
     const { data } = await apiClient.get(ENDPOINTS.PRS.INSTANCE_SCORE(instanceId));
-    return data.data ?? data;
-  },
-
-  async getPatientScores(patientId: string, params?: { skip?: number; limit?: number }): Promise<{ instances: AssessmentInstance[]; total: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.PATIENT_SCORES(patientId), { params });
-    const payload = data.data ?? data;
-    const items: AssessmentInstance[] = Array.isArray(payload) ? payload : payload?.data ?? [];
     return {
-      instances: items,
-      total: data.meta?.total ?? items.length,
+      instance: { instance_id: instanceId },
+      scale_results: Array.isArray(data?.scale_results) ? data.scale_results : [],
     };
   },
 
-  async getPatientScoresSummary(patientId: string): Promise<{ instances: AssessmentInstance[]; total: number; diseases: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.PATIENT_SCORES_SUMMARY(patientId));
-    const payload = data.data ?? data;
-    return {
-      instances: (payload.latest_by_disease ?? []) as AssessmentInstance[],
-      total: payload.total_assessments ?? 0,
-      diseases: payload.diseases_assessed ?? 0,
-    };
+  async getPatientScores(_patientId: string, _params?: { skip?: number; limit?: number }): Promise<{ instances: AssessmentInstance[]; total: number }> {
+    return { instances: [], total: 0 };
+  },
+
+  async getPatientScoresSummary(_patientId: string): Promise<{ instances: AssessmentInstance[]; total: number; diseases: number }> {
+    return { instances: [], total: 0, diseases: 0 };
   },
 };

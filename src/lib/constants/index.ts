@@ -38,6 +38,9 @@ export const ROUTES = {
   CA_DASHBOARD: "/clinical-assistant/dashboard",
   RECEPTIONIST_DASHBOARD: "/receptionist/dashboard",
   ADMIN_DASHBOARD: "/admin/dashboard",
+  REGIONAL_ADMIN_DASHBOARD: "/regional-admin/dashboard",
+  CLINIC_ADMIN_DASHBOARD: "/clinic-admin/dashboard",
+  CONSENT: "/consent",
 } as const;
 
 export const STORAGE_KEYS = {

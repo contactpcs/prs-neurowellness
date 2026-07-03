@@ -29,10 +29,15 @@ function normalizeUser(rawUser: any): User {
     clinic_id: rawUser?.clinic_id ?? undefined,
     clinic_name: rawUser?.clinic_name ?? undefined,
     clinic_city: rawUser?.clinic_city ?? undefined,
+    region_id: rawUser?.region_id ?? undefined,
     phone: rawUser?.phone ?? undefined,
     date_of_birth: rawUser?.date_of_birth ?? undefined,
     gender: rawUser?.gender ?? undefined,
     approval_status: rawUser?.approval_status ?? rawUser?.account_status ?? rawUser?.status ?? undefined,
+    is_active: rawUser?.is_active ?? true,
+    consent_type_required: rawUser?.consent_type_required ?? null,
+    self_registered: rawUser?.self_registered ?? undefined,
+    patient_id: rawUser?.patient_id ?? undefined,
   };
 }
 
@@ -94,18 +99,42 @@ export const login = createAsyncThunk(
   }
 );
 
-// Returns the clinic_name on success so the page can show a confirmation message.
+// Self-registration logs the patient in immediately (inactive, self_registered=TRUE)
+// so they can continue the rest of the wizard — same session shape as login().
 export const register = createAsyncThunk(
   "auth/register",
   async (userData: RegisterData, { rejectWithValue }) => {
     try {
-      const res = await authService.register(userData);
-      return res.clinic_name ?? "";
+      const response = await authService.register(userData);
+      if (!response.user) return rejectWithValue("User data missing from response");
+      const normalizedUser = normalizeUser(response.user);
+      localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.access_token);
+      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, response.refresh_token);
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(normalizedUser));
+      return normalizedUser;
     } catch (error: any) {
-      const detail = error.response?.data?.detail;
+      const detail = error.response?.data?.error?.message || error.response?.data?.detail;
       return rejectWithValue(
         typeof detail === "string" ? detail : "Registration failed. Please try again."
       );
+    }
+  }
+);
+
+// Re-reads /auth/me and updates the stored session — used right after
+// signing onboarding consent, where profiles.is_active flips server-side
+// but the existing token/localStorage snapshot is still stale. Avoids the
+// forced re-login a full login() would require.
+export const refreshUser = createAsyncThunk(
+  "auth/refreshUser",
+  async (_, { rejectWithValue }) => {
+    try {
+      const me = await authService.me();
+      const normalizedUser = normalizeUser({ ...me, roles: [me.role] });
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(normalizedUser));
+      return normalizedUser;
+    } catch {
+      return rejectWithValue("Failed to refresh session");
     }
   }
 );
@@ -165,9 +194,10 @@ const authSlice = createSlice({
         state.error = action.payload as string;
       })
       .addCase(register.pending, (state) => { state.isLoading = true; state.error = null; })
-      .addCase(register.fulfilled, (state) => {
-        // Registration only submits a pending request — no auth session created
+      .addCase(register.fulfilled, (state, action) => {
         state.isLoading = false;
+        state.user = action.payload;
+        state.isAuthenticated = true;
       })
       .addCase(register.rejected, (state, action) => {
         state.isLoading = false;
@@ -184,6 +214,10 @@ const authSlice = createSlice({
       .addCase(restoreSession.rejected, (state) => {
         state.isRestoring = false;
         // No session in localStorage — user must log in
+      })
+      .addCase(refreshUser.fulfilled, (state, action) => {
+        state.user = action.payload;
+        state.isAuthenticated = true;
       });
   },
 });

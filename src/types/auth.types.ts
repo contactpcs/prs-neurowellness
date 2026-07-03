@@ -1,4 +1,4 @@
-export type UserRole = "patient" | "doctor" | "clinical_assistant" | "receptionist" | "platform_admin" | "clinical_admin";
+export type UserRole = "patient" | "doctor" | "clinical_assistant" | "receptionist" | "super_admin" | "regional_admin" | "clinic_admin" | "platform_admin" | "clinical_admin";
 
 export interface User {
   id: string;
@@ -10,6 +10,7 @@ export interface User {
   clinic_id?: string;
   clinic_name?: string;
   clinic_city?: string;
+  region_id?: string; // regional_admin's own region — scopes their portal UI client-side
   
   // Contact & Location
   phone?: string;
@@ -55,6 +56,18 @@ export interface User {
   mrn?: string;
   approval_status?: string;
   registered_at?: string;
+
+  // Consent gate (backend-v2) — is_active=false until the onboarding
+  // consent is signed; consent_type_required tells the frontend which
+  // template to fetch/sign ("staff_onboarding" | "patient_onboarding").
+  is_active?: boolean;
+  consent_type_required?: string | null;
+
+  // Self-registration wizard (backend-v2) — patients.patient_id (public ID,
+  // NOT this profile's own id) that anamnesis/PRS/disease-selection
+  // endpoints key off. Only set right after POST /auth/register.
+  self_registered?: boolean;
+  patient_id?: string;
 }
 
 export interface LoginCredentials {

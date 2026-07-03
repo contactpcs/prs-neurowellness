@@ -3,85 +3,51 @@ import { ENDPOINTS } from "../endpoints";
 import type { PatientDashboard, AssessmentPermission } from "@/types/domain.types";
 
 export const patientsService = {
+  /** NOT AVAILABLE as a single aggregate — composed from /auth/me (name/email,
+   * which /patients never returns — PatientRead has no profile fields joined)
+   * and /patients (RLS-scoped to the caller's own record, for the id). */
   async getDashboard(): Promise<PatientDashboard> {
-    const { data } = await apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD);
-    return data.data ?? data;
+    const [meRes, patientsRes] = await Promise.all([
+      apiClient.get(ENDPOINTS.AUTH.ME),
+      apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD),
+    ]);
+    const me = meRes.data as { id: string; first_name: string; last_name: string; email: string };
+    const own = Array.isArray(patientsRes.data) ? patientsRes.data[0] : undefined;
+    return {
+      profile: {
+        id: (own?.patient_id as string) ?? me.id,
+        full_name: `${me.first_name} ${me.last_name}`.trim(),
+        first_name: me.first_name,
+        last_name: me.last_name,
+        email: me.email,
+      },
+    };
   },
 
+  // NOT AVAILABLE — no doctor-lookup endpoint reachable from the patient role.
   async getMyDoctor(): Promise<{ id: string; first_name: string; last_name: string; specialization?: string; phone?: string }> {
-    const { data } = await apiClient.get(ENDPOINTS.PATIENTS.MY_DOCTOR);
-    return data.data ?? data;
+    throw new Error("Doctor lookup isn't available yet.");
   },
 
+  /** Real: POST /patients/{patient_id}/disease-selection — patientId here is
+   * patients.patient_id (public ID), not the profile id. Used by the
+   * self-registration wizard's disease-selection step. */
+  async selectDisease(patientId: string, diseaseId: string): Promise<void> {
+    await apiClient.post(ENDPOINTS.PATIENTS.DISEASE_SELECTION(patientId), { disease_id: diseaseId, is_primary: true });
+  },
+
+  // NOT AVAILABLE — scale-assignments carry no disease grouping (scale_id/assessment_stage only, no disease_id).
   async getMyAssessments(): Promise<{ permissions: AssessmentPermission[]; total: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.PATIENTS.MY_ASSESSMENTS);
-    const payload = data.data ?? data;
+    return { permissions: [], total: 0 };
+  },
 
-    const rawList: unknown[] = Array.isArray(payload)
-      ? payload
-      : Array.isArray(payload?.permissions)
-        ? payload.permissions
-        : Array.isArray(payload?.assessments)
-          ? payload.assessments
-          : [];
-
-    if (rawList.length === 0) return { permissions: [], total: 0 };
-
-    // New format: backend returns one item per disease with embedded scales[]
-    const firstItem = rawList[0] as Record<string, unknown>;
-    const isNewFormat = typeof firstItem.disease_id === "string" && Array.isArray(firstItem.scales);
-
-    if (isNewFormat) {
-      const permissions = rawList.map((item) => {
-        const p = item as Record<string, unknown>;
-        return {
-          permission_id: String(p.permission_id ?? p.id ?? p.disease_id ?? ""),
-          disease_id: String(p.disease_id ?? ""),
-          disease_name: String(p.disease_name ?? p.disease_id ?? ""),
-          granted_at: String(p.granted_at ?? ""),
-          status: (p.status as AssessmentPermission["status"]) ?? "granted",
-          scales: (p.scales as { scale_id: string; scale_name: string }[]) ?? [],
-        } as AssessmentPermission;
-      });
-      return { permissions, total: permissions.length };
-    }
-
-    // Legacy format: one row per scale (id, disease_id, scale_id, prs_diseases, prs_scales, ...)
-    const diseaseMap = new Map<string, AssessmentPermission>();
-
-    for (const item of rawList) {
-      const p = item as Record<string, unknown>;
-      const diseaseId = String(p.disease_id ?? "");
-      if (!diseaseId) continue;
-
-      const scaleId = String(p.scale_id ?? "");
-      const diseases = (p.prs_diseases as Record<string, unknown>) ?? {};
-      const scaleInfo = (p.prs_scales as Record<string, unknown>) ?? {};
-
-      if (!diseaseMap.has(diseaseId)) {
-        diseaseMap.set(diseaseId, {
-          permission_id: String(p.id ?? ""),
-          disease_id: diseaseId,
-          disease_name: (diseases.disease_name as string) || diseaseId,
-          granted_at: String(p.granted_at ?? ""),
-          status: (p.status as AssessmentPermission["status"]) ?? "granted",
-          scales: scaleId
-            ? [{ scale_id: scaleId, scale_name: (scaleInfo.scale_name as string) || scaleId }]
-            : [],
-        });
-      } else {
-        const existing = diseaseMap.get(diseaseId)!;
-        if (scaleId && !existing.scales?.some((s) => s.scale_id === scaleId)) {
-          existing.scales = existing.scales ?? [];
-          existing.scales.push({
-            scale_id: scaleId,
-            scale_name: (scaleInfo.scale_name as string) || scaleId,
-          });
-        }
-      }
-    }
-
-    const permissions = Array.from(diseaseMap.values());
-    return { permissions, total: permissions.length };
+  /** Real: GET /patients/{patient_id}/scale-assignments?assessment_stage=
+   * Used by the self-registration wizard's PRS step to find which scales
+   * were auto-assigned off the patient's disease selection. */
+  async getScaleAssignments(patientId: string, assessmentStage: string): Promise<{ scale_id: string }[]> {
+    const { data } = await apiClient.get(`/patients/${patientId}/scale-assignments`, {
+      params: { assessment_stage: assessmentStage },
+    });
+    return Array.isArray(data) ? data : [];
   },
 };

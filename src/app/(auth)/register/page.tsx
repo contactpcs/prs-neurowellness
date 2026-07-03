@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
-import { CheckCircle, Loader2, Building2, ChevronDown, Shield, X } from "lucide-react";
+import { Loader2, Building2, ChevronDown, Shield, X } from "lucide-react";
 import { Button } from "@/components/ui";
 import { useAuth, useClinics } from "@/lib/hooks";
 import { register as registerThunk } from "@/store/slices/authSlice";
@@ -360,7 +361,7 @@ function ConsentModal({
 export default function RegisterPage() {
   const { isLoading, error, clearError, register } = useAuth();
   const { clinics, isLoading: clinicsLoading } = useClinics();
-  const [successClinic, setSuccessClinic] = useState<string | null>(null);
+  const router = useRouter();
   const [showConsent, setShowConsent]     = useState(false);
   const [pendingData, setPendingData]     = useState<RegisterFormData | null>(null);
 
@@ -393,43 +394,12 @@ export default function RegisterPage() {
     const result = await register({ ...pendingData, consent_responses: consentResponses });
     if (registerThunk.fulfilled.match(result)) {
       setShowConsent(false);
-      setSuccessClinic(
-        selectedClinic?.clinic_name ?? (result.payload as string) ?? "your clinic"
-      );
+      // Logged in immediately (inactive, self_registered) — straight into
+      // the wizard: disease selection -> onboarding consent -> anamnesis ->
+      // PRS -> pending receptionist approval.
+      router.push("/patient-registration/disease-selection");
     }
   };
-
-  // ── Success screen ──────────────────────────────────────────────────────────
-  if (successClinic) {
-    return (
-      <div className="text-center space-y-5 py-4">
-        <div className="flex justify-center">
-          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
-            <CheckCircle className="w-9 h-9 text-green-600" />
-          </div>
-        </div>
-        <div>
-          <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">
-            Registration Submitted!
-          </h2>
-          <p className="text-sm text-neutral-500 mt-2 leading-relaxed">
-            Your account has been submitted to{" "}
-            <span className="font-semibold text-neutral-700">{successClinic}</span> for
-            review. A receptionist will approve your account shortly.
-          </p>
-        </div>
-        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
-          You will be able to log in once your account is approved.
-        </div>
-        <Link
-          href="/login"
-          className="inline-block w-full text-center py-3 px-4 rounded-lg bg-neutral-900 text-white font-medium text-sm hover:bg-neutral-800 transition-colors"
-        >
-          Back to Login
-        </Link>
-      </div>
-    );
-  }
 
   // ── Registration form ───────────────────────────────────────────────────────
   return (

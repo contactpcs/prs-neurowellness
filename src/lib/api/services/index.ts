@@ -12,3 +12,8 @@ export { doctorNotesService } from "./doctorNotes.service";
 export { anamnesisService } from "./anamnesis.service";
 export { usersService } from "./users.service";
 export { adminService } from "./admin.service";
+export { staffRequestsService } from "./staffRequests.service";
+export { clinicRequestsService } from "./clinicRequests.service";
+export { paymentsService } from "./payments.service";
+export { storeService } from "./store.service";
+export { inventoryService } from "./inventory.service";

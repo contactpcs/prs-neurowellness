@@ -2,53 +2,57 @@ import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type { Permission } from "@/types/domain.types";
 
+/** PatientScaleAssignmentRead (real backend) is scale-keyed, not
+ * disease-keyed — no disease_id/disease_name field exists on it at all
+ * (confirmed against app/modules/prs/schemas.py). disease_id is left blank
+ * rather than guessed. */
+function mapAssignment(a: Record<string, unknown>): Permission {
+  return {
+    permission_id: String(a.psa_id ?? ""),
+    patient_id: String(a.patient_id ?? ""),
+    granted_by: String(a.assigned_by ?? ""),
+    disease_id: "",
+    scale_ids: a.scale_id ? [String(a.scale_id)] : [],
+    status: a.is_active === false ? "revoked" : "granted",
+    granted_at: String(a.created_at ?? ""),
+  };
+}
+
 export const permissionsService = {
+  /** Real backend has no single "grant" call — POSTs one
+   * patient-scale-assignment per scale_id. Returns the first created row. */
   async grantPermission(payload: { patient_id: string; disease_id: string; scale_ids?: string[] }): Promise<Permission> {
-    const { data } = await apiClient.post(ENDPOINTS.PRS.PERMISSIONS, payload);
-    return data.data ?? data;
+    const scaleIds = payload.scale_ids ?? [];
+    const created = await Promise.all(
+      scaleIds.map((scale_id) =>
+        apiClient.post(ENDPOINTS.PRS.PERMISSIONS, {
+          patient_id: payload.patient_id,
+          scale_id,
+          assessment_stage: "main_clinical",
+          assignment_reason: "doctor_override",
+        })
+      )
+    );
+    return mapAssignment(created[0]?.data ?? {});
   },
 
+  // NOT AVAILABLE directly — resolved via the caller's own /patients record first.
   async getMyPermissions(): Promise<{ permissions: Permission[]; total: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.MY_PERMISSIONS);
-    const payload = data.data ?? data;
-    return {
-      permissions: payload.permissions ?? (Array.isArray(payload) ? payload : []),
-      total: payload.total ?? 0,
-    };
+    const patientsRes = await apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD);
+    const own = Array.isArray(patientsRes.data) ? patientsRes.data[0] : undefined;
+    if (!own?.patient_id) return { permissions: [], total: 0 };
+    return permissionsService.getPatientPermissions(own.patient_id as string);
   },
 
   async getPatientPermissions(patientId: string): Promise<{ permissions: Permission[]; total: number }> {
     const { data } = await apiClient.get(ENDPOINTS.PRS.PATIENT_PERMISSIONS(patientId));
-    const payload = data.data ?? data;
-
-    // Backend now returns deduplicated disease-level entries — map directly
-    const rawList: unknown[] = Array.isArray(payload)
-      ? payload
-      : Array.isArray(payload?.permissions)
-        ? payload.permissions
-        : [];
-
-    const permissions: Permission[] = rawList.map((item) => {
-      const p = item as Record<string, unknown>;
-      return {
-        permission_id: String(p.permission_id ?? p.id ?? ""),
-        patient_id:    String(p.patient_id ?? ""),
-        granted_by:    String(p.granted_by ?? p.doctor_id ?? ""),
-        disease_id:    String(p.disease_id ?? ""),
-        disease_name:  p.disease_name as string | undefined,
-        scale_ids:     (p.scale_ids as string[]) ?? [],
-        status:        (p.status as Permission["status"]) ?? "granted",
-        granted_at:    String(p.granted_at ?? ""),
-        expires_at:    p.expires_at ? String(p.expires_at) : undefined,
-        instance_id:   p.instance_id ? String(p.instance_id) : undefined,
-      };
-    });
-
+    const list: Record<string, unknown>[] = Array.isArray(data) ? data : [];
+    const permissions = list.map(mapAssignment);
     return { permissions, total: permissions.length };
   },
 
-  async revokePermission(permissionId: string): Promise<Permission> {
-    const { data } = await apiClient.put(ENDPOINTS.PRS.REVOKE_PERMISSION(permissionId));
-    return data.data ?? data;
+  // NOT AVAILABLE — no revoke/delete endpoint on patient-scale-assignments.
+  async revokePermission(): Promise<never> {
+    throw new Error("Revoking a scale assignment isn't available yet.");
   },
 };

@@ -10,7 +10,9 @@ export { usePatientDashboard, useMyDoctor, useMyAssessments } from "./usePatient
 export { useMyScores, useMyScoresSummary, useInstanceScore, usePatientScores, usePatientScoresSummary } from "./useScores";
 export { useAnamnesisQuestions, useMyAnamnesis, usePatientAnamnesis } from "./useAnamnesis";
 export { useNotifications } from "./useNotifications";
-export { useAdminDashboard, useAdminClinics, useAdminStaff, useAdminPatients } from "./useAdmin";
+export { useAdminDashboard, useAdminClinics, useAdminRegions, useAdminAccounts, useAdminStaff, useAdminPatients } from "./useAdmin";
+export { useStaffRequests } from "./useStaffRequests";
+export { useClinicRequests } from "./useClinicRequests";
 export { useMyDoctorNotes, usePatientNote } from "./useDoctorNotes";
 export { useVoiceMode } from "./useVoiceMode";
 export { useTTS } from "./useTTS";
