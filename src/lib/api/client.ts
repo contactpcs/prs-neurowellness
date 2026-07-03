@@ -39,10 +39,16 @@ apiClient.interceptors.request.use((config) => {
     const token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
     if (token) {
       if (isTokenExpired(token)) {
+        // A stale expired token must never block an otherwise-anonymous call
+        // (register, public clinic list, login) — clear it and let the
+        // request go out with no Authorization header instead of rejecting
+        // it outright. If the endpoint actually needs auth, the server
+        // returns a real 401 and the response interceptor below handles it;
+        // that's the correct place for "your session is gone" to surface.
         clearSessionAndSignalLogout();
-        return Promise.reject(new Error("Session expired"));
+      } else {
+        config.headers.Authorization = `Bearer ${token}`;
       }
-      config.headers.Authorization = `Bearer ${token}`;
     }
   }
   return config;

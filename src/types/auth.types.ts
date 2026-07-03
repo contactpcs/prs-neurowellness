@@ -65,9 +65,12 @@ export interface User {
 
   // Self-registration wizard (backend-v2) — patients.patient_id (public ID,
   // NOT this profile's own id) that anamnesis/PRS/disease-selection
-  // endpoints key off. Only set right after POST /auth/register.
+  // endpoints key off. Returned on every /auth/me call (not just right
+  // after registering) so a patient who logs back in mid-wizard can be
+  // routed to whichever step they left off at.
   self_registered?: boolean;
   patient_id?: string;
+  registration_status?: string;
 }
 
 export interface LoginCredentials {

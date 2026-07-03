@@ -1,16 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, User, Mail, Phone, Calendar, MapPin,
   Stethoscope, CheckCircle, XCircle, Loader2, UserCheck,
-  Heart, AlertCircle, ClipboardList,
+  Heart, AlertCircle, ClipboardList, Check,
 } from "lucide-react";
 import { staffService } from "@/lib/api/services/staff.service";
+import { adminService } from "@/lib/api/services/admin.service";
 import { useStaffPatient, useClinics } from "@/lib/hooks";
 import { Card, CardHeader, CardContent, PageLoader } from "@/components/ui";
+import { PatientJourneySections, type PatientJourneyDetail } from "@/components/admin/PatientJourneySections";
 import type { PatientDetail, DoctorListItem } from "@/types/domain.types";
+
+// Matches patients/service.py _REGISTRATION_STEPS exactly — same stepper used
+// on the admin/regional-admin/clinic-admin patient-detail views.
+const REGISTRATION_STEPS: { key: string; label: string }[] = [
+  { key: "demographics_complete", label: "Demographics" },
+  { key: "disease_selected", label: "Disease Selection" },
+  { key: "consent_signed", label: "Consent Signed" },
+  { key: "anamnesis_complete", label: "Anamnesis" },
+  { key: "general_prs_complete", label: "General PRS" },
+  { key: "registration_complete", label: "Registration Complete" },
+];
 
 function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value?: string | null }) {
   if (!value) return null;
@@ -49,10 +62,21 @@ export default function PatientDetailPage() {
   const [rejectModal, setRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [toast, setToast]             = useState<{ msg: string; ok: boolean } | null>(null);
+  const [journeyDetail, setJourneyDetail] = useState<Record<string, unknown> | null>(null);
+  const [journeyError, setJourneyError]   = useState<string | null>(null);
 
   // Patient from cache, doctors fresh (less critical to cache), clinics from catalog.
   const patient = useStaffPatient(id);
   const { clinics } = useClinics();
+
+  useEffect(() => {
+    setJourneyDetail(null);
+    setJourneyError(null);
+    adminService.getPatientDetail(id).then(setJourneyDetail).catch(() => setJourneyError("Couldn't load registration record"));
+  }, [id]);
+
+  const registrationStatus = journeyDetail?.registration_status as string | undefined;
+  const currentStepIndex = REGISTRATION_STEPS.findIndex((s) => s.key === registrationStatus);
 
   // Resolve clinic name reactively.
   const resolvedClinic: string | null = (() => {
@@ -203,6 +227,50 @@ export default function PatientDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Registration progress — horizontal stepper */}
+      <Card>
+        <CardHeader><h3 className="text-sm font-semibold text-neutral-700">Registration Progress</h3></CardHeader>
+        <CardContent>
+          <div className="flex items-start overflow-x-auto pb-1">
+            {REGISTRATION_STEPS.map((step, i) => {
+              const done = currentStepIndex >= 0 && i <= currentStepIndex;
+              const isLast = i === REGISTRATION_STEPS.length - 1;
+              return (
+                <Fragment key={step.key}>
+                  <div className="flex flex-col items-center flex-shrink-0 w-16">
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 border-2 transition-colors ${
+                      done ? "bg-green-500 border-green-500" : "bg-white border-neutral-300"
+                    }`}>
+                      {done && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
+                    </span>
+                    <span className={`text-[10px] mt-1.5 text-center leading-tight ${done ? "text-neutral-800 font-medium" : "text-neutral-400"}`}>
+                      {step.label}
+                    </span>
+                  </div>
+                  {!isLast && (
+                    <span className={`h-0.5 flex-1 mt-2.5 min-w-[0.75rem] transition-colors ${done ? "bg-green-500" : "bg-neutral-200"}`} />
+                  )}
+                </Fragment>
+              );
+            })}
+          </div>
+          {!registrationStatus && !journeyError && <p className="text-xs text-neutral-400 mt-1">Loading…</p>}
+          {journeyError && <p className="text-xs text-red-500 mt-1">{journeyError}</p>}
+        </CardContent>
+      </Card>
+
+      {/* Disease selection / anamnesis / general PRS */}
+      <Card>
+        <CardHeader><h3 className="text-sm font-semibold text-neutral-700">Registration Record</h3></CardHeader>
+        <CardContent className="space-y-4">
+          {journeyDetail ? (
+            <PatientJourneySections detail={journeyDetail as unknown as PatientJourneyDetail} />
+          ) : (
+            !journeyError && <p className="text-xs text-neutral-400">Loading…</p>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Contact Information */}

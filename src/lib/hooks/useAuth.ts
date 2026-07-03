@@ -24,6 +24,21 @@ function dashboardRouteForRoles(roles: string[]): string {
   return ROUTES.CA_DASHBOARD;
 }
 
+// A self-registered patient stays inactive through the whole 6-step wizard —
+// logging back in mid-way must resume wherever they left off, not always
+// bounce to /consent (which has nothing pending to show once they're past
+// that step, and which comes AFTER disease-selection in this wizard's
+// order — see patient-registration/* pages).
+function resumeRouteForSelfRegisteredPatient(registrationStatus: string | undefined): string {
+  switch (registrationStatus) {
+    case "demographics_complete": return "/patient-registration/disease-selection";
+    case "disease_selected": return ROUTES.CONSENT;
+    case "consent_signed": return "/patient-registration/anamnesis";
+    case "anamnesis_complete": return "/patient-registration/assessment";
+    default: return "/patient-registration/pending"; // general_prs_complete / registration_complete, awaiting approval
+  }
+}
+
 export function useAuth() {
   const dispatch = useAppDispatch();
   const router = useRouter();
@@ -35,9 +50,15 @@ export function useAuth() {
       const roles = result.payload?.roles || [];
 
       // Consent gate — a newly-registered (or not-yet-signed) account is
-      // sent straight to the consent screen, not their role dashboard.
+      // sent to the consent screen (staff/receptionist-registered patients)
+      // or resumed wherever they left off (self-registered patients, whose
+      // wizard has steps both before AND after consent).
       if (result.payload?.is_active === false) {
-        router.push(ROUTES.CONSENT);
+        if (roles.includes(USER_ROLES.PATIENT) && result.payload?.self_registered) {
+          router.push(resumeRouteForSelfRegisteredPatient(result.payload?.registration_status));
+        } else {
+          router.push(ROUTES.CONSENT);
+        }
         return result;
       }
 

@@ -38,6 +38,7 @@ function normalizeUser(rawUser: any): User {
     consent_type_required: rawUser?.consent_type_required ?? null,
     self_registered: rawUser?.self_registered ?? undefined,
     patient_id: rawUser?.patient_id ?? undefined,
+    registration_status: rawUser?.registration_status ?? undefined,
   };
 }
 

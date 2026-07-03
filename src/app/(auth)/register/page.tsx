@@ -1,17 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
-import { Loader2, Building2, ChevronDown, Shield, X } from "lucide-react";
+import { Loader2, Building2, ChevronDown, Shield } from "lucide-react";
 import { Button } from "@/components/ui";
 import { useAuth, useClinics } from "@/lib/hooks";
 import { register as registerThunk } from "@/store/slices/authSlice";
-import { authService } from "@/lib/api/services/auth.service";
-import type { ConsentFormItem, ConsentResponseItem } from "@/types/auth.types";
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -103,267 +101,12 @@ function getFilteredClinics(allClinics: any[], userCity?: string, userState?: st
   return allClinics;
 }
 
-// ─── Consent modal ────────────────────────────────────────────────────────────
-
-function ConsentModal({
-  isOpen,
-  onClose,
-  onAccept,
-  isLoading,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  onAccept: (responses: ConsentResponseItem[]) => void;
-  isLoading: boolean;
-}) {
-  const [apiForms, setApiForms] = useState<ConsentFormItem[]>([]);
-  const [formsLoading, setFormsLoading] = useState(false);
-  const [formsError, setFormsError] = useState("");
-  const [checked, setChecked] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    if (!isOpen) return;
-    setFormsLoading(true);
-    setFormsError("");
-    authService.getConsentForms()
-      .then((forms) => {
-        setApiForms(forms);
-        const init: Record<string, boolean> = {};
-        forms.forEach((f) => { init[f.consent_form_id] = false; });
-        setChecked(init);
-      })
-      .catch(() => setFormsError("Failed to load consent forms. Please close and try again."))
-      .finally(() => setFormsLoading(false));
-  }, [isOpen]);
-
-  const requiredForms = apiForms.filter((f) => f.is_required);
-  const allRequired = apiForms.length > 0 && requiredForms.every((f) => checked[f.consent_form_id]);
-
-  const toggle = (id: string) =>
-    setChecked((prev) => ({ ...prev, [id]: !prev[id] }));
-
-  const handleAccept = () => {
-    const responses: ConsentResponseItem[] = apiForms.map((f) => ({
-      consent_form_id: f.consent_form_id,
-      response: !!checked[f.consent_form_id],
-    }));
-    onAccept(responses);
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200 flex-shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-primary-50 flex items-center justify-center flex-shrink-0">
-              <Shield className="w-4 h-4 text-primary-600" />
-            </div>
-            <div>
-              <h3 className="text-base font-semibold text-neutral-900 leading-tight">
-                Data Privacy Consent
-              </h3>
-              <p className="text-xs text-neutral-400 mt-0.5">Anava</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-neutral-400 hover:text-neutral-600 transition-colors p-1 rounded-md hover:bg-neutral-100"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Scrollable body */}
-        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5 text-sm">
-
-          <p className="text-neutral-500 text-xs leading-relaxed bg-neutral-50 border border-neutral-200 rounded-lg px-4 py-3">
-            By creating an account on the{" "}
-            <strong className="text-neutral-700">Anava</strong>, you
-            acknowledge and agree to the following. Please read carefully before
-            submitting your registration.
-          </p>
-
-          {/* 1 */}
-          <section>
-            <h4 className="font-semibold text-neutral-900 mb-1.5">
-              1. Information you are providing
-            </h4>
-            <p className="text-neutral-600 leading-relaxed">
-              You are submitting personal information (name, date of birth, gender, email,
-              phone, address, emergency contact) and health-related information (medical
-              history, current medications, symptoms) so that your registering clinic can
-              provide you with care.
-            </p>
-          </section>
-
-          {/* 2 */}
-          <section>
-            <h4 className="font-semibold text-neutral-900 mb-2">
-              2. How your information will be used
-            </h4>
-            <ul className="space-y-1.5 text-neutral-600">
-              {[
-                "Identify you as a patient and create your Electronic Medical Record (EMR)",
-                "Allocate you to a treating doctor at your registering clinic",
-                "Administer clinical assessments (Patient Rating Scales) to support your diagnosis and care",
-                "Communicate with you about appointments, results, and account status",
-                "Improve the Platform through anonymized, aggregated analytics",
-              ].map((item) => (
-                <li key={item} className="flex items-start gap-2">
-                  <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary-400 flex-shrink-0" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          {/* 3 */}
-          <section>
-            <h4 className="font-semibold text-neutral-900 mb-1.5">
-              3. Who can access your information
-            </h4>
-            <p className="text-neutral-600 leading-relaxed">
-              Only authorized staff at your registering clinic — your treating doctor,
-              clinical assistant, receptionist, and clinic administrator — can access your
-              data on a role-based, need-to-know basis. All access is logged. Your data is{" "}
-              <strong className="text-neutral-800">isolated to your clinic</strong> and is
-              not visible to other clinics on the Platform.
-            </p>
-          </section>
-
-          {/* 4 */}
-          <section>
-            <h4 className="font-semibold text-neutral-900 mb-2">4. Your rights</h4>
-            <p className="text-neutral-600 mb-2">You may at any time:</p>
-            <ul className="space-y-1.5 text-neutral-600">
-              {[
-                "Access a copy of your data",
-                "Correct inaccurate personal information",
-                "Withdraw this consent (which will end your active use of the Platform)",
-                "Restrict how your data is used",
-                "Port your data to another healthcare provider",
-                "Lodge a complaint with the relevant data protection authority",
-              ].map((r) => (
-                <li key={r} className="flex items-start gap-2">
-                  <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary-400 flex-shrink-0" />
-                  {r}
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2 text-xs text-neutral-400">
-              To exercise any right, contact your registering clinic.
-            </p>
-          </section>
-
-          {/* 5 */}
-          <section>
-            <h4 className="font-semibold text-neutral-900 mb-1.5">
-              5. Sharing with third parties
-            </h4>
-            <p className="text-neutral-600 leading-relaxed">
-              Your identifiable data will{" "}
-              <strong className="text-neutral-800">not</strong> be shared with third
-              parties except: (a) as required by law, (b) with your separate written
-              consent, (c) with trusted infrastructure providers strictly to operate the
-              Platform under confidentiality agreements, or (d) in a medical emergency.
-            </p>
-          </section>
-
-          {/* 6 */}
-          <section>
-            <h4 className="font-semibold text-neutral-900 mb-1.5">6. Research</h4>
-            <p className="text-neutral-600 leading-relaxed">
-              Standard registration does{" "}
-              <strong className="text-neutral-800">not</strong> consent to research use of
-              your data. Any research participation requires separate, specific written
-              consent.
-            </p>
-          </section>
-
-          {/* ── Consent form checkboxes (API-driven) ────────────────────────── */}
-          <div className="border-t border-neutral-200 pt-5">
-            <p className="font-semibold text-neutral-900 mb-1">Required consent forms</p>
-            <p className="text-xs text-neutral-400 mb-4">
-              All required forms must be accepted before you can submit your registration.
-            </p>
-
-            {formsLoading && (
-              <div className="flex items-center gap-2 text-sm text-neutral-400">
-                <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
-                Loading consent forms…
-              </div>
-            )}
-
-            {formsError && (
-              <p className="text-sm text-danger-600 bg-danger-50 border border-danger-100 rounded-lg px-3 py-2">
-                {formsError}
-              </p>
-            )}
-
-            {!formsLoading && !formsError && (
-              <div className="space-y-3">
-                {apiForms.map((f) => (
-                  <label
-                    key={f.consent_form_id}
-                    className="flex items-start gap-3 cursor-pointer group"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={!!checked[f.consent_form_id]}
-                      onChange={() => toggle(f.consent_form_id)}
-                      className="mt-0.5 w-4 h-4 flex-shrink-0 rounded border-neutral-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
-                    />
-                    <span className="text-neutral-700 leading-snug text-sm group-hover:text-neutral-900 transition-colors">
-                      I have read and accept the{" "}
-                      <strong className="text-neutral-900">{f.consent_form_name}</strong>
-                      {f.is_required && (
-                        <span className="ml-1.5 text-xs font-semibold text-danger-600 bg-danger-50 px-1.5 py-0.5 rounded">
-                          Required
-                        </span>
-                      )}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="border-t border-neutral-200 px-6 py-4 flex items-center justify-end gap-3 flex-shrink-0 rounded-b-xl bg-neutral-50">
-          <button
-            onClick={onClose}
-            className="text-sm text-neutral-600 hover:text-neutral-900 transition-colors px-3 py-2 rounded-lg hover:bg-neutral-100"
-          >
-            Cancel
-          </button>
-          <Button
-            onClick={handleAccept}
-            disabled={!allRequired || formsLoading || !!formsError}
-            isLoading={isLoading}
-            size="sm"
-          >
-            Submit Registration
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function RegisterPage() {
   const { isLoading, error, clearError, register } = useAuth();
   const { clinics, isLoading: clinicsLoading } = useClinics();
   const router = useRouter();
-  const [showConsent, setShowConsent]     = useState(false);
-  const [pendingData, setPendingData]     = useState<RegisterFormData | null>(null);
 
   const {
     register: field,
@@ -381,19 +124,17 @@ export default function RegisterPage() {
   const selectedClinic   = clinics.find((c) => c.clinic_id === selectedClinicId);
   const filteredClinics  = getFilteredClinics(clinics, userCity, userState);
 
-  // Validate form → open consent modal (no API call yet)
-  const onSubmit = (data: RegisterFormData) => {
+  // Submits registration directly — the real patient_onboarding consent is
+  // signed right after, on /consent (step 2 of the wizard), where it
+  // actually works (the patient has a real token by then). An earlier
+  // pre-registration "Data Privacy Consent" modal here called
+  // GET /consent-templates before any account/token existed, which that
+  // endpoint has never allowed — removed rather than made public, since it
+  // only duplicated the real consent step anyway.
+  const onSubmit = async (data: RegisterFormData) => {
     clearError();
-    setPendingData(data);
-    setShowConsent(true);
-  };
-
-  // Called from inside the consent modal after all required forms are accepted
-  const handleConsentAccepted = async (consentResponses: ConsentResponseItem[]) => {
-    if (!pendingData) return;
-    const result = await register({ ...pendingData, consent_responses: consentResponses });
+    const result = await register(data);
     if (registerThunk.fulfilled.match(result)) {
-      setShowConsent(false);
       // Logged in immediately (inactive, self_registered) — straight into
       // the wizard: disease selection -> onboarding consent -> anamnesis ->
       // PRS -> pending receptionist approval.
@@ -582,13 +323,12 @@ export default function RegisterPage() {
           <div className="flex items-start gap-2 text-xs text-neutral-400 bg-neutral-50 border border-neutral-200 rounded-lg px-3.5 py-2.5">
             <Shield className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-neutral-400" />
             <span>
-              Clicking <strong className="text-neutral-600">Continue</strong> will show
-              you our Data Privacy Consent before your registration is submitted.
+              After this, you'll pick your condition and sign your onboarding consent — the next steps in your registration.
             </span>
           </div>
 
           {/* ── Submit ───────────────────────────────────────────────────── */}
-          <Button type="submit" className="w-full" size="lg" isLoading={false}>
+          <Button type="submit" className="w-full" size="lg" isLoading={isLoading}>
             Continue
           </Button>
         </form>
@@ -603,14 +343,6 @@ export default function RegisterPage() {
           </Link>
         </p>
       </div>
-
-      {/* Consent modal — rendered outside the form so z-index stacking is clean */}
-      <ConsentModal
-        isOpen={showConsent}
-        onClose={() => setShowConsent(false)}
-        onAccept={handleConsentAccepted}
-        isLoading={isLoading}
-      />
     </>
   );
 }

@@ -10,6 +10,7 @@ import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } fr
 import { consentService, type ConsentRecord } from "@/lib/api/services/consent.service";
 import { filesService, type PatientFile } from "@/lib/api/services/files.service";
 import { adminService } from "@/lib/api/services/admin.service";
+import { PatientJourneySections, type PatientJourneyDetail } from "@/components/admin/PatientJourneySections";
 import type { AdminClinic, AdminPatient } from "@/types/admin.types";
 
 const CLINIC_STATUS_STYLES: Record<AdminClinic["status"], string> = {
@@ -353,8 +354,13 @@ function PatientDetailModal({ patient, clinic }: { patient: AdminPatient; clinic
       {detail === null ? (
         detailError ? <p className="text-xs text-red-500">{detailError}</p> : <p className="text-xs text-neutral-400">Loading full record…</p>
       ) : (
-        <DetailFieldList data={detail} exclude={["profile_id", "primary_clinic_id", "clinic_name"]} />
+        <DetailFieldList
+          data={detail}
+          exclude={["profile_id", "primary_clinic_id", "clinic_name", "diseases", "anamnesis", "anamnesis_responses", "anamnesis_catalog", "general_prs"]}
+        />
       )}
+
+      {detail && <PatientJourneySections detail={detail as unknown as PatientJourneyDetail} />}
 
       {/* Registration progress — horizontal stepper */}
       <div>

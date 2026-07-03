@@ -117,6 +117,7 @@ export const ENDPOINTS = {
     PERMISSIONS: "/patient-scale-assignments",    // real (closest equivalent — see permissions.service.ts)
     MY_PERMISSIONS: "/prs/permissions/my",        // NOT AVAILABLE — no self patient_id resolvable from a bare URL
     PATIENT_PERMISSIONS: (patientId: string) => `/patients/${patientId}/scale-assignments`, // real
+    PATIENT_INSTANCES: (patientId: string) => `/patients/${patientId}/prs-instances`, // real — GET ?assessment_stage=
     SCALE_QUESTIONS: "/prs-catalog/scale-questions", // real — GET ?scale_id= (scale_id is a composite key with "/", so query param not path)
     REVOKE_PERMISSION: (permissionId: string) => `/prs/permissions/${permissionId}/revoke`, // NOT AVAILABLE — no revoke endpoint
     ASSESSMENT_START: "/prs-assessment-instances", // real — shape differs (see prsAssessment.service.ts)
@@ -153,6 +154,7 @@ export const ENDPOINTS = {
     SUBMIT: (anamnesisId: string) => `/anamnesis/${anamnesisId}`,        // real — PATCH {responses, complete:true}
     ME: "/patients",                                                    // real (composed — resolve own patient_id first)
     FOR_PATIENT: (patientId: string) => `/patients/${patientId}/anamnesis`, // real
+    RESPONSES: (anamnesisId: string) => `/anamnesis/${anamnesisId}/responses`, // real
   },
 
   // ─── Schedule ───

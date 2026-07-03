@@ -10,6 +10,26 @@ export interface Clinic {
   address?: string;
 }
 
+/** Raw /auth/me shape — self_registered/patient_id/registration_status are
+ * returned on EVERY call (not just right after registering) so a patient
+ * who logs back in mid-wizard can be routed to wherever they left off. */
+interface MeResponse {
+  id: string; email: string; first_name: string; last_name: string; role: string;
+  clinic_id: string | null; region_id: string | null; is_active: boolean; consent_type_required: string | null;
+  self_registered: boolean; patient_id: string | null; registration_status: string | null;
+}
+
+function meToUser(me: MeResponse): AuthResponse["user"] {
+  return {
+    id: me.id, email: me.email, first_name: me.first_name, last_name: me.last_name,
+    roles: [me.role as AuthResponse["user"]["roles"][number]], permissions: [],
+    clinic_id: me.clinic_id ?? undefined, region_id: me.region_id ?? undefined,
+    is_active: me.is_active, consent_type_required: me.consent_type_required,
+    self_registered: me.self_registered, patient_id: me.patient_id ?? undefined,
+    registration_status: me.registration_status ?? undefined,
+  };
+}
+
 export const authService = {
   /** Real backend: POST /auth/local-login {email} -> {access_token, token_type} only
    * (no user object, no refresh_token). Fetch /auth/me right after to build the
@@ -20,24 +40,7 @@ export const authService = {
     const meRes = await apiClient.get(ENDPOINTS.AUTH.ME, {
       headers: { Authorization: `Bearer ${access_token}` },
     });
-    const me = meRes.data as { id: string; email: string; first_name: string; last_name: string; role: string; clinic_id: string | null; region_id: string | null; is_active: boolean; consent_type_required: string | null };
-    return {
-      access_token,
-      refresh_token: "",
-      expires_in: 0,
-      user: {
-        id: me.id,
-        email: me.email,
-        first_name: me.first_name,
-        last_name: me.last_name,
-        roles: [me.role as AuthResponse["user"]["roles"][number]],
-        permissions: [],
-        clinic_id: me.clinic_id ?? undefined,
-        region_id: me.region_id ?? undefined,
-        is_active: me.is_active,
-        consent_type_required: me.consent_type_required,
-      },
-    };
+    return { access_token, refresh_token: "", expires_in: 0, user: meToUser(meRes.data as MeResponse) };
   },
 
   /** Real: POST /auth/register (public, no auth) -> {access_token}. Creates
@@ -59,26 +62,15 @@ export const authService = {
       primary_clinic_id: formData.clinic_id,
     });
     const access_token: string = data.access_token;
-    const patientId: string = data.patient_id;
     const meRes = await apiClient.get(ENDPOINTS.AUTH.ME, { headers: { Authorization: `Bearer ${access_token}` } });
-    const me = meRes.data as { id: string; email: string; first_name: string; last_name: string; role: string; clinic_id: string | null; region_id: string | null; is_active: boolean; consent_type_required: string | null };
-    return {
-      access_token, refresh_token: "", expires_in: 0,
-      user: {
-        id: me.id, email: me.email, first_name: me.first_name, last_name: me.last_name,
-        roles: [me.role as AuthResponse["user"]["roles"][number]], permissions: [],
-        clinic_id: me.clinic_id ?? undefined, region_id: me.region_id ?? undefined,
-        is_active: me.is_active, consent_type_required: me.consent_type_required,
-        self_registered: true, patient_id: patientId,
-      },
-    };
+    return { access_token, refresh_token: "", expires_in: 0, user: meToUser(meRes.data as MeResponse) };
   },
 
   /** Re-fetches the current session's profile from the DB — used right after
    * signing onboarding consent, since the token itself doesn't change but
    * profiles.is_active does; the app needs the fresh value without a
    * forced re-login. */
-  async me(): Promise<{ id: string; email: string; first_name: string; last_name: string; role: string; clinic_id: string | null; region_id: string | null; is_active: boolean; consent_type_required: string | null }> {
+  async me(): Promise<MeResponse> {
     const { data } = await apiClient.get(ENDPOINTS.AUTH.ME);
     return data;
   },
