@@ -10,11 +10,12 @@ import type { AvailabilitySlot, PatientListItem } from "@/types/domain.types";
 const BRAND_GRADIENT = "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)";
 
 const APPT_TYPES = [
-  { value: "consultation", label: "Consultation" },
-  { value: "follow_up",    label: "Follow-up" },
-  { value: "assessment",   label: "Assessment" },
-  { value: "emergency",    label: "Emergency" },
-  { value: "video",        label: "Video" },
+  { value: "doctor_consultation", label: "Doctor Consultation" },
+  { value: "initial_assessment",  label: "Initial Assessment" },
+  { value: "follow_up",           label: "Follow-up" },
+  { value: "ca_session",          label: "CA Session" },
+  { value: "treatment_session",   label: "Treatment Session" },
+  { value: "teleconsult",         label: "Teleconsult" },
 ];
 
 function fmt12(t: string): string {
@@ -40,7 +41,7 @@ export function BookingModal({
   const [fetched,   setFetched]   = useState(!!patientsProp);
   const [search,    setSearch]    = useState("");
   const [patient,   setPatient]   = useState<PatientListItem | null>(null);
-  const [apptType,  setApptType]  = useState("consultation");
+  const [apptType,  setApptType]  = useState("doctor_consultation");
   const [reason,    setReason]    = useState("");
   const [notes,     setNotes]     = useState("");
   const [busy,      setBusy]      = useState(false);
@@ -66,18 +67,27 @@ export function BookingModal({
     setBusy(true);
     setError("");
     try {
-      await apiClient.post(ENDPOINTS.APPOINTMENTS.LIST, {
+      // AppointmentCreate requires clinic_id — not something this modal's
+      // caller tracks, so resolve it from the doctor's own record.
+      const { data: doctorRow } = await apiClient.get(ENDPOINTS.SCHEDULE.DOCTOR(doctorId));
+      if (!doctorRow?.clinic_id) throw new Error("This doctor has no clinic assignment on file.");
+      const { data: created } = await apiClient.post(ENDPOINTS.APPOINTMENTS.LIST, {
+        clinic_id:        doctorRow.clinic_id,
         patient_id:       patient.id,
         doctor_id:        doctorId,
         appointment_date: slot.date,
         start_time:       slot.start_time,
         appointment_type: apptType,
         reason:           reason || undefined,
-        notes:            notes  || undefined,
       });
+      // notes isn't part of AppointmentCreate (only the generic update
+      // endpoint accepts it) — a second call, not lost input.
+      if (notes.trim()) {
+        await apiClient.patch(ENDPOINTS.APPOINTMENTS.UPDATE(created.appointment_id), { notes: notes.trim() });
+      }
       onSuccess();
     } catch (e: any) {
-      setError(e?.response?.data?.detail ?? "Booking failed");
+      setError(e?.response?.data?.error?.message ?? e?.response?.data?.detail ?? e?.message ?? "Booking failed");
     } finally {
       setBusy(false);
     }

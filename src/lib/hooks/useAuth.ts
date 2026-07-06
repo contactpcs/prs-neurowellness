@@ -24,12 +24,15 @@ function dashboardRouteForRoles(roles: string[]): string {
   return ROUTES.CA_DASHBOARD;
 }
 
-// A self-registered patient stays inactive through the whole 6-step wizard —
-// logging back in mid-way must resume wherever they left off, not always
-// bounce to /consent (which has nothing pending to show once they're past
-// that step, and which comes AFTER disease-selection in this wizard's
-// order — see patient-registration/* pages).
-function resumeRouteForSelfRegisteredPatient(registrationStatus: string | undefined): string {
+// EVERY patient — self- or staff-registered — stays inactive through the
+// same 6-step registration-test wizard (disease selection, consent,
+// anamnesis, general PRS) before getting portal access; only who signs
+// consent and whether a receptionist approval gate applies afterward
+// differ. Logging back in mid-way must resume wherever they left off, not
+// always bounce to /consent (which has nothing pending to show once
+// they're past that step, and which comes AFTER disease-selection in this
+// wizard's order — see patient-registration/* pages).
+function resumeRouteForPatient(registrationStatus: string | undefined): string {
   switch (registrationStatus) {
     case "demographics_complete": return "/patient-registration/disease-selection";
     case "disease_selected": return ROUTES.CONSENT;
@@ -49,15 +52,21 @@ export function useAuth() {
     if (login.fulfilled.match(result)) {
       const roles = result.payload?.roles || [];
 
-      // Consent gate — a newly-registered (or not-yet-signed) account is
-      // sent to the consent screen (staff/receptionist-registered patients)
-      // or resumed wherever they left off (self-registered patients, whose
-      // wizard has steps both before AND after consent).
+      // Consent gate — a newly-registered (or not-yet-signed) staff account
+      // is sent to the consent screen. Any inactive patient (self- OR
+      // staff-registered — both now go through the same registration-test
+      // wizard) is resumed wherever they left off instead. A staff account
+      // that already signed consent before (consent_signed=true) but is now
+      // is_active=false was deliberately deactivated by an admin, not newly
+      // created — that's a different message, not a consent form with
+      // nothing pending to sign (see account-deactivated/page.tsx).
       if (result.payload?.is_active === false) {
-        if (roles.includes(USER_ROLES.PATIENT) && result.payload?.self_registered) {
-          router.push(resumeRouteForSelfRegisteredPatient(result.payload?.registration_status));
-        } else {
+        if (roles.includes(USER_ROLES.PATIENT)) {
+          router.push(resumeRouteForPatient(result.payload?.registration_status));
+        } else if (result.payload?.consent_signed === false) {
           router.push(ROUTES.CONSENT);
+        } else {
+          router.push(ROUTES.ACCOUNT_DEACTIVATED);
         }
         return result;
       }

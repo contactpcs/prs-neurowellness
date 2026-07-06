@@ -35,6 +35,7 @@ function normalizeUser(rawUser: any): User {
     gender: rawUser?.gender ?? undefined,
     approval_status: rawUser?.approval_status ?? rawUser?.account_status ?? rawUser?.status ?? undefined,
     is_active: rawUser?.is_active ?? true,
+    consent_signed: rawUser?.consent_signed ?? true,
     consent_type_required: rawUser?.consent_type_required ?? null,
     self_registered: rawUser?.self_registered ?? undefined,
     patient_id: rawUser?.patient_id ?? undefined,

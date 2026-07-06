@@ -143,7 +143,7 @@ export default function PatientHistoryPage() {
       apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, {
         params: { patient_id: id, limit: 100 },
       })
-        .then((r) => setAppointments(r.data?.data ?? []))
+        .then((r) => setAppointments(Array.isArray(r.data) ? r.data : []))
         .catch(() => setApptErr("Failed to load appointments"))
         .finally(() => setApptLoading(false)),
 

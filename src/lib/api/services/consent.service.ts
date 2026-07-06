@@ -3,6 +3,7 @@ import apiClient from "../client";
 export interface ConsentTemplate {
   template_id: string;
   consent_type: string;
+  role: string | null;
   version: number;
   title: string;
   content: string;
@@ -22,10 +23,15 @@ export interface ConsentRecord {
 }
 
 export const consentService = {
-  async getTemplate(consentType: string): Promise<ConsentTemplate | null> {
+  /** Staff-onboarding templates are now split one-per-role (doctor, CA,
+   * receptionist, clinic_admin, regional_admin, super_admin) instead of one
+   * shared [ROLE]-placeholder template — role must be passed for those to
+   * get the right wording. patient_onboarding (and the other non-role-split
+   * types) have a single row with role=null, so omit role for those. */
+  async getTemplate(consentType: string, role?: string | null): Promise<ConsentTemplate | null> {
     const { data } = await apiClient.get("/consent-templates");
     const list: ConsentTemplate[] = Array.isArray(data) ? data : [];
-    return list.find((t) => t.consent_type === consentType && t.is_active) ?? null;
+    return list.find((t) => t.consent_type === consentType && t.is_active && (t.role ?? null) === (role ?? null)) ?? null;
   },
 
   /** Finds the caller's own pending onboarding consent — staff_id/patient_id

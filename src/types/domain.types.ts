@@ -2,6 +2,7 @@
 
 export interface PatientListItem {
   id: string;
+  profile_id?: string;
   full_name: string;
   first_name: string;
   last_name: string;
@@ -245,8 +246,12 @@ export type AppointmentStatus =
   | "scheduled" | "confirmed" | "checked_in" | "in_progress"
   | "completed" | "cancelled" | "no_show" | "rescheduled";
 
+// Matches the real DB CHECK (SQL/06b_appointment_tables.sql) — Anava's
+// clinical-flow phases, not v1's generic consultation/follow_up/assessment/
+// emergency/video set.
 export type AppointmentType =
-  | "consultation" | "follow_up" | "assessment" | "emergency" | "video";
+  | "initial_assessment" | "doctor_consultation" | "ca_session"
+  | "treatment_session" | "follow_up" | "demo_visit" | "teleconsult";
 
 export interface Appointment {
   appointment_id: string;
@@ -265,6 +270,7 @@ export interface Appointment {
   reason?: string;
   notes?: string;
   patient_complaint?: string;
+  cancellation_reason?: string | null;
   booked_by: string;
   booked_by_role: string;
   created_at: string;
@@ -273,17 +279,20 @@ export interface Appointment {
 
 // ─── Appointment Requests ────────────────────────────────────────
 
-export type AppointmentRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+export type AppointmentRequestStatus = "pending" | "approved" | "rejected" | "cancelled_by_patient" | "expired";
 export type TimeWindow = "any" | "morning" | "afternoon" | "evening";
 export type Urgency = "normal" | "urgent" | "emergency";
 
 export interface AppointmentRequest {
   request_id: string;
   patient_id: string;
-  doctor_id: string;
+  doctor_id: string | null;
   clinic_id: string;
   patient_name?: string;
   doctor_name?: string;
+  request_type?: "new" | "reschedule" | "followup_cycle";
+  parent_appointment_id?: string | null;
+  approved_appointment_id?: string | null;
   preferred_date_1: string;
   preferred_date_2?: string | null;
   preferred_date_3?: string | null;

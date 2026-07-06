@@ -31,11 +31,12 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 const APPT_TYPES: { value: AppointmentType; label: string }[] = [
-  { value: "consultation", label: "Consultation" },
-  { value: "follow_up",    label: "Follow-up" },
-  { value: "assessment",   label: "Assessment" },
-  { value: "video",        label: "Video" },
-  { value: "emergency",    label: "Emergency" },
+  { value: "doctor_consultation", label: "Doctor Consultation" },
+  { value: "initial_assessment",  label: "Initial Assessment" },
+  { value: "follow_up",           label: "Follow-up" },
+  { value: "ca_session",          label: "CA Session" },
+  { value: "treatment_session",   label: "Treatment Session" },
+  { value: "teleconsult",         label: "Teleconsult" },
 ];
 
 function fmtDate(d?: string | null) {
@@ -72,7 +73,7 @@ export function AppointmentRequestsPanel() {
   const [approveForm, setApproveForm] = useState({
     appointment_date: "",
     start_time: "",
-    appointment_type: "consultation" as AppointmentType,
+    appointment_type: "doctor_consultation" as AppointmentType,
     notes: "",
   });
   const [rejectNotes, setRejectNotes] = useState("");
@@ -95,8 +96,7 @@ export function AppointmentRequestsPanel() {
     apiClient
       .get(ENDPOINTS.SCHEDULE.SLOTS(doctorId), { params: { from_date: date } })
       .then((res) => {
-        const d = res.data as Record<string, unknown>;
-        const raw = (d?.data ?? []) as SlotInfo[];
+        const raw = res.data as SlotInfo[];
         setSlots(Array.isArray(raw) ? raw.filter((s) => s.is_available) : []);
       })
       .catch(() => setSlots([]))
@@ -116,7 +116,7 @@ export function AppointmentRequestsPanel() {
         notes: approveForm.notes || undefined,
       });
       setApproveModal(null);
-      setApproveForm({ appointment_date: "", start_time: "", appointment_type: "consultation", notes: "" });
+      setApproveForm({ appointment_date: "", start_time: "", appointment_type: "doctor_consultation", notes: "" });
       setSlots([]);
       refreshPending();
       showToast("Appointment confirmed and patient notified.", true);
@@ -168,13 +168,17 @@ export function AppointmentRequestsPanel() {
   };
 
   const openApprove = (req: AppointmentRequest) => {
+    if (!req.doctor_id) {
+      showToast("This request has no doctor assigned yet — assign one before approving.", false);
+      return;
+    }
     const dates = [req.preferred_date_1, req.preferred_date_2, req.preferred_date_3].filter(Boolean) as string[];
     setApproveError(null);
     setSlots([]);
     setApproveForm({
       appointment_date: dates[0] ?? "",
       start_time: "",
-      appointment_type: "consultation",
+      appointment_type: "doctor_consultation",
       notes: "",
     });
     setApproveModal({

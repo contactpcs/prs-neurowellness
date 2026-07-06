@@ -132,7 +132,7 @@ export default function DoctorDashboard() {
       const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, {
         params: { date_from: toDateStr(from), date_to: toDateStr(to), limit: 100 },
       });
-      setAppointments(data.data ?? []);
+      setAppointments(Array.isArray(data) ? data : []);
     } catch { setAppointments([]); }
   }, []);
 
@@ -142,7 +142,7 @@ export default function DoctorDashboard() {
       const { data } = await apiClient.get(ENDPOINTS.SCHEDULE.SLOTS(doctorId), {
         params: { from_date: toDateStr(from), to_date: toDateStr(to), include_unavailable: true },
       });
-      setSlots(data.data ?? []);
+      setSlots(Array.isArray(data) ? data : []);
     } catch { setSlots([]); }
   }, [doctorId]);
 

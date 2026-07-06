@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MapPin, Plus, Trash2, X, RefreshCw, Building2, PowerOff, Power } from "lucide-react";
+import { MapPin, Plus, Trash2, X, RefreshCw, Building2, PowerOff, Power, Edit2 } from "lucide-react";
 import { useAdminRegions } from "@/lib/hooks";
 import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
 import type { AdminRegion } from "@/types/admin.types";
@@ -71,6 +71,46 @@ function RegionForm({ onSubmit, onClose }: { onSubmit: (data: { region_name: str
   );
 }
 
+function EditRegionForm({ region, onSubmit, onClose }: {
+  region: AdminRegion;
+  onSubmit: (data: { region_name: string }) => Promise<unknown>;
+  onClose: () => void;
+}) {
+  const [regionName, setRegionName] = useState(region.region_name);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!regionName.trim()) { setError("Region name is required"); return; }
+    setLoading(true);
+    setError(null);
+    try {
+      await onSubmit({ region_name: regionName });
+      onClose();
+    } catch (err: any) {
+      setError(err?.response?.data?.error?.message || err?.response?.data?.detail || "Failed to update region");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-xs font-medium text-neutral-600 mb-1">Region Name *</label>
+        <Input value={regionName} onChange={(e) => setRegionName(e.target.value)} required />
+      </div>
+      <p className="text-xs text-neutral-400">Country and state can&apos;t be changed here — they identify this region and are set at creation.</p>
+      {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+      <div className="flex justify-end gap-3 pt-2">
+        <Button type="button" variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
+        <Button type="submit" disabled={loading}>{loading ? "Saving…" : "Save Changes"}</Button>
+      </div>
+    </form>
+  );
+}
+
 function RegionDetailModal({ region }: { region: AdminRegion }) {
   return (
     <div className="space-y-4">
@@ -90,7 +130,7 @@ function RegionDetailModal({ region }: { region: AdminRegion }) {
   );
 }
 
-function RegionCard({ region, onView, onToggle, onDelete, toggling }: { region: AdminRegion; onView: (r: AdminRegion) => void; onToggle: (r: AdminRegion) => void; onDelete: (r: AdminRegion) => void; toggling: boolean }) {
+function RegionCard({ region, onView, onEdit, onToggle, onDelete, toggling }: { region: AdminRegion; onView: (r: AdminRegion) => void; onEdit: (r: AdminRegion) => void; onToggle: (r: AdminRegion) => void; onDelete: (r: AdminRegion) => void; toggling: boolean }) {
   return (
     <Card className="hover:shadow-md transition-shadow">
       <CardContent className="p-5">
@@ -107,7 +147,7 @@ function RegionCard({ region, onView, onToggle, onDelete, toggling }: { region: 
         </button>
         <p className="text-xs text-neutral-500 mt-1">{region.state}, {region.country}</p>
         {!region.regional_admin_id && (
-          <p className="text-xs text-amber-600 mt-1.5 bg-amber-50 rounded px-2 py-1">No regional admin yet — assign one from the Admins page before any clinic here can add staff or patients.</p>
+          <p className="text-xs text-amber-600 mt-1.5 bg-amber-50 rounded px-2 py-1">No regional admin yet — create this region&apos;s first clinic, then assign its regional admin from the Admins page before any clinic here can add staff or patients.</p>
         )}
         <div className="flex items-center gap-2 mt-4">
           <button
@@ -119,6 +159,13 @@ function RegionCard({ region, onView, onToggle, onDelete, toggling }: { region: 
           >
             {region.is_active ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
             {region.is_active ? "Deactivate" : "Activate"}
+          </button>
+          <button
+            onClick={() => onEdit(region)}
+            title="Edit"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-neutral-600 hover:bg-neutral-50 rounded-lg transition-colors border border-neutral-200"
+          >
+            <Edit2 className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={() => onDelete(region)}
@@ -137,6 +184,7 @@ export default function AdminRegionsPage() {
   const { regions, isLoading, error, fetch, createRegion, updateRegion, deleteRegion } = useAdminRegions();
   const [showCreate, setShowCreate] = useState(false);
   const [viewRegion, setViewRegion] = useState<AdminRegion | null>(null);
+  const [editRegion, setEditRegion] = useState<AdminRegion | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -219,6 +267,7 @@ export default function AdminRegionsPage() {
               key={region.region_id}
               region={region}
               onView={setViewRegion}
+              onEdit={setEditRegion}
               onToggle={handleToggle}
               onDelete={handleDelete}
               toggling={togglingId === region.region_id}
@@ -233,6 +282,16 @@ export default function AdminRegionsPage() {
 
       <Modal isOpen={!!viewRegion} onClose={() => setViewRegion(null)} title="Region Details" className="max-w-3xl">
         {viewRegion && <RegionDetailModal region={viewRegion} />}
+      </Modal>
+
+      <Modal isOpen={!!editRegion} onClose={() => setEditRegion(null)} title="Edit Region">
+        {editRegion && (
+          <EditRegionForm
+            region={editRegion}
+            onSubmit={(data) => updateRegion(editRegion.region_id, data)}
+            onClose={() => setEditRegion(null)}
+          />
+        )}
       </Modal>
     </div>
   );

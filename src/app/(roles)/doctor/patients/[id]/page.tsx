@@ -6,6 +6,8 @@ import Link from "next/link";
 import { ChevronRight, ChevronLeft, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save } from "lucide-react";
 import { PatientDetailSkeleton, Button } from "@/components/ui";
 import { AnamnesisForm } from "@/components/assessment/AnamnesisForm";
+import { adminService } from "@/lib/api/services/admin.service";
+import { PatientJourneySections, type PatientJourneyDetail } from "@/components/admin/PatientJourneySections";
 import {
   useDoctorPatient,
   useDoctorPatients,
@@ -39,6 +41,7 @@ function buildSections(
   hasDoctorNote: boolean,
 ) {
   return [
+    { id: "registration-record", name: "Registration Record", status: null },
     { id: "anamnesis", name: "Anamnesis", status: anamnesisStatus === "completed" ? "done" : anamnesisStatus === "in_progress" ? "start" : null },
     { id: "brain-mapping", name: "Brain Mapping", status: "start" },
     { id: "prs", name: "PRS", status: "start" },
@@ -98,6 +101,18 @@ export default function DoctorPatientDetailPage() {
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
   const [noteSavedAt, setNoteSavedAt] = useState<string | null>(null);
+  const [registrationRecord, setRegistrationRecord] = useState<Record<string, unknown> | null>(null);
+  const [registrationRecordError, setRegistrationRecordError] = useState<string | null>(null);
+
+  // Registration Record = disease selection + anamnesis + general PRS taken
+  // during self-registration (assessment_stage='general_registration',
+  // tagged separately from the "Anamnesis"/"PRS" tabs above, which are for
+  // ongoing treatment-session assessments and untouched by this).
+  useEffect(() => {
+    setRegistrationRecord(null);
+    setRegistrationRecordError(null);
+    adminService.getPatientDetail(id).then(setRegistrationRecord).catch(() => setRegistrationRecordError("Couldn't load registration record"));
+  }, [id]);
 
   useEffect(() => {
     if (doctorNote) {
@@ -333,7 +348,24 @@ export default function DoctorPatientDetailPage() {
 
             {/* Right Content - Assessment Details */}
             <div className="flex-1 bg-white rounded-lg shadow-md p-4 sm:p-8 overflow-y-auto">
-              {selectedSection === "anamnesis" ? (
+              {selectedSection === "registration-record" ? (
+                <div className="space-y-5">
+                  <div>
+                    <h2 className="text-2xl font-bold text-neutral-900 mb-1">Registration Record</h2>
+                    <p className="text-neutral-600 text-sm">
+                      Disease selection, anamnesis, and general PRS collected during this patient's registration —
+                      reference data only, separate from ongoing treatment-session Anamnesis/PRS.
+                    </p>
+                  </div>
+                  {registrationRecordError ? (
+                    <p className="text-sm text-red-600">{registrationRecordError}</p>
+                  ) : !registrationRecord ? (
+                    <p className="text-sm text-neutral-400">Loading…</p>
+                  ) : (
+                    <PatientJourneySections detail={registrationRecord as unknown as PatientJourneyDetail} />
+                  )}
+                </div>
+              ) : selectedSection === "anamnesis" ? (
                 <AnamnesisForm
                   patientId={id}
                   mode="doctor"

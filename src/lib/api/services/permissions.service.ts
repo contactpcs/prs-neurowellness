@@ -45,7 +45,15 @@ export const permissionsService = {
   },
 
   async getPatientPermissions(patientId: string): Promise<{ permissions: Permission[]; total: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.PATIENT_PERMISSIONS(patientId));
+    // Scoped to main_clinical — this feeds the doctor's treatment-session
+    // PRS/permissions view. Without this filter it also returned
+    // general_registration-stage assignments (auto-assigned off the
+    // patient's disease selection during registration), mixing registration
+    // intake data into the doctor's ongoing-treatment assessment list. The
+    // registration-stage data has its own separate "Registration Record" view.
+    const { data } = await apiClient.get(ENDPOINTS.PRS.PATIENT_PERMISSIONS(patientId), {
+      params: { assessment_stage: "main_clinical" },
+    });
     const list: Record<string, unknown>[] = Array.isArray(data) ? data : [];
     const permissions = list.map(mapAssignment);
     return { permissions, total: permissions.length };

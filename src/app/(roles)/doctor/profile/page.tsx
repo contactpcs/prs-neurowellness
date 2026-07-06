@@ -94,11 +94,11 @@ export default function DoctorProfilePage() {
     const today = new Date();
     const thirtyDaysAgo = toDateStr(addDays(today, -30));
     Promise.all([
-      apiClient.get(ENDPOINTS.APPOINTMENTS.TODAY).catch(() => ({ data: { data: [] } })),
+      apiClient.get(ENDPOINTS.APPOINTMENTS.TODAY).catch(() => ({ data: [] })),
       apiClient.get(ENDPOINTS.DOCTORS.DASHBOARD).catch(() => ({ data: { data: {} } })),
       apiClient.get(ENDPOINTS.DOCTORS.PATIENTS, { params: { limit: 100 } }).catch(() => ({ data: { data: [] } })),
     ]).then(([todayRes, dashRes, patientsRes]) => {
-      const todayAppts: Appointment[] = todayRes.data?.data ?? [];
+      const todayAppts: Appointment[] = Array.isArray(todayRes.data) ? todayRes.data : [];
       const dashData = dashRes.data?.data ?? {};
       const patientsList: { created_at?: string }[] = patientsRes.data?.data ?? [];
       const totalPatients: number = dashData.patients_summary?.total ?? patientsList.length;

@@ -6,6 +6,7 @@ import { Search, MapPin, UserPlus, X, ChevronRight, Loader2, Users, ClipboardChe
 import { staffService } from "@/lib/api/services/staff.service";
 import type { RegisterPatientPayload } from "@/lib/api/services/staff.service";
 import { authService } from "@/lib/api/services/auth.service";
+import { consentService } from "@/lib/api/services/consent.service";
 import { useStaffPatients, useClinics } from "@/lib/hooks";
 import { Input, Card, PageLoader, Button } from "@/components/ui";
 import type { PatientListItem } from "@/types/domain.types";
@@ -305,6 +306,18 @@ function RegisterModal({
         state: form.state.trim(),
         consent_responses: consentResponses,
       });
+      // POST /patients auto-creates a pending patient_onboarding consent
+      // record, but this modal's checkboxes never actually signed it — the
+      // patient was left inactive forever. Sign it here now that consent
+      // has been captured at the front desk (no witness required).
+      if (patient.profile_id) {
+        const pending = await consentService.getMyPending(patient.profile_id, "patient");
+        if (pending) {
+          await consentService.sign(pending.consent_id, {
+            signature_data: `${form.full_name.trim()} — consent captured at clinic front desk`,
+          });
+        }
+      }
       onSuccess(patient);
     } catch (e: any) {
       setShowConsent(false);

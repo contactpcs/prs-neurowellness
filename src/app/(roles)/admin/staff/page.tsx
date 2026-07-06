@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
 import {
   UserCog, Plus, Search, Edit2, Power, PowerOff, Trash2,
   X, Mail, Building2, RefreshCw, ShieldCheck,
@@ -26,14 +25,12 @@ const ROLES = [
   { value: "doctor",             label: "Doctor" },
   { value: "receptionist",       label: "Receptionist" },
   { value: "clinical_assistant", label: "Clinical Assistant" },
-  { value: "clinical_admin",     label: "Clinical Admin" },
 ];
 
 const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
   doctor:             { bg: "bg-blue-100",   text: "text-blue-700" },
   receptionist:       { bg: "bg-cyan-100",   text: "text-cyan-700" },
   clinical_assistant: { bg: "bg-teal-100",   text: "text-teal-700" },
-  clinical_admin:     { bg: "bg-purple-100", text: "text-purple-700" },
   platform_admin:     { bg: "bg-rose-100",   text: "text-rose-700" },
 };
 
@@ -85,21 +82,16 @@ interface StaffFormProps {
   onSubmit: (data: RegisterStaffPayload) => Promise<unknown>;
   onClose: () => void;
   isEdit?: boolean;
-  /** Arrived here via "Assign Admin" on the Clinics page — locks role +
-   * clinic so the person can't accidentally register a different kind of
-   * staff member on that clinic. */
-  lockClinicId?: string;
-  lockRole?: string;
 }
 
-function StaffForm({ initial, clinicOptions, onSubmit, onClose, isEdit, lockClinicId, lockRole }: StaffFormProps) {
+function StaffForm({ initial, clinicOptions, onSubmit, onClose, isEdit }: StaffFormProps) {
   const [form, setForm] = useState<RegisterStaffPayload>({
     first_name: initial?.first_name ?? "",
     last_name: initial?.last_name ?? "",
     email: initial?.email ?? "",
     password: "",
-    role: lockRole ?? initial?.role ?? "doctor",
-    clinic_id: lockClinicId ?? initial?.clinic_id ?? "",
+    role: initial?.role ?? "doctor",
+    clinic_id: initial?.clinic_id ?? "",
     phone: initial?.phone ?? "",
     gender: undefined,
     dob: "",
@@ -120,7 +112,7 @@ function StaffForm({ initial, clinicOptions, onSubmit, onClose, isEdit, lockClin
     e.preventDefault();
     if (!form.first_name.trim()) { setError("First name is required"); return; }
     if (!form.email.trim()) { setError("Email is required"); return; }
-    if (!isEdit && form.role !== "clinical_admin" && !form.password.trim()) { setError("Password is required"); return; }
+    if (!isEdit && !form.password.trim()) { setError("Password is required"); return; }
     if (!form.clinic_id) { setError("Please select a clinic"); return; }
     setLoading(true);
     setError(null);
@@ -136,11 +128,6 @@ function StaffForm({ initial, clinicOptions, onSubmit, onClose, isEdit, lockClin
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {lockRole === "clinical_admin" && (
-        <p className="text-xs text-indigo-600 bg-indigo-50 rounded-lg px-3 py-2">
-          Assigning this clinic's admin — role and clinic are fixed.
-        </p>
-      )}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-neutral-600 mb-1">First Name *</label>
@@ -155,7 +142,7 @@ function StaffForm({ initial, clinicOptions, onSubmit, onClose, isEdit, lockClin
         <label className="block text-xs font-medium text-neutral-600 mb-1">Email *</label>
         <Input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="staff@clinic.com" required />
       </div>
-      {!isEdit && form.role !== "clinical_admin" && (
+      {!isEdit && (
         <div>
           <label className="block text-xs font-medium text-neutral-600 mb-1">Password *</label>
           <Input type="password" value={form.password} onChange={(e) => set("password", e.target.value)} placeholder="Temporary password" required />
@@ -167,8 +154,7 @@ function StaffForm({ initial, clinicOptions, onSubmit, onClose, isEdit, lockClin
           <select
             value={form.role}
             onChange={(e) => set("role", e.target.value)}
-            disabled={!!lockRole}
-            className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white disabled:bg-neutral-100 disabled:text-neutral-500"
+            className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
           >
             {ROLES.map((r) => (
               <option key={r.value} value={r.value}>{r.label}</option>
@@ -185,8 +171,7 @@ function StaffForm({ initial, clinicOptions, onSubmit, onClose, isEdit, lockClin
         <select
           value={form.clinic_id}
           onChange={(e) => set("clinic_id", e.target.value)}
-          disabled={!!lockClinicId}
-          className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white disabled:bg-neutral-100 disabled:text-neutral-500"
+          className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
         >
           <option value="">Select clinic…</option>
           {clinicOptions.map((c) => (
@@ -348,10 +333,7 @@ function StaffDetailModal({ member }: { member: AdminStaffMember }) {
 
 export default function AdminStaffPage() {
   const { staff, isLoading, error, fetch, registerStaff, updateStaff, toggleStaff, deleteStaff } = useAdminStaff();
-  const { clinics, fetch: fetchClinics, assignClinicAdmin } = useAdminClinics();
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const assignAdminClinicId = searchParams.get("assignAdminClinic");
+  const { clinics, fetch: fetchClinics } = useAdminClinics();
 
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
@@ -366,24 +348,8 @@ export default function AdminStaffPage() {
 
   useEffect(() => { fetch(); fetchClinics(); }, [fetch, fetchClinics]);
 
-  // Arrived here via "Assign Admin" on the Clinics page — open the register
-  // modal pre-locked to clinical_admin + that clinic.
-  useEffect(() => {
-    if (assignAdminClinicId) setShowRegister(true);
-  }, [assignAdminClinicId]);
-
   function closeRegister() {
     setShowRegister(false);
-    if (assignAdminClinicId) router.replace("/admin/staff");
-  }
-
-  async function handleRegisterSubmit(data: RegisterStaffPayload) {
-    if (data.role === "clinical_admin") {
-      return assignClinicAdmin(data.clinic_id, {
-        email: data.email, first_name: data.first_name, last_name: data.last_name, phone: data.phone,
-      });
-    }
-    return registerStaff(data);
   }
 
   async function handleRefresh() {
@@ -599,13 +565,11 @@ export default function AdminStaffPage() {
       </Card>
 
       {/* Register modal */}
-      <Modal isOpen={showRegister} onClose={closeRegister} title={assignAdminClinicId ? "Assign Clinic Admin" : "Register Staff Member"}>
+      <Modal isOpen={showRegister} onClose={closeRegister} title="Register Staff Member">
         <StaffForm
           clinicOptions={clinicOptions}
-          onSubmit={handleRegisterSubmit}
+          onSubmit={registerStaff}
           onClose={closeRegister}
-          lockClinicId={assignAdminClinicId ?? undefined}
-          lockRole={assignAdminClinicId ? "clinical_admin" : undefined}
         />
       </Modal>
 

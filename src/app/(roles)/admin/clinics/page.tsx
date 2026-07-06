@@ -439,7 +439,7 @@ export default function AdminClinicsPage() {
   const [refreshing, setRefreshing] = useState(false);
 
   function goAssignAdmin(clinic: AdminClinic) {
-    router.push(`/admin/staff?assignAdminClinic=${clinic.clinic_id}`);
+    router.push(`/admin/admins/clinical?assignAdminClinic=${clinic.clinic_id}`);
   }
 
   useEffect(() => { fetch(); adminService.getRegions().then(setRegions).catch(() => {}); }, [fetch]);

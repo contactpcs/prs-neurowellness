@@ -41,6 +41,7 @@ export const ROUTES = {
   REGIONAL_ADMIN_DASHBOARD: "/regional-admin/dashboard",
   CLINIC_ADMIN_DASHBOARD: "/clinic-admin/dashboard",
   CONSENT: "/consent",
+  ACCOUNT_DEACTIVATED: "/account-deactivated",
 } as const;
 
 export const STORAGE_KEYS = {

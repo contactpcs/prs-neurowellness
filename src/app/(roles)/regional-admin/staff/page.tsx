@@ -57,14 +57,13 @@ function StaffSkeleton() {
 interface StaffFormProps {
   initial?: Partial<AdminStaffMember>;
   clinicOptions: { value: string; label: string }[];
-  clinicById: Map<string, AdminClinic>;
   fulfillableRequests?: StaffRequest[];
   onSubmit: (data: RegisterStaffPayload) => Promise<unknown>;
   onClose: () => void;
   isEdit?: boolean;
 }
 
-function StaffForm({ initial, clinicOptions, clinicById, fulfillableRequests, onSubmit, onClose, isEdit }: StaffFormProps) {
+function StaffForm({ initial, clinicOptions, fulfillableRequests, onSubmit, onClose, isEdit }: StaffFormProps) {
   const [form, setForm] = useState<RegisterStaffPayload>({
     first_name: initial?.first_name ?? "",
     last_name: initial?.last_name ?? "",
@@ -94,11 +93,14 @@ function StaffForm({ initial, clinicOptions, clinicById, fulfillableRequests, on
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
-  const eligibleRequests = (fulfillableRequests ?? []).filter((r) => r.position_role === form.role);
+  // Clinic picked first — every open/referred request for that clinic
+  // shows up regardless of role, so the role itself gets picked (or
+  // confirmed) from that list rather than before it.
+  const requestsForClinic = (fulfillableRequests ?? []).filter((r) => r.clinic_id === form.clinic_id);
 
   function applyRequest(requestId: string) {
     if (!requestId) { set("staff_request_id", undefined); return; }
-    const req = eligibleRequests.find((r) => r.request_id === requestId);
+    const req = requestsForClinic.find((r) => r.request_id === requestId);
     if (!req) return;
     const [first, ...rest] = (req.candidate_name ?? "").trim().split(/\s+/);
     const credentials = (req.candidate_credentials ?? {}) as Record<string, string>;
@@ -106,6 +108,7 @@ function StaffForm({ initial, clinicOptions, clinicById, fulfillableRequests, on
       ...prev,
       staff_request_id: req.request_id,
       clinic_id: req.clinic_id,
+      role: req.position_role as RegisterStaffPayload["role"],
       first_name: first || prev.first_name,
       last_name: rest.join(" ") || prev.last_name,
       email: req.candidate_email || prev.email,
@@ -137,6 +140,53 @@ function StaffForm({ initial, clinicOptions, clinicById, fulfillableRequests, on
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-xs font-medium text-neutral-600 mb-1">Clinic *</label>
+        <select
+          value={form.clinic_id}
+          onChange={(e) => { set("clinic_id", e.target.value); set("staff_request_id", undefined); }}
+          disabled={isEdit || !!form.staff_request_id}
+          className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white disabled:bg-neutral-100"
+        >
+          <option value="">Select clinic…</option>
+          {clinicOptions.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+      </div>
+
+      {!isEdit && !!form.clinic_id && (
+        <div>
+          <label className="block text-xs font-medium text-neutral-600 mb-1">Open Positions / Referred Candidates</label>
+          {requestsForClinic.length > 0 ? (
+            <>
+              <select value={form.staff_request_id ?? ""} onChange={(e) => applyRequest(e.target.value)} className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white">
+                <option value="">— Direct registration (no request) —</option>
+                {requestsForClinic.map((r) => (
+                  <option key={r.request_id} value={r.request_id}>
+                    {roleLabel(r.position_role)} — {r.candidate_name || "Unnamed candidate"} ({r.request_type === "open_position" ? "open position" : "referral"})
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-neutral-400 mt-1">Selecting one sets the role and prefills the candidate's details below.</p>
+            </>
+          ) : (
+            <p className="text-xs text-neutral-400">No open positions or referred candidates for this clinic — registering directly.</p>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-neutral-600 mb-1">Role *</label>
+          <select value={form.role} onChange={(e) => { set("role", e.target.value); set("staff_request_id", undefined); }} disabled={!isEdit && !!form.staff_request_id} className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white disabled:bg-neutral-100">
+            {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-neutral-600 mb-1">Phone</label>
+          <Input value={form.phone ?? ""} onChange={(e) => set("phone", e.target.value)} />
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-neutral-600 mb-1">First Name *</label>
@@ -158,41 +208,6 @@ function StaffForm({ initial, clinicOptions, clinicById, fulfillableRequests, on
           <Input type="password" value={form.password} onChange={(e) => set("password", e.target.value)} required />
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-neutral-600 mb-1">Role *</label>
-          <select value={form.role} onChange={(e) => { set("role", e.target.value); set("staff_request_id", undefined); }} disabled={!isEdit && !!form.staff_request_id} className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white disabled:bg-neutral-100">
-            {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-neutral-600 mb-1">Phone</label>
-          <Input value={form.phone ?? ""} onChange={(e) => set("phone", e.target.value)} />
-        </div>
-      </div>
-
-      {!isEdit && eligibleRequests.length > 0 && (
-        <div>
-          <label className="block text-xs font-medium text-neutral-600 mb-1">Fulfilling Request</label>
-          <select value={form.staff_request_id ?? ""} onChange={(e) => applyRequest(e.target.value)} className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white">
-            <option value="">— Direct registration (no request) —</option>
-            {eligibleRequests.map((r) => (
-              <option key={r.request_id} value={r.request_id}>
-                {r.candidate_name || "Unnamed candidate"} — {clinicById.get(r.clinic_id)?.clinic_name ?? r.clinic_id}
-              </option>
-            ))}
-          </select>
-          <p className="text-xs text-neutral-400 mt-1">Selecting a request prefills the candidate's details and locks the clinic.</p>
-        </div>
-      )}
-
-      <div>
-        <label className="block text-xs font-medium text-neutral-600 mb-1">Clinic *</label>
-        <select value={form.clinic_id} onChange={(e) => set("clinic_id", e.target.value)} disabled={isEdit || !!form.staff_request_id} className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white disabled:bg-neutral-100">
-          <option value="">Select clinic…</option>
-          {clinicOptions.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </select>
-      </div>
 
       {form.role === "doctor" && (
         <>
@@ -544,12 +559,12 @@ export default function RegionalAdminStaffPage() {
       </Card>
 
       <Modal isOpen={showRegister} onClose={() => setShowRegister(false)} title="Register Staff Member">
-        <StaffForm clinicOptions={clinicOptions} clinicById={clinicById} fulfillableRequests={staffRequests} onSubmit={handleRegister} onClose={() => setShowRegister(false)} />
+        <StaffForm clinicOptions={clinicOptions} fulfillableRequests={staffRequests} onSubmit={handleRegister} onClose={() => setShowRegister(false)} />
       </Modal>
 
       <Modal isOpen={!!editMember} onClose={() => setEditMember(null)} title="Edit Staff Member">
         {editMember && (
-          <StaffForm initial={editMember} isEdit clinicOptions={clinicOptions} clinicById={clinicById} onSubmit={(data) => handleUpdate(editMember.id, data)} onClose={() => setEditMember(null)} />
+          <StaffForm initial={editMember} isEdit clinicOptions={clinicOptions} onSubmit={(data) => handleUpdate(editMember.id, data)} onClose={() => setEditMember(null)} />
         )}
       </Modal>
 

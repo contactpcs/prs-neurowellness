@@ -78,6 +78,13 @@ export interface ClinicAdminAssignPayload {
   first_name: string;
   last_name: string;
   phone?: string;
+  gender?: "male" | "female" | "other";
+  dob?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  pincode?: string;
 }
 
 export interface AdminRegion {
@@ -91,10 +98,18 @@ export interface AdminRegion {
 }
 
 export interface RegionalAdminAssignPayload {
+  clinic_id: string;
   email: string;
   first_name: string;
   last_name: string;
   phone?: string;
+  gender?: "male" | "female" | "other";
+  dob?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  pincode?: string;
 }
 
 // ─── Admins (regional_admin / clinic_admin management) ─────────────

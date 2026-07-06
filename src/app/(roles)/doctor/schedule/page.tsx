@@ -108,7 +108,7 @@ export default function DoctorSchedulePage() {
       const { data } = await apiClient.get(ENDPOINTS.SCHEDULE.SLOTS(doctorId), {
         params: { from_date: dateFrom, to_date: dateTo, include_unavailable: true },
       });
-      setSlots(data.data ?? []);
+      setSlots(Array.isArray(data) ? data : []);
     } catch {
       setSlots([]);
     } finally {

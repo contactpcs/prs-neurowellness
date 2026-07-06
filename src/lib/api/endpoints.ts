@@ -158,26 +158,21 @@ export const ENDPOINTS = {
   },
 
   // ─── Schedule ───
-  // Real backend has no "my own schedule" shortcut (needs an explicit
-  // doctor_id) and no replace/delete for schedule rows — only create + list.
-  // MY/ADD_OVERRIDE/DELETE_OVERRIDE calls in doctor/schedule/page.tsx have
-  // no reachable equivalent from a bare endpoint constant and are left
-  // pointing at their old paths.
   SCHEDULE: {
-    MY: "/schedule/my",                       // NOT AVAILABLE
-    ADD_OVERRIDE: "/schedule/my/overrides",   // NOT AVAILABLE
-    DELETE_OVERRIDE: (id: string) => `/schedule/my/overrides/${id}`, // NOT AVAILABLE — no delete endpoint exists
-    SLOTS: (doctorId: string) => `/doctors/${doctorId}/availability`, // real
+    MY: "/schedule/my",                       // real — GET {weekly,overrides}, PUT {items:[...]} atomic replace
+    ADD_OVERRIDE: "/schedule/my/overrides",   // real — POST, own clinic/doctor resolved server-side
+    DELETE_OVERRIDE: (id: string) => `/schedule/my/overrides/${id}`, // real
+    SLOTS: (doctorId: string) => `/doctors/${doctorId}/availability`, // real — params: from_date, to_date?, include_unavailable?
     DOCTOR: (doctorId: string) => `/doctors/${doctorId}`,             // real
   },
 
   // ─── Appointments ───
   APPOINTMENTS: {
     LIST: "/appointments",              // real — GET list, POST create (same path as old)
-    UPCOMING: "/appointments/upcoming", // NOT AVAILABLE — filtered client-side from LIST
-    TODAY: "/appointments/today",       // NOT AVAILABLE — filtered client-side from LIST
+    UPCOMING: "/appointments/upcoming", // real
+    TODAY: "/appointments/today",       // real
     GET: (id: string) => `/appointments/${id}`, // real
-    UPDATE: (id: string) => `/appointments/${id}`, // NOT AVAILABLE — no generic field-patch endpoint (only reschedule/status)
+    UPDATE: (id: string) => `/appointments/${id}`, // real — PATCH {notes?, patient_complaint?, appointment_type?}
     HISTORY: (id: string) => `/appointments/${id}/audit-log`, // real
     CONFIRM: (id: string) => `/appointments/${id}/status`, // real — PATCH {status:"confirmed"}
     CHECK_IN: (id: string) => `/appointments/${id}/status`, // real — PATCH {status:"checked_in"}
@@ -186,7 +181,7 @@ export const ENDPOINTS = {
     CANCEL: (id: string) => `/appointments/${id}/status`,   // real — PATCH {status:"cancelled"}
     RESCHEDULE: (id: string) => `/appointments/${id}/reschedule`, // real
     NO_SHOW: (id: string) => `/appointments/${id}/status`,  // real — PATCH {status:"no_show"}
-    REQUEST_RESCHEDULE: (id: string) => `/appointments/${id}/request-reschedule`, // NOT AVAILABLE (unused by current service)
+    REQUEST_RESCHEDULE: (id: string) => `/appointments/${id}/request-reschedule`, // real — POST, patient-only
   },
 
   // ─── Appointment Requests ───

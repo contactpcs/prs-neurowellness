@@ -23,10 +23,11 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 const REQ_COLOR: Record<string, string> = {
-  pending:   "bg-amber-50 text-amber-700",
-  approved:  "bg-green-50 text-green-700",
-  rejected:  "bg-red-50 text-red-600",
-  cancelled: "bg-neutral-100 text-neutral-500",
+  pending:              "bg-amber-50 text-amber-700",
+  approved:             "bg-green-50 text-green-700",
+  rejected:             "bg-red-50 text-red-600",
+  cancelled_by_patient: "bg-neutral-100 text-neutral-500",
+  expired:              "bg-neutral-100 text-neutral-400",
 };
 
 const URGENCY_COLOR: Record<string, string> = {

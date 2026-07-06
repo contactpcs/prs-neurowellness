@@ -190,12 +190,13 @@ function RegisterPatientForm({ clinicOptions, onSubmit, onClose }: {
 
 function EditPatientForm({ patient, onSubmit, onClose }: {
   patient: AdminPatient;
-  onSubmit: (data: { first_name?: string; last_name?: string; phone?: string; gender?: string; dob?: string; address?: string; emergency_contact_name?: string; emergency_contact_phone?: string }) => Promise<unknown>;
+  onSubmit: (data: { first_name?: string; last_name?: string; email?: string; phone?: string; gender?: string; dob?: string; address?: string; emergency_contact_name?: string; emergency_contact_phone?: string }) => Promise<unknown>;
   onClose: () => void;
 }) {
   const [form, setForm] = useState({
     first_name: patient.first_name ?? "",
     last_name: patient.last_name ?? "",
+    email: patient.email ?? "",
     phone: patient.phone ?? "",
     gender: patient.gender ?? "",
     dob: patient.date_of_birth ?? "",
@@ -210,7 +211,7 @@ function EditPatientForm({ patient, onSubmit, onClose }: {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.first_name.trim() || !form.last_name.trim()) { setError("First name and last name are required"); return; }
+    if (!form.first_name.trim() || !form.last_name.trim() || !form.email.trim()) { setError("First name, last name, and email are required"); return; }
     setLoading(true);
     setError(null);
     try {
@@ -234,6 +235,10 @@ function EditPatientForm({ patient, onSubmit, onClose }: {
           <label className="block text-xs font-medium text-neutral-600 mb-1">Last Name *</label>
           <Input value={form.last_name} onChange={(e) => set("last_name", e.target.value)} required />
         </div>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-neutral-600 mb-1">Email *</label>
+        <Input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} required />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>

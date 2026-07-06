@@ -25,22 +25,28 @@ export interface ApproveRequestPayload {
   notes?: string;
 }
 
-/** AppointmentRequestRead (real backend) has no patient_name/doctor_name (no
- * profiles join), no preferred_date_2/3 echoed back, no time_window/urgency/
- * review_notes/updated_at on read. Filled with safe defaults. */
 function mapRequest(r: Record<string, unknown>): AppointmentRequest {
   return {
     request_id: String(r.request_id ?? ""),
     patient_id: String(r.patient_id ?? ""),
-    doctor_id: String(r.doctor_id ?? ""),
+    doctor_id: r.doctor_id ? String(r.doctor_id) : null,
     clinic_id: String(r.clinic_id ?? ""),
+    patient_name: r.patient_name ? String(r.patient_name) : undefined,
+    doctor_name: r.doctor_name ? String(r.doctor_name) : undefined,
+    request_type: r.request_type as AppointmentRequest["request_type"],
+    parent_appointment_id: r.parent_appointment_id ? String(r.parent_appointment_id) : null,
+    approved_appointment_id: r.approved_appointment_id ? String(r.approved_appointment_id) : null,
     preferred_date_1: String(r.preferred_date_1 ?? ""),
-    preferred_time_window: "any",
-    patient_complaint: "",
-    urgency: "normal",
+    preferred_date_2: r.preferred_date_2 ? String(r.preferred_date_2) : null,
+    preferred_date_3: r.preferred_date_3 ? String(r.preferred_date_3) : null,
+    preferred_time_window: (r.preferred_time_window as AppointmentRequest["preferred_time_window"]) ?? "any",
+    patient_complaint: String(r.patient_complaint ?? ""),
+    urgency: (r.urgency as AppointmentRequest["urgency"]) ?? "normal",
+    reason: r.reason ? String(r.reason) : null,
+    review_notes: r.review_notes ? String(r.review_notes) : null,
     status: (r.status as AppointmentRequest["status"]) ?? "pending",
     created_at: String(r.created_at ?? ""),
-    updated_at: String(r.created_at ?? ""),
+    updated_at: String(r.updated_at ?? r.created_at ?? ""),
   };
 }
 

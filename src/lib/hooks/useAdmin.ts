@@ -79,7 +79,13 @@ export function useAdminAccounts() {
     }
   }, []);
 
-  return { admins, isLoading, error, fetch };
+  const updateAdmin = useCallback(async (id: string, payload: { first_name?: string; last_name?: string; email?: string; phone?: string }) => {
+    const updated = await adminService.updateAdmin(id, payload);
+    setAdmins((prev) => prev.map((a) => (a.admin_id === id ? updated : a)));
+    return updated;
+  }, []);
+
+  return { admins, isLoading, error, fetch, updateAdmin };
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────

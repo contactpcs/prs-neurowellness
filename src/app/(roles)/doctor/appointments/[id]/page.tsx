@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { useAppointmentDetail } from "@/lib/hooks/useAppointments";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
+import apiClient from "@/lib/api/client";
+import { ENDPOINTS } from "@/lib/api/endpoints";
 import type { AppointmentStatus, AppointmentType } from "@/types/domain.types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -116,10 +118,8 @@ function RescheduleModal({
     setSlots([]);
     setTime("");
     try {
-      const { data } = await import("@/lib/api/client").then(({ default: c }) =>
-        c.get(`/schedule/doctor/${doctorId}/slots`, { params: { from_date: d, to_date: d } }),
-      );
-      setSlots((data?.data ?? []).filter((s: any) => s.is_available));
+      const { data } = await apiClient.get(ENDPOINTS.SCHEDULE.SLOTS(doctorId), { params: { from_date: d, to_date: d } });
+      setSlots((Array.isArray(data) ? data : []).filter((s: any) => s.is_available));
     } catch { setSlots([]); }
     finally { setLoadingSlots(false); }
   }, [doctorId]);
@@ -244,7 +244,7 @@ export default function AppointmentDetailPage() {
     try {
       await fn();
     } catch (e: any) {
-      setActionError(e?.response?.data?.detail ?? e?.message ?? `${label} failed`);
+      setActionError(e?.response?.data?.error?.message ?? e?.response?.data?.detail ?? e?.message ?? `${label} failed`);
     } finally {
       setBusy(false);
     }
@@ -271,14 +271,16 @@ export default function AppointmentDetailPage() {
   const status = appointment.status;
   const docId  = appointment.doctor_id;
 
-  // Status-based action availability
+  // Status-based action availability — mirrors the server's allowed-from
+  // matrix (scheduling/service.py::_ALLOWED_FROM) so a visible button never
+  // 400s when clicked.
   const canConfirm    = status === "scheduled";
-  const canCheckIn    = status === "confirmed";
-  const canStart      = ["confirmed", "checked_in"].includes(status);
+  const canCheckIn    = ["scheduled", "confirmed"].includes(status);
+  const canStart      = status === "checked_in";
   const canComplete   = status === "in_progress";
-  const canNoShow     = ["scheduled", "confirmed"].includes(status);
-  const canCancel     = ["scheduled", "confirmed", "checked_in"].includes(status);
-  const canReschedule = ["scheduled", "confirmed"].includes(status);
+  const canNoShow     = ["scheduled", "confirmed", "checked_in"].includes(status);
+  const canCancel     = ["scheduled", "confirmed", "checked_in", "in_progress"].includes(status);
+  const canReschedule = ["scheduled", "confirmed", "checked_in", "in_progress"].includes(status);
 
   const cfg = STATUS_CONFIG[status];
 
@@ -304,7 +306,7 @@ export default function AppointmentDetailPage() {
                   {appointment.patient_name ?? "Patient"}
                 </h1>
                 <p className="text-sm text-neutral-500 mt-0.5 capitalize">
-                  {(appointment.appointment_type ?? "consultation").replace("_", " ")}
+                  {(appointment.appointment_type ?? "doctor_consultation").replace(/_/g, " ")}
                 </p>
               </div>
               <StatusBadge status={status} />
@@ -406,14 +408,16 @@ export default function AppointmentDetailPage() {
               <h2 className="text-sm font-semibold text-neutral-900 mb-3">History</h2>
               <div className="space-y-2.5">
                 {history.map((h: any, i: number) => (
-                  <div key={h.history_id ?? i} className="flex items-start gap-3 text-xs">
+                  <div key={h.audit_id ?? i} className="flex items-start gap-3 text-xs">
                     <div className="w-1.5 h-1.5 rounded-full bg-neutral-300 mt-1.5 flex-shrink-0" />
                     <div>
-                      <span className="font-medium text-neutral-700 capitalize">{(h.action ?? "").replace(/_/g, " ")}</span>
+                      <span className="font-medium text-neutral-700 capitalize">
+                        {h.previous_status ? `${h.previous_status.replace(/_/g, " ")} → ` : ""}{(h.new_status ?? "").replace(/_/g, " ")}
+                      </span>
                       {h.changed_by_role && (
                         <span className="text-neutral-400 ml-1">by {h.changed_by_role.replace("_", " ")}</span>
                       )}
-                      {h.notes && <p className="text-neutral-500 mt-0.5">{h.notes}</p>}
+                      {h.change_reason && <p className="text-neutral-500 mt-0.5">{h.change_reason}</p>}
                       <p className="text-neutral-300 mt-0.5">
                         {new Date(h.changed_at).toLocaleString("en-US", {
                           month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
@@ -523,7 +527,7 @@ export default function AppointmentDetailPage() {
               <MetaRow label="Status" value={STATUS_CONFIG[status].label} />
               <MetaRow
                 label="Type"
-                value={(appointment.appointment_type ?? "consultation").replace("_", " ")}
+                value={(appointment.appointment_type ?? "doctor_consultation").replace(/_/g, " ")}
                 capitalize
               />
               <MetaRow

@@ -35,10 +35,10 @@ export interface AppointmentCancelPayload {
   cancellation_reason: string;
 }
 
-/** AppointmentRead (real backend) has no patient_name/doctor_name (no
- * profiles join), no combined start_at/end_at, no reason/notes/complaint,
- * no booked_by/booked_by_role, no updated_at. Filled with the closest
- * derivable value or a safe default rather than left crashing on access. */
+/** AppointmentRead now includes patient_name/doctor_name (profiles join) and
+ * booked_by/booked_by_role/updated_at — this just synthesizes start_at/
+ * end_at (combined date+time) since nothing downstream needs to re-derive
+ * that from appointment_date+start_time itself. */
 function mapAppointment(a: Record<string, unknown>): Appointment {
   const date = String(a.appointment_date ?? "");
   const start = String(a.start_time ?? "");
@@ -47,18 +47,24 @@ function mapAppointment(a: Record<string, unknown>): Appointment {
     appointment_id: String(a.appointment_id ?? ""),
     clinic_id: String(a.clinic_id ?? ""),
     patient_id: String(a.patient_id ?? ""),
+    patient_name: a.patient_name ? String(a.patient_name) : undefined,
     doctor_id: String(a.doctor_id ?? ""),
+    doctor_name: a.doctor_name ? String(a.doctor_name) : undefined,
     appointment_date: date,
     start_time: start,
     end_time: end,
     start_at: date && start ? `${date}T${start}` : "",
     end_at: date && end ? `${date}T${end}` : "",
     status: (a.status as AppointmentStatus) ?? "scheduled",
-    appointment_type: (a.appointment_type as AppointmentType) ?? "consultation",
-    booked_by: "",
-    booked_by_role: "",
+    appointment_type: (a.appointment_type as AppointmentType) ?? "doctor_consultation",
+    reason: a.reason ? String(a.reason) : undefined,
+    notes: a.notes ? String(a.notes) : undefined,
+    patient_complaint: a.patient_complaint ? String(a.patient_complaint) : undefined,
+    cancellation_reason: a.cancellation_reason ? String(a.cancellation_reason) : null,
+    booked_by: String(a.booked_by ?? ""),
+    booked_by_role: String(a.booked_by_role ?? ""),
     created_at: String(a.created_at ?? ""),
-    updated_at: String(a.created_at ?? ""),
+    updated_at: String(a.updated_at ?? a.created_at ?? ""),
   };
 }
 
@@ -78,17 +84,14 @@ export const appointmentsService = {
     return { appointments, total: appointments.length };
   },
 
-  // NOT AVAILABLE as a server filter — filtered client-side from list().
   async getUpcoming(): Promise<Appointment[]> {
-    const { appointments } = await appointmentsService.list();
-    const now = new Date();
-    return appointments.filter((a) => new Date(a.start_at) >= now);
+    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.UPCOMING);
+    return extractList(data);
   },
 
   async getToday(): Promise<Appointment[]> {
-    const { appointments } = await appointmentsService.list();
-    const today = new Date().toISOString().slice(0, 10);
-    return appointments.filter((a) => a.appointment_date === today);
+    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.TODAY);
+    return extractList(data);
   },
 
   async getById(id: string): Promise<Appointment> {
@@ -101,9 +104,9 @@ export const appointmentsService = {
     return mapAppointment(data);
   },
 
-  // NOT AVAILABLE — no generic field-patch endpoint (only reschedule/status exist).
-  async update(_id: string, _payload: { notes?: string; patient_complaint?: string; appointment_type?: AppointmentType }): Promise<Appointment> {
-    throw new Error("Editing appointment notes/type after booking isn't available yet.");
+  async update(id: string, payload: { notes?: string; patient_complaint?: string; appointment_type?: AppointmentType }): Promise<Appointment> {
+    const { data } = await apiClient.patch(ENDPOINTS.APPOINTMENTS.UPDATE(id), payload);
+    return mapAppointment(data);
   },
 
   async confirm(id: string): Promise<Appointment> {
@@ -126,8 +129,8 @@ export const appointmentsService = {
     return setStatus(id, "cancelled", { cancellation_reason: payload.cancellation_reason });
   },
 
-  // Real endpoint field is `change_reason`, and also requires `end_time`
-  // (not part of the old payload) — will 422 without it, a genuine gap.
+  // end_time is optional server-side (derived from the doctor's slot
+  // duration at the target start_time) — this payload never needs to send it.
   async reschedule(id: string, payload: AppointmentReschedulePayload): Promise<Appointment> {
     const { data } = await apiClient.patch(ENDPOINTS.APPOINTMENTS.RESCHEDULE(id), {
       appointment_date: payload.appointment_date,

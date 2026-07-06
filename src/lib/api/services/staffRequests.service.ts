@@ -5,7 +5,7 @@ export interface StaffRequest {
   request_id: string;
   clinic_id: string;
   request_type: "open_position" | "candidate_referral" | "staff_removal";
-  position_role: "doctor" | "clinical_assistant" | "receptionist" | "clinic_admin";
+  position_role: "doctor" | "clinical_assistant" | "receptionist";
   candidate_name: string | null;
   candidate_email: string | null;
   candidate_phone?: string | null;

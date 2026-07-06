@@ -19,7 +19,10 @@ export default function SelfRegistrationAnamnesisPage() {
   useEffect(() => {
     if (isRestoring) return;
     if (!user) { router.replace(ROUTES.LOGIN); return; }
-    if (!user.self_registered || !user.patient_id) { router.replace(ROUTES.LOGIN); return; }
+    // Both self- and staff-registered patients go through this same wizard
+    // (gated on registration_status, not self_registered) — only
+    // requirement is being a patient with a resolved patient_id.
+    if (!user.roles.includes("patient") || !user.patient_id) { router.replace(ROUTES.LOGIN); return; }
   }, [isRestoring, user, router]);
 
   if (isRestoring || !user) return <PageLoader />;

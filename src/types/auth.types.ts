@@ -61,6 +61,7 @@ export interface User {
   // consent is signed; consent_type_required tells the frontend which
   // template to fetch/sign ("staff_onboarding" | "patient_onboarding").
   is_active?: boolean;
+  consent_signed?: boolean;
   consent_type_required?: string | null;
 
   // Self-registration wizard (backend-v2) — patients.patient_id (public ID,

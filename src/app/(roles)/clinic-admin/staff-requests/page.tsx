@@ -89,7 +89,6 @@ function NewRequestForm({ clinicId, onSubmit, onClose }: {
           <option value="doctor">Doctor</option>
           <option value="clinical_assistant">Clinical Assistant</option>
           <option value="receptionist">Receptionist</option>
-          <option value="clinic_admin">Clinic Admin</option>
         </select>
       </div>
 

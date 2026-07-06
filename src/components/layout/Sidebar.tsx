@@ -46,7 +46,8 @@ const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React
     { label: "Dashboard",       href: "/admin/dashboard",       icon: LayoutDashboard },
     { label: "Patients",        href: "/admin/patients",        icon: Users },
     { label: "Staff",           href: "/admin/staff",           icon: UserCog },
-    { label: "Admins",          href: "/admin/admins",          icon: ShieldCheck },
+    { label: "Regional Admins", href: "/admin/admins/regional", icon: ShieldCheck },
+    { label: "Clinic Admins",   href: "/admin/admins/clinical", icon: ShieldCheck },
     { label: "Regions",         href: "/admin/regions",         icon: MapPin },
     { label: "Clinics",         href: "/admin/clinics",         icon: Building2 },
     { label: "Clinic Requests", href: "/admin/clinic-requests", icon: ClipboardList },
@@ -55,6 +56,7 @@ const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React
   regional_admin: [
     { label: "Dashboard",       href: "/regional-admin/dashboard",       icon: LayoutDashboard },
     { label: "Clinics",         href: "/regional-admin/clinics",         icon: Building2 },
+    { label: "Clinic Admins",   href: "/regional-admin/clinic-admins",   icon: ShieldCheck },
     { label: "Staff",           href: "/regional-admin/staff",           icon: UserCog },
     { label: "Patients",        href: "/regional-admin/patients",        icon: Users },
     { label: "Appointments",    href: "/regional-admin/appointments",    icon: CalendarDays },

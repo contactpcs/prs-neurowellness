@@ -15,7 +15,8 @@ export interface Clinic {
  * who logs back in mid-wizard can be routed to wherever they left off. */
 interface MeResponse {
   id: string; email: string; first_name: string; last_name: string; role: string;
-  clinic_id: string | null; region_id: string | null; is_active: boolean; consent_type_required: string | null;
+  clinic_id: string | null; region_id: string | null; is_active: boolean; consent_signed: boolean;
+  consent_type_required: string | null;
   self_registered: boolean; patient_id: string | null; registration_status: string | null;
 }
 
@@ -24,7 +25,7 @@ function meToUser(me: MeResponse): AuthResponse["user"] {
     id: me.id, email: me.email, first_name: me.first_name, last_name: me.last_name,
     roles: [me.role as AuthResponse["user"]["roles"][number]], permissions: [],
     clinic_id: me.clinic_id ?? undefined, region_id: me.region_id ?? undefined,
-    is_active: me.is_active, consent_type_required: me.consent_type_required,
+    is_active: me.is_active, consent_signed: me.consent_signed, consent_type_required: me.consent_type_required,
     self_registered: me.self_registered, patient_id: me.patient_id ?? undefined,
     registration_status: me.registration_status ?? undefined,
   };

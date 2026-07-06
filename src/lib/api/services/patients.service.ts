@@ -36,6 +36,17 @@ export const patientsService = {
     await apiClient.post(ENDPOINTS.PATIENTS.DISEASE_SELECTION(patientId), { disease_id: diseaseId, is_primary: true });
   },
 
+  /** Real: GET /patients/{patient_id}/disease-selection — used as a fallback
+   * when the self-registration wizard's PRS step can't find the disease_id
+   * it cached in localStorage (e.g. cleared, or a re-login on a fresh
+   * session after localStorage was already cleaned up post-completion). */
+  async getPrimaryDiseaseSelection(patientId: string): Promise<{ disease_id: string | null } | null> {
+    const { data } = await apiClient.get(ENDPOINTS.PATIENTS.DISEASE_SELECTION(patientId));
+    if (!Array.isArray(data) || data.length === 0) return null;
+    const primary = data.find((d: { is_primary?: boolean }) => d.is_primary) ?? data[0];
+    return { disease_id: primary.disease_id ?? null };
+  },
+
   // NOT AVAILABLE — scale-assignments carry no disease grouping (scale_id/assessment_stage only, no disease_id).
   async getMyAssessments(): Promise<{ permissions: AssessmentPermission[]; total: number }> {
     return { permissions: [], total: 0 };

@@ -14,8 +14,7 @@ import {
   useMyScoresSummary,
   useMyDoctorNotes,
 } from "@/lib/hooks";
-import apiClient from "@/lib/api/client";
-import { ENDPOINTS } from "@/lib/api/endpoints";
+import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { PatientDashboardSkeleton } from "@/components/ui";
 import type {
   AssessmentPermission,
@@ -69,13 +68,7 @@ function PatientDashboard() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
 
   useEffect(() => {
-    apiClient
-      .get(ENDPOINTS.APPOINTMENTS.UPCOMING)
-      .then((res) => {
-        const data = res.data;
-        setAppointments(Array.isArray(data) ? data : (data?.appointments ?? []));
-      })
-      .catch(() => {});
+    appointmentsService.getUpcoming().then(setAppointments).catch(() => {});
   }, []);
 
   if (dashLoading || assessLoading) return <PatientDashboardSkeleton />;
@@ -392,7 +385,7 @@ function PatientDashboard() {
                       <p className="text-[10px] text-gray-500 mt-0.5">
                         {formatTime(appt.start_time)}
                         {appt.doctor_name ? ` · Dr. ${appt.doctor_name.split(" ").pop()}` : ""}
-                        {" · "}{appt.appointment_type === "video" ? "Online" : "In-person"}
+                        {" · "}{appt.appointment_type === "teleconsult" ? "Online" : "In-person"}
                       </p>
                     </div>
                     <AppointmentStatusBadge status={appt.status} />

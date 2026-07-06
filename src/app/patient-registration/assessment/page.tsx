@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Brain } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
+import { useAppDispatch } from "@/store/hooks";
+import { refreshUser } from "@/store/slices/authSlice";
 import { Button } from "@/components/ui";
 import { ROUTES } from "@/lib/constants";
 import { patientsService } from "@/lib/api/services/patients.service";
@@ -34,6 +36,7 @@ const LIKERT_OPTIONS = [
 export default function SelfRegistrationAssessmentPage() {
   const { user, isRestoring } = useAuth();
   const router = useRouter();
+  const dispatch = useAppDispatch();
 
   const [instanceId, setInstanceId] = useState<string | null>(null);
   const [scales, setScales] = useState<ScaleQuestions[]>([]);
@@ -46,13 +49,29 @@ export default function SelfRegistrationAssessmentPage() {
   useEffect(() => {
     if (isRestoring) return;
     if (!user) { router.replace(ROUTES.LOGIN); return; }
-    if (!user.self_registered || !user.patient_id) { router.replace(ROUTES.LOGIN); return; }
-
-    const diseaseId = localStorage.getItem("pcs_registration_disease_id");
-    if (!diseaseId) { setError("We lost track of your selected condition — please contact your clinic to continue."); setLoading(false); return; }
+    // Both self- and staff-registered patients go through this same wizard
+    // (gated on registration_status, not self_registered) — only
+    // requirement is being a patient with a resolved patient_id.
+    if (!user.roles.includes("patient") || !user.patient_id) { router.replace(ROUTES.LOGIN); return; }
 
     (async () => {
       try {
+        // localStorage is only set during the live disease-selection step and
+        // cleared right after this step finishes — a re-login (or a cleared/
+        // fresh browser) loses it even for a patient who already picked a
+        // disease. Fall back to the disease-selection record itself instead
+        // of erroring out.
+        let diseaseId = localStorage.getItem("pcs_registration_disease_id");
+        if (!diseaseId) {
+          const selection = await patientsService.getPrimaryDiseaseSelection(user.patient_id!);
+          diseaseId = selection?.disease_id ?? null;
+        }
+        if (!diseaseId) {
+          setError("We lost track of your selected condition — please contact your clinic to continue.");
+          setLoading(false);
+          return;
+        }
+
         const assignments = await patientsService.getScaleAssignments(user.patient_id!, "general_registration");
         if (assignments.length === 0) {
           setError("No assessment scales are set up for your condition yet — please contact your clinic.");
@@ -88,7 +107,15 @@ export default function SelfRegistrationAssessmentPage() {
       await prsAssessmentService.submitAssessment(instanceId, currentScale.scale_id, scaleResponses);
       if (isLastScale) {
         localStorage.removeItem("pcs_registration_disease_id");
-        router.push("/patient-registration/pending");
+        // Staff-registered patients (approval_status='not_required') get
+        // activated the instant registration_status reaches
+        // registration_complete (patients/service.py::_complete_registration)
+        // — no receptionist approval to wait on. Self-registered patients
+        // stay inactive until that separate approval step. Re-check
+        // is_active instead of always assuming "pending approval".
+        const result = await dispatch(refreshUser());
+        const isActive = refreshUser.fulfilled.match(result) ? result.payload?.is_active : false;
+        router.push(isActive ? ROUTES.PATIENT_DASHBOARD : "/patient-registration/pending");
       } else {
         setScaleIndex((i) => i + 1);
         setAnswers({});

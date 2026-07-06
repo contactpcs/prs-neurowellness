@@ -64,15 +64,15 @@ export default function RequestAppointmentPage() {
       });
       setSuccess(true);
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { status?: number; data?: { detail?: string } } };
+      const axiosErr = err as { response?: { status?: number; data?: { detail?: string; error?: { message?: string } } } };
+      const message = axiosErr?.response?.data?.error?.message ?? axiosErr?.response?.data?.detail ?? "";
       if (axiosErr?.response?.status === 409) {
         setError("You already have a pending appointment request. Please wait for reception to process it before submitting a new one.");
       } else if (axiosErr?.response?.status === 400) {
-        const detail = axiosErr.response.data?.detail ?? "";
-        if (detail.toLowerCase().includes("doctor")) {
+        if (message.toLowerCase().includes("doctor")) {
           setNoDoctorError(true);
         } else {
-          setError(detail || "Invalid request. Please check your details.");
+          setError(message || "Invalid request. Please check your details.");
         }
       } else {
         setError("Something went wrong. Please try again.");

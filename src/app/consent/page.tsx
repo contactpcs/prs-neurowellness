@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ShieldCheck, Brain } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
@@ -14,11 +14,34 @@ export default function ConsentPage() {
 
   const [template, setTemplate] = useState<ConsentTemplate | null>(null);
   const [record, setRecord] = useState<ConsentRecord | null>(null);
-  const [witnessId, setWitnessId] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [signing, setSigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A ref, not state — state updates are async (don't hit the DOM until the
+  // next render), so a `signing` state flag alone can't stop a second click
+  // that lands before React has actually disabled the button. handleSign is
+  // async and yields at its first `await`, which is exactly the gap a fast
+  // double-click (or a trackpad/touch double-fire) can slip through. A ref
+  // updates synchronously, so this genuinely blocks a second concurrent call
+  // no matter how fast the clicks are or when React gets around to painting.
+  const signingRef = useRef(false);
+
+  async function proceedPastConsent() {
+    if (user?.roles.includes("patient")) {
+      // Every patient (self- or staff-registered) stays inactive through
+      // the whole registration-test wizard — signing here does NOT
+      // activate the account (see consent/service.py::sign), so don't
+      // refresh/redirect into a portal that would reject them. Just move
+      // to the next step.
+      router.push("/patient-registration/anamnesis");
+      return;
+    }
+    // Backend already flipped profiles.is_active=TRUE in the same
+    // transaction — re-read /auth/me and go straight into the portal,
+    // no re-login needed.
+    await completeConsent();
+  }
 
   useEffect(() => {
     if (isRestoring) return;
@@ -26,52 +49,56 @@ export default function ConsentPage() {
     if (user.is_active) { router.replace(ROUTES.LOGIN); return; }
 
     const consentType = user.consent_type_required ?? (user.roles.includes("patient") ? "patient_onboarding" : "staff_onboarding");
+    const role = user.roles[0] ?? "patient";
     Promise.all([
-      consentService.getTemplate(consentType),
-      consentService.getMyPending(user.id, user.roles[0] ?? "patient"),
+      // staff_onboarding templates are per-role now — patient_onboarding has
+      // no role split, so pass role only for the staff case.
+      consentService.getTemplate(consentType, consentType === "patient_onboarding" ? null : role),
+      consentService.getMyPending(user.id, role),
     ])
-      .then(([tpl, rec]) => {
+      .then(async ([tpl, rec]) => {
         setTemplate(tpl);
-        setRecord(rec);
-        if (!rec) setError("No pending consent record found for your account — contact your clinic admin.");
+        if (rec) { setRecord(rec); return; }
+        // No PENDING record doesn't necessarily mean no record ever existed —
+        // it can also mean this one already got signed (e.g. a duplicate
+        // sign request got through, or the user landed back here after
+        // already finishing) and there's genuinely nothing left to sign.
+        // Check for that before showing a dead-end "contact admin" error.
+        const idParam = role === "patient" ? { patient_id: user.id } : { staff_id: user.id };
+        const all = await consentService.listForSubject(idParam);
+        const alreadySigned = all.find((r) => r.consent_type === consentType && r.status === "signed");
+        if (alreadySigned) {
+          await proceedPastConsent();
+          return;
+        }
+        setError("No pending consent record found for your account — contact your clinic admin.");
       })
       .catch(() => setError("Could not load your consent form. Try refreshing."))
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRestoring, user, router]);
 
   async function handleSign() {
-    if (!record || !agreed) return;
+    if (!record || !agreed || signingRef.current) return;
+    signingRef.current = true;
     setSigning(true);
     setError(null);
     try {
       await consentService.sign(record.consent_id, {
         signature_data: `${user?.first_name} ${user?.last_name} — agreed ${new Date().toISOString()}`,
-        witness_id: witnessId || undefined,
       });
-      if (user?.self_registered) {
-        // Self-registered patients stay inactive through the whole wizard —
-        // signing here does NOT activate the account (see
-        // consent/service.py::sign), so don't refresh/redirect into a
-        // portal that would reject them. Just move to the next step.
-        router.push("/patient-registration/anamnesis");
-        return;
-      }
-      // Backend already flipped profiles.is_active=TRUE in the same
-      // transaction — re-read /auth/me and go straight into the portal,
-      // no re-login needed.
-      await completeConsent();
+      await proceedPastConsent();
     } catch (err: any) {
       setError(err?.response?.data?.error?.message || err?.response?.data?.detail || "Failed to sign — please try again.");
     } finally {
       setSigning(false);
+      signingRef.current = false;
     }
   }
 
   if (isRestoring || loading) {
     return <div className="min-h-screen flex items-center justify-center text-neutral-400 text-sm">Loading…</div>;
   }
-
-  const needsWitness = record?.consent_type === "patient_onboarding" && !user?.self_registered;
 
   return (
     <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-6">
@@ -94,18 +121,6 @@ export default function ConsentPage() {
         {template?.content && (
           <div className="max-h-64 overflow-y-auto text-sm text-neutral-700 bg-neutral-50 border border-neutral-200 rounded-lg p-4 mb-4 whitespace-pre-wrap">
             {template.content}
-          </div>
-        )}
-
-        {needsWitness && (
-          <div className="mb-4">
-            <label className="block text-xs font-medium text-neutral-600 mb-1">Witness Staff ID (required for patient consent)</label>
-            <input
-              value={witnessId}
-              onChange={(e) => setWitnessId(e.target.value)}
-              placeholder="Ask the staff member who registered you"
-              className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-            />
           </div>
         )}
 

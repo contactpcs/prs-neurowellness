@@ -22,6 +22,7 @@ function normalizePatient(raw: Record<string, unknown>): PatientListItem {
   const last = String(raw.last_name ?? "");
   return {
     id: String(raw.patient_id ?? ""),
+    profile_id: (raw.profile_id as string) ?? undefined,
     full_name: `${first} ${last}`.trim(),
     first_name: first,
     last_name: last,

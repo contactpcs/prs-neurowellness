@@ -185,10 +185,10 @@ export default function DoctorAppointmentsPage() {
           ? apiClient.get(ENDPOINTS.SCHEDULE.SLOTS(doctorId), {
               params: { from_date: from, to_date: to, include_unavailable: true },
             })
-          : Promise.resolve({ data: { data: [] } }),
+          : Promise.resolve({ data: [] }),
       ]);
-      setAppointments(apptRes.data?.data ?? []);
-      setSlots(slotsRes.data?.data ?? []);
+      setAppointments(Array.isArray(apptRes.data) ? apptRes.data : []);
+      setSlots(Array.isArray(slotsRes.data) ? slotsRes.data : []);
     } catch {
       setAppointments([]);
     } finally {

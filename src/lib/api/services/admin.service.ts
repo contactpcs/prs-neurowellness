@@ -73,6 +73,11 @@ export const adminService = {
     return Array.isArray(data) ? data : [];
   },
 
+  async updateAdmin(id: string, payload: { first_name?: string; last_name?: string; email?: string; phone?: string }): Promise<AdminAccount> {
+    const { data } = await apiClient.patch(`/admins/${id}`, payload);
+    return data;
+  },
+
   // ─── Dashboard — no aggregate endpoint, composed from real counts ───
   async getDashboard(): Promise<AdminDashboard> {
     const [clinicsRes, patientsRes] = await Promise.all([
@@ -266,6 +271,7 @@ export const adminService = {
     const { data } = await apiClient.patch(path, {
       first_name: payload?.first_name || undefined,
       last_name: payload?.last_name || undefined,
+      email: payload?.email || undefined,
       phone: payload?.phone || undefined,
       gender: payload?.gender || undefined,
       dob: payload?.dob || undefined,
@@ -284,9 +290,11 @@ export const adminService = {
     };
   },
 
-  /** Toggle the role-slot's own on/off flag (NOT the delete/consent
-   * profile.is_active signal) — doctors use availability_status, CAs and
-   * receptionists have a real is_active column. */
+  /** Toggle the role-slot's own on/off flag. Backend now keeps this in sync
+   * with profiles.is_active (the real login gate) for CA/receptionist — see
+   * staff/service.py::_split_profile_fields — so deactivating here actually
+   * blocks their login, not just flips a display flag. Doctors use
+   * availability_status instead (no is_active column on that table). */
   async _setStaffActive(id: string, role: string | undefined, active: boolean): Promise<void> {
     if (role === "doctor") {
       await apiClient.patch(`/doctors/${id}`, { availability_status: active ? "available" : "inactive" });
@@ -426,7 +434,7 @@ export const adminService = {
     };
   },
 
-  async updatePatient(id: string, payload: { first_name?: string; last_name?: string; phone?: string; gender?: string; dob?: string; address?: string; emergency_contact_name?: string; emergency_contact_phone?: string }): Promise<AdminPatient> {
+  async updatePatient(id: string, payload: { first_name?: string; last_name?: string; email?: string; phone?: string; gender?: string; dob?: string; address?: string; emergency_contact_name?: string; emergency_contact_phone?: string }): Promise<AdminPatient> {
     const { data } = await apiClient.patch(`/patients/${id}`, payload);
     return {
       id: String(data.patient_id ?? id), profile_id: data.profile_id ?? undefined,
