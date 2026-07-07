@@ -3,9 +3,9 @@ import { ENDPOINTS } from "../endpoints";
 import type { PatientDashboard, AssessmentPermission } from "@/types/domain.types";
 
 export const patientsService = {
-  /** NOT AVAILABLE as a single aggregate — composed from /auth/me (name/email,
-   * which /patients never returns — PatientRead has no profile fields joined)
-   * and /patients (RLS-scoped to the caller's own record, for the id). */
+  /** NOT AVAILABLE as a single aggregate — composed from /auth/me (name/email)
+   * and /patients (RLS-scoped to the caller's own record, which also joins
+   * the assigned doctor's name/phone/specialization off primary_doctor_id). */
   async getDashboard(): Promise<PatientDashboard> {
     const [meRes, patientsRes] = await Promise.all([
       apiClient.get(ENDPOINTS.AUTH.ME),
@@ -21,6 +21,14 @@ export const patientsService = {
         last_name: me.last_name,
         email: me.email,
       },
+      assigned_doctor: own?.primary_doctor_id ? {
+        id: own.primary_doctor_id as string,
+        full_name: (own.doctor_name as string) ?? "",
+        first_name: (own.doctor_first_name as string) ?? "",
+        last_name: (own.doctor_last_name as string) ?? "",
+        specialization: (own.doctor_specialization as string) ?? undefined,
+        phone: (own.doctor_phone as string) ?? undefined,
+      } : undefined,
     };
   },
 

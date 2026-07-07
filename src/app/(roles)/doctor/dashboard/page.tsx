@@ -98,7 +98,7 @@ const STATUS_DOT: Record<string, string> = {
 export default function DoctorDashboard() {
   const router   = useRouter();
   const { user } = useAuth();
-  const doctorId = (user as any)?.id ?? "";
+  const doctorId = (user as any)?.doctor_id ?? "";
   const today    = useMemo(() => new Date(), []);
   const todayStr = useMemo(() => toDateStr(today), [today]);
 
@@ -149,6 +149,16 @@ export default function DoctorDashboard() {
   useEffect(() => {
     fetchAppointments(fetchRange.from, fetchRange.to);
     fetchSlots(fetchRange.from, fetchRange.to);
+  }, [fetchRange, fetchAppointments, fetchSlots]);
+
+  // Live update via SSE.
+  useEffect(() => {
+    const onAppointmentEvent = () => {
+      fetchAppointments(fetchRange.from, fetchRange.to);
+      fetchSlots(fetchRange.from, fetchRange.to);
+    };
+    window.addEventListener("sse:appointment", onAppointmentEvent);
+    return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
   }, [fetchRange, fetchAppointments, fetchSlots]);
 
   // ── navigation ────────────────────────────────────────────────────

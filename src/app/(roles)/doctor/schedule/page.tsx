@@ -7,6 +7,7 @@ import {
 import { useAuth } from "@/lib/hooks/useAuth";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
+import { extractErrorMessage } from "@/lib/api/errors";
 import { BookingModal } from "@/components/appointments/BookingModal";
 import type {
   WeeklyScheduleRow, ScheduleOverride, AvailabilitySlot,
@@ -68,7 +69,7 @@ function toHHMM(t: string | null | undefined): string {
 
 export default function DoctorSchedulePage() {
   const { user } = useAuth();
-  const doctorId = (user as any)?.id ?? "";
+  const doctorId = (user as any)?.doctor_id ?? "";
 
   const today    = useMemo(() => new Date(), []);
   const todayStr = useMemo(() => toDateStr(today), [today]);
@@ -88,14 +89,13 @@ export default function DoctorSchedulePage() {
   // ── Data fetchers ──────────────────────────────────────────────────────────
 
   const fetchSchedule = useCallback(async () => {
-    if (!doctorId) return;
     try {
       const { data } = await apiClient.get(ENDPOINTS.SCHEDULE.MY);
       const payload = data.data ?? data;
       setWeekly(payload.weekly ?? []);
       setOverrides(payload.overrides ?? []);
     } catch { /* no schedule yet */ }
-  }, [doctorId]);
+  }, []);
 
   const fetchSlots = useCallback(async (monday: Date) => {
     if (!doctorId) return;
@@ -118,6 +118,14 @@ export default function DoctorSchedulePage() {
 
   useEffect(() => { fetchSchedule(); }, [fetchSchedule]);
   useEffect(() => { fetchSlots(weekMonday); }, [weekMonday, fetchSlots]);
+
+  // Live update via SSE — a booking made from the calendar/booking-request
+  // side changes which slots on this page are still free.
+  useEffect(() => {
+    const onAppointmentEvent = () => fetchSlots(weekMonday);
+    window.addEventListener("sse:appointment", onAppointmentEvent);
+    return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
+  }, [weekMonday, fetchSlots]);
 
   const prevWeek = () => setWeekMonday((m) => { const d = new Date(m); d.setDate(d.getDate() - 7); return d; });
   const nextWeek = () => setWeekMonday((m) => { const d = new Date(m); d.setDate(d.getDate() + 7); return d; });
@@ -476,7 +484,7 @@ function EditScheduleModal({
       await apiClient.put(ENDPOINTS.SCHEDULE.MY, { items });
       onSuccess();
     } catch (e: any) {
-      setError(e?.response?.data?.detail ?? "Save failed");
+      setError(extractErrorMessage(e, "Save failed"));
     } finally {
       setBusy(false);
     }
@@ -583,7 +591,7 @@ function AddOverrideModal({ onClose, onSuccess }: { onClose: () => void; onSucce
       await apiClient.post(ENDPOINTS.SCHEDULE.ADD_OVERRIDE, body);
       onSuccess();
     } catch (e: any) {
-      setError(e?.response?.data?.detail ?? "Save failed");
+      setError(extractErrorMessage(e, "Save failed"));
     } finally {
       setBusy(false);
     }

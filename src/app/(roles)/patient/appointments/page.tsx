@@ -76,6 +76,13 @@ export default function PatientAppointmentsPage() {
 
   useEffect(() => { loadAppointments(); }, [loadAppointments]);
 
+  // Live update — a request approval/reschedule pushes here via SSE.
+  useEffect(() => {
+    const onAppointmentEvent = () => { loadAppointments(); refreshReqs(); };
+    window.addEventListener("sse:appointment", onAppointmentEvent);
+    return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
+  }, [loadAppointments, refreshReqs]);
+
   const now = new Date();
   const upcoming = appts.filter((a) => {
     const d = new Date(`${a.appointment_date}T${a.start_time}`);

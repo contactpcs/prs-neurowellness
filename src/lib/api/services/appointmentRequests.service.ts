@@ -30,6 +30,7 @@ function mapRequest(r: Record<string, unknown>): AppointmentRequest {
     request_id: String(r.request_id ?? ""),
     patient_id: String(r.patient_id ?? ""),
     doctor_id: r.doctor_id ? String(r.doctor_id) : null,
+    doctor_public_id: r.doctor_public_id ? String(r.doctor_public_id) : null,
     clinic_id: String(r.clinic_id ?? ""),
     patient_name: r.patient_name ? String(r.patient_name) : undefined,
     doctor_name: r.doctor_name ? String(r.doctor_name) : undefined,

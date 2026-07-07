@@ -18,6 +18,8 @@ interface MeResponse {
   clinic_id: string | null; region_id: string | null; is_active: boolean; consent_signed: boolean;
   consent_type_required: string | null;
   self_registered: boolean; patient_id: string | null; registration_status: string | null;
+  doctor_id: string | null;
+  email_verified: boolean; phone_verified: boolean;
 }
 
 function meToUser(me: MeResponse): AuthResponse["user"] {
@@ -28,27 +30,52 @@ function meToUser(me: MeResponse): AuthResponse["user"] {
     is_active: me.is_active, consent_signed: me.consent_signed, consent_type_required: me.consent_type_required,
     self_registered: me.self_registered, patient_id: me.patient_id ?? undefined,
     registration_status: me.registration_status ?? undefined,
+    doctor_id: me.doctor_id ?? undefined,
+    email_verified: me.email_verified, phone_verified: me.phone_verified,
   };
 }
 
+// Fetched once per page load and cached — decides which of the two parallel
+// endpoint pairs to call (local-login/register vs the real login/OTP
+// wizard). A plain module-level cache is enough here: auth_mode is a
+// deploy-time setting, never changes mid-session.
+let cachedAuthMode: "local" | "cognito" | null = null;
+async function getAuthMode(): Promise<"local" | "cognito"> {
+  if (cachedAuthMode) return cachedAuthMode;
+  const { data } = await apiClient.get(ENDPOINTS.AUTH.CONFIG);
+  cachedAuthMode = data.auth_mode === "cognito" ? "cognito" : "local";
+  return cachedAuthMode;
+}
+
 export const authService = {
-  /** Real backend: POST /auth/local-login {email} -> {access_token, token_type} only
-   * (no user object, no refresh_token). Fetch /auth/me right after to build the
-   * User the rest of the app expects, matching AuthResponse's declared shape. */
+  /** Local dev: POST /auth/local-login {email} -> {access_token} (no
+   * password check). Cognito mode: POST /auth/login {username, password} ->
+   * real tokens. Either way, fetch /auth/me right after to build the User
+   * shape the rest of the app expects. */
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
-    const loginRes = await apiClient.post(ENDPOINTS.AUTH.LOGIN, { email: credentials.email });
+    const mode = await getAuthMode();
+    const loginRes = mode === "cognito"
+      ? await apiClient.post(ENDPOINTS.AUTH.REAL_LOGIN, { username: credentials.username, password: credentials.password })
+      : await apiClient.post(ENDPOINTS.AUTH.LOGIN, { email: credentials.username });
     const access_token: string = loginRes.data.access_token;
     const meRes = await apiClient.get(ENDPOINTS.AUTH.ME, {
       headers: { Authorization: `Bearer ${access_token}` },
     });
-    return { access_token, refresh_token: "", expires_in: 0, user: meToUser(meRes.data as MeResponse) };
+    return { access_token, refresh_token: loginRes.data.refresh_token ?? "", expires_in: 0, user: meToUser(meRes.data as MeResponse) };
   },
 
-  /** Real: POST /auth/register (public, no auth) -> {access_token}. Creates
-   * an inactive, self_registered patient and logs them in immediately so
-   * they can continue the rest of the wizard (disease selection, consent,
-   * anamnesis, PRS) while still inactive — a receptionist's later approval
-   * is what finally activates the account. */
+  /** Completes Cognito's NEW_PASSWORD_REQUIRED challenge — a staff
+   * account's first login after AdminCreateUser's auto-emailed temp
+   * password. session comes from the login() error the challenge raised. */
+  async completeNewPassword(username: string, newPassword: string, session: string): Promise<AuthResponse> {
+    const { data } = await apiClient.post(ENDPOINTS.AUTH.NEW_PASSWORD, { username, new_password: newPassword, session });
+    const access_token: string = data.access_token;
+    const meRes = await apiClient.get(ENDPOINTS.AUTH.ME, { headers: { Authorization: `Bearer ${access_token}` } });
+    return { access_token, refresh_token: data.refresh_token ?? "", expires_in: 0, user: meToUser(meRes.data as MeResponse) };
+  },
+
+  /** Local dev only — single-step registration, no OTP. 404s once
+   * auth_mode == 'cognito'; real signup is the OTP wizard below. */
   async register(formData: RegisterData): Promise<AuthResponse> {
     const { data } = await apiClient.post(ENDPOINTS.AUTH.REGISTER, {
       email: formData.email,
@@ -94,6 +121,52 @@ export const authService = {
   async getClinics(): Promise<Clinic[]> {
     const { data } = await apiClient.get(ENDPOINTS.AUTH.CLINICS);
     return Array.isArray(data) ? data : [];
+  },
+
+  // ─── Real patient signup wizard (cognito mode only) ───────────────────────
+
+  isRealSignupEnabled: getAuthMode,
+
+  /** Step 1 — starts Cognito's SignUp for the chosen channel; auto-sends
+   * the OTP. Nothing written to our DB yet. */
+  async patientSignupStart(data: {
+    first_name: string; last_name: string; dob?: string; gender?: string;
+    city?: string; state?: string; country?: string; primary_clinic_id: string;
+    method: "email" | "mobile"; contact: string;
+  }): Promise<void> {
+    await apiClient.post(ENDPOINTS.AUTH.SIGNUP_START, data);
+  },
+
+  async patientSignupResend(contact: string): Promise<void> {
+    await apiClient.post(ENDPOINTS.AUTH.SIGNUP_RESEND, { contact });
+  },
+
+  /** Step 2 — verifies the OTP. */
+  async patientSignupVerify(contact: string, code: string): Promise<void> {
+    await apiClient.post(ENDPOINTS.AUTH.SIGNUP_VERIFY, { contact, code });
+  },
+
+  /** Step 3 — sets the real password, creates the profiles/patients row,
+   * auto-logs in. Same fields as Start (stateless wizard) plus password. */
+  async patientSignupComplete(data: {
+    first_name: string; last_name: string; dob?: string; gender?: string;
+    city?: string; state?: string; country?: string; primary_clinic_id: string;
+    method: "email" | "mobile"; contact: string; password: string; confirm_password: string;
+  }): Promise<AuthResponse> {
+    const { data: res } = await apiClient.post(ENDPOINTS.AUTH.SIGNUP_COMPLETE, data);
+    const access_token: string = res.access_token;
+    const meRes = await apiClient.get(ENDPOINTS.AUTH.ME, { headers: { Authorization: `Bearer ${access_token}` } });
+    return { access_token, refresh_token: "", expires_in: 0, user: meToUser(meRes.data as MeResponse) };
+  },
+
+  /** Post-signup: adds + sends a verification code for the channel NOT used
+   * at signup (authenticated — apiClient already attaches the Bearer token). */
+  async verifyChannelStart(attribute: "email" | "phone_number", value: string): Promise<void> {
+    await apiClient.post(ENDPOINTS.AUTH.VERIFY_CHANNEL_START, { attribute, value });
+  },
+
+  async verifyChannelConfirm(attribute: "email" | "phone_number", code: string, value: string): Promise<void> {
+    await apiClient.post(ENDPOINTS.AUTH.VERIFY_CHANNEL_CONFIRM, { attribute, code, value });
   },
 
   // NOT AVAILABLE — no sync-profile concept (profile is created at staff/admin registration time).

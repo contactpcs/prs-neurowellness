@@ -16,6 +16,7 @@ import {
 } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { PatientDashboardSkeleton } from "@/components/ui";
+import { VerifyChannelBanner } from "@/components/auth/VerifyChannelBanner";
 import type {
   AssessmentPermission,
   AssessmentInstance,
@@ -71,6 +72,13 @@ function PatientDashboard() {
     appointmentsService.getUpcoming().then(setAppointments).catch(() => {});
   }, []);
 
+  // Live update — a request approval pushes here via SSE.
+  useEffect(() => {
+    const onAppointmentEvent = () => { appointmentsService.getUpcoming().then(setAppointments).catch(() => {}); };
+    window.addEventListener("sse:appointment", onAppointmentEvent);
+    return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
+  }, []);
+
   if (dashLoading || assessLoading) return <PatientDashboardSkeleton />;
 
   const profile = dashboard?.profile;
@@ -111,6 +119,7 @@ function PatientDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-neutral-900">
+      <VerifyChannelBanner />
       {/* Header */}
       <div className="pb-3 flex items-center justify-between gap-2">
         <div className="min-w-0">

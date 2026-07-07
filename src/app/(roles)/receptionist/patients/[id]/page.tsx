@@ -10,6 +10,8 @@ import {
 import { staffService } from "@/lib/api/services/staff.service";
 import { adminService } from "@/lib/api/services/admin.service";
 import { useStaffPatient, useClinics } from "@/lib/hooks";
+import { useAppDispatch } from "@/store/hooks";
+import { fetchPatient } from "@/store/slices/staffSlice";
 import { Card, CardHeader, CardContent, PageLoader } from "@/components/ui";
 import { PatientJourneySections, type PatientJourneyDetail } from "@/components/admin/PatientJourneySections";
 import type { PatientDetail, DoctorListItem } from "@/types/domain.types";
@@ -53,11 +55,12 @@ export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
 
+  const dispatch = useAppDispatch();
   const [doctors, setDoctors]         = useState<DoctorListItem[]>([]);
   const [isLoading, setIsLoading]     = useState(true);
   const [selectedDoctor, setSelectedDoctor] = useState("");
   const [allocating, setAllocating]   = useState(false);
-  const [allocated, setAllocated]     = useState(false);
+  const [reallocating, setReallocating] = useState(false);
   const [actionLoading, setActionLoading] = useState<"approve" | "reject" | null>(null);
   const [rejectModal, setRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -102,7 +105,9 @@ export default function PatientDetailPage() {
     setAllocating(true);
     try {
       await staffService.allocatePatient(id, selectedDoctor);
-      setAllocated(true);
+      setSelectedDoctor("");
+      setReallocating(false);
+      dispatch(fetchPatient(id));
       showToast("Patient successfully allocated to doctor.", true);
     } catch {
       showToast("Failed to allocate patient. Please try again.", false);
@@ -299,12 +304,12 @@ export default function PatientDetailPage() {
             <h3 className="text-sm font-semibold text-neutral-700">Allocate to Doctor</h3>
           </CardHeader>
           <CardContent className="space-y-4">
-            {allocated ? (
+            {patient.doctor_name && !reallocating ? (
               <div className="flex flex-col items-center justify-center py-4 text-center gap-2">
                 <UserCheck className="h-8 w-8 text-green-500" />
-                <p className="text-sm font-medium text-green-700">Doctor allocated successfully!</p>
+                <p className="text-sm font-medium text-green-700">Currently allocated to Dr. {patient.doctor_name}</p>
                 <button
-                  onClick={() => { setAllocated(false); setSelectedDoctor(""); }}
+                  onClick={() => { setReallocating(true); setSelectedDoctor(""); }}
                   className="text-xs text-blue-600 hover:underline"
                 >
                   Reallocate
@@ -336,18 +341,28 @@ export default function PatientDetailPage() {
                 </div>
 
                 {doctors.length === 0 && (
-                  <p className="text-xs text-neutral-400">No doctors available. Contact admin.</p>
+                  <p className="text-xs text-neutral-400">No doctors available at your clinic. Contact admin.</p>
                 )}
 
-                <button
-                  onClick={handleAllocate}
-                  disabled={!selectedDoctor || allocating}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                >
-                  {allocating
-                    ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Allocating…</>
-                    : <><Stethoscope className="h-3.5 w-3.5" />Allocate Doctor</>}
-                </button>
+                <div className="flex gap-2">
+                  {patient.doctor_name && (
+                    <button
+                      onClick={() => { setReallocating(false); setSelectedDoctor(""); }}
+                      className="px-4 py-2.5 rounded-lg border border-neutral-200 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    onClick={handleAllocate}
+                    disabled={!selectedDoctor || allocating}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  >
+                    {allocating
+                      ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Allocating…</>
+                      : <><Stethoscope className="h-3.5 w-3.5" />Allocate Doctor</>}
+                  </button>
+                </div>
               </>
             )}
           </CardContent>

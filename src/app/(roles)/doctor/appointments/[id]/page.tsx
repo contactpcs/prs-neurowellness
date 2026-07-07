@@ -104,7 +104,7 @@ function CancelDialog({
 
 function RescheduleModal({
   doctorId, onConfirm, onClose, busy,
-}: { doctorId: string; onConfirm: (date: string, time: string, reason?: string) => void; onClose: () => void; busy: boolean }) {
+}: { doctorId: string | null | undefined; onConfirm: (date: string, time: string, reason?: string) => void; onClose: () => void; busy: boolean }) {
   const todayStr = new Date().toISOString().slice(0, 10);
   const [date,   setDate]   = useState(todayStr);
   const [time,   setTime]   = useState("");
@@ -269,7 +269,9 @@ export default function AppointmentDetailPage() {
   }
 
   const status = appointment.status;
-  const docId  = appointment.doctor_id;
+  // appointment.doctor_id is profiles.id — /doctors/{doctor_id}/availability
+  // expects doctors.doctor_id (public ID) instead, hence doctor_public_id.
+  const docId  = appointment.doctor_public_id;
 
   // Status-based action availability — mirrors the server's allowed-from
   // matrix (scheduling/service.py::_ALLOWED_FROM) so a visible button never

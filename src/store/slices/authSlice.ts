@@ -40,7 +40,15 @@ function normalizeUser(rawUser: any): User {
     self_registered: rawUser?.self_registered ?? undefined,
     patient_id: rawUser?.patient_id ?? undefined,
     registration_status: rawUser?.registration_status ?? undefined,
+    doctor_id: rawUser?.doctor_id ?? undefined,
+    email_verified: rawUser?.email_verified ?? true,
+    phone_verified: rawUser?.phone_verified ?? true,
   };
+}
+
+export interface PasswordChallenge {
+  username: string;
+  session: string;
 }
 
 interface AuthState {
@@ -49,6 +57,11 @@ interface AuthState {
   isLoading: boolean;
   isRestoring: boolean; // true while restoreSession is in-flight on page load
   error: string | null;
+  // Set when Cognito's NEW_PASSWORD_REQUIRED challenge fires (a staff
+  // account's first login after AdminCreateUser's auto-emailed temp
+  // password) — the login page swaps to a "set new password" form instead
+  // of showing this as a plain error.
+  passwordChallenge: PasswordChallenge | null;
 }
 
 const initialState: AuthState = {
@@ -57,7 +70,18 @@ const initialState: AuthState = {
   isLoading: false,
   isRestoring: true, // start true — session restore runs immediately on mount
   error: null,
+  passwordChallenge: null,
 };
+
+// AnavaException's real shape is {error:{code,message,details}} — FastAPI's
+// own {detail:...} only ever appears for raw Pydantic validation errors,
+// never a custom exception like the ones /auth/login actually raises.
+function extractApiError(error: any): { code?: string; message?: string; details?: any } {
+  const data = error?.response?.data;
+  if (data?.error) return data.error;
+  if (typeof data?.detail === "string") return { message: data.detail };
+  return { message: error?.message };
+}
 
 export const login = createAsyncThunk(
   "auth/login",
@@ -88,15 +112,40 @@ export const login = createAsyncThunk(
 
       return normalizedUser;
     } catch (error: any) {
-      const rawDetail = error.response?.data?.detail || error.message || "Login failed";
-      const lower = String(rawDetail).toLowerCase();
-      let errorMessage = rawDetail;
+      const apiError = extractApiError(error);
+      if (apiError.code === "NEW_PASSWORD_REQUIRED") {
+        const session = apiError.details?.[0]?.session;
+        return rejectWithValue({ passwordChallenge: { username: credentials.username, session } });
+      }
+      const rawMessage = apiError.message || "Login failed";
+      const lower = rawMessage.toLowerCase();
+      let errorMessage = rawMessage;
       if (lower.includes("pending") || lower.includes("not approved") || lower.includes("awaiting approval")) {
         errorMessage = "You will be able to log in once your account is approved.";
       } else if (lower.includes("rejected") || lower.includes("account denied")) {
         errorMessage = "Your account has been rejected. Please contact reception.";
       }
       return rejectWithValue(errorMessage);
+    }
+  }
+);
+
+// Completes Cognito's NEW_PASSWORD_REQUIRED challenge — same session shape
+// as login() itself once it succeeds.
+export const completeNewPassword = createAsyncThunk(
+  "auth/completeNewPassword",
+  async (data: { username: string; newPassword: string; session: string }, { rejectWithValue }) => {
+    try {
+      const response = await authService.completeNewPassword(data.username, data.newPassword, data.session);
+      if (!response.user) return rejectWithValue("User data missing from response");
+      const normalizedUser = normalizeUser(response.user);
+      localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.access_token);
+      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, response.refresh_token);
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(normalizedUser));
+      return normalizedUser;
+    } catch (error: any) {
+      const apiError = extractApiError(error);
+      return rejectWithValue(apiError.message || "Could not set new password");
     }
   }
 );
@@ -108,6 +157,32 @@ export const register = createAsyncThunk(
   async (userData: RegisterData, { rejectWithValue }) => {
     try {
       const response = await authService.register(userData);
+      if (!response.user) return rejectWithValue("User data missing from response");
+      const normalizedUser = normalizeUser(response.user);
+      localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.access_token);
+      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, response.refresh_token);
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(normalizedUser));
+      return normalizedUser;
+    } catch (error: any) {
+      const detail = error.response?.data?.error?.message || error.response?.data?.detail;
+      return rejectWithValue(
+        typeof detail === "string" ? detail : "Registration failed. Please try again."
+      );
+    }
+  }
+);
+
+// Real (cognito-mode) patient signup wizard's final step — same session
+// shape as register() above, called once the OTP is verified and the real
+// password is set (see PatientSignupComplete in patient-registration/).
+export const completePatientSignup = createAsyncThunk(
+  "auth/completePatientSignup",
+  async (
+    data: Parameters<typeof authService.patientSignupComplete>[0],
+    { rejectWithValue }
+  ) => {
+    try {
+      const response = await authService.patientSignupComplete(data);
       if (!response.user) return rejectWithValue("User data missing from response");
       const normalizedUser = normalizeUser(response.user);
       localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.access_token);
@@ -182,6 +257,9 @@ const authSlice = createSlice({
     clearError: (state) => {
       state.error = null;
     },
+    clearPasswordChallenge: (state) => {
+      state.passwordChallenge = null;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -193,6 +271,22 @@ const authSlice = createSlice({
       })
       .addCase(login.rejected, (state, action) => {
         state.isLoading = false;
+        const payload = action.payload as string | { passwordChallenge: PasswordChallenge };
+        if (payload && typeof payload === "object" && "passwordChallenge" in payload) {
+          state.passwordChallenge = payload.passwordChallenge;
+        } else {
+          state.error = payload as string;
+        }
+      })
+      .addCase(completeNewPassword.pending, (state) => { state.isLoading = true; state.error = null; })
+      .addCase(completeNewPassword.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.user = action.payload;
+        state.isAuthenticated = true;
+        state.passwordChallenge = null;
+      })
+      .addCase(completeNewPassword.rejected, (state, action) => {
+        state.isLoading = false;
         state.error = action.payload as string;
       })
       .addCase(register.pending, (state) => { state.isLoading = true; state.error = null; })
@@ -202,6 +296,16 @@ const authSlice = createSlice({
         state.isAuthenticated = true;
       })
       .addCase(register.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      })
+      .addCase(completePatientSignup.pending, (state) => { state.isLoading = true; state.error = null; })
+      .addCase(completePatientSignup.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.user = action.payload;
+        state.isAuthenticated = true;
+      })
+      .addCase(completePatientSignup.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       })
@@ -224,5 +328,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { logout, clearError, updateUserInStore } = authSlice.actions;
+export const { logout, clearError, clearPasswordChallenge, updateUserInStore } = authSlice.actions;
 export default authSlice.reducer;

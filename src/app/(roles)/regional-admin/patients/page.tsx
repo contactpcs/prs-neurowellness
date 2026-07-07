@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import {
   Users, Search, X, Check, Trash2, Edit2,
-  Building2, Calendar, Plus, RefreshCw, FileText, ShieldCheck,
+  Building2, Calendar, Plus, RefreshCw, FileText, ShieldCheck, Power, PowerOff,
 } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
 import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
@@ -362,6 +362,7 @@ export default function RegionalAdminPatientsPage() {
   const [detailPatient, setDetailPatient] = useState<AdminPatient | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!user?.region_id) return;
@@ -406,6 +407,18 @@ export default function RegionalAdminPatientsPage() {
   async function handleDelete(id: string) {
     await adminService.deletePatient(id);
     setPatients((prev) => prev.filter((p) => p.id !== id));
+  }
+  async function handleToggleActive(patient: AdminPatient) {
+    setProcessingId(patient.id);
+    setActionError(null);
+    try {
+      const updated = await adminService.updatePatient(patient.id, { is_active: !patient.is_active });
+      setPatients((prev) => prev.map((p) => (p.id === patient.id ? updated : p)));
+    } catch (e: any) {
+      setActionError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Failed to update patient status");
+    } finally {
+      setProcessingId(null);
+    }
   }
 
   const initials = (p: AdminPatient) => [p.first_name?.[0], p.last_name?.[0]].filter(Boolean).join("").toUpperCase() || "?";
@@ -502,6 +515,18 @@ export default function RegionalAdminPatientsPage() {
                       <div className="flex items-center justify-end gap-1.5">
                         <button onClick={() => setEditTarget(patient)} className="p-1.5 rounded-lg text-neutral-500 hover:text-neutral-700 hover:bg-neutral-100 transition-colors" title="Edit">
                           <Edit2 className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleToggleActive(patient)}
+                          disabled={processingId === patient.id}
+                          title={patient.is_active === false ? "Reactivate" : "Deactivate"}
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            patient.is_active === false
+                              ? "text-green-500 hover:text-green-700 hover:bg-green-50"
+                              : "text-amber-500 hover:text-amber-700 hover:bg-amber-50"
+                          }`}
+                        >
+                          {patient.is_active === false ? <Power className="h-4 w-4" /> : <PowerOff className="h-4 w-4" />}
                         </button>
                         <button onClick={() => setDeleteTarget(patient)} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors" title="Delete">
                           <Trash2 className="h-4 w-4" />

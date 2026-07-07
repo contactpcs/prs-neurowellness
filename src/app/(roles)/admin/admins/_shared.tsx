@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ShieldCheck, RefreshCw, X, Mail, Phone, MapPin, Building2, Edit2 } from "lucide-react";
+import { ShieldCheck, RefreshCw, X, Mail, Phone, MapPin, Building2, Edit2, Power, PowerOff } from "lucide-react";
 import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
 import type { AdminAccount } from "@/types/admin.types";
 
@@ -101,15 +101,28 @@ export function AdminAccountsSection({
   error: string | null;
   refreshing: boolean;
   onRefresh: () => void;
-  updateAdmin: (id: string, data: { first_name?: string; last_name?: string; email?: string; phone?: string }) => Promise<unknown>;
+  updateAdmin: (id: string, data: { first_name?: string; last_name?: string; email?: string; phone?: string; is_active?: boolean }) => Promise<unknown>;
   headerAction?: React.ReactNode;
   emptyLabel: string;
 }) {
   const [viewAdmin, setViewAdmin] = useState<AdminAccount | null>(null);
   const [editAdmin, setEditAdmin] = useState<AdminAccount | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const initials = (a: AdminAccount) => [a.first_name?.[0], a.last_name?.[0]].filter(Boolean).join("").toUpperCase() || "?";
+
+  async function handleToggle(admin: AdminAccount) {
+    setTogglingId(admin.admin_id);
+    setActionError(null);
+    try {
+      await updateAdmin(admin.admin_id, { is_active: !admin.is_active });
+    } catch (e: any) {
+      setActionError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Failed to update admin status");
+    } finally {
+      setTogglingId(null);
+    }
+  }
 
   if (isLoading) return <AdminsSkeleton />;
 
@@ -193,17 +206,31 @@ export function AdminAccountsSection({
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                         admin.is_active ? "bg-green-100 text-green-700" : "bg-neutral-100 text-neutral-500"
                       }`}>
-                        {admin.is_active ? "Active" : "Pending Consent"}
+                        {admin.is_active ? "Active" : "Inactive"}
                       </span>
                     </td>
                     <td className="px-4 py-3.5 text-center">
-                      <button
-                        onClick={() => setEditAdmin(admin)}
-                        title="Edit"
-                        className="p-1.5 text-neutral-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                      >
-                        <Edit2 className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => setEditAdmin(admin)}
+                          title="Edit"
+                          className="p-1.5 text-neutral-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleToggle(admin)}
+                          disabled={togglingId === admin.admin_id}
+                          title={admin.is_active ? "Deactivate" : "Reactivate"}
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            admin.is_active
+                              ? "text-amber-500 hover:text-amber-700 hover:bg-amber-50"
+                              : "text-green-500 hover:text-green-700 hover:bg-green-50"
+                          }`}
+                        >
+                          {admin.is_active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -5,7 +5,7 @@ import { useSelector } from "react-redux";
 import { useRouter } from "next/navigation";
 import type { RootState } from "@/store/store";
 import { useAppDispatch } from "@/store/hooks";
-import { login, register, logout, restoreSession, refreshUser, clearError } from "@/store/slices/authSlice";
+import { login, register, completePatientSignup, completeNewPassword, logout, restoreSession, refreshUser, clearError, clearPasswordChallenge } from "@/store/slices/authSlice";
 import { ROUTES, USER_ROLES } from "@/lib/constants";
 import type { LoginCredentials, RegisterData } from "@/types/auth.types";
 
@@ -45,7 +45,7 @@ function resumeRouteForPatient(registrationStatus: string | undefined): string {
 export function useAuth() {
   const dispatch = useAppDispatch();
   const router = useRouter();
-  const { user, isAuthenticated, isLoading, isRestoring, error } = useSelector((s: RootState) => s.auth);
+  const { user, isAuthenticated, isLoading, isRestoring, error, passwordChallenge } = useSelector((s: RootState) => s.auth);
 
   const handleLogin = useCallback(async (credentials: LoginCredentials) => {
     const result = await dispatch(login(credentials));
@@ -91,6 +91,21 @@ export function useAuth() {
     return dispatch(register(data));
   }, [dispatch]);
 
+  const handleCompletePatientSignup = useCallback(
+    async (data: Parameters<typeof completePatientSignup>[0]) => dispatch(completePatientSignup(data)),
+    [dispatch],
+  );
+
+  const handleCompleteNewPassword = useCallback(async (newPassword: string) => {
+    if (!passwordChallenge) return;
+    const result = await dispatch(completeNewPassword({ username: passwordChallenge.username, newPassword, session: passwordChallenge.session }));
+    if (completeNewPassword.fulfilled.match(result)) {
+      const roles = result.payload?.roles || [];
+      router.push(dashboardRouteForRoles(roles));
+    }
+    return result;
+  }, [dispatch, router, passwordChallenge]);
+
   const handleLogout = useCallback(() => {
     dispatch(logout());
     router.push(ROUTES.LOGIN);
@@ -101,13 +116,16 @@ export function useAuth() {
   }, [dispatch]);
 
   return {
-    user, isAuthenticated, isLoading, isRestoring, error,
+    user, isAuthenticated, isLoading, isRestoring, error, passwordChallenge,
     login: handleLogin,
     register: handleRegister,
+    completePatientSignup: handleCompletePatientSignup,
+    completeNewPassword: handleCompleteNewPassword,
     logout: handleLogout,
     restoreSession: restore,
     completeConsent,
     clearError: () => dispatch(clearError()),
+    clearPasswordChallenge: () => dispatch(clearPasswordChallenge()),
     hasRole: (role: string) => user?.roles?.includes(role as any) ?? false,
     isDoctor: user?.roles?.includes(USER_ROLES.DOCTOR) ?? false,
     isPatient: user?.roles?.includes(USER_ROLES.PATIENT) ?? false,

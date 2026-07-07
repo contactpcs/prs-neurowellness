@@ -8,8 +8,17 @@
 export const ENDPOINTS = {
   // ─── Auth ───
   AUTH: {
-    LOGIN: "/auth/local-login", // dev-mode: {email} or {cognito_sub}, no password checked
-    REGISTER: "/auth/register", // real — public patient self-registration, POST, returns {access_token}
+    LOGIN: "/auth/local-login", // local dev only: {email} or {cognito_sub}, no password checked
+    REAL_LOGIN: "/auth/login",  // cognito mode: {username (email or phone), password}
+    NEW_PASSWORD: "/auth/login/new-password", // completes NEW_PASSWORD_REQUIRED: {username, new_password, session}
+    CONFIG: "/auth/config",     // public — {auth_mode: "local"|"cognito"}, decides which of the above to call
+    REGISTER: "/auth/register", // local dev only — real signup is the OTP wizard below
+    SIGNUP_START: "/auth/patients/signup/start",
+    SIGNUP_RESEND: "/auth/patients/signup/resend",
+    SIGNUP_VERIFY: "/auth/patients/signup/verify",
+    SIGNUP_COMPLETE: "/auth/patients/signup/complete",
+    VERIFY_CHANNEL_START: "/auth/patients/verify-channel/start",
+    VERIFY_CHANNEL_CONFIRM: "/auth/patients/verify-channel/confirm",
     ME: "/auth/me",             // real — GET only
     SYNC_PROFILE: "/auth/sync-profile", // NOT AVAILABLE
     CLINICS: "/auth/clinics",           // real — public clinic picker for self-registration
@@ -45,6 +54,7 @@ export const ENDPOINTS = {
     MY_SCORES: "/patients/my-scores",           // NOT AVAILABLE — no list-instances-by-patient endpoint
     DISEASE_SELECTION: (patientId: string) => `/patients/${patientId}/disease-selection`, // real — POST
     DECIDE_APPROVAL: (patientId: string) => `/patients/${patientId}/approval`, // real — PATCH {decision, rejection_reason}
+    ALLOCATE_DOCTOR: (patientId: string) => `/patients/${patientId}/allocate-doctor`, // real — PATCH {doctor_id}
   },
 
   // ─── Staff ───

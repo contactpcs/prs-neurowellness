@@ -79,7 +79,7 @@ export function useAdminAccounts() {
     }
   }, []);
 
-  const updateAdmin = useCallback(async (id: string, payload: { first_name?: string; last_name?: string; email?: string; phone?: string }) => {
+  const updateAdmin = useCallback(async (id: string, payload: { first_name?: string; last_name?: string; email?: string; phone?: string; is_active?: boolean }) => {
     const updated = await adminService.updateAdmin(id, payload);
     setAdmins((prev) => prev.map((a) => (a.admin_id === id ? updated : a)));
     return updated;
@@ -263,10 +263,15 @@ export function useAdminPatients() {
     );
   }, []);
 
-  const updatePatient = useCallback(async (id: string, payload: { first_name?: string; last_name?: string; phone?: string; gender?: string; dob?: string; address?: string; emergency_contact_name?: string; emergency_contact_phone?: string }) => {
+  const updatePatient = useCallback(async (id: string, payload: { first_name?: string; last_name?: string; phone?: string; gender?: string; dob?: string; address?: string; emergency_contact_name?: string; emergency_contact_phone?: string; is_active?: boolean }) => {
     const updated = await adminService.updatePatient(id, payload);
     setPatients((prev) => prev.map((p) => (p.id === id ? updated : p)));
     return updated;
+  }, []);
+
+  const togglePatientActive = useCallback(async (id: string, activate: boolean) => {
+    await adminService.updatePatient(id, { is_active: activate });
+    setPatients((prev) => prev.map((p) => (p.id === id ? { ...p, is_active: activate } : p)));
   }, []);
 
   const deletePatient = useCallback(async (id: string) => {
@@ -274,5 +279,5 @@ export function useAdminPatients() {
     setPatients((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
-  return { patients, total, isLoading, error, fetch, registerPatient, updatePatient, approvePatient, rejectPatient, deletePatient };
+  return { patients, total, isLoading, error, fetch, registerPatient, updatePatient, togglePatientActive, approvePatient, rejectPatient, deletePatient };
 }

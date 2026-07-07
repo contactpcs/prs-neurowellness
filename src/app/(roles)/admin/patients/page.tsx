@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import {
   Users, Search, X, Check, XCircle, Trash2, Edit2,
-  Clock, Building2, Calendar, Plus, RefreshCw, FileText, ShieldCheck,
+  Clock, Building2, Calendar, Plus, RefreshCw, FileText, ShieldCheck, Power, PowerOff,
 } from "lucide-react";
 import { useAdminPatients, useAdminClinics } from "@/lib/hooks";
 import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
@@ -451,7 +451,7 @@ function PatientDetailModal({ patient, clinic }: { patient: AdminPatient; clinic
 // ─── Page ─────────────────────────────────────────────────────────
 
 export default function AdminPatientsPage() {
-  const { patients, isLoading, error, fetch, registerPatient, updatePatient, approvePatient, rejectPatient, deletePatient } = useAdminPatients();
+  const { patients, isLoading, error, fetch, registerPatient, updatePatient, togglePatientActive, approvePatient, rejectPatient, deletePatient } = useAdminPatients();
   const { clinics, fetch: fetchClinics } = useAdminClinics();
 
   const [tab, setTab] = useState<"all" | "pending" | "approved" | "rejected">("all");
@@ -500,6 +500,14 @@ export default function AdminPatientsPage() {
     setActionError(null);
     try { await rejectPatient(id); } catch (e: any) {
       setActionError(e?.response?.data?.detail || "Failed to reject patient");
+    } finally { setProcessingId(null); }
+  }
+
+  async function handleToggleActive(patient: AdminPatient) {
+    setProcessingId(patient.id);
+    setActionError(null);
+    try { await togglePatientActive(patient.id, !patient.is_active); } catch (e: any) {
+      setActionError(e?.response?.data?.detail || "Failed to update patient status");
     } finally { setProcessingId(null); }
   }
 
@@ -703,6 +711,18 @@ export default function AdminPatientsPage() {
                           title="Edit"
                         >
                           <Edit2 className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleToggleActive(patient)}
+                          disabled={processingId === patient.id}
+                          title={patient.is_active === false ? "Reactivate" : "Deactivate"}
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            patient.is_active === false
+                              ? "text-green-500 hover:text-green-700 hover:bg-green-50"
+                              : "text-amber-500 hover:text-amber-700 hover:bg-amber-50"
+                          }`}
+                        >
+                          {patient.is_active === false ? <Power className="h-4 w-4" /> : <PowerOff className="h-4 w-4" />}
                         </button>
                         <button
                           onClick={() => setDeleteTarget(patient)}

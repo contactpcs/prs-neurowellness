@@ -3,8 +3,11 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/hooks";
+import { useAppDispatch } from "@/store/hooks";
 import { ROUTES, STORAGE_KEYS } from "@/lib/constants";
 import { clearSessionAndSignalLogout, isTokenExpired } from "@/lib/api/client";
+import { openEventStream } from "@/lib/sse";
+import { notificationReceived } from "@/store/slices/notificationsSlice";
 
 // Pages that don't need a session — a stale/expired token cleanup should
 // never force-navigate someone away from these (e.g. mid self-registration
@@ -24,10 +27,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { user, isRestoring, restoreSession } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const dispatch = useAppDispatch();
 
   useEffect(() => {
     restoreSession();
   }, [restoreSession]);
+
+  // One SSE connection per logged-in session (Architecture Section 25.1) —
+  // opened here rather than per-page so it survives navigation and there's
+  // never more than one. Appointment-related pages listen for the
+  // "sse:appointment" window event this dispatches to refetch their own
+  // list; everything else just needs the notification bell to update,
+  // which the Redux dispatch below handles directly.
+  useEffect(() => {
+    if (isRestoring || !user) return;
+    const token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    if (!token) return;
+    const source = openEventStream(token, (msg) => {
+      dispatch(notificationReceived(msg));
+      // Generic fan-out for any live count that needs to refresh (sidebar nav
+      // badges) — every message type, not just appointment-specific ones.
+      window.dispatchEvent(new CustomEvent("sse:notification", { detail: msg }));
+      if (msg.type === "appointment") {
+        window.dispatchEvent(new CustomEvent("sse:appointment", { detail: msg }));
+      }
+    });
+    return () => source.close();
+  }, [isRestoring, user, dispatch]);
 
   // Consent/deactivation gate on every page load, not just fresh logins —
   // an inactive staff/receptionist-registered-patient account that

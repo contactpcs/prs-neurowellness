@@ -153,7 +153,7 @@ function TodaySummary({ appointments }: { appointments: Appointment[] }) {
 
 export default function DoctorAppointmentsPage() {
   const { user } = useAuth();
-  const doctorId = (user as any)?.id ?? "";
+  const doctorId = (user as any)?.doctor_id ?? "";
 
   const today      = useMemo(() => new Date(), []);
   const todayStr   = useMemo(() => toDateStr(today), [today]);
@@ -197,6 +197,15 @@ export default function DoctorAppointmentsPage() {
   }, [doctorId]);
 
   useEffect(() => { fetchData(weekStart); }, [weekStart, fetchData]);
+
+  // Live update — a booking/cancellation/reschedule anywhere pushes here via
+  // SSE (see AuthProvider); refetch this week's view instead of waiting for
+  // the next navigation/poll.
+  useEffect(() => {
+    const onAppointmentEvent = () => fetchData(weekStart);
+    window.addEventListener("sse:appointment", onAppointmentEvent);
+    return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
+  }, [weekStart, fetchData]);
 
   const apptByDate = useMemo(() => {
     const map: Record<string, Appointment[]> = {};

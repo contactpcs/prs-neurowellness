@@ -85,6 +85,22 @@ const notificationsSlice = createSlice({
       state.loadedAt = null;
       state.status = "idle";
     },
+    // Pushed live via SSE (lib/sse.ts) — prepends without a network round
+    // trip, per Architecture Section 25.1 ("frontend updates the relevant
+    // list/badge/toast without a refresh"). The stream's payload is a
+    // slice of a real notifications row, not the full Notification shape
+    // (no id/user_id/is_read/created_at from the server) — filled in here
+    // since nothing about it is server-authoritative anyway; the next real
+    // fetchNotifications() call replaces it with the true row.
+    notificationReceived: (state, action: { payload: { type: string; title: string; body: string | null; notification_id: string } }) => {
+      const msg = action.payload;
+      state.notifications.unshift({
+        id: msg.notification_id, user_id: "", title: msg.title, message: msg.body ?? "",
+        type: msg.type, is_read: false, created_at: new Date().toISOString(),
+      });
+      state.total += 1;
+      state.unreadCount += 1;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -114,7 +130,7 @@ const notificationsSlice = createSlice({
   },
 });
 
-export const { invalidateNotifications } = notificationsSlice.actions;
+export const { invalidateNotifications, notificationReceived } = notificationsSlice.actions;
 export default notificationsSlice.reducer;
 
 export const selectNotifications       = (s: RootState) => s.notifications.notifications;

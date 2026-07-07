@@ -50,6 +50,7 @@ function mapAppointment(a: Record<string, unknown>): Appointment {
     patient_name: a.patient_name ? String(a.patient_name) : undefined,
     doctor_id: String(a.doctor_id ?? ""),
     doctor_name: a.doctor_name ? String(a.doctor_name) : undefined,
+    doctor_public_id: a.doctor_public_id ? String(a.doctor_public_id) : null,
     appointment_date: date,
     start_time: start,
     end_time: end,

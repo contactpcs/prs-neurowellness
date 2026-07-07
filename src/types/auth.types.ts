@@ -72,10 +72,20 @@ export interface User {
   self_registered?: boolean;
   patient_id?: string;
   registration_status?: string;
+
+  // doctors.doctor_id (public ID, NOT this profile's own id) — role=='doctor'
+  // only. /doctors/{doctor_id}/... path params expect this, not profiles.id.
+  doctor_id?: string;
+  // Cognito-mode patient signup only — always true otherwise (local dev,
+  // staff, patients pre-dating this feature). Drives a "verify your other
+  // channel" prompt when a patient's only confirmed one of email/phone.
+  email_verified?: boolean;
+  phone_verified?: boolean;
 }
 
 export interface LoginCredentials {
-  email: string;
+  // Email or E.164 mobile number (patients may have signed up with either).
+  username: string;
   password: string;
 }
 

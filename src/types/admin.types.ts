@@ -205,6 +205,7 @@ export interface AdminPatient {
   mrn?: string;
   registered_at?: string;
   created_at?: string;
+  is_active?: boolean;
 }
 
 // ─── Notifications ────────────────────────────────────────────────

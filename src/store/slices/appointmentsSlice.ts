@@ -93,10 +93,22 @@ function upsert(state: AppointmentsState, appt: Appointment) {
   const splice = (arr: Appointment[]) => {
     const i = arr.findIndex((a) => a.appointment_id === appt.appointment_id);
     if (i >= 0) arr[i] = appt;
+    else arr.unshift(appt);
   };
   splice(state.list);
   splice(state.today);
   splice(state.upcoming);
+}
+
+function markStatus(state: AppointmentsState, appointmentId: string, status: Appointment["status"]) {
+  const patch = (arr: Appointment[]) => {
+    const i = arr.findIndex((a) => a.appointment_id === appointmentId);
+    if (i >= 0) arr[i] = { ...arr[i], status };
+  };
+  patch(state.list);
+  patch(state.today);
+  patch(state.upcoming);
+  if (state.detail[appointmentId]) state.detail[appointmentId] = { ...state.detail[appointmentId], status };
 }
 
 const MUTATION_FULFILLED = [
@@ -105,7 +117,6 @@ const MUTATION_FULFILLED = [
   startAppointment.fulfilled.type,
   completeAppointment.fulfilled.type,
   cancelAppointment.fulfilled.type,
-  rescheduleAppointment.fulfilled.type,
   markNoShow.fulfilled.type,
 ];
 
@@ -130,6 +141,16 @@ const appointmentsSlice = createSlice({
       .addCase(fetchTodayAppointments.rejected,  (s) => { s.todayStatus = "failed"; })
       .addCase(fetchUpcomingAppointments.fulfilled, (s, a) => { s.upcoming = a.payload; })
       .addCase(fetchAppointmentById.fulfilled, (s, a) => { upsert(s, a.payload); })
+      // reschedule() replaces the OLD appointment with a genuinely NEW row
+      // (different appointment_id) — a plain upsert can't find the new id
+      // in any existing array (findIndex misses, gets silently dropped) and
+      // never marks the old one 'rescheduled' locally, so the calendar kept
+      // showing the stale scheduled row until a full page reload re-fetched
+      // real server state. Do both explicitly instead of relying on upsert.
+      .addCase(rescheduleAppointment.fulfilled, (s, a) => {
+        markStatus(s, a.meta.arg.id, "rescheduled");
+        upsert(s, a.payload);
+      })
       .addMatcher(
         (action) => MUTATION_FULFILLED.includes(action.type),
         (state, action: PayloadAction<Appointment>) => { upsert(state, action.payload); },

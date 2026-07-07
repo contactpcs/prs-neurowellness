@@ -35,6 +35,8 @@ function normalizePatient(raw: Record<string, unknown>): PatientListItem {
     clinic_id: (raw.primary_clinic_id as string) ?? undefined,
     registered_at: (raw.registration_completed_at as string) ?? undefined,
     created_at: (raw.created_at as string) ?? undefined,
+    doctor_id: (raw.primary_doctor_id as string) ?? null,
+    doctor_name: (raw.doctor_name as string) ?? null,
   };
 }
 
@@ -124,8 +126,11 @@ export const staffService = {
     };
   },
 
-  // NOT AVAILABLE — no reassign-doctor endpoint found for the receptionist/staff role.
-  async allocatePatient(_patientId: string, _doctorId: string): Promise<unknown> {
-    throw new Error("Reassigning a patient's doctor isn't available yet.");
+  /** Real: PATCH /patients/{id}/allocate-doctor {doctor_id} — ends any
+   * existing active doctor_patient_assignments row and creates a new one,
+   * same clinic only (backend rejects a doctor at a different clinic). */
+  async allocatePatient(patientId: string, doctorId: string): Promise<PatientDetail> {
+    const { data } = await apiClient.patch(ENDPOINTS.PATIENTS.ALLOCATE_DOCTOR(patientId), { doctor_id: doctorId });
+    return normalizePatient(data) as PatientDetail;
   },
 };

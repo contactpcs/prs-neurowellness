@@ -20,6 +20,8 @@ export interface PatientListItem {
   clinic_id?: string;
   clinic_name?: string;
   clinic_city?: string;
+  doctor_id?: string | null;
+  doctor_name?: string | null;
   last_prs?: {
     disease_id?: string;
     disease_name?: string;
@@ -260,6 +262,7 @@ export interface Appointment {
   patient_name?: string;
   doctor_id: string;
   doctor_name?: string;
+  doctor_public_id?: string | null;
   appointment_date: string;
   start_time: string;
   end_time: string;
@@ -290,6 +293,7 @@ export interface AppointmentRequest {
   clinic_id: string;
   patient_name?: string;
   doctor_name?: string;
+  doctor_public_id?: string | null;
   request_type?: "new" | "reschedule" | "followup_cycle";
   parent_appointment_id?: string | null;
   approved_appointment_id?: string | null;

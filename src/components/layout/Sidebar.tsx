@@ -4,7 +4,7 @@ import { memo, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
-import { useAuth } from "@/lib/hooks";
+import { useAuth, useSidebarBadges, type BadgeKey } from "@/lib/hooks";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { authService } from "@/lib/api/services";
 import {
@@ -14,7 +14,14 @@ import {
   ShoppingBag, Receipt,
 } from "lucide-react";
 
-const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React.ElementType }>> = {
+interface NavItem {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  badge?: BadgeKey;
+}
+
+const NAV_ITEMS: Record<string, NavItem[]> = {
   patient: [
     { label: "Dashboard",    href: "/patient/dashboard",    icon: LayoutDashboard },
     { label: "Appointments", href: "/patient/appointments", icon: CalendarDays },
@@ -23,23 +30,24 @@ const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React
   ],
   doctor: [
     { label: "Dashboard",    href: "/doctor/dashboard",    icon: LayoutDashboard },
-    { label: "Appointments", href: "/doctor/appointments", icon: CalendarDays },
+    { label: "Appointments", href: "/doctor/appointments", icon: CalendarDays, badge: "doctorPendingAppointments" },
     { label: "Patients",     href: "/doctor/patients",     icon: Users },
     { label: "Schedule",     href: "/doctor/schedule",     icon: Calendar },
     { label: "Profile",      href: "/doctor/profile",      icon: UserCircle },
   ],
   clinical_assistant: [
     { label: "Dashboard",   href: "/clinical-assistant/dashboard",            icon: LayoutDashboard },
-    { label: "Appt. Reqs.", href: "/clinical-assistant/appointment-requests", icon: CalendarDays },
+    { label: "Appt. Reqs.", href: "/clinical-assistant/appointment-requests", icon: CalendarDays, badge: "appointmentRequests" },
     { label: "All Patients",href: "/clinical-assistant/patients",             icon: Users },
-    { label: "Approvals",   href: "/clinical-assistant/approvals",            icon: ClipboardCheck },
+    { label: "Approvals",   href: "/clinical-assistant/approvals",            icon: ClipboardCheck, badge: "patientApprovals" },
     { label: "Profile",     href: "/clinical-assistant/profile",              icon: UserCircle },
   ],
   receptionist: [
     { label: "Dashboard",   href: "/receptionist/dashboard",            icon: LayoutDashboard },
-    { label: "Appt. Reqs.", href: "/receptionist/appointment-requests", icon: CalendarDays },
+    { label: "Appt. Reqs.", href: "/receptionist/appointment-requests", icon: CalendarDays, badge: "appointmentRequests" },
+    { label: "Appointments",href: "/receptionist/appointments",         icon: Calendar },
     { label: "All Patients",href: "/receptionist/patients",             icon: Users },
-    { label: "Approvals",   href: "/receptionist/approvals",            icon: ClipboardCheck },
+    { label: "Approvals",   href: "/receptionist/approvals",            icon: ClipboardCheck, badge: "patientApprovals" },
     { label: "Profile",     href: "/receptionist/profile",              icon: UserCircle },
   ],
   platform_admin: [
@@ -50,7 +58,7 @@ const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React
     { label: "Clinic Admins",   href: "/admin/admins/clinical", icon: ShieldCheck },
     { label: "Regions",         href: "/admin/regions",         icon: MapPin },
     { label: "Clinics",         href: "/admin/clinics",         icon: Building2 },
-    { label: "Clinic Requests", href: "/admin/clinic-requests", icon: ClipboardList },
+    { label: "Clinic Requests", href: "/admin/clinic-requests", icon: ClipboardList, badge: "clinicRequests" },
     { label: "Settings",        href: "/admin/settings",        icon: Settings },
   ],
   regional_admin: [
@@ -60,7 +68,7 @@ const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React
     { label: "Staff",           href: "/regional-admin/staff",           icon: UserCog },
     { label: "Patients",        href: "/regional-admin/patients",        icon: Users },
     { label: "Appointments",    href: "/regional-admin/appointments",    icon: CalendarDays },
-    { label: "Staff Approvals", href: "/regional-admin/staff-approvals", icon: ClipboardCheck },
+    { label: "Staff Approvals", href: "/regional-admin/staff-approvals", icon: ClipboardCheck, badge: "staffApprovals" },
   ],
   clinic_admin: [
     { label: "Dashboard",      href: "/clinic-admin/dashboard",      icon: LayoutDashboard },
@@ -68,7 +76,7 @@ const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React
     { label: "Staff",          href: "/clinic-admin/staff",          icon: UserCog },
     { label: "Patients",       href: "/clinic-admin/patients",       icon: Users },
     { label: "Appointments",   href: "/clinic-admin/appointments",   icon: CalendarDays },
-    { label: "Staff Requests", href: "/clinic-admin/staff-requests", icon: ClipboardList },
+    { label: "Staff Requests", href: "/clinic-admin/staff-requests", icon: ClipboardList, badge: "staffRequests" },
     { label: "Store Orders",   href: "/clinic-admin/store-orders",   icon: ShoppingBag },
     { label: "Payments",       href: "/clinic-admin/payments",       icon: Receipt },
   ],
@@ -103,6 +111,9 @@ function SidebarInner() {
   const items = NAV_ITEMS[role] || NAV_ITEMS.patient;
   const initials = [user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join("").toUpperCase();
   const roleName = isSuperAdmin ? "Admin" : isRegionalAdmin ? "Regional Admin" : isClinicAdmin ? "Clinic Admin" : role.replace(/_/g, " ");
+
+  const badgeKeys = items.map((i) => i.badge).filter((b): b is BadgeKey => !!b);
+  const badgeCounts = useSidebarBadges(badgeKeys);
 
   useEffect(() => {
     if (/\/patients\/[^/]+/.test(pathname)) {
@@ -180,22 +191,37 @@ function SidebarInner() {
       <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-0.5">
         {items.map((item) => {
           const isActive = pathname.startsWith(item.href);
+          const count = item.badge ? badgeCounts[item.badge] ?? 0 : 0;
           return (
             <Link
               key={item.href}
               href={item.href}
-              title={!expanded ? item.label : undefined}
+              title={!expanded ? (count > 0 ? `${item.label} (${count})` : item.label) : undefined}
               onClick={() => setIsMobileOpen(false)}
               className={cn(
-                "flex items-center rounded-lg text-sm font-medium transition-colors border-l-2",
+                "relative flex items-center rounded-lg text-sm font-medium transition-colors border-l-2",
                 expanded ? "gap-3 px-3 py-2.5" : "justify-center px-2 py-2.5",
                 isActive
                   ? "bg-white/15 text-white border-white"
                   : "text-blue-100 hover:bg-white/10 hover:text-white border-transparent",
               )}
             >
-              <item.icon className={cn("h-4.5 w-4.5 flex-shrink-0", isActive ? "text-white" : "text-blue-300")} />
-              {expanded && <span>{item.label}</span>}
+              <span className="relative flex-shrink-0">
+                <item.icon className={cn("h-4.5 w-4.5", isActive ? "text-white" : "text-blue-300")} />
+                {!expanded && count > 0 && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 ring-2 ring-[#00A1E4]" />
+                )}
+              </span>
+              {expanded && (
+                <span className="flex-1 flex items-center justify-between gap-2">
+                  {item.label}
+                  {count > 0 && (
+                    <span className="flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full bg-red-500 text-white text-[11px] font-semibold leading-none">
+                      {count > 99 ? "99+" : count}
+                    </span>
+                  )}
+                </span>
+              )}
             </Link>
           );
         })}

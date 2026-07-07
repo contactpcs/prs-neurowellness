@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ShieldCheck, RefreshCw, Mail, Phone, Building2 } from "lucide-react";
+import { ShieldCheck, RefreshCw, Mail, Phone, Building2, Power, PowerOff, X } from "lucide-react";
 import { useAdminAccounts } from "@/lib/hooks";
 import { Card, CardContent, Skeleton, Modal, DetailFieldList } from "@/components/ui";
 import type { AdminAccount } from "@/types/admin.types";
@@ -30,15 +30,29 @@ export default function RegionalAdminClinicAdminsPage() {
   // Backend clamps this list to the caller's own region regardless of any
   // region_id passed — see admin/router.py::list_admins — so this is
   // already scoped, no client-side filtering needed.
-  const { admins, isLoading, error, fetch } = useAdminAccounts();
+  const { admins, isLoading, error, fetch, updateAdmin } = useAdminAccounts();
   const [viewAdmin, setViewAdmin] = useState<AdminAccount | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => { fetch({ admin_type: "clinic_admin" }); }, [fetch]);
 
   async function handleRefresh() {
     setRefreshing(true);
     try { await fetch({ admin_type: "clinic_admin" }); } finally { setRefreshing(false); }
+  }
+
+  async function handleToggle(admin: AdminAccount) {
+    setTogglingId(admin.admin_id);
+    setActionError(null);
+    try {
+      await updateAdmin(admin.admin_id, { is_active: !admin.is_active });
+    } catch (e: any) {
+      setActionError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Failed to update admin status");
+    } finally {
+      setTogglingId(null);
+    }
   }
 
   const initials = (a: AdminAccount) => [a.first_name?.[0], a.last_name?.[0]].filter(Boolean).join("").toUpperCase() || "?";
@@ -62,8 +76,11 @@ export default function RegionalAdminClinicAdminsPage() {
         </button>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>
+      {(error || actionError) && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-center justify-between">
+          <span>{error || actionError}</span>
+          <button onClick={() => setActionError(null)}><X className="h-4 w-4" /></button>
+        </div>
       )}
 
       <Card>
@@ -80,6 +97,7 @@ export default function RegionalAdminClinicAdminsPage() {
                   <th className="text-left px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">Admin</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">Clinic</th>
                   <th className="text-center px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">Onboarding</th>
+                  <th className="text-center px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
@@ -114,6 +132,20 @@ export default function RegionalAdminClinicAdminsPage() {
                       }`}>
                         {admin.is_active ? "Active" : "Pending Consent"}
                       </span>
+                    </td>
+                    <td className="px-4 py-3.5 text-center">
+                      <button
+                        onClick={() => handleToggle(admin)}
+                        disabled={togglingId === admin.admin_id}
+                        title={admin.is_active ? "Deactivate" : "Reactivate"}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          admin.is_active
+                            ? "text-amber-500 hover:text-amber-700 hover:bg-amber-50"
+                            : "text-green-500 hover:text-green-700 hover:bg-green-50"
+                        }`}
+                      >
+                        {admin.is_active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
+                      </button>
                     </td>
                   </tr>
                 ))}

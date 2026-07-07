@@ -47,6 +47,7 @@ function fmtDate(d?: string | null) {
 interface ApproveModalState {
   id: string;
   doctorId: string;
+  doctorName: string;
   patientName: string;
   preferredDates: string[];
 }
@@ -62,7 +63,7 @@ export function AppointmentRequestsPanel() {
     approve, reject,
   } = usePendingRequests();
 
-  const { requests: allRequests, isLoading: allLoading } = useAppointmentRequests();
+  const { requests: allRequests, isLoading: allLoading, refresh: refreshAll } = useAppointmentRequests();
 
   const [tab, setTab] = useState<"pending" | "all">("pending");
   const [approveModal, setApproveModal] = useState<ApproveModalState | null>(null);
@@ -85,6 +86,14 @@ export function AppointmentRequestsPanel() {
     setToast({ msg, ok });
     setTimeout(() => setToast(null), 3500);
   };
+
+  // Live update — a new request submitted elsewhere (or one this staff
+  // member just decided from another tab) pushes here via SSE.
+  useEffect(() => {
+    const onAppointmentEvent = () => { refreshPending(); refreshAll(); };
+    window.addEventListener("sse:appointment", onAppointmentEvent);
+    return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
+  }, [refreshPending, refreshAll]);
 
   useEffect(() => {
     const date = approveForm.appointment_date;
@@ -168,7 +177,10 @@ export function AppointmentRequestsPanel() {
   };
 
   const openApprove = (req: AppointmentRequest) => {
-    if (!req.doctor_id) {
+    // req.doctor_id is profiles.id (identity FK) — the availability endpoint
+    // keys on doctors.doctor_id (public ID) instead, so doctor_public_id
+    // (joined server-side) is what the slots fetch below must use.
+    if (!req.doctor_public_id) {
       showToast("This request has no doctor assigned yet — assign one before approving.", false);
       return;
     }
@@ -183,7 +195,8 @@ export function AppointmentRequestsPanel() {
     });
     setApproveModal({
       id: req.request_id,
-      doctorId: req.doctor_id,
+      doctorId: req.doctor_public_id,
+      doctorName: req.doctor_name ?? "Unassigned",
       patientName: req.patient_name ?? "Patient",
       preferredDates: dates,
     });
@@ -269,7 +282,8 @@ export function AppointmentRequestsPanel() {
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
             <h3 className="text-lg font-semibold text-neutral-900">Confirm Appointment</h3>
             <p className="text-sm text-neutral-500">
-              Scheduling for <span className="font-medium text-neutral-800">{approveModal.patientName}</span>
+              Scheduling for <span className="font-medium text-neutral-800">{approveModal.patientName}</span>{" "}
+              with <span className="font-medium text-neutral-800">Dr. {approveModal.doctorName}</span>
             </p>
 
             {approveModal.preferredDates.length > 0 && (
@@ -486,6 +500,12 @@ function RequestRow({
               {req.urgency}
             </span>
           </div>
+          <p className="text-xs text-neutral-500 mt-0.5">
+            Doctor:{" "}
+            <span className={req.doctor_name ? "font-medium text-neutral-700" : "text-amber-600"}>
+              {req.doctor_name ? `Dr. ${req.doctor_name}` : "Unassigned"}
+            </span>
+          </p>
           <p className="text-sm text-neutral-600 mt-1 line-clamp-2">{req.patient_complaint}</p>
           <div className="flex items-center gap-3 mt-1.5 text-xs text-neutral-400">
             <span className="flex items-center gap-1">

@@ -1,10 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Users, ClipboardCheck, UserPlus, ArrowRight, Clock, CheckCircle } from "lucide-react";
+import { Users, ClipboardCheck, UserPlus, ArrowRight, Clock, CheckCircle, Stethoscope } from "lucide-react";
 import { useAuth, useStaffDashboard, useStaffPendingPatients, useStaffPatients } from "@/lib/hooks";
 import { PageLoader, Card, CardContent, Button } from "@/components/ui";
-import type { PatientListItem } from "@/types/domain.types";
+import { staffService } from "@/lib/api/services/staff.service";
+import { DoctorWeekCalendar } from "@/components/appointments/DoctorWeekCalendar";
+import type { PatientListItem, DoctorListItem } from "@/types/domain.types";
 
 function isSameDay(dateStr?: string): boolean {
   if (!dateStr) return false;
@@ -18,6 +21,17 @@ export default function ReceptionistDashboard() {
   const { dashboard, isLoading: dashLoading } = useStaffDashboard();
   const { pending, isLoading: pendingLoading } = useStaffPendingPatients();
   const { patients, isLoading: patientsLoading } = useStaffPatients();
+
+  const [doctors, setDoctors] = useState<DoctorListItem[]>([]);
+  const [selectedDoctorId, setSelectedDoctorId] = useState("");
+  const [calendarView, setCalendarView] = useState<"single" | "all">("single");
+
+  useEffect(() => {
+    staffService.getDoctors().then(({ doctors: d }) => {
+      setDoctors(d);
+      setSelectedDoctorId((prev) => prev || d[0]?.id || "");
+    }).catch(() => {});
+  }, []);
 
   // Dashboard stats come from the server, or derive client-side from cached lists.
   const totalPatients = dashboard?.patient_count ?? patients.length;
@@ -70,6 +84,64 @@ export default function ReceptionistDashboard() {
           </Link>
         ))}
       </div>
+
+      {/* Doctor calendar — same weekly slot-grid as the doctor's own
+          schedule page. "Single" switches across one doctor at a time;
+          "All" stacks every doctor's calendar at this clinic at once. */}
+      <section>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide flex items-center gap-1.5">
+            <Stethoscope className="h-4 w-4" />Doctor Calendar
+          </h2>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1">
+              <button
+                onClick={() => setCalendarView("single")}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  calendarView === "single" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"
+                }`}
+              >
+                Single Doctor
+              </button>
+              <button
+                onClick={() => setCalendarView("all")}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  calendarView === "all" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"
+                }`}
+              >
+                All Doctors
+              </button>
+            </div>
+            {calendarView === "single" && (
+              <select
+                value={selectedDoctorId}
+                onChange={(e) => setSelectedDoctorId(e.target.value)}
+                className="px-3 py-1.5 text-sm border border-neutral-200 rounded-lg bg-white"
+              >
+                {doctors.length === 0 && <option value="">No doctors at this clinic</option>}
+                {doctors.map((d) => (
+                  <option key={d.id} value={d.id}>Dr. {d.first_name} {d.last_name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
+
+        {calendarView === "single" ? (
+          <DoctorWeekCalendar doctorId={selectedDoctorId} />
+        ) : doctors.length === 0 ? (
+          <Card><CardContent className="py-10 text-center text-sm text-neutral-500">No doctors at this clinic</CardContent></Card>
+        ) : (
+          <div className="space-y-6">
+            {doctors.map((d) => (
+              <div key={d.id}>
+                <p className="text-sm font-semibold text-neutral-800 mb-2">Dr. {d.first_name} {d.last_name}</p>
+                <DoctorWeekCalendar doctorId={d.id} />
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Pending registrations preview */}
       <section>

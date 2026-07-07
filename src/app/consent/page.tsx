@@ -100,6 +100,20 @@ export default function ConsentPage() {
     return <div className="min-h-screen flex items-center justify-center text-neutral-400 text-sm">Loading…</div>;
   }
 
+  // The form itself disappears the instant Sign & Continue is clicked —
+  // no lingering "Signing…" button state while the request is in flight.
+  // On success proceedPastConsent() navigates away from here entirely; on
+  // failure `signing` flips back to false (see handleSign's finally) and
+  // the form below reappears with the error banner.
+  if (signing) {
+    return (
+      <div className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center gap-3">
+        <div className="w-8 h-8 border-2 border-neutral-200 border-t-indigo-600 rounded-full animate-spin" />
+        <p className="text-sm text-neutral-500">Signing your consent…</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-6">
       <div className="w-full max-w-lg bg-white rounded-2xl shadow-card border border-neutral-200/80 p-8">
@@ -133,8 +147,8 @@ export default function ConsentPage() {
 
         <div className="flex justify-between items-center">
           <button onClick={logout} className="text-xs text-neutral-400 hover:text-neutral-600">Log out</button>
-          <Button disabled={!agreed || !record || signing} onClick={handleSign}>
-            {signing ? "Signing…" : "Sign & Continue"}
+          <Button disabled={!agreed || !record} onClick={handleSign}>
+            Sign & Continue
           </Button>
         </div>
       </div>

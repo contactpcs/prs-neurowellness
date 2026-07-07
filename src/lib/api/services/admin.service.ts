@@ -73,7 +73,7 @@ export const adminService = {
     return Array.isArray(data) ? data : [];
   },
 
-  async updateAdmin(id: string, payload: { first_name?: string; last_name?: string; email?: string; phone?: string }): Promise<AdminAccount> {
+  async updateAdmin(id: string, payload: { first_name?: string; last_name?: string; email?: string; phone?: string; is_active?: boolean }): Promise<AdminAccount> {
     const { data } = await apiClient.patch(`/admins/${id}`, payload);
     return data;
   },
@@ -354,6 +354,7 @@ export const adminService = {
       mrn: (p.mrn as string) ?? undefined,
       registered_at: (p.registration_completed_at as string) ?? undefined,
       created_at: (p.created_at as string) ?? undefined,
+      is_active: (p.profile_is_active as boolean) ?? true,
       };
     });
     return { patients, total: patients.length };
@@ -434,7 +435,7 @@ export const adminService = {
     };
   },
 
-  async updatePatient(id: string, payload: { first_name?: string; last_name?: string; email?: string; phone?: string; gender?: string; dob?: string; address?: string; emergency_contact_name?: string; emergency_contact_phone?: string }): Promise<AdminPatient> {
+  async updatePatient(id: string, payload: { first_name?: string; last_name?: string; email?: string; phone?: string; gender?: string; dob?: string; address?: string; emergency_contact_name?: string; emergency_contact_phone?: string; is_active?: boolean }): Promise<AdminPatient> {
     const { data } = await apiClient.patch(`/patients/${id}`, payload);
     return {
       id: String(data.patient_id ?? id), profile_id: data.profile_id ?? undefined,
@@ -443,6 +444,7 @@ export const adminService = {
       clinic_id: data.primary_clinic_id ?? undefined, approval_status: "approved",
       registration_status: data.registration_status ?? undefined,
       mrn: data.mrn ?? undefined, created_at: data.created_at ?? undefined,
+      is_active: data.profile_is_active ?? true,
     };
   },
 

@@ -6,7 +6,7 @@ import { Card, CardContent, Skeleton } from "@/components/ui";
 import { adminService } from "@/lib/api/services/admin.service";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { doctorsService } from "@/lib/api/services/doctors.service";
-import type { AdminStaffMember, AdminPatient } from "@/types/admin.types";
+import type { AdminStaffMember } from "@/types/admin.types";
 import type { Appointment } from "@/types/domain.types";
 
 const APPT_STATUS_STYLES: Record<string, string> = {
@@ -57,7 +57,6 @@ function AppointmentsSkeleton() {
 export function AppointmentsSection({ clinicId }: { clinicId: string }) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [staff, setStaff] = useState<AdminStaffMember[]>([]);
-  const [patients, setPatients] = useState<AdminPatient[]>([]);
   const [doctorSchedules, setDoctorSchedules] = useState<Record<string, DoctorSchedule[]>>({});
   const [doctorOverrides, setDoctorOverrides] = useState<Record<string, ScheduleOverride[]>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -70,14 +69,12 @@ export function AppointmentsSection({ clinicId }: { clinicId: string }) {
   async function load() {
     setError(null);
     try {
-      const [appointmentsRes, staffRes, patientsRes] = await Promise.all([
+      const [appointmentsRes, staffRes] = await Promise.all([
         appointmentsService.list({ clinic_id: clinicId }),
         adminService.getStaff({ clinic_id: clinicId }),
-        adminService.getPatients({ clinic_id: clinicId }),
       ]);
       setAppointments(appointmentsRes.appointments);
       setStaff(staffRes.staff);
-      setPatients(patientsRes.patients);
 
       const doctors = staffRes.staff.filter((s) => s.role === "doctor");
       const [scheduleResults, overrideResults] = await Promise.all([
@@ -99,6 +96,13 @@ export function AppointmentsSection({ clinicId }: { clinicId: string }) {
 
   useEffect(() => { setIsLoading(true); load().finally(() => setIsLoading(false)); }, [clinicId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Live update — any appointment/request change at this clinic pushes here via SSE.
+  useEffect(() => {
+    const onAppointmentEvent = () => load();
+    window.addEventListener("sse:appointment", onAppointmentEvent);
+    return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
+  }, [clinicId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function handleRefresh() {
     setRefreshing(true);
     try { await load(); } finally { setRefreshing(false); }
@@ -106,8 +110,6 @@ export function AppointmentsSection({ clinicId }: { clinicId: string }) {
 
   if (isLoading) return <AppointmentsSkeleton />;
 
-  const patientName = (id: string) => { const p = patients.find((x) => x.id === id); return p ? `${p.first_name} ${p.last_name}` : id; };
-  const doctorName = (id: string) => { const s = staff.find((x) => x.id === id); return s ? `${s.first_name} ${s.last_name}` : id; };
   const doctors = staff.filter((s) => s.role === "doctor");
 
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -124,8 +126,7 @@ export function AppointmentsSection({ clinicId }: { clinicId: string }) {
     .filter((a) => doctorFilter === "all" || a.doctor_id === doctorFilter)
     .filter((a) => {
       if (!search) return true;
-      const name = patientName(a.patient_id).toLowerCase();
-      return name.includes(search.toLowerCase());
+      return (a.patient_name ?? "").toLowerCase().includes(search.toLowerCase());
     })
     .sort((a, b) => {
       const dateCmp = tab === "past" ? b.appointment_date.localeCompare(a.appointment_date) : a.appointment_date.localeCompare(b.appointment_date);
@@ -173,7 +174,8 @@ export function AppointmentsSection({ clinicId }: { clinicId: string }) {
         </div>
         <select value={doctorFilter} onChange={(e) => setDoctorFilter(e.target.value)} className="px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white">
           <option value="all">All Doctors</option>
-          {doctors.map((d) => <option key={d.id} value={d.id}>{d.first_name} {d.last_name}</option>)}
+          {/* appointments.doctor_id is profiles.id, not doctors.doctor_id — filter by profile_id to match. */}
+          {doctors.map((d) => <option key={d.id} value={d.profile_id ?? d.id}>{d.first_name} {d.last_name}</option>)}
         </select>
       </div>
 
@@ -188,8 +190,8 @@ export function AppointmentsSection({ clinicId }: { clinicId: string }) {
             {filtered.map((a) => (
               <div key={a.appointment_id} className="flex items-center justify-between px-6 py-4">
                 <div>
-                  <p className="text-sm font-medium text-neutral-900">{patientName(a.patient_id)}</p>
-                  <p className="text-xs text-neutral-400 mt-0.5">{a.appointment_date} · {timeLabel(a.start_time)}–{timeLabel(a.end_time)} · Dr. {doctorName(a.doctor_id)}</p>
+                  <p className="text-sm font-medium text-neutral-900">{a.patient_name ?? "Unknown patient"}</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">{a.appointment_date} · {timeLabel(a.start_time)}–{timeLabel(a.end_time)} · Dr. {a.doctor_name ?? "Unknown"}</p>
                   <p className="text-xs text-neutral-400 capitalize">{a.appointment_type.replace(/_/g, " ")}</p>
                 </div>
                 <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize flex-shrink-0 ${APPT_STATUS_STYLES[a.status] ?? "bg-neutral-100 text-neutral-600"}`}>
