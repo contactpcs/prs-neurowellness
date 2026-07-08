@@ -10,6 +10,8 @@ import { usersService } from "@/lib/api/services/users.service";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
 import { fetchMyDoctor, selectMyDoctor } from "@/store/slices/patientsSlice";
+import { useAuth } from "@/lib/hooks";
+import { computeProfileCompletion } from "@/lib/profileCompletion";
 
 // ─── helpers ──────────────────────────────────────────────────────
 
@@ -102,6 +104,7 @@ const TABS: { id: TabId; label: string; Icon: React.ElementType }[] = [
 export default function PatientProfilePage() {
   const dispatch   = useAppDispatch();
   const myDoctor   = useAppSelector(selectMyDoctor);
+  const { user }   = useAuth();
 
   const [profileRaw,  setProfileRaw]  = useState<Record<string, unknown> | null>(null);
   const [fetchError,  setFetchError]  = useState<string | null>(null);
@@ -214,6 +217,8 @@ export default function PatientProfilePage() {
   const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
   const email       = (profileRaw?.email as string) ?? "";
   const phone       = (profileRaw?.phone as string) ?? "";
+  const { percent: completionPct, items: completionItems } = computeProfileCompletion(user);
+  const missingItems = completionItems.filter((i) => !i.done);
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">
@@ -225,9 +230,27 @@ export default function PatientProfilePage() {
           </div>
           <div className="min-w-0">
             <h1 className="text-2xl font-bold text-neutral-900 leading-tight truncate">{form.full_name || "—"}</h1>
-            
+
           </div>
         </div>
+
+        {completionPct < 100 && (
+          <div className="mt-5">
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-xs font-semibold text-neutral-500">Profile completion</p>
+              <span className="text-xs font-bold" style={{ color: BRAND_PRIMARY }}>{completionPct}%</span>
+            </div>
+            <div className="h-2 rounded-full bg-white/70 overflow-hidden">
+              <div className="h-full rounded-full transition-all" style={{ width: `${completionPct}%`, background: BRAND }} />
+            </div>
+            {missingItems.length > 0 && (
+              <p className="text-[11px] text-neutral-500 mt-1.5">
+                Missing: {missingItems.map((i) => i.label).join(", ")}
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 mt-6 pt-5 border-t border-blue-100">
           <div>
             <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-1">Country</p>

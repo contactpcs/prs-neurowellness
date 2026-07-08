@@ -17,6 +17,7 @@ import {
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { PatientDashboardSkeleton } from "@/components/ui";
 import { VerifyChannelBanner } from "@/components/auth/VerifyChannelBanner";
+import { ProfileCompletionBar } from "@/components/patient/ProfileCompletionBar";
 import type {
   AssessmentPermission,
   AssessmentInstance,
@@ -120,6 +121,7 @@ function PatientDashboard() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-neutral-900">
       <VerifyChannelBanner />
+      <ProfileCompletionBar />
       {/* Header */}
       <div className="pb-3 flex items-center justify-between gap-2">
         <div className="min-w-0">
