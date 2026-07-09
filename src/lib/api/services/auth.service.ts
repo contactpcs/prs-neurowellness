@@ -84,9 +84,11 @@ export const authService = {
       phone: formData.phone,
       gender: formData.gender,
       dob: formData.date_of_birth,
+      address: formData.address,
       city: formData.city,
       state: formData.state,
       country: formData.country,
+      pincode: formData.pincode,
       primary_clinic_id: formData.clinic_id,
     });
     const access_token: string = data.access_token;
@@ -130,8 +132,8 @@ export const authService = {
   /** Step 1 — starts Cognito's SignUp for the chosen channel; auto-sends
    * the OTP. Nothing written to our DB yet. */
   async patientSignupStart(data: {
-    first_name: string; last_name: string; dob?: string; gender?: string;
-    city?: string; state?: string; country?: string; primary_clinic_id: string;
+    first_name: string; last_name: string; dob?: string; gender?: string; address?: string;
+    city?: string; state?: string; country?: string; pincode?: string; primary_clinic_id: string;
     method: "email" | "mobile"; contact: string;
   }): Promise<void> {
     await apiClient.post(ENDPOINTS.AUTH.SIGNUP_START, data);
@@ -149,8 +151,8 @@ export const authService = {
   /** Step 3 — sets the real password, creates the profiles/patients row,
    * auto-logs in. Same fields as Start (stateless wizard) plus password. */
   async patientSignupComplete(data: {
-    first_name: string; last_name: string; dob?: string; gender?: string;
-    city?: string; state?: string; country?: string; primary_clinic_id: string;
+    first_name: string; last_name: string; dob?: string; gender?: string; address?: string;
+    city?: string; state?: string; country?: string; pincode?: string; primary_clinic_id: string;
     method: "email" | "mobile"; contact: string; password: string; confirm_password: string;
   }): Promise<AuthResponse> {
     const { data: res } = await apiClient.post(ENDPOINTS.AUTH.SIGNUP_COMPLETE, data);

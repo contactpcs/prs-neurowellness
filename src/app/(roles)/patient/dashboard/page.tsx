@@ -17,7 +17,7 @@ import {
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { PatientDashboardSkeleton } from "@/components/ui";
 import { VerifyChannelBanner } from "@/components/auth/VerifyChannelBanner";
-import { ProfileCompletionBar } from "@/components/patient/ProfileCompletionBar";
+import { computeProfileCompletion } from "@/lib/profileCompletion";
 import type {
   AssessmentPermission,
   AssessmentInstance,
@@ -102,13 +102,8 @@ function PatientDashboard() {
   const completedAppts = appointments.filter((a) => a.status === "completed").length;
   const totalPlannedAppts = appointments.length;
 
-  const profileFields = [
-    profile?.full_name, profile?.date_of_birth, profile?.gender, profile?.phone,
-    anamnesisRecord?.chief_complaint, anamnesisRecord?.current_medications,
-  ];
-  const filledFields = profileFields.filter(Boolean).length;
-  const profilePct = Math.round((filledFields / profileFields.length) * 100);
-  const remainingFields = profileFields.length - filledFields;
+  const { percent: profilePct, items: profileItems } = computeProfileCompletion(profile);
+  const remainingFields = profileItems.filter((i) => !i.done).length;
 
   const prsProgress =
     scoreInstances.length > 0 ? Math.round(scoreInstances[0].percentage ?? 0) : 0;
@@ -121,7 +116,6 @@ function PatientDashboard() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-neutral-900">
       <VerifyChannelBanner />
-      <ProfileCompletionBar />
       {/* Header */}
       <div className="pb-3 flex items-center justify-between gap-2">
         <div className="min-w-0">

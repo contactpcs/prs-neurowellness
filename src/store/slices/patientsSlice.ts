@@ -70,7 +70,7 @@ export const fetchPatientDashboard = createAsyncThunk<
 );
 
 export const fetchMyDoctor = createAsyncThunk<
-  MyDoctor,
+  MyDoctor | null,
   void,
   { state: RootState }
 >(

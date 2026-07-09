@@ -3,22 +3,21 @@ import { ENDPOINTS } from "../endpoints";
 import type { User } from "@/types/auth.types";
 
 export const usersService = {
-  // Real GET /auth/me returns {id,email,first_name,last_name,role,clinic_id,region_id} — role (singular) mapped to roles (array).
-  async getProfile(): Promise<User> {
-    const { data } = await apiClient.get(ENDPOINTS.USERS.PROFILE);
-    return {
-      id: data.id,
-      email: data.email,
-      first_name: data.first_name,
-      last_name: data.last_name,
-      roles: [data.role as User["roles"][number]],
-      permissions: [],
-      clinic_id: data.clinic_id ?? undefined,
-    };
+  // Patient self-profile — GET /auth/me only carries identity fields (no
+  // dob/address/city/etc), so this fetches the full patient record via
+  // GET /patients/{patient_id} instead (patient_id comes off the logged-in
+  // user, set on every /auth/me call — see auth.types.ts).
+  async getProfile(): Promise<Record<string, unknown>> {
+    const me = await apiClient.get(ENDPOINTS.USERS.PROFILE);
+    const patientId = me.data.patient_id;
+    if (!patientId) return me.data;
+    const { data } = await apiClient.get(ENDPOINTS.DOCTORS.PATIENT(patientId));
+    return data;
   },
 
-  // NOT AVAILABLE — no profile-edit endpoint exists.
-  async updateProfile(_payload: Record<string, unknown>): Promise<User> {
+  // NOT AVAILABLE — no patient self-edit endpoint exists yet (PATCH
+  // /patients/{id} is admin-only, see patients/router.py:71-74).
+  async updateProfile(_payload: Record<string, unknown>): Promise<Record<string, unknown>> {
     throw new Error("Editing your profile isn't available yet.");
   },
 };

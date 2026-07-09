@@ -110,9 +110,11 @@ export interface RegisterData {
   clinic_id: string;
   date_of_birth: string;
   gender: string;
+  address?: string;
   city: string;
   state: string;
   country?: string;
+  pincode?: string;
   consent_responses?: ConsentResponseItem[];
 }
 

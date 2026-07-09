@@ -15,7 +15,7 @@ function AssignRegionalAdminForm({ regionsWithClinic, onSubmit, onClose }: {
   const [regionId, setRegionId] = useState(regionsWithClinic[0]?.region_id ?? "");
   const [form, setForm] = useState<Omit<RegionalAdminAssignPayload, "clinic_id">>({
     email: "", first_name: "", last_name: "", phone: "",
-    gender: undefined, dob: "", address: "", city: "", state: "",
+    gender: undefined, dob: "", address: "", city: "", state: "", country: "", pincode: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,6 +121,16 @@ function AssignRegionalAdminForm({ regionsWithClinic, onSubmit, onClose }: {
         <div>
           <label className="block text-xs font-medium text-neutral-600 mb-1">Address</label>
           <Input value={form.address ?? ""} onChange={(e) => set("address", e.target.value)} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-neutral-600 mb-1">Country</label>
+          <Input value={form.country ?? ""} onChange={(e) => set("country", e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-neutral-600 mb-1">Pincode</label>
+          <Input value={form.pincode ?? ""} onChange={(e) => set("pincode", e.target.value)} />
         </div>
       </div>
       <p className="text-xs text-neutral-400">They'll need to sign their onboarding consent on first login before they can act.</p>

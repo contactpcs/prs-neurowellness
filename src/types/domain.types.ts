@@ -74,6 +74,11 @@ export interface PatientDashboard {
     phone?: string;
     date_of_birth?: string;
     gender?: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    pincode?: string;
   };
   assigned_doctor?: {
     id: string;

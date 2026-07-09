@@ -4,14 +4,18 @@ import { useEffect, useRef, useState } from "react";
 import {
   User, ShoppingBag, CreditCard, Bell, Settings,
   Check, X, AlertCircle, Plus, Stethoscope, Edit2,
+  Mail, Phone, FileText, Upload, Download,
 } from "lucide-react";
 import { PageLoader } from "@/components/ui";
 import { usersService } from "@/lib/api/services/users.service";
+import { authService } from "@/lib/api/services/auth.service";
+import { patientFilesService, type PatientFile } from "@/lib/api/services/patientFiles.service";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
 import { fetchMyDoctor, selectMyDoctor } from "@/store/slices/patientsSlice";
 import { useAuth } from "@/lib/hooks";
 import { computeProfileCompletion } from "@/lib/profileCompletion";
+import { dialCodeForCountry } from "@/lib/countries";
 
 // ─── helpers ──────────────────────────────────────────────────────
 
@@ -50,7 +54,7 @@ const EMPTY_FORM = {
 };
 
 type FormState = typeof EMPTY_FORM;
-type TabId = "overview" | "purchases" | "payments" | "notifications" | "settings";
+type TabId = "overview" | "files" | "purchases" | "payments" | "notifications" | "settings";
 
 // ─── styles ───────────────────────────────────────────────────────
 
@@ -93,11 +97,270 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
 
 const TABS: { id: TabId; label: string; Icon: React.ElementType }[] = [
   { id: "overview",      label: "Overview",      Icon: User        },
+  { id: "files",         label: "Files",         Icon: FileText    },
   { id: "purchases",     label: "Purchases",     Icon: ShoppingBag },
   { id: "payments",      label: "Payments",      Icon: CreditCard  },
   { id: "notifications", label: "Notifications", Icon: Bell        },
   { id: "settings",      label: "Settings",      Icon: Settings    },
 ];
+
+// ─── inline channel verification (Overview tab — Cognito mode only) ─
+// Same two calls the old dedicated /patient/verify-channel screen used;
+// consolidated here per explicit request — no separate page.
+function ChannelVerification({ emailVerified, phoneVerified, country }: { emailVerified?: boolean; phoneVerified?: boolean; country?: string }) {
+  const dispatch = useAppDispatch();
+  const missingEmail = emailVerified === false;
+  const missingPhone = phoneVerified === false;
+  const [target, setTarget] = useState<"email" | "phone_number" | null>(
+    missingEmail ? "email" : missingPhone ? "phone_number" : null,
+  );
+  const [step, setStep] = useState<"value" | "otp">("value");
+  const [value, setValue] = useState("");
+  const [otp, setOtp] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!missingEmail && !missingPhone) return null;
+  if (!target) return null;
+
+  const label = target === "email" ? "email" : "mobile number";
+  const otherLabel = target === "email" ? "mobile number" : "email";
+  const dialCode = dialCodeForCountry(country);
+  // Cognito needs E.164 (+<dial code><digits>) — country is already known
+  // from registration, so the digits-only input is all the patient types;
+  // no separate "type your country code" step.
+  const fullValue = target === "phone_number" ? `${dialCode}${value.replace(/\D/g, "")}` : value.trim();
+
+  const onSendCode = async () => {
+    if (!value.trim()) { setError(`Enter your ${label}`); return; }
+    setError(null); setBusy(true);
+    try {
+      await authService.verifyChannelStart(target, fullValue);
+      setStep("otp");
+    } catch (e: any) {
+      setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Could not send verification code");
+    } finally { setBusy(false); }
+  };
+
+  const onConfirmWith = async (code: string) => {
+    if (code.trim().length !== 6) return;
+    setError(null); setBusy(true);
+    try {
+      await authService.verifyChannelConfirm(target, code, fullValue);
+      dispatch(updateUserInStore(target === "email" ? { email_verified: true } : { phone_verified: true }));
+      const otherStillMissing = target === "email" ? missingPhone : missingEmail;
+      if (otherStillMissing) { setTarget(target === "email" ? "phone_number" : "email"); setStep("value"); setValue(""); setOtp(""); }
+      else { setTarget(null); }
+    } catch (e: any) {
+      setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Incorrect or expired code");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3.5">
+      <div className="flex items-start gap-2.5">
+        {target === "email" ? <Mail className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" /> : <Phone className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-amber-800">Verify your {label}</p>
+          <p className="text-xs text-amber-700 mt-0.5">
+            You signed up with your {otherLabel} — add and verify your {label} too, so you can sign in with either.
+          </p>
+
+          {step === "value" && (
+            <div className="mt-2 flex items-center gap-2">
+              {target === "email" ? (
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  className="flex-1 max-w-xs px-2.5 py-1.5 text-xs border border-amber-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                />
+              ) : (
+                <div className="flex items-center gap-1.5 max-w-xs flex-1">
+                  <span className="flex items-center justify-center px-2 py-1.5 rounded-lg border border-amber-300 bg-white text-xs text-amber-700 flex-shrink-0">
+                    {dialCode}
+                  </span>
+                  <input
+                    type="tel"
+                    placeholder="XXXXXXXXXX"
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    className="flex-1 min-w-0 px-2.5 py-1.5 text-xs border border-amber-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                  />
+                </div>
+              )}
+              <button onClick={onSendCode} disabled={busy} className="px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50 flex-shrink-0">
+                {busy ? "Sending…" : "Send code"}
+              </button>
+            </div>
+          )}
+
+          {step === "otp" && (
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                inputMode="numeric" maxLength={6} placeholder="123456" value={otp}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/\D/g, "").slice(0, 6);
+                  setOtp(v);
+                  if (v.length === 6 && !busy) onConfirmWith(v);
+                }}
+                className="flex-1 max-w-[140px] px-2.5 py-1.5 text-xs border border-amber-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+              />
+              {busy && <span className="text-xs text-amber-700">Confirming…</span>}
+            </div>
+          )}
+
+          {error && <p className="mt-1.5 text-xs text-red-600">{error}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const DOCUMENT_TYPE_OPTIONS = [
+  { value: "past_prescription",    label: "Past prescription" },
+  { value: "lab_report",           label: "Lab report" },
+  { value: "imaging_report",       label: "Imaging report" },
+  { value: "hospital_discharge",   label: "Hospital discharge summary" },
+  { value: "referral_letter",      label: "Referral letter" },
+  { value: "vaccination_record",   label: "Vaccination record" },
+  { value: "insurance_document",   label: "Insurance document" },
+  { value: "previous_assessment",  label: "Previous assessment" },
+  { value: "doctor_notes",         label: "Doctor notes" },
+  { value: "other",                label: "Other" },
+];
+
+function formatFileSize(bytes: number | null): string {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ─── Files tab — patient uploads their own medical history documents ─
+function MedicalFilesSection({ patientId, clinicId }: { patientId?: string; clinicId?: string }) {
+  const [files, setFiles] = useState<PatientFile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [documentType, setDocumentType] = useState("other");
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!patientId) { setLoading(false); return; }
+    patientFilesService.list(patientId)
+      .then(setFiles)
+      .catch(() => setError("Failed to load files"))
+      .finally(() => setLoading(false));
+  }, [patientId]);
+
+  const onPick = () => fileInputRef.current?.click();
+
+  const onFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !patientId || !clinicId) return;
+    setError(null);
+    setUploading(true);
+    try {
+      const uploaded = await patientFilesService.upload(patientId, clinicId, file, documentType);
+      setFiles((prev) => [uploaded, ...prev]);
+    } catch (err: any) {
+      setError(err?.response?.data?.error?.message || err?.response?.data?.detail || "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const onDownload = async (fileId: string, fileName: string) => {
+    try {
+      const url = await patientFilesService.downloadUrl(fileId);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {
+      setError("Could not download this file");
+    }
+  };
+
+  if (!patientId || !clinicId) {
+    return <p className="text-sm text-neutral-400">Loading…</p>;
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-base font-bold text-neutral-900">Medical History Files</h2>
+          <p className="text-xs text-neutral-400 mt-0.5">Upload previous prescriptions, lab reports, or any other medical records.</p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-neutral-200 p-4 mb-5 flex flex-wrap items-center gap-3">
+        <select
+          value={documentType}
+          onChange={(e) => setDocumentType(e.target.value)}
+          className="px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:border-sky-400"
+        >
+          {DOCUMENT_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <input ref={fileInputRef} type="file" className="hidden" onChange={onFileSelected} />
+        <button
+          onClick={onPick} disabled={uploading}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50 hover:opacity-90 transition-opacity"
+          style={{ background: BRAND }}
+        >
+          <Upload className="w-3.5 h-3.5" /> {uploading ? "Uploading…" : "Upload file"}
+        </button>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg text-sm mb-4">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-sm text-neutral-400">Loading files…</p>
+      ) : files.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-neutral-200 py-14 text-center text-sm text-neutral-400">
+          No files uploaded yet
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {files.map((f) => (
+            <div key={f.file_id} className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 p-3.5">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-full bg-sky-100 flex items-center justify-center flex-shrink-0">
+                  <FileText className="w-4 h-4" style={{ color: BRAND_PRIMARY }} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-neutral-900 truncate">{f.file_name}</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    {DOCUMENT_TYPE_OPTIONS.find((o) => o.value === f.document_type)?.label ?? f.document_type}
+                    {f.file_size ? ` · ${formatFileSize(f.file_size)}` : ""}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => onDownload(f.file_id, f.file_name)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 flex-shrink-0"
+              >
+                <Download className="w-3.5 h-3.5" /> Download
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── component ────────────────────────────────────────────────────
 
@@ -129,12 +392,12 @@ export default function PatientProfilePage() {
         setProfileRaw(d as Record<string, unknown>);
         const filled: FormState = {
           full_name:         (d.full_name      as string) ?? `${d.first_name ?? ""} ${d.last_name ?? ""}`.trim(),
-          date_of_birth:     (d.date_of_birth  as string) ?? "",
+          date_of_birth:     (d.dob            as string) ?? "",
           gender:            (d.gender         as string) ?? "",
           government_id:     (d.government_id  as string) ?? "",
           id_type:           (d.id_type        as string) ?? "",
           language_pref:     ((d.language_pref ?? d.primary_language) as string) ?? "",
-          address_line1:     (d.address_line1  as string) ?? "",
+          address_line1:     (d.address        as string) ?? "",
           city:              (d.city           as string) ?? "",
           state:             (d.state          as string) ?? "",
           country:           (d.country        as string) ?? "",
@@ -168,12 +431,12 @@ export default function PatientProfilePage() {
       const u: any = (rawUpdated as any).patient ?? rawUpdated;
       const freshFilled: FormState = {
         full_name:         (u.full_name      as string) ?? `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim(),
-        date_of_birth:     (u.date_of_birth  as string) ?? "",
+        date_of_birth:     (u.dob            as string) ?? "",
         gender:            (u.gender         as string) ?? "",
         government_id:     (u.government_id  as string) ?? "",
         id_type:           (u.id_type        as string) ?? "",
         language_pref:     ((u.language_pref ?? u.primary_language) as string) ?? "",
-        address_line1:     (u.address_line1  as string) ?? "",
+        address_line1:     (u.address        as string) ?? "",
         city:              (u.city           as string) ?? "",
         state:             (u.state          as string) ?? "",
         country:           (u.country        as string) ?? "",
@@ -217,7 +480,9 @@ export default function PatientProfilePage() {
   const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
   const email       = (profileRaw?.email as string) ?? "";
   const phone       = (profileRaw?.phone as string) ?? "";
-  const { percent: completionPct, items: completionItems } = computeProfileCompletion(user);
+  const { percent: completionPct, items: completionItems } = computeProfileCompletion(profileRaw, {
+    email_verified: user?.email_verified, phone_verified: user?.phone_verified,
+  });
   const missingItems = completionItems.filter((i) => !i.done);
 
   return (
@@ -296,6 +561,8 @@ export default function PatientProfilePage() {
                 <AlertCircle className="w-4 h-4 flex-shrink-0" /> {fetchError}
               </div>
             )}
+
+            <ChannelVerification emailVerified={user?.email_verified} phoneVerified={user?.phone_verified} country={form.country} />
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {/* Left — Personal Information */}
@@ -447,6 +714,13 @@ export default function PatientProfilePage() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ── Files ── */}
+        {activeTab === "files" && (
+          <div className="p-6">
+            <MedicalFilesSection patientId={user?.patient_id} clinicId={user?.clinic_id} />
           </div>
         )}
 

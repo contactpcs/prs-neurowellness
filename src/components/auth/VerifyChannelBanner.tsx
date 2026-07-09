@@ -31,7 +31,7 @@ export function VerifyChannelBanner() {
             <p className="text-xs text-amber-700 mt-0.5">
               You signed up with your {missingEmail ? "mobile number" : "email"} — add and verify your {label} too, so you can sign in with either.
             </p>
-            <Link href="/patient/verify-channel" className="mt-2 inline-block text-xs font-semibold text-amber-800 hover:underline">
+            <Link href="/patient/profile" className="mt-2 inline-block text-xs font-semibold text-amber-800 hover:underline">
               Verify now
             </Link>
           </div>

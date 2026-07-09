@@ -11,6 +11,7 @@ import { Button } from "@/components/ui";
 import { useAuth, useClinics } from "@/lib/hooks";
 import { register as registerThunk } from "@/store/slices/authSlice";
 import { authService } from "@/lib/api/services/auth.service";
+import { COUNTRY_OPTIONS } from "@/lib/countries";
 
 // ─── Shared field helpers (used by both the local-dev form and the OTP wizard) ─
 
@@ -19,19 +20,6 @@ const GENDER_OPTIONS = [
   { value: "male",              label: "Male" },
   { value: "female",            label: "Female" },
   { value: "other",             label: "Other" },
-];
-
-// Country drives the mobile dial code shown next to the phone field — not
-// an exhaustive world list, just the countries this clinic network actually
-// serves patients from today plus a few common ones.
-const COUNTRY_OPTIONS = [
-  { name: "India",          dialCode: "+91" },
-  { name: "United States",  dialCode: "+1" },
-  { name: "United Kingdom", dialCode: "+44" },
-  { name: "United Arab Emirates", dialCode: "+971" },
-  { name: "Singapore",      dialCode: "+65" },
-  { name: "Australia",      dialCode: "+61" },
-  { name: "Canada",         dialCode: "+1" },
 ];
 
 function FieldLabel({ htmlFor, text, required, optional }: { htmlFor: string; text: string; required?: boolean; optional?: boolean }) {
@@ -99,8 +87,11 @@ const registerSchema = z.object({
   phone:         z.string().min(1, "Phone is required"),
   date_of_birth: z.string().min(1, "Date of birth is required"),
   gender:        z.string().min(1, "Gender is required"),
+  address:       z.string().optional(),
   city:          z.string().min(1, "City is required"),
   state:         z.string().min(1, "State is required"),
+  country:       z.string().optional(),
+  pincode:       z.string().optional(),
   clinic_id:     z.string().min(1, "Please select your clinic"),
 });
 type RegisterFormData = z.infer<typeof registerSchema>;
@@ -188,6 +179,11 @@ function LocalRegisterForm() {
           </div>
         </div>
 
+        <div>
+          <FieldLabel htmlFor="address" text="Address" optional />
+          <input id="address" placeholder="Street address" {...field("address")} className={inputCls} />
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <FieldLabel htmlFor="city" text="City" required />
@@ -198,6 +194,17 @@ function LocalRegisterForm() {
             <FieldLabel htmlFor="state" text="State" required />
             <input id="state" placeholder="Maharashtra" {...field("state")} className={errors.state ? inputErrCls : inputCls} />
             <FieldError msg={errors.state?.message} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <FieldLabel htmlFor="country" text="Country" optional />
+            <input id="country" placeholder="India" {...field("country")} className={inputCls} />
+          </div>
+          <div>
+            <FieldLabel htmlFor="pincode" text="Pincode" optional />
+            <input id="pincode" placeholder="400001" {...field("pincode")} className={inputCls} />
           </div>
         </div>
 
@@ -244,9 +251,11 @@ const demographicsSchema = z.object({
   last_name:  z.string().min(1, "Last name is required"),
   gender:     z.string().min(1, "Gender is required"),
   date_of_birth: z.string().min(1, "Date of birth is required"),
+  address:    z.string().optional(),
   city:       z.string().min(1, "City is required"),
   state:      z.string().min(1, "State is required"),
   country:    z.string().min(1, "Country is required"),
+  pincode:    z.string().optional(),
   clinic_id:  z.string().min(1, "Please select your clinic"),
 });
 type DemographicsData = z.infer<typeof demographicsSchema>;
@@ -291,7 +300,8 @@ function OtpSignupWizard() {
     try {
       await authService.patientSignupStart({
         first_name: data.first_name, last_name: data.last_name, dob: data.date_of_birth,
-        gender: data.gender, city: data.city, state: data.state, country: data.country,
+        gender: data.gender, address: data.address, city: data.city, state: data.state,
+        country: data.country, pincode: data.pincode,
         primary_clinic_id: data.clinic_id, method, contact: fullContact,
       });
       setDemographics(data);
@@ -354,8 +364,9 @@ function OtpSignupWizard() {
     try {
       const result = await completePatientSignup({
         first_name: demographics.first_name, last_name: demographics.last_name,
-        dob: demographics.date_of_birth, gender: demographics.gender,
+        dob: demographics.date_of_birth, gender: demographics.gender, address: demographics.address,
         city: demographics.city, state: demographics.state, country: demographics.country,
+        pincode: demographics.pincode,
         primary_clinic_id: demographics.clinic_id, method, contact: fullContact,
         password, confirm_password: confirmPassword,
       });
@@ -411,6 +422,11 @@ function OtpSignupWizard() {
             </div>
           </div>
 
+          <div>
+            <FieldLabel htmlFor="address" text="Address" optional />
+            <input id="address" placeholder="Street address" {...field("address")} className={inputCls} />
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <FieldLabel htmlFor="city" text="City" required />
@@ -422,6 +438,11 @@ function OtpSignupWizard() {
               <input id="state" placeholder="Maharashtra" {...field("state")} className={errors.state ? inputErrCls : inputCls} />
               <FieldError msg={errors.state?.message} />
             </div>
+          </div>
+
+          <div>
+            <FieldLabel htmlFor="pincode" text="Pincode" optional />
+            <input id="pincode" placeholder="400001" {...field("pincode")} className={inputCls} />
           </div>
 
           <div>

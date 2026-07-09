@@ -20,6 +20,14 @@ export const patientsService = {
         first_name: me.first_name,
         last_name: me.last_name,
         email: me.email,
+        phone: own?.phone as string | undefined,
+        date_of_birth: own?.dob as string | undefined,
+        gender: own?.gender as string | undefined,
+        address: own?.address as string | undefined,
+        city: own?.city as string | undefined,
+        state: own?.state as string | undefined,
+        country: own?.country as string | undefined,
+        pincode: own?.pincode as string | undefined,
       },
       assigned_doctor: own?.primary_doctor_id ? {
         id: own.primary_doctor_id as string,
@@ -32,9 +40,21 @@ export const patientsService = {
     };
   },
 
-  // NOT AVAILABLE — no doctor-lookup endpoint reachable from the patient role.
-  async getMyDoctor(): Promise<{ id: string; first_name: string; last_name: string; specialization?: string; phone?: string }> {
-    throw new Error("Doctor lookup isn't available yet.");
+  /** Real — GET /patients (RLS-scoped to caller) already joins the assigned
+   * doctor's name/phone/specialization off primary_doctor_id, same as
+   * getDashboard() above; this just extracts that piece for consumers that
+   * only need the doctor. */
+  async getMyDoctor(): Promise<{ id: string; first_name: string; last_name: string; specialization?: string; phone?: string } | null> {
+    const { data } = await apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD);
+    const own = Array.isArray(data) ? data[0] : undefined;
+    if (!own?.primary_doctor_id) return null;
+    return {
+      id: own.primary_doctor_id as string,
+      first_name: (own.doctor_first_name as string) ?? "",
+      last_name: (own.doctor_last_name as string) ?? "",
+      specialization: (own.doctor_specialization as string) ?? undefined,
+      phone: (own.doctor_phone as string) ?? undefined,
+    };
   },
 
   /** Real: POST /patients/{patient_id}/disease-selection — patientId here is
