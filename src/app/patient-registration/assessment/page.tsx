@@ -133,7 +133,7 @@ export default function SelfRegistrationAssessmentPage() {
 
   return (
     <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-6">
-      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-card border border-neutral-200/80 p-8">
+      <div className="w-full max-w-5xl bg-white rounded-2xl shadow-card border border-neutral-200/80 p-8">
         <div className="flex items-center gap-2.5 mb-6">
           <div className="w-8 h-8 rounded-lg bg-brand-gradient flex items-center justify-center">
             <Brain className="h-4 w-4 text-white" />
@@ -154,9 +154,9 @@ export default function SelfRegistrationAssessmentPage() {
               <div key={q.question_id}>
                 <label className="block text-sm font-medium text-neutral-800 mb-2">{q.question_text}</label>
                 {q.answer_type === "likert" || q.answer_type === "radio" || q.answer_type === "checkbox" ? (
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-4 gap-2">
                     {LIKERT_OPTIONS.map((o) => (
-                      <label key={o.value} className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg border cursor-pointer ${answers[q.question_id] === o.value ? "border-primary-500 bg-primary-50" : "border-neutral-200 hover:bg-neutral-50"}`}>
+                      <label key={o.value} className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg border cursor-pointer whitespace-nowrap ${answers[q.question_id] === o.value ? "border-primary-500 bg-primary-50" : "border-neutral-200 hover:bg-neutral-50"}`}>
                         <input
                           type="radio"
                           name={q.question_id}
