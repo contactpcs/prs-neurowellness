@@ -153,7 +153,7 @@ export default function PatientDetailPage() {
   const clinic = resolvedClinic || patient.clinic_name || patient.clinic_city;
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6">
       {/* Back */}
       <button
         onClick={() => router.back()}
