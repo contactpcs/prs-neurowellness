@@ -12,7 +12,7 @@ interface ConditionSelectorProps {
 
 export function ConditionSelector({ conditions, selectedId, onSelect }: ConditionSelectorProps) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+    <div className="w-full grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
       {conditions.map((cond) => {
         const isSelected = selectedId === cond.condition_id;
         return (
@@ -26,8 +26,8 @@ export function ConditionSelector({ conditions, selectedId, onSelect }: Conditio
                 : "border-neutral-200 hover:border-primary-300 hover:bg-neutral-50"
             )}
           >
-            <Brain className={cn("h-8 w-8", isSelected ? "text-primary-500" : "text-neutral-400")} />
-            <span className={cn("text-sm font-medium", isSelected ? "text-primary-900" : "text-neutral-700")}>
+            <Brain className={cn("h-7 w-7", isSelected ? "text-primary-500" : "text-neutral-400")} />
+            <span className={cn("text-sm font-medium leading-tight", isSelected ? "text-primary-900" : "text-neutral-700")}>
               {cond.label}
             </span>
             <span className="text-xs text-neutral-500">{cond.scale_ids.length} scales</span>

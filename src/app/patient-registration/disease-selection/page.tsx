@@ -59,29 +59,31 @@ export default function DiseaseSelectionPage() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-6">
-      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-card border border-neutral-200/80 p-8">
-        <div className="flex items-center gap-2.5 mb-6">
+    <div className="h-[100dvh] bg-neutral-50 flex items-center justify-center p-6 overflow-hidden">
+      <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-2xl shadow-card border border-neutral-200/80 p-8 flex flex-col">
+        <div className="flex items-center gap-2.5 mb-5 shrink-0">
           <div className="w-8 h-8 rounded-lg bg-brand-gradient flex items-center justify-center">
             <Brain className="h-4 w-4 text-white" />
           </div>
           <span className="font-bold text-accent-dark">Anava PRS</span>
         </div>
 
-        <h1 className="text-lg font-bold text-neutral-900 mb-1">What brings you in?</h1>
-        <p className="text-sm text-neutral-500 mb-6">
+        <h1 className="text-xl font-bold text-neutral-900 mb-1.5 shrink-0">What brings you in?</h1>
+        <p className="text-sm text-neutral-500 mb-6 shrink-0">
           Step 1 of 3 — select the condition closest to what you'd like help with. If you're not sure, pick the closest match; your doctor will confirm at your first visit.
         </p>
 
-        {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-4">{error}</p>}
+        {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-4 shrink-0">{error}</p>}
 
-        {conditions.length === 0 ? (
-          <p className="text-sm text-neutral-400">No conditions available right now — please contact your clinic.</p>
-        ) : (
-          <ConditionSelector conditions={conditions} selectedId={selectedId} onSelect={setSelectedId} />
-        )}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {conditions.length === 0 ? (
+            <p className="text-sm text-neutral-400">No conditions available right now — please contact your clinic.</p>
+          ) : (
+            <ConditionSelector conditions={conditions} selectedId={selectedId} onSelect={setSelectedId} />
+          )}
+        </div>
 
-        <div className="flex justify-between items-center mt-6">
+        <div className="flex justify-between items-center mt-6 pt-4 shrink-0">
           <button onClick={logout} className="text-xs text-neutral-400 hover:text-neutral-600">Log out</button>
           <Button disabled={!selectedId || submitting} onClick={handleContinue}>
             {submitting ? "Saving…" : "Continue"}
