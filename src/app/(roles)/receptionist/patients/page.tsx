@@ -330,15 +330,15 @@ function RegisterModal({
   return (
     <>
       <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 flex-shrink-0">
             <h2 className="text-lg font-semibold text-neutral-900">Register New Patient</h2>
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-neutral-100 text-neutral-500 transition-colors">
               <X className="h-4 w-4" />
             </button>
           </div>
 
-          <form onSubmit={handleContinue} className="px-6 py-5 space-y-4">
+          <form id="register-patient-form" onSubmit={handleContinue} className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
             {err && (
               <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</p>
             )}
@@ -451,22 +451,24 @@ function RegisterModal({
               </span>
             </div>
 
-            <div className="flex gap-3 pt-2 border-t border-neutral-100">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 px-4 py-2 rounded-lg border border-neutral-200 text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
-              >
-                Continue
-              </button>
-            </div>
           </form>
+
+          <div className="flex gap-3 px-6 py-4 border-t border-neutral-100 flex-shrink-0">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 rounded-lg border border-neutral-200 text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="register-patient-form"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+            >
+              Continue
+            </button>
+          </div>
         </div>
       </div>
 
