@@ -24,6 +24,7 @@ import { ProgressSidebar } from "@/components/questionnaire/ProgressSidebar";
 import { STTBar } from "@/components/questionnaire/STTBar";
 import { useTTS } from "@/lib/hooks";
 import { cn } from "@/lib/utils/cn";
+import { computeHiddenQuestionIndices } from "@/lib/utils/prsSkipLogic";
 import type { ScaleQuestion } from "@/types/prs.types";
 import { buildReadAloudText, type STTPhase } from "@/lib/hooks/useAssessmentSTT";
 
@@ -66,6 +67,11 @@ interface AssessmentUIProps {
   isSttsupported?: boolean;
 
   isSubmitting?: boolean;
+
+  languageCode?: string;
+  languageOptions?: { code: string; label: string }[];
+  onLanguageChange?: (code: string) => void;
+  isLanguageSwitching?: boolean;
 }
 
 export function AssessmentUI({
@@ -93,16 +99,27 @@ export function AssessmentUI({
   sttHint,
   isSttsupported,
   isSubmitting,
+  languageCode,
+  languageOptions,
+  onLanguageChange,
+  isLanguageSwitching,
 }: AssessmentUIProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const currentScale = scales[currentScaleIndex];
-  const totalQuestions = questions.length;
-  const questionsRemaining = totalQuestions - questionsAnswered;
+  const currentScaleResponses = currentScale ? (responses[currentScale.scale_id] ?? {}) : {};
+  const hiddenIndices = computeHiddenQuestionIndices(questions, currentScaleResponses);
+  const totalQuestions = questions.length - hiddenIndices.size;
+  const questionsAnsweredVisible = questions.reduce(
+    (n, _, idx) => (!hiddenIndices.has(idx) && currentScaleResponses[String(idx)] !== undefined ? n + 1 : n),
+    0,
+  );
+  const questionsRemaining = totalQuestions - questionsAnsweredVisible;
   const scaleNumber = currentScaleIndex + 1;
   const overallProgress =
     totalScales > 0 ? Math.round((completedScaleIds.size / totalScales) * 100) : 0;
-  const currentScaleResponses = currentScale ? (responses[currentScale.scale_id] ?? {}) : {};
-  const firstUnansweredIdx = questions.findIndex((_, idx) => currentScaleResponses[String(idx)] === undefined);
+  const firstUnansweredIdx = questions.findIndex(
+    (_, idx) => !hiddenIndices.has(idx) && currentScaleResponses[String(idx)] === undefined,
+  );
   const readAloudQuestion = firstUnansweredIdx === -1
     ? questions[questions.length - 1]
     : questions[firstUnansweredIdx];
@@ -195,6 +212,23 @@ export function AssessmentUI({
                 <p className="text-slate-400 text-xs leading-relaxed mt-0.5 truncate hidden sm:block">{currentScale.description}</p>
               )}
             </div>
+
+            {/* Language selector — switches question/option wording; recorded on the instance in the DB */}
+            {languageOptions && languageOptions.length > 1 && onLanguageChange && (
+              <select
+                value={languageCode ?? "en"}
+                disabled={isLanguageSwitching}
+                onChange={(e) => onLanguageChange(e.target.value)}
+                aria-label="Assessment language"
+                className="shrink-0 bg-white/10 hover:bg-white/20 text-white text-xs md:text-sm rounded-lg px-2 py-1.5 border border-white/20 disabled:opacity-50"
+              >
+                {languageOptions.map((opt) => (
+                  <option key={opt.code} value={opt.code} className="text-neutral-900">
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
 
@@ -219,7 +253,7 @@ export function AssessmentUI({
             )}
             <div className="ml-auto flex items-center gap-1 px-2 py-0.5 bg-orange-50 border border-orange-200 rounded-full text-orange-700 text-xs font-medium">
               <CheckCircle className="w-3 h-3 shrink-0" />
-              {questionsAnswered}/{totalQuestions}
+              {questionsAnsweredVisible}/{totalQuestions}
             </div>
           </div>
         </div>
@@ -248,6 +282,7 @@ export function AssessmentUI({
             {/* All questions */}
             <div className="space-y-3">
               {questions.map((question, idx) => {
+                if (hiddenIndices.has(idx)) return null;
                 const qValue = scaleResponses[String(idx)];
                 const isAnswered = qValue !== undefined;
                 const isCurrentStt = idx === currentQuestionIndex && sttEnabled;

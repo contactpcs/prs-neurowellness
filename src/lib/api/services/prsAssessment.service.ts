@@ -48,6 +48,11 @@ export type PrsAssessmentQuestion = {
   display_order?: number;
   question_index: number;
   options?: PrsQuestionOption[];
+  hidden_unless?: {
+    question_id: string;
+    hidden_when_label?: string;
+    visible_only_when_label?: string;
+  } | null;
 };
 
 export type PrsAssessmentScaleResult = {
@@ -64,6 +69,12 @@ export type PrsAssessmentStartResult = {
   is_resumed?: boolean;
   scales: PrsAssessmentScaleResult[];
 };
+
+export const PRS_LANGUAGES = [
+  { code: "en", label: "English" },
+  { code: "hi", label: "हिन्दी" },
+  { code: "mr", label: "मराठी" },
+] as const;
 
 export type PrsSavedResponse = {
   response_id: string;
@@ -125,12 +136,14 @@ export const prsAssessmentService = {
     patient_id?: string;
     session_id?: string;
     cycle_id?: string;
+    language_code?: string;
   }): Promise<PrsAssessmentStartResult> {
     if (!payload.patient_id) throw new Error("patient_id is required to start an assessment.");
     const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_START, {
       patient_id: payload.patient_id,
       disease_id: payload.disease_id,
       assessment_stage: "main_clinical",
+      language_code: payload.language_code ?? "en",
       ...(payload.session_id ? { session_id: payload.session_id } : {}),
       ...(payload.cycle_id ? { cycle_id: payload.cycle_id } : {}),
     });
@@ -138,6 +151,22 @@ export const prsAssessmentService = {
     return {
       instance_id: result.instance_id,
       is_resumed: result.is_resumed ?? false,
+      scales: Array.isArray(result.scales) ? result.scales : [],
+    };
+  },
+
+  /** Real: PATCH /prs-assessment-instances/{id}/language — language dropdown
+   * shown after "Start Assessment". Updates the instance's stored
+   * language_code and returns the same scales[] shape as startAssessment(),
+   * fully re-translated, so callers just re-map and re-render. */
+  async setLanguage(instanceId: string, languageCode: string): Promise<PrsAssessmentStartResult> {
+    const { data } = await apiClient.patch(ENDPOINTS.PRS.ASSESSMENT_LANGUAGE(instanceId), {
+      language_code: languageCode,
+    });
+    const result = unwrap<PrsAssessmentStartResult>(data);
+    return {
+      instance_id: result.instance_id,
+      is_resumed: result.is_resumed ?? true,
       scales: Array.isArray(result.scales) ? result.scales : [],
     };
   },
