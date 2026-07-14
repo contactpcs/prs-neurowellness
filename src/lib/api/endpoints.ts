@@ -135,6 +135,7 @@ export const ENDPOINTS = {
     ASSESSMENT_SAVE_RESPONSE: (instanceId: string) => `/prs-assessment-instances/${instanceId}/responses`, // real (same endpoint, single-item batch)
     ASSESSMENT_RESPONSES: (instanceId: string) => `/prs-assessment-instances/${instanceId}/responses`, // real — GET saved answers (resume flow); GET ?language= for translated doctor view
     ASSESSMENT_LANGUAGE: (instanceId: string) => `/prs-assessment-instances/${instanceId}/language`, // real — PATCH { language_code }
+    ASSESSMENT_RESPONSES_BY_SCALE: (instanceId: string) => `/prs-assessment-instances/${instanceId}/responses-by-scale`, // real — GET ?language= — detailed report, grouped by scale, every question (answered/unanswered/skipped)
     ASSESSMENT_INSTANCE: (instanceId: string) => `/prs-assessment-instances/${instanceId}`, // real — GET instance record
     MY_SCORES: "/prs/scores/me",                                    // NOT AVAILABLE
     MY_SCORES_SUMMARY: "/prs/scores/me/summary",                    // NOT AVAILABLE

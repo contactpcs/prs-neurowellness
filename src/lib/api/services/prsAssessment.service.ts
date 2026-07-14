@@ -81,6 +81,12 @@ export type PrsSavedResponse = {
   question_id: string;
   given_response: string;
   response_value: number | null;
+  // Only populated when getResponses() is called with a `language` — the
+  // doctor/staff translated report view (question_text/response_label in the
+  // requested language). Absent on the plain resume-flow call.
+  question_text?: string;
+  response_label?: string;
+  language_code?: string;
 };
 
 export type PrsInstanceResponses = {
@@ -89,6 +95,22 @@ export type PrsInstanceResponses = {
   responses_count: number;
   responses: PrsSavedResponse[];
   responses_by_qid: Record<string, PrsSavedResponse>;
+};
+
+export type PrsScaleQuestionResponse = {
+  question_id: string;
+  question_text: string;
+  given_response: string | null;
+  response_label: string | null;
+  is_answered: boolean;
+  is_skipped: boolean;
+};
+
+export type PrsScaleResponses = {
+  scale_id: string;
+  scale_code: string;
+  scale_name: string;
+  questions: PrsScaleQuestionResponse[];
 };
 
 export type PrsQuestionOption = {
@@ -205,9 +227,14 @@ export const prsAssessmentService = {
   },
 
   /** Real: GET /prs-assessment-instances/{id}/responses — returns saved
-   * ResponseRead[], used to restore answers when resuming an instance. */
-  async getResponses(instanceId: string): Promise<PrsInstanceResponses> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.ASSESSMENT_RESPONSES(instanceId));
+   * ResponseRead[], used to restore answers when resuming an instance.
+   * Pass `language` for the doctor/staff report view — backend translates
+   * question_text/response_label into that language (given_response, the
+   * canonical option_value, is untouched either way). */
+  async getResponses(instanceId: string, language?: string): Promise<PrsInstanceResponses> {
+    const { data } = await apiClient.get(ENDPOINTS.PRS.ASSESSMENT_RESPONSES(instanceId), {
+      params: language ? { language } : undefined,
+    });
     const raw = unwrap<unknown>(data);
     const list: PrsSavedResponse[] = Array.isArray(raw)
       ? (raw as PrsSavedResponse[])
@@ -223,6 +250,18 @@ export const prsAssessmentService = {
       responses: list,
       responses_by_qid: byQid,
     };
+  },
+
+  /** Real: GET /prs-assessment-instances/{id}/responses-by-scale?language=
+   * — detailed report view. Unlike getResponses() above, this includes every
+   * question the patient was assigned (answered, unanswered, or skipped via
+   * skip_logic), grouped by scale — not just the ones with a saved answer. */
+  async getResponsesByScale(instanceId: string, language: string = "en"): Promise<PrsScaleResponses[]> {
+    const { data } = await apiClient.get(ENDPOINTS.PRS.ASSESSMENT_RESPONSES_BY_SCALE(instanceId), {
+      params: { language },
+    });
+    const raw = unwrap<unknown>(data);
+    return Array.isArray(raw) ? (raw as PrsScaleResponses[]) : [];
   },
 
   /** Old `responses` keys were question_index numbers (never real question_ids,

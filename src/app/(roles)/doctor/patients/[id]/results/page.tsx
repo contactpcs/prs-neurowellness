@@ -1,9 +1,11 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight, AlertTriangle, User } from "lucide-react";
 import { usePatientResult } from "@/lib/hooks";
 import { PageLoader, Card, CardContent } from "@/components/ui";
+import { prsAssessmentService, PRS_LANGUAGES, type PrsScaleResponses } from "@/lib/api/services/prsAssessment.service";
 
 function severityColor(level?: string) {
   switch (level?.toLowerCase()) {
@@ -24,6 +26,22 @@ export default function DoctorPatientResultPage() {
   const detail = usePatientResult(patientId, instanceId);
   const isLoading = !detail;
   const error = instanceId && !isLoading && !detail;
+
+  const [responseLanguage, setResponseLanguage] = useState("en");
+  const [scaleResponses, setScaleResponses] = useState<PrsScaleResponses[]>([]);
+  const [responsesLoading, setResponsesLoading] = useState(false);
+
+  useEffect(() => {
+    if (!instanceId) return;
+    let cancelled = false;
+    setResponsesLoading(true);
+    prsAssessmentService
+      .getResponsesByScale(instanceId, responseLanguage)
+      .then((r) => { if (!cancelled) setScaleResponses(r); })
+      .catch(() => { if (!cancelled) setScaleResponses([]); })
+      .finally(() => { if (!cancelled) setResponsesLoading(false); });
+    return () => { cancelled = true; };
+  }, [instanceId, responseLanguage]);
 
   if (isLoading && instanceId) return <PageLoader />;
 
@@ -50,9 +68,19 @@ export default function DoctorPatientResultPage() {
             <ChevronRight className="w-5 h-5 rotate-180" />
             Back
           </button>
-          <div className="flex items-center gap-2 text-sm text-neutral-500">
+          <div className="flex items-center gap-3 text-sm text-neutral-500">
             <User className="h-4 w-4" />
             <span>Patient: {patientId}</span>
+            <select
+              value={responseLanguage}
+              onChange={(e) => setResponseLanguage(e.target.value)}
+              aria-label="Responses language"
+              className="text-xs border border-neutral-300 rounded-lg px-2 py-1 bg-white text-neutral-700"
+            >
+              {PRS_LANGUAGES.map((opt) => (
+                <option key={opt.code} value={opt.code}>{opt.label}</option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
@@ -176,6 +204,46 @@ export default function DoctorPatientResultPage() {
             </div>
           </section>
         )}
+
+        {/* Patient responses — question text + given answer, in the selected language */}
+        <section>
+          <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide mb-3">
+            Patient Responses
+          </h2>
+          {responsesLoading ? (
+            <Card><CardContent><p className="text-sm text-neutral-400 py-2">Loading responses…</p></CardContent></Card>
+          ) : scaleResponses.length === 0 ? (
+            <Card><CardContent><p className="text-sm text-neutral-400 py-2">No responses recorded.</p></CardContent></Card>
+          ) : (
+            <div className="space-y-4">
+              {scaleResponses.map((scale) => (
+                <Card key={scale.scale_id}>
+                  <CardContent className="space-y-0">
+                    <p className="text-sm font-semibold text-neutral-900 mb-2">
+                      {scale.scale_name ?? scale.scale_code ?? scale.scale_id}
+                    </p>
+                    <div className="divide-y divide-neutral-100">
+                      {scale.questions.map((q) => (
+                        <div key={q.question_id} className="py-3 flex items-start justify-between gap-4">
+                          <p className="text-sm text-neutral-700 flex-1">{q.question_text}</p>
+                          {q.is_answered ? (
+                            <p className="text-sm font-medium text-neutral-900 shrink-0 text-right">
+                              {q.response_label ?? q.given_response}
+                            </p>
+                          ) : q.is_skipped ? (
+                            <span className="text-xs text-neutral-400 italic shrink-0">Skipped</span>
+                          ) : (
+                            <span className="text-xs text-amber-600 shrink-0">Not answered</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );
