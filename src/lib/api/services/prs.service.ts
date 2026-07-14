@@ -159,11 +159,13 @@ export const prsService = {
   async getCondition(_conditionId: string): Promise<ConditionBattery> { throw new Error(NOT_AVAILABLE); },
 
   /** Real: GET /prs-catalog/scale-questions?scale_id= — used by the
-   * self-registration wizard's PRS step (no scale/question catalog UI
-   * existed anywhere in the app before this). */
+   * self-registration wizard's PRS step. Rows now include question_index
+   * and the full options[] (option_id, value, label, points, display_order). */
   async getScaleQuestions(scaleId: string): Promise<{
     question_id: string; question_text: string; answer_type: string;
     min_value: number | null; max_value: number | null; is_required: boolean; display_order: number;
+    question_index?: number;
+    options?: { option_id: string; value: string; label: string; points?: number; display_order?: number }[];
   }[]> {
     const { data } = await apiClient.get(ENDPOINTS.PRS.SCALE_QUESTIONS, { params: { scale_id: scaleId } });
     return Array.isArray(data) ? data : [];

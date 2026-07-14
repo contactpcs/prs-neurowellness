@@ -369,7 +369,7 @@ export default function DoctorPatientDetailPage() {
                 <AnamnesisForm
                   patientId={id}
                   mode="doctor"
-                  initialRecord={anamnesisRecord}
+                  initialRecord={anamnesisLoading ? undefined : anamnesisRecord}
                   onSubmitted={() => dispatch(invalidatePatientAnamnesis(id))}
                 />
               ) : selectedSection === "brain-mapping" ? (

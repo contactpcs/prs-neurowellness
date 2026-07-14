@@ -1,7 +1,7 @@
 import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type { DoctorDashboard, PatientListItem, PatientDetail } from "@/types/domain.types";
-import type { InstanceScoreDetail } from "./scores.service";
+import { fetchInstanceScoreDetail, type InstanceScoreDetail } from "./scores.service";
 
 /** PatientRead now joins profiles for first_name/last_name/email/phone. */
 function mapPatient(p: Record<string, unknown>): PatientListItem {
@@ -44,20 +44,31 @@ export const doctorsService = {
     return mapPatient(data) as PatientDetail;
   },
 
-  async getPatientResult(patientId: string, instanceId: string): Promise<InstanceScoreDetail> {
-    const { data } = await apiClient.get(ENDPOINTS.DOCTORS.PATIENT_RESULT(patientId, instanceId));
-    return data;
+  async getPatientResult(_patientId: string, instanceId: string): Promise<InstanceScoreDetail> {
+    return fetchInstanceScoreDetail(instanceId);
   },
 
   /** Real backend has no single grant-assessment call — POST one
-   * patient-scale-assignment per scale_id instead. */
+   * patient-scale-assignment per scale_id instead. Callers that pass only a
+   * disease_id (the assign page) get every scale in that disease's battery,
+   * resolved from /prs-catalog/diseases — without this the loop below ran
+   * zero POSTs and "assigned" nothing. */
   async grantAssessment(patientId: string, payload: { disease_id: string; scale_ids?: string[] }): Promise<unknown> {
-    const scaleIds = payload.scale_ids ?? [];
+    let scaleIds = payload.scale_ids ?? [];
+    if (scaleIds.length === 0) {
+      const { data } = await apiClient.get(ENDPOINTS.PRS.CONDITIONS);
+      const diseases: { disease_id?: string; scales?: { scale_id: string }[]; scale_ids?: string[] }[] =
+        Array.isArray(data) ? data : [];
+      const disease = diseases.find((d) => d.disease_id === payload.disease_id);
+      scaleIds = disease?.scales?.map((s) => s.scale_id) ?? disease?.scale_ids ?? [];
+      if (scaleIds.length === 0) throw new Error(`No scales found for disease ${payload.disease_id}`);
+    }
     const results = await Promise.all(
       scaleIds.map((scale_id) =>
         apiClient.post(ENDPOINTS.DOCTORS.GRANT_ASSESSMENT(patientId), {
           patient_id: patientId,
           scale_id,
+          disease_id: payload.disease_id,
           assessment_stage: "main_clinical",
           assignment_reason: "doctor_override",
         })

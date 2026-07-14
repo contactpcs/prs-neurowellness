@@ -172,16 +172,30 @@ export const anamnesisService = {
     const own = Array.isArray(patientsRes.data) ? patientsRes.data[0] : undefined;
     if (!own?.patient_id) throw new Error("No patient record found for the current user.");
     const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.FOR_PATIENT(own.patient_id));
-    return data;
+    return withResponses(data);
   },
 
   async getForPatient(patientId: string): Promise<AnamnesisRecord | null> {
     try {
       const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.FOR_PATIENT(patientId));
-      return data;
+      return withResponses(data);
     } catch (err: unknown) {
       if ((err as { response?: { status?: number } })?.response?.status === 404) return null;
       throw err;
     }
   },
 };
+
+/** GET /patients/{id}/anamnesis returns the assessment row only —
+ * saved answers live at GET /anamnesis/{id}/responses. Merge them so
+ * consumers get a hydratable record in one call. Response-fetch failures
+ * degrade to an answerless record rather than failing the whole load. */
+async function withResponses(record: AnamnesisRecord): Promise<AnamnesisRecord> {
+  if (!record?.anamnesis_id) return record;
+  try {
+    const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.RESPONSES(record.anamnesis_id));
+    return { ...record, responses: Array.isArray(data) ? data : [] };
+  } catch {
+    return record;
+  }
+}

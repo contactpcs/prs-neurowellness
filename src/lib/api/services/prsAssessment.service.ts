@@ -1,13 +1,12 @@
 import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
 
-// GAP: backend-v2's PRS module has no endpoint that returns a scale's
-// question list (confirmed against app/modules/prs/router.py — only
-// diseases list, patient-scale-assignments, and prs-assessment-instances
-// start/get/responses/results exist). Methods that need per-question data
-// (getConditionDetails, getQuestionOptions, and the `scales`/`questions`
-// fields of startAssessment/getResponses) cannot be filled from a real
-// source — they return empty rather than fabricated data.
+// POST /prs-assessment-instances returns the full AssessmentStartRead
+// (instance_id, is_resumed, scales[] each with questions[] incl. options[])
+// and resumes an in-progress instance instead of duplicating. Saved answers
+// are restorable via GET /prs-assessment-instances/{id}/responses. The only
+// remaining gap is a per-question options endpoint — options now arrive
+// embedded in each question, so getQuestionOptions stays a stub.
 
 type ApiSuccessResponse<T> = {
   success: boolean;
@@ -99,27 +98,48 @@ export type PrsQuestionOptionsResult = {
 };
 
 export const prsAssessmentService = {
-  // NOT AVAILABLE — no per-disease scale/question detail endpoint.
+  /** Composed from GET /prs-catalog/diseases — each disease row now carries
+   * its scales[] (scale_id, scale_code, scale_name, full_name, short_name). */
   async getConditionDetails(conditionId: string): Promise<PrsConditionDetails> {
-    return { disease_id: conditionId, scales: [] };
+    const { data } = await apiClient.get(ENDPOINTS.PRS.CONDITIONS);
+    const list = unwrap<Record<string, unknown>[]>(data);
+    const match = Array.isArray(list)
+      ? list.find((d) => d.disease_id === conditionId)
+      : undefined;
+    if (!match) return { disease_id: conditionId, scales: [] };
+    return {
+      ...match,
+      disease_id: conditionId,
+      scales: Array.isArray(match.scales) ? (match.scales as PrsConditionScale[]) : [],
+    };
   },
 
   /** Real endpoint (POST /prs-assessment-instances) needs assessment_stage,
    * which the old payload never carried — defaulted to "main_clinical".
-   * `scales` comes back empty (see file-level GAP note above); the instance
-   * itself is real and usable for submitAssessment/getResponses. */
+   * Returns AssessmentStartRead: resumes an in-progress instance
+   * (is_resumed: true) instead of duplicating, and carries the full
+   * scales → questions → options tree in one call. */
   async startAssessment(payload: {
     disease_id: string;
     taken_by: "patient" | "doctor_on_behalf";
     patient_id?: string;
+    session_id?: string;
+    cycle_id?: string;
   }): Promise<PrsAssessmentStartResult> {
     if (!payload.patient_id) throw new Error("patient_id is required to start an assessment.");
     const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_START, {
       patient_id: payload.patient_id,
       disease_id: payload.disease_id,
       assessment_stage: "main_clinical",
+      ...(payload.session_id ? { session_id: payload.session_id } : {}),
+      ...(payload.cycle_id ? { cycle_id: payload.cycle_id } : {}),
     });
-    return { instance_id: data.instance_id, is_resumed: false, scales: [] };
+    const result = unwrap<PrsAssessmentStartResult>(data);
+    return {
+      instance_id: result.instance_id,
+      is_resumed: result.is_resumed ?? false,
+      scales: Array.isArray(result.scales) ? result.scales : [],
+    };
   },
 
   /** Real: POST /prs-assessment-instances with assessment_stage=general_registration
@@ -155,15 +175,24 @@ export const prsAssessmentService = {
     });
   },
 
-  // NOT AVAILABLE as a separate responses list — only the instance record itself is fetchable.
+  /** Real: GET /prs-assessment-instances/{id}/responses — returns saved
+   * ResponseRead[], used to restore answers when resuming an instance. */
   async getResponses(instanceId: string): Promise<PrsInstanceResponses> {
     const { data } = await apiClient.get(ENDPOINTS.PRS.ASSESSMENT_RESPONSES(instanceId));
+    const raw = unwrap<unknown>(data);
+    const list: PrsSavedResponse[] = Array.isArray(raw)
+      ? (raw as PrsSavedResponse[])
+      : Array.isArray((raw as { responses?: unknown })?.responses)
+        ? ((raw as { responses: PrsSavedResponse[] }).responses)
+        : [];
+    const byQid: Record<string, PrsSavedResponse> = {};
+    for (const r of list) byQid[r.question_id] = r;
     return {
-      instance_id: data.instance_id ?? instanceId,
-      status: data.status ?? "in_progress",
-      responses_count: 0,
-      responses: [],
-      responses_by_qid: {},
+      instance_id: (raw as { instance_id?: string })?.instance_id ?? instanceId,
+      status: (raw as { status?: string })?.status ?? "in_progress",
+      responses_count: list.length,
+      responses: list,
+      responses_by_qid: byQid,
     };
   },
 

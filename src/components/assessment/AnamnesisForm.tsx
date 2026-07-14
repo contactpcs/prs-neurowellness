@@ -233,8 +233,11 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted }: A
       });
 
     return () => { cancelled = true; };
+  // initialRecord is in the deps so a parent that resolves its record fetch
+  // AFTER this form mounts (e.g. the doctor page's Redux-cached anamnesis)
+  // re-syncs the form instead of leaving it stuck on the no-record state.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [patientId, mode]);
+  }, [patientId, mode, initialRecord]);
 
   // ── auto-start for patient when no record ─────────────────────────────────
   useEffect(() => {

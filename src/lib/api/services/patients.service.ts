@@ -75,9 +75,83 @@ export const patientsService = {
     return { disease_id: primary.disease_id ?? null };
   },
 
-  // NOT AVAILABLE — scale-assignments carry no disease grouping (scale_id/assessment_stage only, no disease_id).
+  /** Composed: resolve own patient_id via /patients (RLS-scoped), then group
+   * /patients/{id}/scale-assignments (which now carry disease_id) by disease.
+   * Disease/scale names come from /prs-catalog/diseases; a disease counts as
+   * "completed" when a completed prs-instance exists for it. */
   async getMyAssessments(): Promise<{ permissions: AssessmentPermission[]; total: number }> {
-    return { permissions: [], total: 0 };
+    const patientsRes = await apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD);
+    const own = Array.isArray(patientsRes.data) ? patientsRes.data[0] : undefined;
+    if (!own?.patient_id) return { permissions: [], total: 0 };
+    const patientId = String(own.patient_id);
+
+    const [assignRes, diseasesRes, instancesRes] = await Promise.all([
+      apiClient.get(ENDPOINTS.PRS.PATIENT_PERMISSIONS(patientId), {
+        params: { assessment_stage: "main_clinical" },
+      }),
+      apiClient.get(ENDPOINTS.PRS.CONDITIONS).catch(() => ({ data: [] })),
+      apiClient
+        .get(ENDPOINTS.PRS.PATIENT_INSTANCES(patientId), {
+          params: { assessment_stage: "main_clinical" },
+        })
+        .catch(() => ({ data: [] })),
+    ]);
+
+    type AssignmentRow = {
+      psa_id?: string;
+      scale_id?: string;
+      disease_id?: string;
+      is_active?: boolean;
+      created_at?: string;
+    };
+    type DiseaseRow = {
+      disease_id?: string;
+      disease_name?: string;
+      scales?: { scale_id: string; scale_name?: string; short_name?: string }[];
+    };
+    type InstanceRow = { disease_id?: string; status?: string };
+
+    const assignments: AssignmentRow[] = Array.isArray(assignRes.data) ? assignRes.data : [];
+    const diseases: DiseaseRow[] = Array.isArray(diseasesRes.data) ? diseasesRes.data : [];
+    const instances: InstanceRow[] = Array.isArray(instancesRes.data) ? instancesRes.data : [];
+
+    const diseaseById = new Map(diseases.map((d) => [String(d.disease_id), d]));
+    const completedDiseases = new Set(
+      instances.filter((i) => i.status === "completed").map((i) => String(i.disease_id)),
+    );
+
+    const byDisease = new Map<string, AssignmentRow[]>();
+    for (const a of assignments) {
+      if (a.is_active === false || !a.disease_id) continue;
+      const key = String(a.disease_id);
+      if (!byDisease.has(key)) byDisease.set(key, []);
+      byDisease.get(key)!.push(a);
+    }
+
+    const permissions: AssessmentPermission[] = Array.from(byDisease.entries()).map(
+      ([diseaseId, rows]) => {
+        const disease = diseaseById.get(diseaseId);
+        const scaleNameById = new Map(
+          (disease?.scales ?? []).map((s) => [s.scale_id, s.scale_name ?? s.short_name]),
+        );
+        return {
+          permission_id: String(rows[0]?.psa_id ?? diseaseId),
+          patient_id: patientId,
+          disease_id: diseaseId,
+          disease_name: disease?.disease_name ?? diseaseId,
+          granted_at: String(rows[0]?.created_at ?? ""),
+          status: completedDiseases.has(diseaseId) ? "completed" : "granted",
+          scales: rows
+            .filter((r) => r.scale_id)
+            .map((r) => ({
+              scale_id: String(r.scale_id),
+              scale_name: scaleNameById.get(String(r.scale_id)) ?? String(r.scale_id),
+            })),
+        };
+      },
+    );
+
+    return { permissions, total: permissions.length };
   },
 
   /** Real: GET /patients/{patient_id}/scale-assignments?assessment_stage=

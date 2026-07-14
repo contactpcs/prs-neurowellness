@@ -23,6 +23,7 @@ export default function AssignAssessmentPage() {
   const [instructions, setInstructions] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [assignError, setAssignError] = useState<string | null>(null);
 
   useEffect(() => { loadConditions(); }, [loadConditions]);
 
@@ -43,6 +44,7 @@ export default function AssignAssessmentPage() {
   const handleAssign = async () => {
     if (!selectedCondition) return;
     setIsSubmitting(true);
+    setAssignError(null);
     try {
       await doctorsService.grantAssessment(patientId, {
         disease_id: selectedCondition,
@@ -58,6 +60,11 @@ export default function AssignAssessmentPage() {
       router.refresh();
     } catch (err) {
       console.error("Assign error:", err);
+      const detail =
+        (err as { response?: { data?: { error?: { message?: string }; detail?: string } } })?.response?.data;
+      setAssignError(
+        detail?.error?.message ?? detail?.detail ?? (err as { message?: string })?.message ?? "Failed to assign assessment.",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -143,6 +150,9 @@ export default function AssignAssessmentPage() {
             </CardContent>
           </Card>
 
+          {assignError && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3">{assignError}</p>
+          )}
           <Button size="lg" className="w-full" onClick={handleAssign} isLoading={isSubmitting}>
             Assign Assessment to Patient
           </Button>

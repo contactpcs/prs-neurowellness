@@ -133,7 +133,8 @@ export const ENDPOINTS = {
     ASSESSMENT_START: "/prs-assessment-instances", // real — shape differs (see prsAssessment.service.ts)
     ASSESSMENT_SUBMIT: (instanceId: string) => `/prs-assessment-instances/${instanceId}/responses`, // real
     ASSESSMENT_SAVE_RESPONSE: (instanceId: string) => `/prs-assessment-instances/${instanceId}/responses`, // real (same endpoint, single-item batch)
-    ASSESSMENT_RESPONSES: (instanceId: string) => `/prs-assessment-instances/${instanceId}`, // NOT AVAILABLE as a separate list — instance GET only
+    ASSESSMENT_RESPONSES: (instanceId: string) => `/prs-assessment-instances/${instanceId}/responses`, // real — GET saved answers (resume flow)
+    ASSESSMENT_INSTANCE: (instanceId: string) => `/prs-assessment-instances/${instanceId}`, // real — GET instance record
     MY_SCORES: "/prs/scores/me",                                    // NOT AVAILABLE
     MY_SCORES_SUMMARY: "/prs/scores/me/summary",                    // NOT AVAILABLE
     INSTANCE_SCORE: (instanceId: string) => `/prs-assessment-instances/${instanceId}/results`, // real

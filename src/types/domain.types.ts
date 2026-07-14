@@ -94,6 +94,7 @@ export interface PatientDashboard {
 
 export interface AssessmentPermission {
   permission_id: string;
+  patient_id?: string;
   disease_id: string;
   disease_name: string;
   granted_at: string;

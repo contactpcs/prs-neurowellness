@@ -119,6 +119,7 @@ export default function PatientAssessmentPage() {
         const result = await prsAssessmentService.startAssessment({
           disease_id: permission.disease_id,
           taken_by: "patient",
+          patient_id: permission.patient_id,
         });
 
         if (result.scales.length === 0) throw new Error("No scales found for this assessment");
@@ -243,11 +244,18 @@ export default function PatientAssessmentPage() {
     if (!currentScale) return;
     setIsSubmitting(true);
     try {
+      // responses state is keyed by question INDEX — remap to real
+      // question_ids before submit (backend FK rejects raw indexes).
       const scaleResponses = responses[currentScale.scale_id] ?? {};
+      const byQuestionId: Record<string, number | string> = {};
+      for (const [idx, v] of Object.entries(scaleResponses)) {
+        const qid = currentScale.question_ids[Number(idx)];
+        if (qid) byQuestionId[qid] = v;
+      }
       await prsAssessmentService.submitAssessment(
         currentScale.instance_id,
         currentScale.scale_id,
-        scaleResponses,
+        byQuestionId,
       );
       const newCompleted = new Set(completedScaleIds).add(currentScale.scale_id);
       setCompletedScaleIds(newCompleted);
