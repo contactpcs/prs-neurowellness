@@ -84,7 +84,7 @@ export default function RequestAppointmentPage() {
 
   if (success) {
     return (
-      <div className="max-w-lg mx-auto">
+      <div className="max-w-lg mx-auto mt-6">
         <div className="bg-white border border-neutral-200 rounded-2xl px-8 py-12 text-center space-y-4">
           <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto">
             <CheckCircle className="h-7 w-7 text-green-600" />
@@ -115,7 +115,7 @@ export default function RequestAppointmentPage() {
   }
 
   return (
-    <div className="max-w-lg space-y-5">
+    <div className="space-y-5">
       <div className="flex items-center gap-3">
         <Link
           href="/patient/appointments"
@@ -148,137 +148,145 @@ export default function RequestAppointmentPage() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-5">
-        {/* Preferred dates */}
-        <div className="space-y-3">
-          <label className="text-sm font-semibold text-neutral-800">Preferred Date(s)</label>
-          <div className="space-y-2">
-            <div>
-              <label className="text-xs text-neutral-500 block mb-1">First choice <span className="text-red-500">*</span></label>
-              <input
-                type="date"
-                min={today}
-                required
-                value={form.preferred_date_1}
-                onChange={(e) => set("preferred_date_1", e.target.value)}
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-neutral-500 block mb-1">Second choice <span className="text-neutral-400">(optional)</span></label>
-              <input
-                type="date"
-                min={today}
-                value={form.preferred_date_2}
-                onChange={(e) => set("preferred_date_2", e.target.value)}
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-neutral-500 block mb-1">Third choice <span className="text-neutral-400">(optional)</span></label>
-              <input
-                type="date"
-                min={today}
-                value={form.preferred_date_3}
-                onChange={(e) => set("preferred_date_3", e.target.value)}
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Time window */}
-        <div>
-          <label className="text-sm font-semibold text-neutral-800 block mb-2">Preferred Time</label>
-          <div className="grid grid-cols-2 gap-2">
-            {TIME_WINDOWS.map((tw) => (
-              <button
-                key={tw.value}
-                type="button"
-                onClick={() => set("preferred_time_window", tw.value)}
-                className={`px-3 py-2 rounded-lg border text-sm font-medium text-left transition-colors ${
-                  form.preferred_time_window === tw.value
-                    ? "border-blue-500 bg-blue-50 text-blue-700"
-                    : "border-neutral-200 text-neutral-600 hover:bg-neutral-50"
-                }`}
-              >
-                {tw.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Urgency */}
-        <div>
-          <label className="text-sm font-semibold text-neutral-800 block mb-2">Urgency</label>
-          <div className="space-y-2">
-            {URGENCIES.map((u) => (
-              <label
-                key={u.value}
-                className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                  form.urgency === u.value
-                    ? "border-blue-500 bg-blue-50"
-                    : "border-neutral-200 hover:bg-neutral-50"
-                }`}
-              >
+      <form onSubmit={handleSubmit} className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          {/* Preferred dates */}
+          <div className="space-y-3">
+            <label className="text-sm font-semibold text-neutral-800">Preferred Date(s)</label>
+            <div className="space-y-2">
+              <div>
+                <label className="text-xs text-neutral-500 block mb-1">First choice <span className="text-red-500">*</span></label>
                 <input
-                  type="radio"
-                  name="urgency"
-                  value={u.value}
-                  checked={form.urgency === u.value}
-                  onChange={() => set("urgency", u.value)}
-                  className="mt-0.5"
+                  type="date"
+                  min={today}
+                  required
+                  value={form.preferred_date_1}
+                  onChange={(e) => set("preferred_date_1", e.target.value)}
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
                 />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <p className={`text-sm font-medium ${form.urgency === u.value ? "text-blue-700" : "text-neutral-800"}`}>
-                    {u.label}
-                  </p>
-                  <p className="text-xs text-neutral-500">{u.desc}</p>
+                  <label className="text-xs text-neutral-500 block mb-1">Second choice <span className="text-neutral-400">(optional)</span></label>
+                  <input
+                    type="date"
+                    min={today}
+                    value={form.preferred_date_2}
+                    onChange={(e) => set("preferred_date_2", e.target.value)}
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
                 </div>
-              </label>
-            ))}
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1">Third choice <span className="text-neutral-400">(optional)</span></label>
+                  <input
+                    type="date"
+                    min={today}
+                    value={form.preferred_date_3}
+                    onChange={(e) => set("preferred_date_3", e.target.value)}
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Time window */}
+            <div>
+              <label className="text-sm font-semibold text-neutral-800 block mb-2">Preferred Time</label>
+              <div className="grid grid-cols-2 gap-2">
+                {TIME_WINDOWS.map((tw) => (
+                  <button
+                    key={tw.value}
+                    type="button"
+                    onClick={() => set("preferred_time_window", tw.value)}
+                    className={`px-3 py-2 rounded-lg border text-sm font-medium text-left transition-colors ${
+                      form.preferred_time_window === tw.value
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+                    }`}
+                  >
+                    {tw.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Urgency */}
+          <div>
+            <label className="text-sm font-semibold text-neutral-800 block mb-2">Urgency</label>
+            <div className="space-y-2">
+              {URGENCIES.map((u) => (
+                <label
+                  key={u.value}
+                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    form.urgency === u.value
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-neutral-200 hover:bg-neutral-50"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="urgency"
+                    value={u.value}
+                    checked={form.urgency === u.value}
+                    onChange={() => set("urgency", u.value)}
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <p className={`text-sm font-medium ${form.urgency === u.value ? "text-blue-700" : "text-neutral-800"}`}>
+                      {u.label}
+                    </p>
+                    <p className="text-xs text-neutral-500">{u.desc}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Complaint */}
-        <div>
-          <label className="text-sm font-semibold text-neutral-800 block mb-1.5">
-            Describe your complaint <span className="text-red-500">*</span>
-          </label>
-          <textarea
-            required
-            minLength={5}
-            rows={4}
-            value={form.patient_complaint}
-            onChange={(e) => set("patient_complaint", e.target.value)}
-            placeholder="Describe your symptoms or reason for the visit…"
-            className="w-full border border-neutral-200 rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
-          />
-          <p className="text-xs text-neutral-400 mt-1">{form.patient_complaint.length} chars (min 5)</p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Complaint */}
+          <div>
+            <label className="text-sm font-semibold text-neutral-800 block mb-1.5">
+              Describe your complaint <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              required
+              minLength={5}
+              rows={4}
+              value={form.patient_complaint}
+              onChange={(e) => set("patient_complaint", e.target.value)}
+              placeholder="Describe your symptoms or reason for the visit…"
+              className="w-full border border-neutral-200 rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
+            />
+            <p className="text-xs text-neutral-400 mt-1">{form.patient_complaint.length} chars (min 5)</p>
+          </div>
+
+          {/* Optional reason */}
+          <div>
+            <label className="text-sm font-semibold text-neutral-800 block mb-1.5">
+              Additional notes <span className="text-neutral-400 font-normal">(optional)</span>
+            </label>
+            <textarea
+              rows={4}
+              value={form.reason}
+              onChange={(e) => set("reason", e.target.value)}
+              placeholder="Any other details for reception…"
+              className="w-full border border-neutral-200 rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
+            />
+          </div>
         </div>
 
-        {/* Optional reason */}
-        <div>
-          <label className="text-sm font-semibold text-neutral-800 block mb-1.5">
-            Additional notes <span className="text-neutral-400 font-normal">(optional)</span>
-          </label>
-          <textarea
-            rows={2}
-            value={form.reason}
-            onChange={(e) => set("reason", e.target.value)}
-            placeholder="Any other details for reception…"
-            className="w-full border border-neutral-200 rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
-          />
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            disabled={submitting || !form.preferred_date_1 || form.patient_complaint.trim().length < 5}
+            className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-8 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+          >
+            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+            {submitting ? "Submitting…" : "Submit Request"}
+          </button>
         </div>
-
-        <button
-          type="submit"
-          disabled={submitting || !form.preferred_date_1 || form.patient_complaint.trim().length < 5}
-          className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-3 rounded-lg text-sm font-semibold transition-colors"
-        >
-          {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-          {submitting ? "Submitting…" : "Submit Request"}
-        </button>
       </form>
     </div>
   );

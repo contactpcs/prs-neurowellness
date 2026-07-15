@@ -409,6 +409,7 @@ export default function DoctorOnBehalfAssessmentPage() {
       languageOptions={[...PRS_LANGUAGES]}
       onLanguageChange={handleLanguageChange}
       isLanguageSwitching={isLanguageSwitching}
+      backHref={`/doctor/patients/${patientId}`}
     />
   );
 }
