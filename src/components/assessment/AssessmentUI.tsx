@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   RotateCcw,
   Info,
@@ -72,6 +73,9 @@ interface AssessmentUIProps {
   languageOptions?: { code: string; label: string }[];
   onLanguageChange?: (code: string) => void;
   isLanguageSwitching?: boolean;
+
+  backHref?: string;
+  backLabel?: string;
 }
 
 export function AssessmentUI({
@@ -103,6 +107,8 @@ export function AssessmentUI({
   languageOptions,
   onLanguageChange,
   isLanguageSwitching,
+  backHref,
+  backLabel = "Back to patient details",
 }: AssessmentUIProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const currentScale = scales[currentScaleIndex];
@@ -145,7 +151,7 @@ export function AssessmentUI({
   const scaleResponses = responses[currentScale.scale_id] ?? {};
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] -mx-6 -mb-6 bg-neutral-50 relative">
+    <div className="flex h-[calc(100vh-4rem)] -mx-6 -mt-6 -mb-6 bg-neutral-50 relative">
       {/* Mobile sidebar overlay backdrop */}
       {sidebarOpen && (
         <div
@@ -174,6 +180,19 @@ export function AssessmentUI({
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden bg-white min-w-0">
+        {/* Back link */}
+        {backHref && (
+          <div className="border-b border-neutral-100 px-4 py-2 flex-shrink-0">
+            <Link
+              href={backHref}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-500 hover:text-neutral-800 transition-colors"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              {backLabel}
+            </Link>
+          </div>
+        )}
+
         {/* Resumed Banner */}
         {isResumed && (
           <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border-b border-amber-200 px-4 py-2.5">

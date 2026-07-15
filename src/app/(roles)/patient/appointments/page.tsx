@@ -106,7 +106,7 @@ export default function PatientAppointmentsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6">
       {toast && (
         <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
           {toast.ok ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
@@ -147,7 +147,7 @@ export default function PatientAppointmentsPage() {
       {requests.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-base font-semibold text-neutral-800">Appointment Requests</h2>
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {requests.map((req) => (
               <RequestCard
                 key={req.request_id}
@@ -210,7 +210,7 @@ export default function PatientAppointmentsPage() {
             </p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {displayAppts.map((a) => (
               <AppointmentCard key={a.appointment_id} appt={a} />
             ))}
