@@ -36,6 +36,12 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString("en-US", {
+    year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
+}
+
 function buildSections(
   anamnesisStatus: "in_progress" | "completed" | null,
   hasDoctorNote: boolean,
@@ -526,7 +532,7 @@ export default function DoctorPatientDetailPage() {
                               <div>
                                 <h4 className="font-semibold text-neutral-900">{a.disease_name}</h4>
                                 <p className="text-sm text-neutral-600 mt-1">
-                                  Completed on {formatDate(result?.completed_at ?? a.granted_at)}
+                                  Completed on {formatDateTime(result?.completed_at ?? a.granted_at)}
                                 </p>
                               </div>
                               <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-lg">
@@ -631,7 +637,7 @@ export default function DoctorPatientDetailPage() {
                           <div className="flex items-start justify-between mb-4">
                             <div>
                               <h4 className="font-semibold text-neutral-900">{a.disease_name}</h4>
-                              <p className="text-sm text-neutral-600 mt-1">Assigned on {formatDate(a.granted_at)}</p>
+                              <p className="text-sm text-neutral-600 mt-1">Assigned on {formatDateTime(a.granted_at)}</p>
                             </div>
                             <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg">
                               Pending

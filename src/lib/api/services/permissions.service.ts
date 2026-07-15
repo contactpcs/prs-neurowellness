@@ -51,9 +51,17 @@ export const permissionsService = {
     // intake data into the doctor's ongoing-treatment assessment list. The
     // registration-stage data has its own separate "Registration Record" view.
     //
-    // Assignments are per-scale rows; grouped here by disease_id (one
-    // Permission per disease, scale_ids aggregated) with disease_name
-    // resolved from /prs-catalog/diseases.
+    // Assignments are per-scale rows. patient_scale_assignments has no
+    // "which Assign click created this row" column, so a re-assign of the
+    // same disease used to collapse into the SAME Permission as the first
+    // one (grouped by disease_id alone) — the doctor's 2nd assignment was
+    // silently absorbed into the 1st's already-"completed" card, no error,
+    // nothing visibly new. Grouped by (disease_id, minute-truncated
+    // created_at) instead — each Assign click's rows share a created_at
+    // within the same minute (they're POSTed together), so each click is
+    // its own round with its own granted_at, keyed by that round's first
+    // row's psa_id (not the disease_id) so two rounds for the same disease
+    // never collide into one Map slot.
     const [assignRes, diseasesRes, instancesRes] = await Promise.all([
       apiClient.get(ENDPOINTS.PRS.PATIENT_PERMISSIONS(patientId), {
         params: { assessment_stage: "main_clinical" },
@@ -70,18 +78,14 @@ export const permissionsService = {
       ? diseasesRes.data
       : [];
     const diseaseNameById = new Map(diseases.map((d) => [String(d.disease_id), d.disease_name]));
-    const instances: { disease_id?: string; instance_id?: string; status?: string; completed_at?: string }[] =
+    const instances: { disease_id?: string; instance_id?: string; status?: string; started_at?: string; completed_at?: string }[] =
       Array.isArray(instancesRes.data) ? instancesRes.data : [];
-    // Latest completed instance per disease — flips the grouped Permission
-    // to "completed" and carries the instance_id for results links.
-    const completedByDisease = new Map<string, { instance_id?: string; completed_at?: string }>();
-    for (const i of instances) {
-      if (i.status === "completed" && i.disease_id) {
-        completedByDisease.set(String(i.disease_id), i);
-      }
-    }
 
-    const byDisease = new Map<string, Permission>();
+    const minuteBucket = (iso: string) => iso.slice(0, 16); // "2026-07-15T10:23"
+
+    // Group assignment rows into rounds: one per (disease_id, minute the
+    // round was assigned in).
+    const rounds = new Map<string, Permission>();
     const ungrouped: Permission[] = [];
     for (const row of list) {
       const p = mapAssignment(row);
@@ -90,21 +94,48 @@ export const permissionsService = {
         ungrouped.push(p); // legacy rows created before disease_id existed
         continue;
       }
-      const existing = byDisease.get(p.disease_id);
+      const roundKey = `${p.disease_id}::${minuteBucket(p.granted_at)}`;
+      const existing = rounds.get(roundKey);
       if (existing) {
         existing.scale_ids.push(...p.scale_ids);
+        if (p.granted_at < existing.granted_at) existing.granted_at = p.granted_at; // earliest row in the round
       } else {
-        const done = completedByDisease.get(p.disease_id);
-        byDisease.set(p.disease_id, {
-          ...p,
-          disease_name: diseaseNameById.get(p.disease_id) ?? p.disease_id,
-          ...(done
-            ? { status: "completed" as const, completed_at: done.completed_at, instance_id: done.instance_id }
-            : {}),
-        });
+        rounds.set(roundKey, { ...p, disease_name: diseaseNameById.get(p.disease_id) ?? p.disease_id });
       }
     }
-    const permissions = [...byDisease.values(), ...ungrouped];
+
+    // Match each round to the instance that actually belongs to it: the
+    // instance whose started_at falls between this round's granted_at and
+    // the NEXT round's granted_at for the same disease (so an old
+    // instance from a prior round can never bleed into a later
+    // re-assignment's round, which is exactly what silently happened before).
+    const roundsByDisease = new Map<string, Permission[]>();
+    for (const r of rounds.values()) {
+      const arr = roundsByDisease.get(r.disease_id) ?? [];
+      arr.push(r);
+      roundsByDisease.set(r.disease_id, arr);
+    }
+    for (const [diseaseId, diseaseRounds] of roundsByDisease) {
+      diseaseRounds.sort((a, b) => (a.granted_at < b.granted_at ? -1 : 1));
+      const diseaseInstances = instances
+        .filter((i) => String(i.disease_id) === diseaseId && i.started_at)
+        .sort((a, b) => (a.started_at! < b.started_at! ? -1 : 1));
+      diseaseRounds.forEach((round, idx) => {
+        const windowEnd = diseaseRounds[idx + 1]?.granted_at ?? null;
+        const match = diseaseInstances.find(
+          (i) => i.started_at! >= round.granted_at && (windowEnd === null || i.started_at! < windowEnd),
+        );
+        if (match?.status === "completed") {
+          round.status = "completed";
+          round.completed_at = match.completed_at;
+          round.instance_id = match.instance_id;
+        } else if (match?.instance_id) {
+          round.instance_id = match.instance_id; // in-progress — resumable, but not "completed"
+        }
+      });
+    }
+
+    const permissions = [...rounds.values(), ...ungrouped];
     return { permissions, total: permissions.length };
   },
 
