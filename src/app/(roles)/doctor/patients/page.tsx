@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 import { Input, PatientListSkeleton } from "@/components/ui";
 import { useDoctorPatients } from "@/lib/hooks";
@@ -23,7 +23,8 @@ function fmtGender(g?: string): string {
 
 export default function DoctorPatientsPage() {
   const { patients, isLoading } = useDoctorPatients();
-  const [search, setSearch] = useState("");
+  const searchParams = useSearchParams();
+  const [search, setSearch] = useState(searchParams.get("q") ?? "");
   const router = useRouter();
 
   const filtered = patients.filter((p) =>

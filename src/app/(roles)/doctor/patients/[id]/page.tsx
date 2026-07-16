@@ -8,6 +8,7 @@ import { PatientDetailSkeleton, Button } from "@/components/ui";
 import { AnamnesisForm } from "@/components/assessment/AnamnesisForm";
 import { adminService } from "@/lib/api/services/admin.service";
 import { PatientJourneySections, type PatientJourneyDetail } from "@/components/admin/PatientJourneySections";
+import { PatientHistoryPanel } from "@/components/admin/PatientHistoryPanel";
 import {
   useDoctorPatient,
   useDoctorPatients,
@@ -71,6 +72,7 @@ export default function DoctorPatientDetailPage() {
   const { instances: scoreInstances, total: totalAssessments } = usePatientScoresSummary(id);
   const { record: anamnesisRecord, isLoading: anamnesisLoading } = usePatientAnamnesis(id);
   const { note: doctorNote, isLoading: noteLoading, save: saveNote } = usePatientNote(id);
+  const [headerSearch, setHeaderSearch] = useState("");
 
   const isLoading = !patient;
 
@@ -173,7 +175,7 @@ export default function DoctorPatientDetailPage() {
   const pendingAssessments = (assessments as Permission[]).filter((a: Permission) => a.status === "granted");
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-neutral-100 to-neutral-50">
+    <div className="min-h-screen bg-gradient-to-b from-neutral-100 to-neutral-50 -mt-14 md:-mt-6 -mx-4 sm:-mx-6 -mb-4 sm:-mb-6">
       {/* Top Header with Navigation */}
       <div className="bg-white border-b border-neutral-200 px-4 sm:px-8 py-3">
         <div className="flex items-center justify-between gap-3">
@@ -189,6 +191,13 @@ export default function DoctorPatientDetailPage() {
               <input
                 type="text"
                 placeholder="Search patients..."
+                value={headerSearch}
+                onChange={(e) => setHeaderSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && headerSearch.trim()) {
+                    router.push(`/doctor/patients?q=${encodeURIComponent(headerSearch.trim())}`);
+                  }
+                }}
                 className="flex-1 bg-transparent outline-none text-sm text-neutral-600 placeholder:text-neutral-400"
               />
             </div>
@@ -314,17 +323,6 @@ export default function DoctorPatientDetailPage() {
               </button>
               <div className={`overflow-y-auto space-y-0 transition-all duration-150 ${basicOpen ? "flex-1" : "hidden"}`}>
                 {buildSections(anamnesisRecord?.status ?? null, !!doctorNote?.note_text).map((section) => {
-                  if (section.id === "medical-history") {
-                    return (
-                      <Link
-                        key="medical-history"
-                        href={`/doctor/patients/${id}/history`}
-                        className="w-full px-4 py-4 text-left transition-colors border-l-4 flex items-center justify-between bg-white border-l-transparent text-neutral-700 hover:bg-neutral-50"
-                      >
-                        <span className="font-medium">{section.name}</span>
-                      </Link>
-                    );
-                  }
                   return (
                     <button
                       key={section.id}
@@ -354,7 +352,9 @@ export default function DoctorPatientDetailPage() {
 
             {/* Right Content - Assessment Details */}
             <div className="flex-1 bg-white rounded-lg shadow-md p-4 sm:p-8 overflow-y-auto">
-              {selectedSection === "registration-record" ? (
+              {selectedSection === "medical-history" ? (
+                <PatientHistoryPanel patientId={id} />
+              ) : selectedSection === "registration-record" ? (
                 <div className="space-y-5">
                   <div>
                     <h2 className="text-2xl font-bold text-neutral-900 mb-1">Registration Record</h2>
