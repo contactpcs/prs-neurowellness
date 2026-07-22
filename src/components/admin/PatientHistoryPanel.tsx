@@ -1,14 +1,30 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Calendar, Activity, FileText, Shield, Filter, ChevronDown, ChevronUp, AlertCircle, Loader2 } from "lucide-react";
-import { usePatientPermissions, usePatientAnamnesis } from "@/lib/hooks";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Calendar, Activity, FileText, ClipboardList, FileCheck2, Filter, ChevronDown, ChevronUp, AlertCircle, Loader2, Upload, Download } from "lucide-react";
+import { usePatientPermissions } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { doctorsService } from "@/lib/api/services/doctors.service";
+import { patientFilesService, type PatientFile } from "@/lib/api/services/patientFiles.service";
 import type { InstanceScoreDetail } from "@/lib/api/services/scores.service";
 import type { Appointment, AppointmentStatus } from "@/types/domain.types";
 
-type Tab = "appointments" | "prs" | "anamnesis" | "permissions";
+type Tab = "appointments" | "reports" | "prs" | "sessions" | "final-reports";
+
+const REPORT_TYPE_OPTIONS = [
+  { value: "blood_test",     label: "Blood test" },
+  { value: "scan",           label: "Scan" },
+  { value: "mri",            label: "MRI" },
+  { value: "eeg",            label: "EEG" },
+  { value: "other",          label: "Other" },
+];
+
+function formatFileSize(bytes: number | null): string {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function formatDate(iso?: string | null) {
   if (!iso) return "—";
@@ -69,17 +85,15 @@ function SectionError({ msg }: { msg: string }) {
   );
 }
 
-export function PatientHistoryPanel({ patientId }: { patientId: string }) {
+export function PatientHistoryPanel({ patientId, clinicId }: { patientId: string; clinicId?: string }) {
   const [tab, setTab] = useState<Tab>("appointments");
 
   // Real, working sources — same ones the rest of the doctor patient-detail
   // page already relies on. The old standalone /history page hit stub
   // services (scores.service's getPatientScoresSummary always returns
   // empty) and mis-shaped endpoints (doctors.service's PatientDetail has no
-  // `.permissions` field, and the raw anamnesis fetch skipped the
-  // `withResponses` unwrap), which is why nothing showed up there.
+  // `.permissions` field), which is why nothing showed up there.
   const assessments = usePatientPermissions(patientId);
-  const { record: anamnesis, isLoading: anamnesisLoading } = usePatientAnamnesis(patientId);
 
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [apptLoading, setApptLoading]   = useState(true);
@@ -94,6 +108,15 @@ export function PatientHistoryPanel({ patientId }: { patientId: string }) {
   const [drillLoading, setDrillLoading] = useState<string | null>(null);
   const [drillErr,     setDrillErr]     = useState<Record<string, boolean>>({});
 
+  // ── medical reports (blood tests, scans, MRI, EEG) ──────────────────────
+  const [reports, setReports]           = useState<PatientFile[]>([]);
+  const [reportsLoading, setReportsLoading] = useState(true);
+  const [reportsErr, setReportsErr]     = useState<string | null>(null);
+  const [reportType, setReportType]     = useState("other");
+  const [uploading, setUploading]       = useState(false);
+  const [uploadErr, setUploadErr]       = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     setApptLoading(true);
     appointmentsService.list({ patient_id: patientId, limit: 100 })
@@ -101,6 +124,48 @@ export function PatientHistoryPanel({ patientId }: { patientId: string }) {
       .catch(() => setApptErr("Failed to load appointments"))
       .finally(() => setApptLoading(false));
   }, [patientId]);
+
+  useEffect(() => {
+    setReportsLoading(true);
+    patientFilesService.list(patientId)
+      .then(setReports)
+      .catch(() => setReportsErr("Failed to load medical reports"))
+      .finally(() => setReportsLoading(false));
+  }, [patientId]);
+
+  const onPickReport = () => fileInputRef.current?.click();
+
+  const onReportSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !clinicId) return;
+    setUploadErr(null);
+    setUploading(true);
+    try {
+      const uploaded = await patientFilesService.upload(patientId, clinicId, file, reportType);
+      setReports((prev) => [uploaded, ...prev]);
+    } catch (err: any) {
+      setUploadErr(err?.response?.data?.error?.message || err?.response?.data?.detail || "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const onDownloadReport = async (fileId: string, fileName: string) => {
+    try {
+      const url = await patientFilesService.downloadUrl(fileId);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {
+      setUploadErr("Could not download this file");
+    }
+  };
 
   const handleDrill = useCallback(async (instanceId: string) => {
     if (drillOpen === instanceId) { setDrillOpen(null); return; }
@@ -127,17 +192,18 @@ export function PatientHistoryPanel({ patientId }: { patientId: string }) {
     .sort((a, b) => b.appointment_date.localeCompare(a.appointment_date));
 
   const TABS: { id: Tab; label: string; Icon: React.ElementType }[] = [
-    { id: "appointments", label: "Appointments",       Icon: Calendar  },
-    { id: "prs",          label: "PRS Assessments",    Icon: Activity  },
-    { id: "anamnesis",    label: "Anamnesis",           Icon: FileText  },
-    { id: "permissions",  label: "Granted Permissions", Icon: Shield    },
+    { id: "appointments",   label: "Appointments",          Icon: Calendar     },
+    { id: "reports",        label: "Medical Reports",       Icon: FileText     },
+    { id: "prs",            label: "PRS Assessments",       Icon: Activity     },
+    { id: "sessions",       label: "Device Sessions",       Icon: ClipboardList },
+    { id: "final-reports",  label: "Final Treatment Reports", Icon: FileCheck2 },
   ];
 
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-2xl font-bold text-neutral-900 mb-1">Medical History</h2>
-        <p className="text-neutral-600 text-sm">Appointments, PRS assessments, anamnesis, and granted permissions.</p>
+        <p className="text-neutral-600 text-sm">Appointments, medical reports, PRS assessments, device sessions, and final treatment reports.</p>
       </div>
 
       {/* Tabs */}
@@ -358,105 +424,75 @@ export function PatientHistoryPanel({ patientId }: { patientId: string }) {
           </div>
         )}
 
-        {/* ── Anamnesis ── */}
-        {tab === "anamnesis" && (
-          <div className="p-6 bg-white">
-            {anamnesisLoading ? (
-              <SectionSkeleton />
-            ) : !anamnesis ? (
-              <div className="py-12 text-center text-sm text-neutral-400">No anamnesis record found</div>
-            ) : (
-              <div className="space-y-5">
-                <div>
-                  <h3 className="text-base font-semibold text-neutral-900">Anamnesis Record</h3>
-                  <p className="text-xs text-neutral-500 mt-0.5">
-                    Status:{" "}
-                    <span className={`font-medium ${anamnesis.status === "completed" ? "text-green-700" : "text-amber-700"}`}>
-                      {statusLabel(anamnesis.status)}
-                    </span>
-                    {anamnesis.completed_at && ` · Completed ${formatDate(anamnesis.completed_at)}`}
-                  </p>
-                </div>
+        {/* ── Medical Reports ── */}
+        {tab === "reports" && (
+          <div className="bg-white">
+            <div className="px-6 py-4 border-b border-neutral-100 flex flex-wrap items-center gap-3">
+              <select
+                value={reportType}
+                onChange={(e) => setReportType(e.target.value)}
+                className="px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+              >
+                {REPORT_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <input ref={fileInputRef} type="file" className="hidden" onChange={onReportSelected} />
+              <button
+                onClick={onPickReport}
+                disabled={uploading || !clinicId}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-neutral-900 text-white text-sm font-semibold disabled:opacity-50 hover:opacity-90 transition-opacity"
+              >
+                <Upload className="w-3.5 h-3.5" /> {uploading ? "Uploading…" : "Upload report"}
+              </button>
+              <span className="ml-auto text-xs text-neutral-400">
+                {reports.length} record{reports.length !== 1 ? "s" : ""}
+              </span>
+            </div>
 
-                {[
-                  { label: "Chief Complaint",       value: anamnesis.chief_complaint },
-                  { label: "Main Symptoms",          value: anamnesis.main_symptoms },
-                  { label: "Initial Symptoms",       value: anamnesis.initial_symptoms },
-                  { label: "Symptoms Onset",         value: anamnesis.symptoms_start },
-                  { label: "Duration",               value: anamnesis.symptoms_duration },
-                  { label: "Frequency",              value: anamnesis.symptoms_frequency },
-                  { label: "Intensity",              value: anamnesis.symptoms_intensity },
-                  { label: "Progression",            value: anamnesis.symptoms_progression },
-                  { label: "Previous Treatments",    value: anamnesis.previous_treatments },
-                  { label: "Current Medications",    value: anamnesis.current_medications },
-                  { label: "Operations",             value: anamnesis.has_operations ? (anamnesis.operations_details || "Yes") : "No" },
-                  { label: "Brain MRI",              value: anamnesis.has_brain_mri ? (anamnesis.mri_details || "Yes") : "No" },
-                  { label: "Other Scans",            value: anamnesis.other_scans },
-                  { label: "Neuromodulation",        value: anamnesis.has_neuromodulation ? (anamnesis.neuromodulation_details || "Yes") : "No" },
-                  { label: "Diagnosis Related",      value: anamnesis.diagnosis_related ? (anamnesis.diagnosis_details || "Yes") : "No" },
-                ].filter((f) => f.value).map((field) => (
-                  <div key={field.label} className="border-b border-neutral-100 pb-4">
-                    <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1">{field.label}</p>
-                    <p className="text-sm text-neutral-800">{field.value}</p>
+            {uploadErr && <SectionError msg={uploadErr} />}
+
+            {reportsLoading ? <SectionSkeleton /> : reportsErr ? <SectionError msg={reportsErr} /> : reports.length === 0 ? (
+              <div className="px-6 py-12 text-center text-sm text-neutral-400">No medical reports uploaded yet</div>
+            ) : (
+              <div className="divide-y divide-neutral-100">
+                {reports.map((f) => (
+                  <div key={f.file_id} className="flex items-center justify-between gap-3 px-6 py-3.5">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-full bg-neutral-100 flex items-center justify-center flex-shrink-0">
+                        <FileText className="w-4 h-4 text-neutral-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-neutral-900 truncate">{f.file_name}</p>
+                        <p className="text-xs text-neutral-400 mt-0.5">
+                          {REPORT_TYPE_OPTIONS.find((o) => o.value === f.document_type)?.label ?? f.document_type}
+                          {f.file_size ? ` · ${formatFileSize(f.file_size)}` : ""}
+                          {f.created_at ? ` · ${formatDate(f.created_at)}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onDownloadReport(f.file_id, f.file_name)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 flex-shrink-0"
+                    >
+                      <Download className="w-3.5 h-3.5" /> Download
+                    </button>
                   </div>
                 ))}
-
-                {anamnesis.secondary_symptoms && anamnesis.secondary_symptoms.length > 0 && (
-                  <div className="border-b border-neutral-100 pb-4">
-                    <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">Secondary Symptoms</p>
-                    <div className="flex flex-wrap gap-2">
-                      {anamnesis.secondary_symptoms.map((s) => (
-                        <span key={s} className="px-2 py-0.5 bg-neutral-100 text-neutral-700 text-xs rounded">{s}</span>
-                      ))}
-                    </div>
-                    {anamnesis.secondary_symptoms_details && (
-                      <p className="text-sm text-neutral-800 mt-2">{anamnesis.secondary_symptoms_details}</p>
-                    )}
-                  </div>
-                )}
               </div>
             )}
           </div>
         )}
 
-        {/* ── Granted Permissions ── */}
-        {tab === "permissions" && (
-          <div className="bg-white">
-            {assessments.length === 0 ? (
-              <div className="px-6 py-12 text-center text-sm text-neutral-400">No permissions granted yet</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-neutral-100">
-                      {["Disease", "Status", "Granted", "Completed / Expires"].map((h) => (
-                        <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-100">
-                    {assessments.map((p) => (
-                      <tr key={p.permission_id} className="hover:bg-neutral-50 transition-colors">
-                        <td className="px-5 py-3 text-sm font-medium text-neutral-900">
-                          {p.disease_name || p.disease_id}
-                        </td>
-                        <td className="px-5 py-3">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${PERM_BADGE[p.status] ?? "bg-gray-100 text-gray-600"}`}>
-                            {statusLabel(p.status)}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3 text-sm text-neutral-600 whitespace-nowrap">
-                          {formatDate(p.granted_at)}
-                        </td>
-                        <td className="px-5 py-3 text-sm text-neutral-600 whitespace-nowrap">
-                          {formatDate(p.completed_at ?? p.expires_at)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+        {/* ── Device Sessions ── */}
+        {tab === "sessions" && (
+          <div className="px-6 py-12 text-center text-sm text-neutral-400 bg-white">
+            No device session logs recorded yet
+          </div>
+        )}
+
+        {/* ── Final Treatment Reports ── */}
+        {tab === "final-reports" && (
+          <div className="px-6 py-12 text-center text-sm text-neutral-400 bg-white">
+            No final treatment reports available yet
           </div>
         )}
 

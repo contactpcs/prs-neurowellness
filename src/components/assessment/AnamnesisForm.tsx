@@ -417,7 +417,14 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted }: A
 
   // Show read-only summary view when completed
   if (completed && record) {
-    return <AnamnesisReadOnlyView record={record} questions={questions} takenBy={meta?.taken_by} />;
+    return (
+      <AnamnesisReadOnlyView
+        record={record}
+        questions={questions}
+        takenBy={meta?.taken_by}
+        onEdit={mode === "doctor" ? () => setRecordState("in_progress") : undefined}
+      />
+    );
   }
 
   return (

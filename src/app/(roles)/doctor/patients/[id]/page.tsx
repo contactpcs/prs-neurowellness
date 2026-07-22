@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight, ChevronLeft, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save } from "lucide-react";
+import { ChevronRight, ChevronLeft, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save, StickyNote } from "lucide-react";
 import { PatientDetailSkeleton, Button } from "@/components/ui";
 import { AnamnesisForm } from "@/components/assessment/AnamnesisForm";
 import { adminService } from "@/lib/api/services/admin.service";
@@ -54,6 +54,7 @@ function buildSections(
     { id: "prs", name: "PRS", status: "start" },
     { id: "notes", name: "Doctor's Notes", status: hasDoctorNote ? "done" : null },
     { id: "medical-history", name: "Medical History", status: "link" },
+    { id: "treatment-protocol", name: "Treatment Protocol", status: null },
     { id: "treatment-plan", name: "Treatment Plan", status: "locked" },
     { id: "final-report", name: "Final Report", status: "locked" },
   ];
@@ -109,6 +110,7 @@ export default function DoctorPatientDetailPage() {
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
   const [noteSavedAt, setNoteSavedAt] = useState<string | null>(null);
+  const [notepadEditing, setNotepadEditing] = useState(false);
   const [registrationRecord, setRegistrationRecord] = useState<Record<string, unknown> | null>(null);
   const [registrationRecordError, setRegistrationRecordError] = useState<string | null>(null);
 
@@ -120,6 +122,15 @@ export default function DoctorPatientDetailPage() {
     setRegistrationRecord(null);
     setRegistrationRecordError(null);
     adminService.getPatientDetail(id).then(setRegistrationRecord).catch(() => setRegistrationRecordError("Couldn't load registration record"));
+  }, [id]);
+
+  // Reset immediately on patient switch so a previous patient's note text
+  // can never linger/be saved against the wrong patient while the new
+  // patient's note is still loading.
+  useEffect(() => {
+    setNoteText("");
+    setNoteSavedAt(null);
+    setNotepadEditing(false);
   }, [id]);
 
   useEffect(() => {
@@ -151,6 +162,7 @@ export default function DoctorPatientDetailPage() {
       const saved = (result as any)?.payload?.note as DoctorNote | undefined;
       if (saved?.note_text != null) setNoteText(saved.note_text);
       setNoteSavedAt(saved?.updated_at ?? new Date().toISOString());
+      setNotepadEditing(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save note";
       setNoteError(message);
@@ -211,28 +223,28 @@ export default function DoctorPatientDetailPage() {
         </div>
       </div>
 
-      <div className="px-4 sm:px-8 py-4 sm:py-8 space-y-4 sm:space-y-6">
+      <div className="px-4 sm:px-8 py-3 sm:py-5 space-y-3 sm:space-y-4">
         {/* Patient info + Next Activity — two side-by-side cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
           {/* Left — Patient Name Card */}
-          <div className="bg-white rounded-lg shadow-md p-4 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-5">
-              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-white font-bold text-2xl border-2 border-[#f47920] flex-shrink-0">
+          <div className="bg-white rounded-lg shadow-md p-2 sm:p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-white font-bold text-xl border-2 border-[#f47920] flex-shrink-0">
                 {fullName?.[0]?.toUpperCase()}
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-neutral-900">{fullName}</h1>
+                <h1 className="text-xl font-bold text-neutral-900">{fullName}</h1>
                 {patient?.mrn && (
                   <p className="text-sm text-neutral-600">({patient.mrn})</p>
                 )}
-                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
                   {age && (
                     <span className="text-base text-neutral-700">
                       {age} Yrs{patient?.gender ? ` · ${patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1)}` : ""}
                     </span>
                   )}
                   {patient?.approval_status && (
-                    <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg capitalize">
+                    <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-sm font-medium rounded-lg capitalize">
                       {patient.approval_status}
                     </span>
                   )}
@@ -243,40 +255,40 @@ export default function DoctorPatientDetailPage() {
               <button
                 onClick={() => prevPatient && router.push(`/doctor/patients/${prevPatient.id}`)}
                 disabled={!prevPatient}
-                className="px-3 py-1.5 bg-neutral-800 text-white text-xs font-medium rounded-full hover:bg-neutral-700 transition-colors flex items-center gap-1 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="px-4 py-2 bg-neutral-800 text-white text-sm font-medium rounded-full hover:bg-neutral-700 transition-colors flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
                 title={prevPatient?.full_name ?? ""}
               >
-                <ChevronLeft className="w-3.5 h-3.5" /> Prev
+                <ChevronLeft className="w-4 h-4" /> Prev
               </button>
               <button
                 onClick={() => nextPatient && router.push(`/doctor/patients/${nextPatient.id}`)}
                 disabled={!nextPatient}
-                className="px-3 py-1.5 bg-neutral-800 text-white text-xs font-medium rounded-full hover:bg-neutral-700 transition-colors flex items-center gap-1 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="px-4 py-2 bg-neutral-800 text-white text-sm font-medium rounded-full hover:bg-neutral-700 transition-colors flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
                 title={nextPatient?.full_name ?? ""}
               >
-                Next <ChevronRight className="w-3.5 h-3.5" />
+                Next <ChevronRight className="w-4 h-4" />
               </button>
             </div>
           </div>
 
           {/* Right — Next Activity Card */}
-          <div className="bg-white rounded-lg shadow-md p-4 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="bg-white rounded-lg shadow-md p-2 sm:p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             {nextAssessment ? (
               <>
                 <div>
-                  <p className="text-neutral-500 text-sm mb-1">Next Activity</p>
-                  <h3 className="text-2xl font-bold text-neutral-900">{nextAssessment.disease_name}</h3>
-                  <span className="inline-block mt-2 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg">Basic 2/7</span>
+                  <p className="text-neutral-500 text-sm mb-0.5">Next Activity</p>
+                  <h3 className="text-xl font-bold text-neutral-900">{nextAssessment.disease_name}</h3>
+                  <span className="inline-block mt-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-sm font-medium rounded-lg">Basic 2/7</span>
                 </div>
-                <button 
+                <button
                   onClick={() => router.push(`/doctor/patients/${id}/assessment/${nextAssessment.permission_id}`)}
-                  className="px-6 py-3 bg-orange-500 text-white font-medium rounded-full hover:bg-orange-600 transition-colors flex items-center gap-2 flex-shrink-0"
+                  className="px-6 py-3 bg-orange-500 text-white font-semibold text-base rounded-full hover:bg-orange-600 transition-colors flex items-center gap-2 flex-shrink-0"
                 >
                   ▶ Start
                 </button>
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center w-full py-4 text-center">
+              <div className="flex flex-col items-center justify-center w-full py-2 text-center">
                 <p className="text-neutral-500 text-sm">No pending activity</p>
                 <p className="text-neutral-400 text-xs mt-1">Assign an assessment to get started</p>
               </div>
@@ -353,7 +365,7 @@ export default function DoctorPatientDetailPage() {
             {/* Right Content - Assessment Details */}
             <div className="flex-1 bg-white rounded-lg shadow-md p-4 sm:p-8 overflow-y-auto">
               {selectedSection === "medical-history" ? (
-                <PatientHistoryPanel patientId={id} />
+                <PatientHistoryPanel patientId={id} clinicId={patient?.clinic_id} />
               ) : selectedSection === "registration-record" ? (
                 <div className="space-y-5">
                   <div>
@@ -434,6 +446,18 @@ export default function DoctorPatientDetailPage() {
                   )}
 
                   <EEGReportList patientId={id} canDelete refreshTrigger={eegRefreshKey} />
+                </div>
+              ) : selectedSection === "treatment-protocol" ? (
+                <div className="space-y-5">
+                  <div>
+                    <h2 className="text-2xl font-bold text-neutral-900 mb-1">Treatment Protocol</h2>
+                    <p className="text-neutral-600 text-sm">
+                      The recommended treatment protocol for this patient, derived from their assessment results.
+                    </p>
+                  </div>
+                  <div className="px-6 py-16 text-center text-sm text-neutral-400 bg-neutral-50 rounded-lg border border-neutral-100">
+                    Not started yet
+                  </div>
                 </div>
               ) : selectedSection === "notes" ? (
                 <div className="space-y-4">
@@ -657,6 +681,63 @@ export default function DoctorPatientDetailPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Floating Notepad — fixed to the viewport so it's always visible while
+          scrolling and stays mounted across every section tab, sharing state
+          with Doctor's Notes so both stay in sync. */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+        {notepadEditing && (
+          <div
+            className="w-80 min-w-[240px] min-h-[220px] max-w-[calc(100vw-3rem)] max-h-[calc(100vh-8rem)] resize overflow-auto bg-white rounded-xl shadow-xl border border-neutral-200 p-4 flex flex-col"
+          >
+            <div className="flex items-center justify-between mb-2 flex-shrink-0">
+              <div className="flex items-center gap-1.5">
+                <StickyNote className="w-4 h-4 text-neutral-500" />
+                <h3 className="text-sm font-semibold text-neutral-900">Notepad</h3>
+              </div>
+              <button
+                onClick={() => setNotepadEditing(false)}
+                className="text-neutral-400 hover:text-neutral-600 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <textarea
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Type your clinical notes here..."
+              autoFocus
+              className="w-full flex-1 min-h-[80px] resize-none border border-neutral-200 rounded-lg p-2.5 text-sm text-neutral-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-colors"
+            />
+
+            {noteError && <p className="text-xs text-red-600 mt-2">{noteError}</p>}
+            {noteSavedAt && (
+              <p className="text-[11px] text-neutral-400 mt-2">Last saved {formatDate(noteSavedAt)}</p>
+            )}
+
+            <div className="flex justify-end mt-3">
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={handleSaveNote}
+                disabled={noteSaving || noteText === (doctorNote?.note_text ?? "")}
+              >
+                <Save className="h-3.5 w-3.5" />
+                {noteSaving ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={() => setNotepadEditing((o) => !o)}
+          className="w-12 h-12 rounded-full bg-neutral-900 text-white shadow-lg flex items-center justify-center hover:bg-neutral-800 transition-colors flex-shrink-0"
+          title="Notepad"
+        >
+          {notepadEditing ? <span className="text-lg leading-none">✕</span> : <StickyNote className="w-5 h-5" />}
+        </button>
       </div>
     </div>
   );

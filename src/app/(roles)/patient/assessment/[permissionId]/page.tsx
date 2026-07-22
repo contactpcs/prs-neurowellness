@@ -394,6 +394,8 @@ export default function PatientAssessmentPage() {
       languageOptions={[...PRS_LANGUAGES]}
       onLanguageChange={handleLanguageChange}
       isLanguageSwitching={isLanguageSwitching}
+      backHref="/patient/dashboard"
+      backLabel="Back to Dashboard"
     />
   );
 }
