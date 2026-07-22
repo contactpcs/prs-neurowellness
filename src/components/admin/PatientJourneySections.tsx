@@ -80,19 +80,31 @@ export function PatientJourneySections({ detail }: { detail: PatientJourneyDetai
         )}
       </SectionShell>
 
-      <SectionShell icon={<ClipboardList className="h-3.5 w-3.5" />} title="Anamnesis">
+      <SectionShell icon={<ClipboardList className="h-3.5 w-3.5" />} title="Patient Complaints">
         {!detail.anamnesis ? (
           <p className="text-xs text-neutral-400">Not started yet.</p>
         ) : responses.length === 0 ? (
           <p className="text-xs text-neutral-400">Status: {detail.anamnesis.status} — no responses recorded.</p>
         ) : (
-          <div className="divide-y divide-neutral-100 border border-neutral-100 rounded-lg overflow-hidden">
-            {responses.map((r) => (
-              <div key={r.question_id} className="px-4 py-2 text-sm">
-                <p className="text-xs text-neutral-500">{questionText(r.question_id)}</p>
-                <p className="text-neutral-800">{r.response_values?.length ? r.response_values.join(", ") : r.response_value ?? "—"}</p>
-              </div>
-            ))}
+          <div className="border border-neutral-100 rounded-lg overflow-hidden">
+            <table className="w-full text-base">
+              <thead>
+                <tr className="bg-neutral-50 border-b border-neutral-100">
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide w-1/2 border-r border-neutral-200">Question</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Response</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {responses.map((r) => (
+                  <tr key={r.question_id}>
+                    <td className="px-4 py-3 align-top text-neutral-700 border-r border-neutral-200">{questionText(r.question_id)}</td>
+                    <td className="px-4 py-3 align-top text-neutral-900 font-semibold">
+                      {r.response_values?.length ? r.response_values.join(", ") : r.response_value ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </SectionShell>
