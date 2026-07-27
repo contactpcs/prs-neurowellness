@@ -174,9 +174,13 @@ export default function DoctorProfilePage() {
       setForm(freshFilled); originalRef.current = freshFilled;
       setProfileRaw(updated as unknown as Record<string, unknown>);
       dispatch(updateUserInStore({
-        first_name: updated.first_name, last_name: updated.last_name,
-        full_name: updated.full_name, specialisation: updated.specialisation,
-        city: updated.city, gender: updated.gender, date_of_birth: updated.date_of_birth,
+        first_name: updated.first_name as string | undefined,
+        last_name: updated.last_name as string | undefined,
+        full_name: updated.full_name as string | undefined,
+        specialisation: updated.specialisation as string | undefined,
+        city: updated.city as string | undefined,
+        gender: updated.gender as string | undefined,
+        date_of_birth: updated.date_of_birth as string | undefined,
       }));
       setSaveSuccess(true); setIsEditing(false);
     } catch (err) {
