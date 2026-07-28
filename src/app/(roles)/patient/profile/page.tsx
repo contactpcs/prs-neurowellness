@@ -10,6 +10,7 @@ import { PageLoader } from "@/components/ui";
 import { usersService } from "@/lib/api/services/users.service";
 import { authService } from "@/lib/api/services/auth.service";
 import { patientFilesService, type PatientFile } from "@/lib/api/services/patientFiles.service";
+import { extractErrorMessage } from "@/lib/api/errors";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
 import { fetchMyDoctor, selectMyDoctor } from "@/store/slices/patientsSlice";
@@ -267,7 +268,7 @@ function MedicalFilesSection({ patientId, clinicId }: { patientId?: string; clin
       const uploaded = await patientFilesService.upload(patientId, clinicId, file, documentType);
       setFiles((prev) => [uploaded, ...prev]);
     } catch (err: any) {
-      setError(err?.response?.data?.error?.message || err?.response?.data?.detail || "Upload failed");
+      setError(extractErrorMessage(err, "Upload failed"));
     } finally {
       setUploading(false);
     }

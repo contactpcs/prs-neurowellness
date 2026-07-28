@@ -1,3 +1,4 @@
+import axios from "axios";
 import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type { EEGReport, EEGReportListResponse, UploadEEGReportPayload } from "@/types/eeg.types";
@@ -31,15 +32,28 @@ export const eegService = {
     const clinicId = patientRes.data?.primary_clinic_id;
     if (!clinicId) throw new Error("Could not resolve the patient's clinic to upload a file.");
 
+    const contentType = payload.file.type || "application/octet-stream";
     const presign = await apiClient.post(`/patients/${payload.patient_id}/files/presign-upload`, {
       doc_type: "eeg",
       file_name: payload.report_name,
       clinic_id: clinicId,
+      content_type: contentType,
     });
     const { s3_key, upload_url } = presign.data;
-    await apiClient.put(upload_url ?? `/files/upload/${s3_key}`, payload.file, {
-      headers: { "Content-Type": "application/octet-stream" },
-    });
+    // Presigned S3 URLs must be hit with a bare client — apiClient's
+    // interceptor attaches this app's Cognito bearer token to every
+    // request, and an Authorization header on a sigv4 presigned PUT
+    // conflicts with the query-string signature (S3 rejects the whole
+    // request with SignatureDoesNotMatch). The local-dev fallback path
+    // IS our own backend and does need that token, so it still goes
+    // through apiClient.
+    if (upload_url) {
+      await axios.put(upload_url, payload.file, { headers: { "Content-Type": contentType } });
+    } else {
+      await apiClient.put(`/files/upload/${s3_key}`, payload.file, {
+        headers: { "Content-Type": contentType },
+      });
+    }
     const confirm = await apiClient.post(`/patients/${payload.patient_id}/files`, {
       doc_type: "eeg",
       s3_key,

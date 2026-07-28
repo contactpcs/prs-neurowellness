@@ -1,3 +1,4 @@
+import axios from "axios";
 import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
 
@@ -27,15 +28,26 @@ function mapFile(f: Record<string, unknown>): PatientFile {
  * patient is allowed to create, enforced server-side too). */
 export const patientFilesService = {
   async upload(patientId: string, clinicId: string, file: File, documentType?: string): Promise<PatientFile> {
+    const contentType = file.type || "application/octet-stream";
     const presign = await apiClient.post(`/patients/${patientId}/files/presign-upload`, {
       doc_type: "medical_history",
       file_name: file.name,
       clinic_id: clinicId,
+      content_type: contentType,
     });
     const { s3_key, upload_url } = presign.data;
-    await apiClient.put(upload_url ?? `/files/upload/${s3_key}`, file, {
-      headers: { "Content-Type": "application/octet-stream" },
-    });
+    // Presigned S3 URLs must be hit with a bare client — apiClient's
+    // interceptor attaches this app's Cognito bearer token to every
+    // request, and an Authorization header on a sigv4 presigned PUT
+    // conflicts with the query-string signature (S3 rejects the whole
+    // request with SignatureDoesNotMatch). The local-dev fallback path
+    // IS our own backend and does need that token, so it still goes
+    // through apiClient.
+    if (upload_url) {
+      await axios.put(upload_url, file, { headers: { "Content-Type": contentType } });
+    } else {
+      await apiClient.put(`/files/upload/${s3_key}`, file, { headers: { "Content-Type": contentType } });
+    }
     const confirm = await apiClient.post(`/patients/${patientId}/files`, {
       doc_type: "medical_history",
       s3_key,

@@ -6,6 +6,7 @@ import { usePatientPermissions } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { doctorsService } from "@/lib/api/services/doctors.service";
 import { patientFilesService, type PatientFile } from "@/lib/api/services/patientFiles.service";
+import { extractErrorMessage } from "@/lib/api/errors";
 import type { InstanceScoreDetail } from "@/lib/api/services/scores.service";
 import type { Appointment, AppointmentStatus } from "@/types/domain.types";
 
@@ -145,7 +146,7 @@ export function PatientHistoryPanel({ patientId, clinicId }: { patientId: string
       const uploaded = await patientFilesService.upload(patientId, clinicId, file, reportType);
       setReports((prev) => [uploaded, ...prev]);
     } catch (err: any) {
-      setUploadErr(err?.response?.data?.error?.message || err?.response?.data?.detail || "Upload failed");
+      setUploadErr(extractErrorMessage(err, "Upload failed"));
     } finally {
       setUploading(false);
     }
