@@ -5,6 +5,7 @@ export { prsAssessmentService } from "./prsAssessment.service";
 export { doctorsService } from "./doctors.service";
 export { patientsService } from "./patients.service";
 export { staffService } from "./staff.service";
+export { receptionService } from "./reception.service";
 export { notificationsService } from "./notifications.service";
 export { permissionsService } from "./permissions.service";
 export { scoresService } from "./scores.service";

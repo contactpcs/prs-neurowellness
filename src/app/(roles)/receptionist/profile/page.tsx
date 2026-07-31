@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { User, Mail, Phone, MapPin, Building2, ShieldCheck, Calendar } from "lucide-react";
-import { usersService } from "@/lib/api/services/users.service";
+import { receptionService } from "@/lib/api/services/reception.service";
 import { useAuth } from "@/lib/hooks";
 import { Card, CardHeader, CardContent, PageLoader } from "@/components/ui";
 
@@ -36,8 +36,8 @@ export default function ReceptionistProfilePage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    usersService
-      .getProfile()
+    receptionService
+      .getMyProfile()
       .then((p: any) => setProfile(p))
       .catch(() => setProfile(authUser))
       .finally(() => setIsLoading(false));
@@ -53,7 +53,7 @@ export default function ReceptionistProfilePage() {
   const fullName  = data?.full_name  || `${firstName} ${lastName}`.trim() || "Unknown";
   const initials  = (firstName[0] || "?").toUpperCase() + (lastName[0] || "").toUpperCase();
 
-  const clinicName  = data?.clinic_name  || data?.clinic?.name   || null;
+  const clinicName  = data?.clinic_name  || (typeof data?.clinic === "string" ? data.clinic : data?.clinic?.name) || null;
   const clinicCity  = data?.clinic_city  || data?.clinic?.city   || data?.clinic?.location || null;
   const clinicDisplay = clinicName || clinicCity;
 

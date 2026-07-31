@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Users, ClipboardCheck, UserPlus, ArrowRight, Clock, CheckCircle, Stethoscope } from "lucide-react";
-import { useAuth, useStaffDashboard, useStaffPendingPatients, useStaffPatients } from "@/lib/hooks";
+import { useAuth, useReceptionDashboard, useReceptionPendingPatients, useReceptionPatients } from "@/lib/hooks";
 import { PageLoader, Card, CardContent, Button } from "@/components/ui";
-import { staffService } from "@/lib/api/services/staff.service";
+import { receptionService } from "@/lib/api/services/reception.service";
 import { DoctorWeekCalendar } from "@/components/appointments/DoctorWeekCalendar";
 import type { PatientListItem, DoctorListItem } from "@/types/domain.types";
 
@@ -18,16 +18,16 @@ function isSameDay(dateStr?: string): boolean {
 
 export default function ReceptionistDashboard() {
   const { user } = useAuth();
-  const { dashboard, isLoading: dashLoading } = useStaffDashboard();
-  const { pending, isLoading: pendingLoading } = useStaffPendingPatients();
-  const { patients, isLoading: patientsLoading } = useStaffPatients();
+  const { dashboard, isLoading: dashLoading } = useReceptionDashboard();
+  const { pending, isLoading: pendingLoading } = useReceptionPendingPatients();
+  const { patients, isLoading: patientsLoading } = useReceptionPatients();
 
   const [doctors, setDoctors] = useState<DoctorListItem[]>([]);
   const [selectedDoctorId, setSelectedDoctorId] = useState("");
   const [calendarView, setCalendarView] = useState<"single" | "all">("single");
 
   useEffect(() => {
-    staffService.getDoctors().then(({ doctors: d }) => {
+    receptionService.getDoctors().then(({ doctors: d }) => {
       setDoctors(d);
       setSelectedDoctorId((prev) => prev || d[0]?.id || "");
     }).catch(() => {});

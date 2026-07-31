@@ -70,6 +70,33 @@ export const ENDPOINTS = {
     ALLOCATE: (patientId: string) => `/staff/patients/${patientId}/allocate`, // NOT AVAILABLE — no reassign-doctor endpoint found
   },
 
+  // ─── Reception ───
+  // Dedicated receptionist adapter module — backend/app/modules/reception.
+  // Scoped to receptionist/clinic_admin/regional_admin/super_admin only
+  // (403 for other roles, e.g. clinical_assistant — do NOT reuse these for
+  // clinical-assistant screens, which stay on the generic STAFF endpoints
+  // above). Covers only what's actually built — see
+  // Documents/Reception_API_Integration_Guide.md for the full spec.
+  RECEPTION: {
+    SEND_CODE: "/reception/registrations/send-code",
+    VERIFY_CODE: "/reception/registrations/verify-code",
+    PASSWORD_POLICY: "/reception/registrations/password-policy",
+    REGISTER_PATIENT: "/reception/patients",
+    PATIENTS: "/reception/patients",
+    PATIENT: (patientId: string) => `/reception/patients/${patientId}`,
+    REGISTRATIONS: "/reception/registrations",
+    APPROVE_REGISTRATION: (registrationId: string) => `/reception/registrations/${registrationId}/approve`,
+    REJECT_REGISTRATION: (registrationId: string) => `/reception/registrations/${registrationId}/reject`,
+    ME: "/reception/me",
+    CHANGE_PASSWORD: "/reception/me/change-password",
+    DOCTORS: "/reception/doctors",
+    ENUMS: "/reception/enums",
+    NOTIFICATIONS_UNREAD_COUNT: "/reception/notifications/unread-count",
+    NOTIFICATIONS: "/reception/notifications",
+    NOTIFICATION_TOGGLE_READ: (notificationId: string) => `/reception/notifications/${notificationId}`,
+    NOTIFICATIONS_MARK_ALL_READ: "/reception/notifications/mark-all-read",
+  },
+
   // ─── Admin ───
   ADMIN: {
     CLINICS_BOOTSTRAP: "/admin/clinics/create", // NOT AVAILABLE

@@ -6,7 +6,7 @@ import {
   Search, CheckCircle, XCircle, Mail,
   Phone, Calendar, Clock, ChevronRight, Loader2,
 } from "lucide-react";
-import { staffService } from "@/lib/api/services/staff.service";
+import { receptionService } from "@/lib/api/services/reception.service";
 import { useAuth } from "@/lib/hooks";
 import { Input, Card, CardContent, PageLoader } from "@/components/ui";
 import type { PatientListItem } from "@/types/domain.types";
@@ -28,7 +28,7 @@ export default function ReceptionistApprovalsPage() {
 
   const fetchPending = useCallback(() => {
     setIsLoading(true);
-    staffService
+    receptionService
       .getPendingPatients()
       .then(({ patients: p }) => setPatients(p))
       .catch(() => {})
@@ -40,7 +40,7 @@ export default function ReceptionistApprovalsPage() {
   const handleApprove = async (patientId: string) => {
     setActionLoading(patientId);
     try {
-      await staffService.approvePatient(patientId);
+      await receptionService.approvePatient(patientId);
       setPatients((prev) => prev.filter((p) => p.id !== patientId));
       showToast("Patient approved successfully.", true);
     } catch {
@@ -53,7 +53,9 @@ export default function ReceptionistApprovalsPage() {
     if (!rejectModal) return;
     setActionLoading(rejectModal.id);
     try {
-      await staffService.rejectPatient(rejectModal.id, rejectReason || undefined);
+      // Real endpoint has no rejection-reason field — the reason text
+      // entered above isn't transmitted (see reception.service.ts).
+      await receptionService.rejectPatient(rejectModal.id);
       setPatients((prev) => prev.filter((p) => p.id !== rejectModal.id));
       setRejectModal(null);
       setRejectReason("");
