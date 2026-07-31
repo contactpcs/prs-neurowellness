@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { appointmentRequestsService } from "@/lib/api/services/appointmentRequests.service";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { staffService } from "@/lib/api/services/staff.service";
+import { receptionService } from "@/lib/api/services/reception.service";
 import { staffRequestsService } from "@/lib/api/services/staffRequests.service";
 import { clinicRequestsService } from "@/lib/api/services/clinicRequests.service";
 
@@ -12,17 +13,25 @@ import { clinicRequestsService } from "@/lib/api/services/clinicRequests.service
 // "sse:notification" dispatch covers appointment/staff_request/
 // patient_approval alike, so one listener here handles them all instead of
 // wiring a separate window event per badge type).
+//
+// "patientApprovals" (clinical_assistant) and "receptionPatientApprovals"
+// (receptionist) are deliberately separate keys even though they show the
+// same concept — clinical_assistant stays on the generic /patients-based
+// staffService, while receptionist reads from the role-restricted
+// /api/v1/reception/* module, which 403s for clinical_assistant.
 export type BadgeKey =
-  | "appointmentRequests" | "patientApprovals" | "staffRequests"
-  | "staffApprovals" | "clinicRequests" | "doctorPendingAppointments";
+  | "appointmentRequests" | "patientApprovals" | "receptionPatientApprovals" | "staffRequests"
+  | "staffApprovals" | "clinicRequests" | "doctorPendingAppointments" | "receptionUnreadNotifications";
 
 const FETCHERS: Record<BadgeKey, () => Promise<number>> = {
   appointmentRequests: async () => (await appointmentRequestsService.list({ status: "pending" })).total,
   patientApprovals: async () => (await staffService.getPendingPatients()).total,
+  receptionPatientApprovals: async () => (await receptionService.getPendingPatients()).total,
   staffRequests: async () => (await staffRequestsService.list({ status: "pending" })).length,
   staffApprovals: async () => (await staffRequestsService.list({ status: "pending" })).length,
   clinicRequests: async () => (await clinicRequestsService.list({ status: "pending" })).length,
   doctorPendingAppointments: async () => (await appointmentsService.list({ status: "scheduled" })).total,
+  receptionUnreadNotifications: async () => receptionService.getUnreadCount(),
 };
 
 export function useSidebarBadges(keys: BadgeKey[]): Record<string, number> {

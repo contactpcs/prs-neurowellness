@@ -5,6 +5,7 @@ export { useSessions } from "./useSessions";
 export { useQuestionnaire } from "./useQuestionnaire";
 export { useScales, useClinics } from "./useCatalog";
 export { useStaffDashboard, useStaffPatients, useStaffPendingPatients, useStaffPatient } from "./useStaff";
+export { useReceptionDashboard, useReceptionPatients, useReceptionPendingPatients, useReceptionPatient } from "./useReception";
 export { useDoctorPatients, useDoctorPatient, usePatientResult, usePatientPermissions, useMyAlerts } from "./useDoctor";
 export { usePatientDashboard, useMyDoctor, useMyAssessments } from "./usePatient";
 export { useMyScores, useMyScoresSummary, useInstanceScore, usePatientScores, usePatientScoresSummary } from "./useScores";

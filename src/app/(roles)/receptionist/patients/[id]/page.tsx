@@ -8,13 +8,12 @@ import {
   Heart, AlertCircle, ClipboardList, Check,
 } from "lucide-react";
 import { staffService } from "@/lib/api/services/staff.service";
+import { receptionService } from "@/lib/api/services/reception.service";
 import { adminService } from "@/lib/api/services/admin.service";
-import { useStaffPatient, useClinics } from "@/lib/hooks";
-import { useAppDispatch } from "@/store/hooks";
-import { fetchPatient } from "@/store/slices/staffSlice";
+import { useReceptionPatient, useClinics } from "@/lib/hooks";
 import { Card, CardHeader, CardContent, PageLoader } from "@/components/ui";
 import { PatientJourneySections, type PatientJourneyDetail } from "@/components/admin/PatientJourneySections";
-import type { PatientDetail, DoctorListItem } from "@/types/domain.types";
+import type { DoctorListItem } from "@/types/domain.types";
 
 // Matches patients/service.py _REGISTRATION_STEPS exactly — same stepper used
 // on the admin/regional-admin/clinic-admin patient-detail views.
@@ -55,9 +54,8 @@ export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
 
-  const dispatch = useAppDispatch();
   const [doctors, setDoctors]         = useState<DoctorListItem[]>([]);
-  const [isLoading, setIsLoading]     = useState(true);
+  const [doctorsLoading, setDoctorsLoading] = useState(true);
   const [selectedDoctor, setSelectedDoctor] = useState("");
   const [allocating, setAllocating]   = useState(false);
   const [reallocating, setReallocating] = useState(false);
@@ -68,9 +66,9 @@ export default function PatientDetailPage() {
   const [journeyDetail, setJourneyDetail] = useState<Record<string, unknown> | null>(null);
   const [journeyError, setJourneyError]   = useState<string | null>(null);
 
-  // Patient from cache, doctors fresh (less critical to cache), clinics from catalog.
-  const patient = useStaffPatient(id);
+  const { patient, isLoading: patientLoading, refresh: refreshPatient } = useReceptionPatient(id);
   const { clinics } = useClinics();
+  const isLoading = patientLoading || doctorsLoading;
 
   useEffect(() => {
     setJourneyDetail(null);
@@ -89,10 +87,10 @@ export default function PatientDetailPage() {
   })();
 
   useEffect(() => {
-    staffService.getDoctors()
+    receptionService.getDoctors()
       .then(({ doctors: d }) => setDoctors(d))
       .catch(() => {})
-      .finally(() => setIsLoading(false));
+      .finally(() => setDoctorsLoading(false));
   }, []);
 
   const showToast = (msg: string, ok: boolean) => {
@@ -107,7 +105,7 @@ export default function PatientDetailPage() {
       await staffService.allocatePatient(id, selectedDoctor);
       setSelectedDoctor("");
       setReallocating(false);
-      dispatch(fetchPatient(id));
+      refreshPatient();
       showToast("Patient successfully allocated to doctor.", true);
     } catch {
       showToast("Failed to allocate patient. Please try again.", false);
@@ -119,7 +117,8 @@ export default function PatientDetailPage() {
   const handleApprove = async () => {
     setActionLoading("approve");
     try {
-      await staffService.approvePatient(id);
+      await receptionService.approvePatient(id);
+      refreshPatient();
       showToast("Patient approved successfully.", true);
     } catch {
       showToast("Failed to approve patient.", false);
@@ -131,8 +130,10 @@ export default function PatientDetailPage() {
   const handleReject = async () => {
     setActionLoading("reject");
     try {
-      await staffService.rejectPatient(id, rejectReason || undefined);
+      // Real endpoint has no rejection-reason field — rejectReason isn't transmitted.
+      await receptionService.rejectPatient(id);
       setRejectModal(false);
+      refreshPatient();
       showToast("Patient registration rejected.", true);
     } catch {
       showToast("Failed to reject patient.", false);
@@ -149,7 +150,7 @@ export default function PatientDetailPage() {
   const name    = patient.full_name || `${patient.first_name} ${patient.last_name}`.trim() || "Unknown";
   const initials = (patient.first_name?.[0] || name[0] || "?").toUpperCase() +
                    (patient.last_name?.[0]  || name.split(" ")[1]?.[0] || "").toUpperCase();
-  const isPending = patient.status === "pending";
+  const isPending = patient.approval_status === "pending";
   const clinic = resolvedClinic || patient.clinic_name || patient.clinic_city;
 
   return (

@@ -11,7 +11,7 @@ import {
   LayoutDashboard, Users, ClipboardList,
   UserCircle, LogOut, Brain, ChevronLeft, Menu, Calendar, CalendarDays,
   ClipboardCheck, MapPin, Building2, UserCog, Settings, ShieldCheck,
-  ShoppingBag, Receipt,
+  ShoppingBag, Receipt, Bell,
 } from "lucide-react";
 
 interface NavItem {
@@ -47,7 +47,8 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { label: "Appt. Reqs.", href: "/receptionist/appointment-requests", icon: CalendarDays, badge: "appointmentRequests" },
     { label: "Appointments",href: "/receptionist/appointments",         icon: Calendar },
     { label: "All Patients",href: "/receptionist/patients",             icon: Users },
-    { label: "Approvals",   href: "/receptionist/approvals",            icon: ClipboardCheck, badge: "patientApprovals" },
+    { label: "Approvals",   href: "/receptionist/approvals",            icon: ClipboardCheck, badge: "receptionPatientApprovals" },
+    { label: "Notifications", href: "/receptionist/notifications",      icon: Bell, badge: "receptionUnreadNotifications" },
     { label: "Profile",     href: "/receptionist/profile",              icon: UserCircle },
   ],
   platform_admin: [

@@ -10,6 +10,7 @@ export interface PatientListItem {
   phone?: string;
   mrn?: string;
   date_of_birth?: string;
+  age?: number;
   gender?: string;
   condition?: string;
   status?: string;
