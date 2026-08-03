@@ -175,4 +175,21 @@ export const authService = {
   async syncProfile(_data: Partial<RegisterData> & { email: string; full_name?: string }): Promise<void> {
     throw new Error("Profile sync isn't available.");
   },
+
+  // ─── Forgot password (cognito mode only — 404s under local auth) ─────────
+
+  /** Always resolves regardless of whether the username exists — the
+   * backend intentionally returns 204 either way to avoid leaking account
+   * existence. Show the same "check your email/phone" message unconditionally. */
+  async forgotPasswordStart(username: string): Promise<void> {
+    await apiClient.post(ENDPOINTS.AUTH.FORGOT_PASSWORD_START, { username });
+  },
+
+  /** Sets the new password directly — Cognito's ConfirmForgotPassword does
+   * the code check and password change in one call. */
+  async forgotPasswordConfirm(username: string, code: string, newPassword: string, confirmPassword: string): Promise<void> {
+    await apiClient.post(ENDPOINTS.AUTH.FORGOT_PASSWORD_CONFIRM, {
+      username, code, new_password: newPassword, confirm_password: confirmPassword,
+    });
+  },
 };

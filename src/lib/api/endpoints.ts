@@ -22,6 +22,8 @@ export const ENDPOINTS = {
     ME: "/auth/me",             // real — GET only
     SYNC_PROFILE: "/auth/sync-profile", // NOT AVAILABLE
     CLINICS: "/auth/clinics",           // real — public clinic picker for self-registration
+    FORGOT_PASSWORD_START: "/auth/forgot-password/start",     // real (cognito mode only) — {username} -> 204, always (no user enumeration)
+    FORGOT_PASSWORD_CONFIRM: "/auth/forgot-password/confirm", // real (cognito mode only) — {username, code, new_password, confirm_password} -> 204
   },
 
   // ─── Consent ───
