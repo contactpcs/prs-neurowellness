@@ -80,6 +80,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { label: "Staff Requests", href: "/clinic-admin/staff-requests", icon: ClipboardList, badge: "staffRequests" },
     { label: "Store Orders",   href: "/clinic-admin/store-orders",   icon: ShoppingBag },
     { label: "Payments",       href: "/clinic-admin/payments",       icon: Receipt },
+    { label: "Settings",       href: "/clinic-admin/settings",       icon: Settings },
   ],
 };
 

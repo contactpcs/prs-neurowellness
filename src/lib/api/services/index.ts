@@ -18,3 +18,4 @@ export { clinicRequestsService } from "./clinicRequests.service";
 export { paymentsService } from "./payments.service";
 export { storeService } from "./store.service";
 export { inventoryService } from "./inventory.service";
+export { clinicDevicesService } from "./clinicDevices.service";

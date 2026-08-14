@@ -244,6 +244,14 @@ export const ENDPOINTS = {
     AVAILABILITY: (clinicId: string) => `/clinics/${clinicId}/device-availability`,
   },
 
+  // ─── Clinic device inventory (Settings → Clinic Devices) ───
+  // WHAT the clinic owns, gating the protocol Step-1 picker. Distinct from
+  // CLINIC_DEVICE above, which is WHEN sessions run and HOW MANY at once.
+  CLINIC_DEVICE_INVENTORY: {
+    LIST: (clinicId: string) => `/clinics/${clinicId}/devices`,
+    ITEM: (clinicId: string, clinicDeviceId: string) => `/clinics/${clinicId}/devices/${clinicDeviceId}`,
+  },
+
   // ─── Schedule ───
   SCHEDULE: {
     MY: "/schedule/my",                       // real — GET {weekly,overrides}, PUT {items:[...]} atomic replace

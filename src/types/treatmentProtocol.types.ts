@@ -31,6 +31,41 @@ export interface DeviceRead {
   clinic_quantity?: number | null;
 }
 
+// ─── Clinic device inventory (Settings → Clinic Devices) ───
+// Mirrors backend/app/modules/scheduling/schemas.py ClinicDeviceRead/Create/Update.
+// Distinct from DeviceScheduleRead below: this is WHAT the clinic owns,
+// device-schedule is WHEN sessions run and HOW MANY at once.
+export interface ClinicDeviceRead {
+  clinic_device_id: string;
+  clinic_id: string;
+  device_id: string;
+  quantity: number;
+  is_active: boolean;
+  acquired_on?: string | null;
+  notes?: string | null;
+  // Hydrated from the catalogue so the screen shows names, not ids.
+  device_code?: string | null;
+  device_name?: string | null;
+  modality?: string | null;
+  phase?: 1 | 2 | null;
+  device_is_active?: boolean | null;
+  company_name?: string | null;
+}
+
+export interface ClinicDeviceCreate {
+  device_id: string;
+  quantity?: number; // defaults to 1 server-side
+  acquired_on?: string | null;
+  notes?: string | null;
+}
+
+export interface ClinicDeviceUpdate {
+  quantity?: number;
+  is_active?: boolean;
+  acquired_on?: string | null;
+  notes?: string | null;
+}
+
 // ─── Clinic device schedule (availability panel, Step 7) ───
 export interface DeviceScheduleRead {
   schedule_id: string;
