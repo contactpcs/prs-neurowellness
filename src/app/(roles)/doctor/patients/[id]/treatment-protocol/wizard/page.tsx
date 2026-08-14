@@ -1,0 +1,1091 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import {
+  Check, ChevronRight, Loader2, Plus, X, AlertTriangle, ShieldCheck,
+} from "lucide-react";
+import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
+import { useAuth } from "@/lib/hooks";
+import { Card, CardContent, Input, Select, Button, PageLoader } from "@/components/ui";
+import { PlacementMap } from "./PlacementMap";
+import type {
+  DeviceRead, ConditionRead, DiagnosisRead, DiagnosisResolution, PlacementRead, DosingRead, ScaleRead,
+  SchedulePreview, ProtocolCreate, ProtocolScaleAssignment, ProtocolRead,
+  DeviceScheduleRead, DeviceOverrideRead, DeviceSlotRead,
+} from "@/types/treatmentProtocol.types";
+
+const STEP_LABELS = ["Device", "Condition", "Diagnosis", "Placement", "Dosing", "Scales", "Schedule", "Review"];
+const REASON_OPTIONS = ["Patient discomfort", "Patient tolerance", "Clinical reassessment", "Treatment response", "Other"];
+const CADENCE_OPTIONS = ["After every session", "Weekly", "Every 2 weeks", "At re-assessment only", "Baseline & end only", "Monthly"];
+const FREQ_OPTIONS = [1, 2, 3, 5, 7];
+
+interface AssignedScale extends ProtocolScaleAssignment {
+  displayName: string;
+}
+
+interface WizardState {
+  deviceId: string | null;
+  conditionIds: string[];
+  diagnosisIds: string[];
+  placementId: string | null;
+  anodeSite: string | null;
+  cathodeSites: string[];
+  dosingId: string | null;
+  currentMa: string;
+  sessionDurationMin: string;
+  rampSeconds: string;
+  sessionCount: string;
+  sessionsPerWeek: number;
+  followUpEveryN: string;
+  startDate: string;
+  skipDates: string[];
+  extraDates: string[];
+  scales: AssignedScale[];
+  protocolNote: string;
+}
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+function emptyState(): WizardState {
+  return {
+    deviceId: null, conditionIds: [], diagnosisIds: [],
+    placementId: null, anodeSite: null, cathodeSites: [],
+    dosingId: null, currentMa: "", sessionDurationMin: "", rampSeconds: "30",
+    sessionCount: "20", sessionsPerWeek: 5, followUpEveryN: "",
+    startDate: todayIso(), skipDates: [], extraDates: [],
+    scales: [], protocolNote: "",
+  };
+}
+
+const PUSH_ERROR_MESSAGES: Record<string, string> = {
+  DEVICE_NOT_AVAILABLE_AT_CLINIC: "That device isn't in this clinic's inventory anymore — go back to Step 1 and re-pick a device.",
+  PROTOCOL_NOT_ACTIVE: "The protocol being modified is no longer active — refresh and try again.",
+  PROTOCOL_NOT_CANCELLABLE: "The prior protocol version couldn't be cancelled — it may have already been superseded.",
+  DEVICE_NOT_FOUND: "That device no longer exists — go back to Step 1 and re-pick a device.",
+};
+
+function describePushError(e: any): string {
+  const code = e?.response?.data?.error?.code;
+  if (code && PUSH_ERROR_MESSAGES[code]) return PUSH_ERROR_MESSAGES[code];
+  return e?.response?.data?.error?.message || e?.response?.data?.detail || "Failed to push the protocol. Please try again.";
+}
+
+export default function TreatmentProtocolWizardPage() {
+  const { id: patientId } = useParams<{ id: string }>();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { user } = useAuth();
+
+  const mode = searchParams.get("mode") === "modify" ? "modify" : "new";
+  const priorProtocolId = searchParams.get("protocolId");
+
+  const [step, setStep] = useState(0);
+  const [state, setState] = useState<WizardState>(emptyState());
+  const [reasonGateOpen, setReasonGateOpen] = useState(mode === "modify");
+  const [reasonLabel, setReasonLabel] = useState("");
+  const [reasonNote, setReasonNote] = useState("");
+  const [reasonError, setReasonError] = useState<string | null>(null);
+  const [prefillLoading, setPrefillLoading] = useState(mode === "modify");
+  const [err, setErr] = useState<string | null>(null);
+
+  const set = <K extends keyof WizardState>(k: K, v: WizardState[K]) => setState((s) => ({ ...s, [k]: v }));
+
+  // ─── Catalogue caches ───
+  const [devices, setDevices] = useState<DeviceRead[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(true);
+  const [conditions, setConditions] = useState<ConditionRead[]>([]);
+  const [diagnoses, setDiagnoses] = useState<DiagnosisRead[]>([]);
+  const [dxQuery, setDxQuery] = useState("");
+  const [resolution, setResolution] = useState<DiagnosisResolution | null>(null);
+  const [placements, setPlacements] = useState<PlacementRead[]>([]);
+  const [dosingRows, setDosingRows] = useState<DosingRead[]>([]);
+  const [scaleCatalogue, setScaleCatalogue] = useState<ScaleRead[]>([]);
+  const [customScaleText, setCustomScaleText] = useState("");
+  const [preview, setPreview] = useState<SchedulePreview | null>(null);
+  const [deviceSchedules, setDeviceSchedules] = useState<DeviceScheduleRead[]>([]);
+  const [deviceOverrides, setDeviceOverrides] = useState<DeviceOverrideRead[]>([]);
+  const [deviceSlots, setDeviceSlots] = useState<DeviceSlotRead[]>([]);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [validation, setValidation] = useState<{ valid: boolean; errors: string[]; warnings: string[]; maxCathodes: number } | null>(null);
+
+  const [pushing, setPushing] = useState(false);
+  const [pushed, setPushed] = useState<ProtocolRead | null>(null);
+
+  const selectedDevice = devices.find((d) => d.device_id === state.deviceId) || null;
+  const primaryConditionId = resolution?.driving_condition_id || state.conditionIds[0] || undefined;
+  const selectedDosing = dosingRows.find((d) => d.dosing_id === state.dosingId) || null;
+  const isHD = selectedDevice?.modality === "HD-tDCS";
+
+  // ─── Prefill from an existing active protocol when modifying ───
+  useEffect(() => {
+    if (mode !== "modify" || !priorProtocolId) return;
+    treatmentProtocolService.getProtocolDetail(priorProtocolId).then((detail) => {
+      setState((s) => ({
+        ...s,
+        deviceId: detail.device_id,
+        placementId: detail.placement_id || null,
+        anodeSite: detail.placement?.anode_site || null,
+        cathodeSites: detail.placement?.cathode_site ? [detail.placement.cathode_site] : (detail.placement?.return_sites || []),
+        dosingId: detail.dosing_id || null,
+        currentMa: String((detail.device_settings as any)?.current_ma ?? ""),
+        sessionDurationMin: String((detail.device_settings as any)?.duration_min ?? ""),
+        rampSeconds: String((detail.device_settings as any)?.ramp_seconds ?? "30"),
+        sessionCount: String(detail.session_count),
+        followUpEveryN: detail.follow_up_every_n ? String(detail.follow_up_every_n) : "",
+      }));
+    }).catch(() => setErr("Couldn't load the current protocol to modify.")).finally(() => setPrefillLoading(false));
+  }, [mode, priorProtocolId]);
+
+  // ─── Step 1: Device ─── clinicId is required — otherwise the picker
+  // offers devices this clinic doesn't own, and the DB trigger rejects
+  // the protocol at Step 8 after the doctor has filled in everything else.
+  useEffect(() => {
+    if (!user?.clinic_id) return;
+    setDevicesLoading(true);
+    treatmentProtocolService.listDevices({ clinicId: user.clinic_id })
+      .then(setDevices).catch(() => setDevices([])).finally(() => setDevicesLoading(false));
+  }, [user?.clinic_id]);
+
+  // ─── Step 2: Condition ───
+  useEffect(() => {
+    if (!state.deviceId) return;
+    treatmentProtocolService.listConditions(state.deviceId).then(setConditions).catch(() => {});
+  }, [state.deviceId]);
+
+  // ─── Step 3: Diagnosis ───
+  useEffect(() => {
+    if (!state.deviceId || state.conditionIds.length === 0) { setDiagnoses([]); return; }
+    const t = setTimeout(() => {
+      treatmentProtocolService.listDiagnoses({ conditionIds: state.conditionIds, deviceId: state.deviceId!, q: dxQuery || undefined })
+        .then(setDiagnoses).catch(() => {});
+    }, 250);
+    return () => clearTimeout(t);
+  }, [state.deviceId, state.conditionIds, dxQuery]);
+
+  useEffect(() => {
+    if (!state.deviceId || state.diagnosisIds.length === 0) { setResolution(null); return; }
+    treatmentProtocolService.resolveDiagnoses(state.deviceId, state.diagnosisIds).then((r) => {
+      setResolution(r);
+      // Auto-apply the driving suggestion the first time a placement/dosing hasn't been chosen yet.
+      setState((s) => (s.placementId ? s : { ...s, placementId: r.placement_id || s.placementId, dosingId: r.dosing_id || s.dosingId }));
+    }).catch(() => setResolution(null));
+  }, [state.deviceId, state.diagnosisIds]);
+
+  // ─── Step 4: Placement ───
+  useEffect(() => {
+    if (!state.deviceId) return;
+    treatmentProtocolService.listPlacements(state.deviceId, primaryConditionId).then(setPlacements).catch(() => {});
+  }, [state.deviceId, primaryConditionId]);
+
+  // ─── Step 5: Dosing ───
+  useEffect(() => {
+    if (!state.deviceId) return;
+    treatmentProtocolService.listDosing(state.deviceId, primaryConditionId, state.placementId || undefined).then((rows) => {
+      setDosingRows(rows);
+      if (rows.length === 1) setState((s) => ({ ...s, dosingId: rows[0].dosing_id }));
+    }).catch(() => {});
+  }, [state.deviceId, primaryConditionId, state.placementId]);
+
+  useEffect(() => {
+    if (selectedDosing) {
+      setState((s) => ({
+        ...s,
+        currentMa: s.currentMa || String(selectedDosing.current_ma_min ?? selectedDosing.total_current_ma ?? ""),
+        sessionDurationMin: s.sessionDurationMin || String(selectedDosing.session_duration_min ?? ""),
+      }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.dosingId]);
+
+  // ─── Step 6: Scales ───
+  useEffect(() => {
+    if (state.conditionIds.length === 0) return;
+    treatmentProtocolService.listScales(state.conditionIds).then(setScaleCatalogue).catch(() => {});
+  }, [state.conditionIds]);
+
+  // ─── Step 7: Schedule preview ───
+  useEffect(() => {
+    if (step !== 6 || !state.startDate || !state.sessionCount) return;
+    setPreviewLoading(true);
+    const t = setTimeout(() => {
+      treatmentProtocolService.previewSchedule({
+        start_date: state.startDate,
+        session_count: Math.max(1, Math.min(90, parseInt(state.sessionCount) || 20)),
+        sessions_per_week: state.sessionsPerWeek,
+        follow_up_every_n: state.followUpEveryN ? parseInt(state.followUpEveryN) : undefined,
+        skip_dates: state.skipDates,
+        extra_dates: state.extraDates,
+      }).then(setPreview).catch(() => setPreview(null)).finally(() => setPreviewLoading(false));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [step, state.startDate, state.sessionCount, state.sessionsPerWeek, state.followUpEveryN, state.skipDates, state.extraDates]);
+
+  // ─── Step 7: Availability panel (clinic device-schedule + overrides + slot capacity) ───
+  useEffect(() => {
+    if (step !== 6 || !user?.clinic_id) return;
+    treatmentProtocolService.listDeviceSchedules(user.clinic_id).then(setDeviceSchedules).catch(() => setDeviceSchedules([]));
+  }, [step, user?.clinic_id]);
+
+  useEffect(() => {
+    if (step !== 6 || !user?.clinic_id || !state.startDate) return;
+    treatmentProtocolService.listDeviceOverrides(user.clinic_id, state.startDate).then(setDeviceOverrides).catch(() => setDeviceOverrides([]));
+    const toDate = new Date(state.startDate + "T00:00:00Z");
+    toDate.setUTCDate(toDate.getUTCDate() + 7);
+    treatmentProtocolService.listDeviceAvailability(user.clinic_id, state.startDate, toDate.toISOString().slice(0, 10))
+      .then(setDeviceSlots).catch(() => setDeviceSlots([]));
+  }, [step, user?.clinic_id, state.startDate]);
+
+  // ─── Placement node clicks ───
+  const maxCathodes = validation?.maxCathodes ?? (isHD ? 4 : 1);
+  const handleNodeClick = async (nodeId: string) => {
+    let anodeSite = state.anodeSite;
+    let cathodeSites = state.cathodeSites;
+    if (anodeSite === nodeId) { anodeSite = null; }
+    else if (cathodeSites.includes(nodeId)) { cathodeSites = cathodeSites.filter((c) => c !== nodeId); }
+    else if (!anodeSite) { anodeSite = nodeId; }
+    else if (cathodeSites.length < maxCathodes) { cathodeSites = [...cathodeSites, nodeId]; }
+    else { return; }
+
+    const matched = placements.find((p) => p.anode_site === anodeSite
+      && (p.cathode_site ? [p.cathode_site].join(",") === cathodeSites.join(",") : (p.return_sites || []).slice().sort().join(",") === cathodeSites.slice().sort().join(",")));
+
+    setState((s) => ({ ...s, anodeSite, cathodeSites, placementId: matched ? matched.placement_id : null }));
+
+    if (state.deviceId && anodeSite) {
+      try {
+        const v = await treatmentProtocolService.validatePlacement({ device_id: state.deviceId, anode_site: anodeSite, cathode_sites: cathodeSites });
+        setValidation({ valid: v.valid, errors: v.errors, warnings: v.warnings, maxCathodes: v.max_cathodes });
+      } catch { setValidation(null); }
+    } else {
+      setValidation(null);
+    }
+  };
+
+  const applyPlacement = (p: PlacementRead) => {
+    setState((s) => ({ ...s, placementId: p.placement_id, anodeSite: p.anode_site || null, cathodeSites: p.cathode_site ? [p.cathode_site] : (p.return_sites || []) }));
+    setValidation(null);
+  };
+
+  // ─── Nav guards ───
+  const canContinue: Record<number, boolean> = {
+    0: !!state.deviceId,
+    1: state.conditionIds.length > 0,
+    2: state.diagnosisIds.length > 0,
+    3: !!state.placementId,
+    4: !!state.dosingId && !!state.sessionCount,
+    5: true,
+    6: !!preview,
+    7: false,
+  };
+
+  const goNext = () => setStep((s) => Math.min(7, s + 1));
+  const goBack = () => setStep((s) => Math.max(0, s - 1));
+
+  // ─── Push ───
+  const handlePush = async () => {
+    if (!user?.doctor_id || !user?.clinic_id) { setErr("Your account has no doctor/clinic assignment — cannot create a protocol."); return; }
+    if (!state.deviceId || !state.placementId || !state.dosingId) return;
+    setErr(null);
+    setPushing(true);
+    try {
+      const finalNotes = mode === "modify"
+        ? `Reason: ${reasonLabel || "Other"} — ${reasonNote}${state.protocolNote ? ` | ${state.protocolNote}` : ""}`
+        : (state.protocolNote || null);
+
+      const planId = await treatmentProtocolService.resolveOrCreatePlanId({
+        patientId, doctorId: user.doctor_id, clinicId: user.clinic_id,
+        deviceType: selectedDevice?.modality || "tDCS",
+        sessionCount: parseInt(state.sessionCount) || 20,
+      });
+
+      const deviceSettings: Record<string, unknown> = {};
+      if (state.currentMa) deviceSettings.current_ma = parseFloat(state.currentMa);
+      if (state.sessionDurationMin) deviceSettings.duration_min = parseInt(state.sessionDurationMin);
+      if (state.rampSeconds) deviceSettings.ramp_seconds = parseInt(state.rampSeconds);
+
+      const payload: ProtocolCreate = {
+        plan_id: planId,
+        device_id: state.deviceId,
+        placement_id: state.placementId,
+        dosing_id: state.dosingId,
+        session_count: Math.max(1, Math.min(90, parseInt(state.sessionCount) || 20)),
+        follow_up_every_n: state.followUpEveryN ? parseInt(state.followUpEveryN) : undefined,
+        start_date: state.startDate,
+        sessions_per_week: state.sessionsPerWeek,
+        skip_dates: state.skipDates,
+        extra_dates: state.extraDates,
+        diagnosis_ids: state.diagnosisIds,
+        scales: state.scales.map(({ scale_id, scale_code, cadence }) => ({ scale_id, scale_code, cadence })),
+        device_settings: deviceSettings,
+        notes: finalNotes,
+      };
+
+      const created = await treatmentProtocolService.createProtocol(payload);
+      await treatmentProtocolService.activateProtocol(created.protocol_id);
+      if (mode === "modify" && priorProtocolId) {
+        await treatmentProtocolService.cancelProtocol(priorProtocolId, finalNotes || "Superseded by a new protocol version.");
+      }
+      setPushed(created);
+    } catch (e: any) {
+      setErr(describePushError(e));
+    } finally {
+      setPushing(false);
+    }
+  };
+
+  if (prefillLoading) return <PageLoader />;
+
+  if (reasonGateOpen) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-4">
+        <div>
+          <h1 className="text-xl font-bold text-neutral-900">Modify Treatment Protocol</h1>
+          <p className="text-sm text-neutral-500 mt-1">This creates protocol v-next. Sessions already performed keep the current version exactly as delivered.</p>
+        </div>
+        <Card>
+          <CardContent className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-neutral-700 mb-2">Reason for Modification <span className="text-red-500">*</span></label>
+              <div className="flex flex-wrap gap-2">
+                {REASON_OPTIONS.map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setReasonLabel(r)}
+                    className={`px-3 py-2 rounded-lg border text-sm transition-colors ${reasonLabel === r ? "border-blue-500 bg-blue-50 text-blue-700" : "border-neutral-200 text-neutral-600 hover:border-neutral-300"}`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-neutral-700 mb-1.5">Clinical Note <span className="text-red-500">*</span></label>
+              <textarea
+                value={reasonNote}
+                onChange={(e) => setReasonNote(e.target.value)}
+                placeholder="Clinical rationale for the change…"
+                rows={4}
+                className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
+              />
+            </div>
+            {reasonError && <p className="text-sm text-red-600">{reasonError}</p>}
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => router.back()}>Cancel</Button>
+              <Button
+                onClick={() => {
+                  if (!reasonLabel || !reasonNote.trim()) { setReasonError("Both a reason and a clinical note are required."); return; }
+                  setReasonError(null);
+                  setReasonGateOpen(false);
+                }}
+              >
+                Continue to Protocol
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (pushed) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <Card>
+          <CardContent className="py-10 text-center space-y-4">
+            <div className="w-14 h-14 rounded-full bg-green-50 border border-green-100 mx-auto flex items-center justify-center">
+              <Check className="h-7 w-7 text-green-600" />
+            </div>
+            <h2 className="text-xl font-bold text-neutral-900">Treatment Protocol Pushed</h2>
+            <p className="text-sm text-neutral-500">Protocol is now active and visible to the care team.</p>
+            <div className="grid grid-cols-2 gap-3 text-left mt-4">
+              {[
+                ["Status", pushed.status],
+                ["Sessions", String(pushed.session_count)],
+                ["Scales queued", String(state.scales.length)],
+                ["Device", pushed.device_name || pushed.modality || "—"],
+              ].map(([k, v]) => (
+                <div key={k} className="border border-neutral-100 rounded-lg bg-neutral-50 px-3 py-2">
+                  <p className="text-[10px] uppercase tracking-wide text-neutral-400 font-semibold">{k}</p>
+                  <p className="text-sm font-bold text-neutral-900 mt-0.5">{v}</p>
+                </div>
+              ))}
+            </div>
+            <Button className="mt-2" onClick={() => router.push(`/doctor/patients/${patientId}/treatment-protocol`)}>
+              View Treatment Protocol
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-6xl mx-auto space-y-4 pb-24">
+      <div>
+        <h1 className="text-xl font-bold text-neutral-900">{mode === "modify" ? "Modify Treatment Protocol" : "New Treatment Protocol"}</h1>
+        <p className="text-xs text-neutral-400 mt-0.5">Step {step + 1} of 8 · {STEP_LABELS[step]}</p>
+      </div>
+
+      {/* Stepper */}
+      <div className="flex items-stretch overflow-hidden rounded-xl border border-neutral-200 bg-white overflow-x-auto">
+        {STEP_LABELS.map((label, i) => {
+          const active = i === step, done = i < step;
+          return (
+            <button
+              key={label}
+              onClick={() => i < step && setStep(i)}
+              className="flex-1 min-w-[110px] flex items-center gap-2 px-3 py-3 text-left"
+              style={{ background: active ? "#eff6ff" : "#fff", boxShadow: active ? "inset 0 -2px 0 #2563eb" : "none", borderRight: i < 7 ? "1px solid #f1f1f1" : "none" }}
+            >
+              <span
+                className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                style={{ background: done ? "#2563eb" : active ? "#fff" : "#f5f5f5", border: `1px solid ${done || active ? "#2563eb" : "#e5e5e5"}`, color: done ? "#fff" : active ? "#1d4ed8" : "#a3a3a3" }}
+              >
+                {done ? <Check className="h-3 w-3" /> : i + 1}
+              </span>
+              <span className={`text-xs font-semibold whitespace-nowrap ${active ? "text-blue-900" : done ? "text-neutral-800" : "text-neutral-400"}`}>{label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {err && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</p>}
+
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div className="flex-1 min-w-0">
+          <Card>
+            <CardContent>
+              {step === 0 && (
+                <DeviceStep devices={devices} loading={devicesLoading} selected={state.deviceId} onSelect={(id) => set("deviceId", id)} />
+              )}
+              {step === 1 && (
+                <ConditionStep conditions={conditions} selected={state.conditionIds} onToggle={(id) => {
+                  const has = state.conditionIds.includes(id);
+                  set("conditionIds", has ? state.conditionIds.filter((c) => c !== id) : [...state.conditionIds, id]);
+                }} />
+              )}
+              {step === 2 && (
+                <DiagnosisStep
+                  diagnoses={diagnoses} selected={state.diagnosisIds} query={dxQuery} onQuery={setDxQuery}
+                  resolution={resolution}
+                  onToggle={(id) => {
+                    const has = state.diagnosisIds.includes(id);
+                    set("diagnosisIds", has ? state.diagnosisIds.filter((d) => d !== id) : [...state.diagnosisIds, id]);
+                  }}
+                />
+              )}
+              {step === 3 && (
+                <PlacementStep
+                  placements={placements} state={state} validation={validation}
+                  onApply={applyPlacement}
+                />
+              )}
+              {step === 4 && (
+                <DosingStep
+                  dosingRows={dosingRows} state={state}
+                  onSelectDosing={(id) => set("dosingId", id)}
+                  onField={(k, v) => set(k, v)}
+                />
+              )}
+              {step === 5 && (
+                <ScalesStep
+                  catalogue={scaleCatalogue} assigned={state.scales}
+                  customText={customScaleText} onCustomText={setCustomScaleText}
+                  onAdd={(a) => set("scales", [...state.scales, a])}
+                  onRemove={(i) => set("scales", state.scales.filter((_, j) => j !== i))}
+                  onCadence={(i, cadence) => set("scales", state.scales.map((s, j) => (j === i ? { ...s, cadence } : s)))}
+                />
+              )}
+              {step === 6 && (
+                <ScheduleStep
+                  state={state} preview={preview} loading={previewLoading}
+                  deviceSchedules={deviceSchedules} deviceOverrides={deviceOverrides} deviceSlots={deviceSlots}
+                  onStartDate={(v) => set("startDate", v)}
+                  onDayClick={(k, isSession) => {
+                    if (isSession) {
+                      set("skipDates", state.skipDates.includes(k) ? state.skipDates.filter((d) => d !== k) : [...state.skipDates, k]);
+                    } else {
+                      set("extraDates", state.extraDates.includes(k) ? state.extraDates.filter((d) => d !== k) : [...state.extraDates, k]);
+                    }
+                  }}
+                  onRegenerate={() => { set("skipDates", []); set("extraDates", []); }}
+                />
+              )}
+              {step === 7 && (
+                <ReviewStep
+                  state={state} device={selectedDevice} resolution={resolution} preview={preview}
+                  onNote={(v) => set("protocolNote", v)}
+                />
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {step >= 3 && step <= 4 && (
+          <div className="w-full lg:w-80 flex-shrink-0">
+            <Card>
+              <CardContent>
+                <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-3">10-20 Placement</p>
+                <PlacementMap
+                  anodeSite={state.anodeSite} cathodeSites={state.cathodeSites}
+                  suggestedAnode={resolution?.placement_id ? placements.find((p) => p.placement_id === resolution.placement_id)?.anode_site : undefined}
+                  suggestedCathodes={resolution?.placement_id ? (placements.find((p) => p.placement_id === resolution.placement_id)?.return_sites || []) : undefined}
+                  onNodeClick={handleNodeClick} interactive={step === 3}
+                />
+                <div className="mt-8 pt-3 border-t border-neutral-100 flex gap-3 text-xs">
+                  <div className="flex-1">
+                    <p className="text-neutral-400 uppercase tracking-wide">Anode</p>
+                    <p className="font-bold text-neutral-900">{state.anodeSite || "—"}</p>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-neutral-400 uppercase tracking-wide">Cathode</p>
+                    <p className="font-bold text-neutral-900">{state.cathodeSites.join(", ") || "—"}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </div>
+
+      {/* Footer nav */}
+      <div className="fixed bottom-0 left-0 right-0 lg:left-16 bg-white/95 backdrop-blur border-t border-neutral-200 px-4 sm:px-8 py-3 flex items-center gap-3 z-10">
+        <Button variant="outline" disabled={step === 0} onClick={goBack}>Back</Button>
+        <div className="flex-1" />
+        {step < 7 ? (
+          <Button disabled={!canContinue[step]} onClick={goNext}>
+            Continue <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+        ) : (
+          <Button disabled={pushing} onClick={handlePush}>
+            {pushing && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+            {mode === "modify" ? "Push Updated Protocol" : "Push Treatment Protocol"}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Step 1 — Device
+// ─────────────────────────────────────────────────────────────────────────
+function DeviceStep({
+  devices, loading, selected, onSelect,
+}: {
+  devices: DeviceRead[]; loading: boolean; selected: string | null; onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-base font-bold text-neutral-900">1 · Neuromodulation Device</h2>
+        <p className="text-sm text-neutral-500 mt-1">Select the device for this protocol, scoped to your clinic&apos;s inventory. Phase 2 devices are catalogued but not yet configurable.</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {devices.map((d) => {
+          const on = selected === d.device_id;
+          const disabled = d.phase === 2;
+          return (
+            <button
+              key={d.device_id}
+              disabled={disabled}
+              onClick={() => onSelect(d.device_id)}
+              className={`text-left px-4 py-3.5 rounded-lg border-2 transition-colors ${disabled ? "opacity-50 cursor-not-allowed border-neutral-200" : on ? "border-blue-600 bg-blue-50" : "border-neutral-200 hover:border-neutral-300"}`}
+            >
+              <div className="flex items-center gap-2">
+                <span className={`w-4.5 h-4.5 rounded flex items-center justify-center border ${on ? "bg-blue-600 border-blue-600" : "border-neutral-300"}`}>
+                  {on && <Check className="h-3 w-3 text-white" />}
+                </span>
+                <span className="font-semibold text-neutral-900">{d.device_name}</span>
+                <span className="flex-1" />
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${d.phase === 1 ? "bg-green-50 text-green-700 border border-green-100" : "bg-neutral-100 text-neutral-500 border border-neutral-200"}`}>
+                  Phase {d.phase}
+                </span>
+              </div>
+              <p className="text-xs text-neutral-500 mt-2">{d.company_name ? `${d.company_name} · ` : ""}{d.modality}{d.model_number ? ` · ${d.model_number}` : ""}</p>
+              {d.clinic_quantity != null && (
+                <p className="text-[11px] text-neutral-400 mt-1">{d.clinic_quantity} unit{d.clinic_quantity === 1 ? "" : "s"} at this clinic</p>
+              )}
+            </button>
+          );
+        })}
+        {loading && <p className="text-sm text-neutral-400">Loading devices…</p>}
+        {!loading && devices.length === 0 && (
+          <p className="text-sm text-neutral-400 col-span-full">
+            No devices configured for this clinic — contact your clinic admin.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Step 2 — Condition
+// ─────────────────────────────────────────────────────────────────────────
+function ConditionStep({ conditions, selected, onToggle }: { conditions: ConditionRead[]; selected: string[]; onToggle: (id: string) => void }) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-base font-bold text-neutral-900">2 · Condition</h2>
+        <p className="text-sm text-neutral-500 mt-1">One or more. Drives which ICD-10 diagnosis codes are offered next.</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {conditions.map((c) => {
+          const on = selected.includes(c.condition_id);
+          return (
+            <button
+              key={c.condition_id}
+              onClick={() => onToggle(c.condition_id)}
+              className={`text-left px-4 py-3.5 rounded-lg border-2 flex items-center gap-3 transition-colors ${on ? "border-blue-600 bg-blue-50" : "border-neutral-200 hover:border-neutral-300"}`}
+            >
+              <span className={`w-4.5 h-4.5 rounded flex items-center justify-center border flex-shrink-0 ${on ? "bg-blue-600 border-blue-600" : "border-neutral-300"}`}>
+                {on && <Check className="h-3 w-3 text-white" />}
+              </span>
+              <div className="min-w-0">
+                <p className="font-semibold text-neutral-900 truncate">{c.condition_name}</p>
+                <p className="text-xs text-neutral-400 mt-0.5">{c.diagnosis_count} codes{c.evidence_level ? ` · Evidence ${c.evidence_level}` : ""}</p>
+              </div>
+            </button>
+          );
+        })}
+        {conditions.length === 0 && <p className="text-sm text-neutral-400">Select a device first.</p>}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Step 3 — Diagnosis
+// ─────────────────────────────────────────────────────────────────────────
+function DiagnosisStep({
+  diagnoses, selected, query, onQuery, onToggle, resolution,
+}: {
+  diagnoses: DiagnosisRead[]; selected: string[]; query: string; onQuery: (v: string) => void;
+  onToggle: (id: string) => void; resolution: DiagnosisResolution | null;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-bold text-neutral-900">3 · Diagnosis Codes (ICD-10)</h2>
+          <p className="text-sm text-neutral-500 mt-1">{selected.length ? `${selected.length} selected` : "None selected"}</p>
+        </div>
+        <div className="w-64 flex-shrink-0">
+          <Input placeholder="Search code or description" value={query} onChange={(e) => onQuery(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="border border-neutral-200 rounded-lg overflow-hidden">
+        <div className="max-h-80 overflow-y-auto divide-y divide-neutral-100">
+          {diagnoses.map((d) => {
+            const on = selected.includes(d.diagnosis_id);
+            return (
+              <button
+                key={d.diagnosis_id}
+                onClick={() => onToggle(d.diagnosis_id)}
+                className={`w-full text-left px-3 py-2.5 flex items-center gap-3 transition-colors ${on ? "bg-blue-50" : "hover:bg-neutral-50"}`}
+              >
+                <span className={`w-4 h-4 rounded flex items-center justify-center border flex-shrink-0 ${on ? "bg-blue-600 border-blue-600" : "border-neutral-300"}`}>
+                  {on && <Check className="h-2.5 w-2.5 text-white" />}
+                </span>
+                <span className="text-xs font-semibold text-blue-700 w-20 flex-shrink-0">{d.icd10_code}</span>
+                <span className="text-xs text-neutral-700 flex-1 min-w-0">{d.icd10_description}</span>
+                {d.evidence_level && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-500 flex-shrink-0">Ev. {d.evidence_level}</span>
+                )}
+              </button>
+            );
+          })}
+          {diagnoses.length === 0 && <p className="text-sm text-neutral-400 px-3 py-6 text-center">No matching codes — try a different search or select a condition first.</p>}
+        </div>
+      </div>
+
+      {resolution && (
+        <div className="border border-blue-200 bg-blue-50 rounded-lg p-3.5 space-y-2">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-blue-700">Resolution — ranked by evidence level</p>
+          <p className="text-xs text-blue-800 leading-relaxed">
+            {resolution.driving_condition_name
+              ? `Suggested: ${resolution.driving_condition_name}${resolution.evidence_level ? ` (Evidence ${resolution.evidence_level})` : ""}${resolution.placement_summary ? ` — ${resolution.placement_summary}` : ""}`
+              : resolution.note || "No catalogued suggestion for this combination — set placement and dosing manually."}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Step 4 — Placement
+// ─────────────────────────────────────────────────────────────────────────
+function PlacementStep({
+  placements, state, validation, onApply,
+}: {
+  placements: PlacementRead[]; state: WizardState;
+  validation: { valid: boolean; errors: string[]; warnings: string[]; maxCathodes: number } | null;
+  onApply: (p: PlacementRead) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-base font-bold text-neutral-900">4 · Electrode Placement</h2>
+        <p className="text-sm text-neutral-500 mt-1">Pick a catalogued montage, or click nodes on the map at right to check a combination against the device's electrode rule.</p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {placements.map((p) => {
+          const on = state.placementId === p.placement_id;
+          return (
+            <button
+              key={p.placement_id}
+              onClick={() => onApply(p)}
+              className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${on ? "border-blue-600 bg-blue-600 text-white" : "border-neutral-200 text-neutral-700 hover:border-neutral-300"}`}
+            >
+              {p.montage_label}
+            </button>
+          );
+        })}
+        {placements.length === 0 && <p className="text-sm text-neutral-400">No catalogued montages for this device/condition yet.</p>}
+      </div>
+
+      {!state.placementId && (state.anodeSite || state.cathodeSites.length > 0) && (
+        <div className="flex items-start gap-2.5 border border-amber-100 bg-amber-50 rounded-lg px-3.5 py-2.5">
+          <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-800 leading-relaxed">
+            This combination isn&apos;t in the catalogue for this device — it can be rule-checked but not saved as-is.
+            Select a library montage above to continue.
+          </p>
+        </div>
+      )}
+
+      {validation && (
+        <div className={`border rounded-lg px-3.5 py-2.5 text-xs ${validation.valid ? "border-green-100 bg-green-50 text-green-800" : "border-red-100 bg-red-50 text-red-700"}`}>
+          <p className="font-semibold">{validation.valid ? "Valid electrode combination" : "Invalid electrode combination"}</p>
+          {validation.errors.map((e, i) => <p key={i} className="mt-1">{e}</p>)}
+          {validation.warnings.map((w, i) => <p key={i} className="mt-1">{w}</p>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Step 5 — Dosing
+// ─────────────────────────────────────────────────────────────────────────
+function DosingStep({
+  dosingRows, state, onSelectDosing, onField,
+}: {
+  dosingRows: DosingRead[]; state: WizardState;
+  onSelectDosing: (id: string) => void;
+  onField: <K extends keyof WizardState>(k: K, v: WizardState[K]) => void;
+}) {
+  const selected = dosingRows.find((d) => d.dosing_id === state.dosingId) || null;
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-base font-bold text-neutral-900">5 · Stimulation Parameters</h2>
+        <p className="text-sm text-neutral-500 mt-1">Catalogue dose for this montage — override below only for a documented per-patient deviation.</p>
+      </div>
+
+      {dosingRows.length > 1 && (
+        <div className="flex flex-wrap gap-2">
+          {dosingRows.map((d) => (
+            <button
+              key={d.dosing_id}
+              onClick={() => onSelectDosing(d.dosing_id)}
+              className={`px-3 py-2 rounded-lg border text-xs font-medium ${state.dosingId === d.dosing_id ? "border-blue-600 bg-blue-50 text-blue-700" : "border-neutral-200 text-neutral-600"}`}
+            >
+              {d.num_sessions_text || d.evidence_level} · Ev. {d.evidence_level}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selected && (
+        <div className="border border-neutral-100 bg-neutral-50 rounded-lg px-3.5 py-3 text-xs text-neutral-600 grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <div><span className="text-neutral-400">Evidence</span><p className="font-semibold text-neutral-800">{selected.evidence_level}</p></div>
+          <div><span className="text-neutral-400">Suggested sessions</span><p className="font-semibold text-neutral-800">{selected.num_sessions_text || "—"}</p></div>
+          {selected.notes && <div className="col-span-2 sm:col-span-3"><span className="text-neutral-400">Notes</span><p className="font-semibold text-neutral-800">{selected.notes}</p></div>}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Input label="Current intensity (mA)" value={state.currentMa} onChange={(e) => onField("currentMa", e.target.value)} />
+        <Input label="Session duration (min)" value={state.sessionDurationMin} onChange={(e) => onField("sessionDurationMin", e.target.value)} />
+        <Input label="Ramp up/down (sec)" value={state.rampSeconds} onChange={(e) => onField("rampSeconds", e.target.value)} />
+        <Input label="Total sessions" value={state.sessionCount} onChange={(e) => onField("sessionCount", e.target.value)} />
+      </div>
+
+      <div>
+        <p className="text-xs font-medium text-neutral-700 mb-2">Frequency</p>
+        <div className="flex flex-wrap gap-2">
+          {FREQ_OPTIONS.map((n) => (
+            <button
+              key={n}
+              onClick={() => onField("sessionsPerWeek", n)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-medium border ${state.sessionsPerWeek === n ? "border-blue-600 bg-blue-600 text-white" : "border-neutral-300 text-neutral-600"}`}
+            >
+              {n === 7 ? "Daily" : `${n}× / week`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <Input label="Follow-up every N sessions (optional)" value={state.followUpEveryN} onChange={(e) => onField("followUpEveryN", e.target.value)} placeholder="e.g. 10" />
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Step 6 — Scales
+// ─────────────────────────────────────────────────────────────────────────
+function ScalesStep({
+  catalogue, assigned, customText, onCustomText, onAdd, onRemove, onCadence,
+}: {
+  catalogue: ScaleRead[]; assigned: AssignedScale[]; customText: string; onCustomText: (v: string) => void;
+  onAdd: (a: AssignedScale) => void; onRemove: (i: number) => void; onCadence: (i: number, c: string) => void;
+}) {
+  const usedIds = assigned.map((a) => a.scale_id).filter(Boolean);
+  const pool = catalogue.filter((s) => !usedIds.includes(s.scale_id));
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-base font-bold text-neutral-900">6 · Assessment Scales &amp; Cadence</h2>
+        <p className="text-sm text-neutral-500 mt-1">Suggested from the selected conditions. These become patient PRS tasks.</p>
+      </div>
+
+      <div className="border border-neutral-200 rounded-lg divide-y divide-neutral-100">
+        {assigned.map((a, i) => (
+          <div key={i} className="flex items-center gap-3 px-3.5 py-2.5">
+            <span className="text-sm font-semibold text-neutral-900 flex-1">{a.displayName}</span>
+            <div className="w-52">
+              <Select value={a.cadence} onChange={(e) => onCadence(i, e.target.value)} options={CADENCE_OPTIONS.map((c) => ({ value: c, label: c }))} />
+            </div>
+            <button onClick={() => onRemove(i)} className="text-neutral-400 hover:text-red-600"><X className="h-4 w-4" /></button>
+          </div>
+        ))}
+        {assigned.length === 0 && <p className="text-sm text-neutral-400 px-3.5 py-6 text-center">No scales assigned yet.</p>}
+      </div>
+
+      <div className="border border-neutral-100 bg-neutral-50 rounded-lg p-3.5">
+        <p className="text-xs font-medium text-neutral-700 mb-2">Add a scale</p>
+        <div className="flex flex-wrap gap-2">
+          {pool.map((s) => (
+            <button
+              key={s.scale_id}
+              onClick={() => onAdd({ scale_id: s.scale_id, cadence: "At re-assessment only", displayName: s.scale_name })}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-neutral-300 text-xs font-medium text-neutral-600 hover:border-blue-400 hover:text-blue-700"
+            >
+              <Plus className="h-3 w-3" />{s.scale_code}
+            </button>
+          ))}
+        </div>
+        <div className="mt-3">
+          <Input
+            placeholder="Or type a scale not listed and press Enter"
+            value={customText}
+            onChange={(e) => onCustomText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && customText.trim()) {
+                onAdd({ scale_code: customText.trim(), cadence: "At re-assessment only", displayName: customText.trim() });
+                onCustomText("");
+              }
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Step 7 — Schedule
+// ─────────────────────────────────────────────────────────────────────────
+function ScheduleStep({
+  state, preview, loading, deviceSchedules, deviceOverrides, deviceSlots, onStartDate, onDayClick, onRegenerate,
+}: {
+  state: WizardState; preview: SchedulePreview | null; loading: boolean;
+  deviceSchedules: DeviceScheduleRead[]; deviceOverrides: DeviceOverrideRead[]; deviceSlots: DeviceSlotRead[];
+  onStartDate: (v: string) => void; onDayClick: (isoDate: string, isSession: boolean) => void; onRegenerate: () => void;
+}) {
+  const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  const sessionsByDate = new Map((preview?.sessions || []).map((s) => [s.planned_date, s.session_number]));
+  const followUpsByDate = new Set((preview?.follow_ups || []).map((f) => f.planned_date));
+
+  const weeks: { label: string; days: { date: string; iso: string; session?: number; isFollowUp: boolean }[] }[] = [];
+  if (preview?.first_date && preview?.last_date) {
+    const first = new Date(preview.first_date + "T00:00:00Z");
+    const monday = new Date(first); monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
+    const last = new Date(preview.last_date + "T00:00:00Z");
+    const nWeeks = Math.min(10, Math.max(1, Math.ceil((+last - +monday) / (7 * 86400000)) + 1));
+    for (let w = 0; w < nWeeks; w++) {
+      const days = [];
+      for (let d = 0; d < 7; d++) {
+        const dt = new Date(monday); dt.setUTCDate(dt.getUTCDate() + w * 7 + d);
+        const iso = dt.toISOString().slice(0, 10);
+        days.push({ date: String(dt.getUTCDate()) + (dt.getUTCDate() === 1 ? ` ${MON[dt.getUTCMonth()]}` : ""), iso, session: sessionsByDate.get(iso), isFollowUp: followUpsByDate.has(iso) });
+      }
+      weeks.push({ label: `Week ${w + 1}`, days });
+    }
+  }
+
+  // ─── Availability panel — 3 of the 4 mock rows are real; Assistant/Patient aren't modelled ───
+  const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const activeSchedules = deviceSchedules.filter((s) => s.is_active).sort((a, b) => a.day_of_week - b.day_of_week);
+  const clinicHoursSummary = activeSchedules.length
+    ? (() => {
+        const first = activeSchedules[0], last = activeSchedules[activeSchedules.length - 1];
+        const sameHours = activeSchedules.every((s) => s.start_time === first.start_time && s.end_time === last.end_time);
+        const dayRange = activeSchedules.length > 1 ? `${DOW[first.day_of_week]}–${DOW[last.day_of_week]}` : DOW[first.day_of_week];
+        return sameHours ? `${dayRange}, ${first.start_time.slice(0, 5)}–${last.end_time.slice(0, 5)}` : `${activeSchedules.length} day(s) configured`;
+      })()
+    : "Not configured";
+  const maxCapacity = deviceSlots.length ? Math.max(...deviceSlots.map((s) => s.capacity)) : activeSchedules[0]?.capacity;
+  const closedOverrides = deviceOverrides.filter((o) => !o.is_available);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 items-start">
+      <div className="space-y-4 min-w-0">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-base font-bold text-neutral-900">7 · Session Schedule</h2>
+            <p className="text-sm text-neutral-500 mt-1">
+              {preview ? `${preview.session_count} sessions · ${preview.week_count} weeks · ${preview.follow_up_count} follow-ups` : "Set a start date to preview."}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Input type="date" value={state.startDate} onChange={(e) => onStartDate(e.target.value)} />
+            <Button variant="outline" size="sm" onClick={onRegenerate}>Regenerate</Button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4 text-xs text-neutral-500 flex-wrap">
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-blue-600 inline-block" />Session</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block" />Follow-up</span>
+          <span>Click a scheduled day to skip it · click an empty weekday to add an extra session</span>
+        </div>
+
+        {loading && <p className="text-xs text-neutral-400">Refreshing preview…</p>}
+
+        <div className="border border-neutral-200 rounded-lg overflow-hidden">
+          <div className="grid grid-cols-[64px_repeat(7,1fr)] bg-neutral-50 border-b border-neutral-200 text-[10px] font-bold uppercase text-neutral-400">
+            <div className="px-2 py-2">Week</div>
+            {DAYS.map((d) => <div key={d} className="px-2 py-2">{d}</div>)}
+          </div>
+          {weeks.map((w) => (
+            <div key={w.label} className="grid grid-cols-[64px_repeat(7,1fr)] border-b border-neutral-100 last:border-0">
+              <div className="px-2 py-2 bg-neutral-50 border-r border-neutral-100 text-[11px] font-semibold text-neutral-700">{w.label}</div>
+              {w.days.map((d) => {
+                const closed = closedOverrides.some((o) => o.override_date === d.iso);
+                return (
+                  <div
+                    key={d.iso}
+                    onClick={() => onDayClick(d.iso, d.session != null)}
+                    className={`min-h-[54px] px-1.5 py-1.5 border-r border-neutral-50 last:border-0 cursor-pointer hover:bg-blue-50/40 ${closed ? "bg-neutral-100" : ""}`}
+                  >
+                    <p className="text-[10px] text-neutral-400">{d.date}</p>
+                    {closed && <p className="text-[9.5px] text-neutral-400 mt-0.5">Closed</p>}
+                    {d.session != null && (
+                      <div className="mt-1 rounded px-1 py-0.5 text-[10px] font-semibold text-white bg-blue-600 text-center">S{d.session}</div>
+                    )}
+                    {d.isFollowUp && (
+                      <div className="mt-1 rounded px-1 py-0.5 text-[9.5px] font-semibold text-amber-700 bg-amber-50 border border-dashed border-amber-400 text-center">Follow-up</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+          {weeks.length === 0 && <p className="text-sm text-neutral-400 px-3 py-8 text-center">No preview yet.</p>}
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="space-y-3">
+          <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Availability</p>
+          <div className="space-y-2.5 text-xs">
+            <div>
+              <p className="text-neutral-400">Clinic</p>
+              <p className="font-medium text-neutral-800 mt-0.5">{clinicHoursSummary}</p>
+            </div>
+            <div>
+              <p className="text-neutral-400">Device</p>
+              <p className="font-medium text-neutral-800 mt-0.5">{maxCapacity != null ? `${maxCapacity} slots/day` : "—"}</p>
+            </div>
+            <div>
+              <p className="text-neutral-400">Clinic closed</p>
+              {closedOverrides.length === 0 ? (
+                <p className="font-medium text-neutral-800 mt-0.5">None in this window</p>
+              ) : (
+                <p className="font-medium text-neutral-800 mt-0.5">{closedOverrides.map((o) => o.override_date).join(", ")}</p>
+              )}
+            </div>
+          </div>
+          <p className="text-[10px] text-neutral-400 pt-2 border-t border-neutral-100">
+            Assistant and patient availability aren&apos;t tracked by this system yet.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Step 8 — Review
+// ─────────────────────────────────────────────────────────────────────────
+function ReviewStep({
+  state, device, resolution, preview, onNote,
+}: {
+  state: WizardState; device: DeviceRead | null; resolution: DiagnosisResolution | null; preview: SchedulePreview | null;
+  onNote: (v: string) => void;
+}) {
+  const rows: [string, string][] = [
+    ["Device", device ? `${device.device_name} (${device.modality})` : "—"],
+    ["Conditions", resolution?.driving_condition_name ? `${resolution.driving_condition_name}${resolution.evidence_level ? ` (Evidence ${resolution.evidence_level})` : ""}` : `${state.conditionIds.length} selected`],
+    ["Diagnosis codes", `${state.diagnosisIds.length} selected`],
+    ["Placement", `${state.anodeSite || "—"} → ${state.cathodeSites.join(", ") || "—"}`],
+    ["Dose", `${state.currentMa || "—"} mA · ${state.sessionDurationMin || "—"} min · ${state.rampSeconds || "—"} s ramp`],
+    ["Frequency", `${state.sessionsPerWeek === 7 ? "Daily" : `${state.sessionsPerWeek}×/week`} × ${state.sessionCount} sessions`],
+    ["Scales", state.scales.map((s) => s.displayName).join(", ") || "None"],
+    ["Schedule", preview ? `${preview.session_count} booked · ${preview.follow_up_count} follow-ups` : "—"],
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-base font-bold text-neutral-900">8 · Review &amp; Push</h2>
+        <p className="text-sm text-neutral-500 mt-1">Everything below is written to the patient record as one protocol object.</p>
+      </div>
+
+      <div className="border border-neutral-200 rounded-lg divide-y divide-neutral-100">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex gap-3 px-3.5 py-2.5 text-sm">
+            <span className="w-40 flex-shrink-0 text-neutral-400">{k}</span>
+            <span className="flex-1 text-neutral-800 font-medium">{v}</span>
+          </div>
+        ))}
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-neutral-700 mb-1.5">Protocol note to care team (optional)</label>
+        <textarea
+          value={state.protocolNote}
+          onChange={(e) => onNote(e.target.value)}
+          placeholder="Add any note for the care team…"
+          rows={3}
+          className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
+        />
+      </div>
+
+      <div className="flex items-start gap-2.5 border border-blue-100 bg-blue-50 rounded-lg px-3.5 py-2.5">
+        <ShieldCheck className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
+        <p className="text-xs text-blue-800 leading-relaxed">
+          Pushing creates {preview?.session_count ?? state.sessionCount} appointments and activates this protocol immediately.
+        </p>
+      </div>
+    </div>
+  );
+}

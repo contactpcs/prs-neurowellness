@@ -22,6 +22,7 @@ import { invalidatePatientAnamnesis } from "@/store/slices/anamnesisSlice";
 import type { DoctorNote } from "@/lib/api/services/doctorNotes.service";
 import type { Permission, AssessmentInstance, AnamnesisRecord } from "@/types/domain.types";
 import { EEGReportList, EEGUploadForm, NEDFUploadForm } from "@/components/eeg";
+import { TreatmentProtocolPanel } from "@/components/doctor/TreatmentProtocolPanel";
 
 function statusClass(status: Permission["status"]): string {
   switch (status) {
@@ -448,17 +449,7 @@ export default function DoctorPatientDetailPage() {
                   <EEGReportList patientId={id} canDelete refreshTrigger={eegRefreshKey} />
                 </div>
               ) : selectedSection === "treatment-protocol" ? (
-                <div className="space-y-5">
-                  <div>
-                    <h2 className="text-2xl font-bold text-neutral-900 mb-1">Treatment Protocol</h2>
-                    <p className="text-neutral-600 text-sm">
-                      The recommended treatment protocol for this patient, derived from their assessment results.
-                    </p>
-                  </div>
-                  <div className="px-6 py-16 text-center text-sm text-neutral-400 bg-neutral-50 rounded-lg border border-neutral-100">
-                    Not started yet
-                  </div>
-                </div>
+                <TreatmentProtocolPanel patientId={id} />
               ) : selectedSection === "notes" ? (
                 <div className="space-y-4">
                   <div className="flex items-start justify-between">
