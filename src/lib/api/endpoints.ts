@@ -199,6 +199,51 @@ export const ENDPOINTS = {
     RESPONSES: (anamnesisId: string) => `/anamnesis/${anamnesisId}/responses`, // real
   },
 
+  // ─── Neuromodulation catalogue (Treatment Protocol wizard, steps 1-6) ───
+  NEUROMOD: {
+    DEVICE_COMPANIES: "/neuromod/device-companies",
+    DEVICES: "/neuromod/devices",
+    DEVICE: (deviceId: string) => `/neuromod/devices/${deviceId}`,
+    CONDITIONS: "/neuromod/conditions",
+    DIAGNOSES: "/neuromod/diagnoses",
+    DIAGNOSES_RESOLVE: "/neuromod/diagnoses/resolve",
+    PLACEMENTS: "/neuromod/placements",
+    PLACEMENTS_VALIDATE: "/neuromod/placements/validate",
+    DOSING: "/neuromod/dosing",
+    SCALES: "/neuromod/scales",
+  },
+
+  // ─── Treatment Protocols (wizard steps 7-8 + lifecycle + PRS) ───
+  TREATMENT_PROTOCOLS: {
+    SCHEDULE_PREVIEW: "/treatment-protocols/schedule-preview",
+    LIST: "/treatment-protocols",
+    CREATE: "/treatment-protocols",
+    DETAIL: (id: string) => `/treatment-protocols/${id}`,
+    UPDATE: (id: string) => `/treatment-protocols/${id}`,
+    SESSIONS: (id: string) => `/treatment-protocols/${id}/sessions`,
+    ACTIVATE: (id: string) => `/treatment-protocols/${id}/activate`,
+    CANCEL: (id: string) => `/treatment-protocols/${id}/cancel`,
+    COMPLETE: (id: string) => `/treatment-protocols/${id}/complete`,
+    PRS_DEVICE_SESSION: (id: string) => `/treatment-protocols/${id}/prs/device-session`,
+    PRS_FOLLOW_UP: (id: string) => `/treatment-protocols/${id}/prs/follow-up`,
+    PRS_LIST: (id: string) => `/treatment-protocols/${id}/prs`,
+  },
+
+  // ─── Clinical (treatment cycles/plans — treatment_protocols.plan_id FK dependency) ───
+  CLINICAL: {
+    CYCLES: "/treatment-cycles",
+    CYCLE_STATUS: (cycleId: string) => `/treatment-cycles/${cycleId}/status`,
+    PLANS: "/treatment-plans",
+    PLAN: (planId: string) => `/treatment-plans/${planId}`,
+  },
+
+  // ─── Clinic device schedule (Treatment Protocol wizard step 7 availability panel) ───
+  CLINIC_DEVICE: {
+    SCHEDULES: (clinicId: string) => `/clinics/${clinicId}/device-schedules`,
+    OVERRIDES: (clinicId: string) => `/clinics/${clinicId}/device-schedule-overrides`,
+    AVAILABILITY: (clinicId: string) => `/clinics/${clinicId}/device-availability`,
+  },
+
   // ─── Schedule ───
   SCHEDULE: {
     MY: "/schedule/my",                       // real — GET {weekly,overrides}, PUT {items:[...]} atomic replace
