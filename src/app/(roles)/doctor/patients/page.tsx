@@ -40,7 +40,7 @@ function PatientRowDetail({ patientId, registrationStatus }: { patientId: string
 
   return (
     <tr>
-      <td colSpan={6} className="px-6 py-5 bg-neutral-50 border-t border-neutral-100">
+      <td colSpan={7} className="px-6 py-5 bg-neutral-50 border-t border-neutral-100">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
           <div className="bg-white rounded-lg p-3 border border-neutral-200">
             <p className="text-xs text-neutral-500 mb-0.5">Registration Status</p>
@@ -58,7 +58,7 @@ function PatientRowDetail({ patientId, registrationStatus }: { patientId: string
             <p className="text-xs text-neutral-500 mb-0.5">Overall Progress</p>
             <div className="flex items-center gap-2 mt-1.5">
               <div className="flex-1 h-2 rounded-full bg-neutral-100 overflow-hidden">
-                <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${pct}%` }} />
+                <div className="h-full rounded-full bg-action-orange transition-all" style={{ width: `${pct}%` }} />
               </div>
               <span className="text-xs font-semibold text-neutral-700 flex-shrink-0">{pct}%</span>
             </div>
@@ -137,6 +137,7 @@ export default function DoctorPatientsPage() {
           <thead>
             <tr className="border-b border-neutral-100 bg-neutral-50">
               <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Patient Name</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Diagnosis</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Clinic Name</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Last Visit</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Status</th>
@@ -156,8 +157,7 @@ export default function DoctorPatientsPage() {
                     {/* Patient Name */}
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"
-                          style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}>
+                        <div className="h-9 w-9 rounded-full bg-brand-gradient flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
                           {p.first_name?.[0]}{p.last_name?.[0]}
                         </div>
                         <div>
@@ -170,6 +170,8 @@ export default function DoctorPatientsPage() {
                         </div>
                       </div>
                     </td>
+                    {/* Diagnosis */}
+                    <td className="px-6 py-4 text-neutral-600">{p.condition || "—"}</td>
                     {/* Clinic Name */}
                     <td className="px-6 py-4 text-neutral-600">{clinicLabel}</td>
                     {/* Last Visit */}
@@ -188,8 +190,7 @@ export default function DoctorPatientsPage() {
                     <td className="pl-6 pr-2 py-4">
                       <button
                         onClick={() => router.push(`/doctor/patients/${p.id}`)}
-                        className="px-4 py-1.5 rounded-lg text-sm font-semibold text-white transition-colors"
-                        style={{ background: "linear-gradient(135deg, #f97316 0%, #ea580c 100%)" }}
+                        className="px-4 py-1.5 rounded-lg text-sm font-semibold text-white bg-action-orange hover:bg-action-orange-dark transition-colors"
                       >
                         View
                       </button>
@@ -215,7 +216,7 @@ export default function DoctorPatientsPage() {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-neutral-400 text-sm">No patients found</td>
+                <td colSpan={7} className="px-6 py-10 text-center text-neutral-400 text-sm">No patients found</td>
               </tr>
             )}
           </tbody>

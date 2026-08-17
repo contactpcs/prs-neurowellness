@@ -327,8 +327,7 @@ export default function AppointmentDetailPage() {
                 <User className="w-4 h-4 text-neutral-400 flex-shrink-0" />
                 <Link
                   href={`/doctor/patients/${appointment.patient_id}`}
-                  className="hover:underline font-medium"
-                  style={{ color: "#00A1E4" }}
+                  className="hover:underline font-medium text-accent"
                 >
                   View patient profile
                 </Link>
@@ -363,8 +362,7 @@ export default function AppointmentDetailPage() {
               {!editingNotes ? (
                 <button
                   onClick={() => setEditingNotes(true)}
-                  className="flex items-center gap-1 text-xs font-medium hover:underline"
-                  style={{ color: "#00A1E4" }}
+                  className="flex items-center gap-1 text-xs font-medium text-accent hover:underline"
                 >
                   <Pencil className="w-3 h-3" />
                   Edit

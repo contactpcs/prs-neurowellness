@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Search, ChevronLeft, ChevronRight, CalendarDays, Phone, MessageSquare, Eye,
+  Search, ChevronLeft, ChevronRight, CalendarDays, Phone, MessageSquare, Eye, Siren,
 } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import apiClient from "@/lib/api/client";
@@ -365,19 +365,19 @@ export default function DoctorDashboard() {
             />
           </div>
           <div className="flex items-center gap-2 bg-white border border-neutral-200 rounded-lg px-3 py-2 text-sm text-neutral-700">
-            <CalendarDays className="w-4 h-4 flex-shrink-0" style={{ color: "#00A1E4" }} />
+            <CalendarDays className="w-4 h-4 flex-shrink-0 text-accent" />
             <span>Today, {todayDisplay}</span>
           </div>
         </div>
       </div>
 
       {/* next appointments + quick actions */}
-      <div className="grid gap-6 grid-cols-1 lg:grid-cols-[1fr_280px] mb-6">
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-[1fr_300px] mb-5">
         <div className="bg-white rounded-2xl border border-neutral-200 shadow-card overflow-hidden">
           <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100">
             <h2 className="text-base font-semibold text-neutral-900">Next Appointment</h2>
-            <Link href="/doctor/appointments" className="text-sm font-medium hover:underline" style={{ color: "#00A1E4" }}>
-              View all
+            <Link href="/doctor/appointments" className="text-sm font-medium text-accent hover:underline">
+              All appointments →
             </Link>
           </div>
           <div className="divide-y divide-neutral-100">
@@ -405,10 +405,7 @@ export default function DoctorDashboard() {
                       {new Date(appt.appointment_date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
                     </p>
                     <Link href={`/doctor/appointments/${appt.appointment_id}`}>
-                      <button
-                        className="px-4 py-1.5 rounded-lg text-white text-xs font-semibold hover:opacity-90 transition-opacity"
-                        style={{ background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)" }}
-                      >
+                      <button className="px-4 py-1.5 rounded-full bg-action-orange text-white text-xs font-semibold hover:bg-action-orange-dark transition-colors">
                         Start Visit
                       </button>
                     </Link>
@@ -419,24 +416,21 @@ export default function DoctorDashboard() {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-neutral-200 shadow-card p-6">
-          <h2 className="text-base font-semibold text-neutral-900 mb-4">Quick Actions</h2>
-          <div className="space-y-3">
-            <button
-              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
-              style={{ background: BRAND }}
-            >
-              <Phone className="w-5 h-5 flex-shrink-0" />
-              Contact Receptionist
-            </button>
-            <button
-              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
-              style={{ background: BRAND }}
-            >
-              <MessageSquare className="w-5 h-5 flex-shrink-0" />
-              Contact Clinical Assistant
-            </button>
-          </div>
+        <div className="bg-white rounded-2xl border border-neutral-200 shadow-card p-4 flex flex-col gap-2.5">
+          <h2 className="text-sm font-semibold text-neutral-900">Emergency Services</h2>
+          <button className="flex items-center justify-center gap-2 h-[38px] rounded-lg bg-danger-500 text-white font-semibold text-xs hover:bg-danger-700 transition-colors">
+            <Siren className="w-[15px] h-[15px] flex-shrink-0" />
+            Contact Emergency Services
+          </button>
+          <div className="h-px bg-neutral-100 my-0.5" />
+          <button className="flex items-center gap-2.5 h-[34px] px-3 rounded-lg bg-white border border-neutral-200 text-neutral-700 font-medium text-xs hover:bg-neutral-50 transition-colors">
+            <Phone className="w-3.5 h-3.5 flex-shrink-0" />
+            Contact Receptionist
+          </button>
+          <button className="flex items-center gap-2.5 h-[34px] px-3 rounded-lg bg-white border border-neutral-200 text-neutral-700 font-medium text-xs hover:bg-neutral-50 transition-colors">
+            <MessageSquare className="w-3.5 h-3.5 flex-shrink-0" />
+            Contact Clinical Assistant
+          </button>
         </div>
       </div>
 
@@ -463,15 +457,16 @@ export default function DoctorDashboard() {
             </div>
 
             {/* view switcher */}
-            <div className="flex items-center rounded-lg border border-neutral-200 overflow-hidden text-sm font-medium">
+            <div className="flex items-center gap-0.5 rounded-lg bg-neutral-100 p-0.5 text-sm font-medium">
               {(["Week", "Day", "Month"] as CalView[]).map((v) => (
                 <button
                   key={v}
                   onClick={() => setView(v)}
-                  className="px-3 py-1.5 transition-colors"
-                  style={view === v
-                    ? { background: BRAND, color: "#fff" }
-                    : { background: "#fff", color: "#525252" }}
+                  className={
+                    view === v
+                      ? "px-3 py-1.5 rounded-md bg-white text-neutral-900 shadow-xs transition-colors"
+                      : "px-3 py-1.5 rounded-md text-neutral-500 transition-colors"
+                  }
                 >
                   {v}
                 </button>

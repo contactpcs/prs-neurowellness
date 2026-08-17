@@ -294,8 +294,7 @@ export default function DoctorSchedulePage() {
               <h3 className="text-sm font-semibold text-neutral-900">Weekly Template</h3>
               <button
                 onClick={() => setShowEditSched(true)}
-                className="text-xs font-medium hover:underline"
-                style={{ color: "#00A1E4" }}
+                className="text-xs font-medium hover:underline text-accent"
               >
                 Edit
               </button>
@@ -306,8 +305,7 @@ export default function DoctorSchedulePage() {
                 <p className="text-xs text-neutral-400">No schedule set yet</p>
                 <button
                   onClick={() => setShowEditSched(true)}
-                  className="mt-2 text-xs font-medium hover:underline"
-                  style={{ color: "#00A1E4" }}
+                  className="mt-2 text-xs font-medium hover:underline text-accent"
                 >
                   Set up schedule
                 </button>
@@ -342,8 +340,7 @@ export default function DoctorSchedulePage() {
               <h3 className="text-sm font-semibold text-neutral-900">Date Overrides</h3>
               <button
                 onClick={() => setShowAddOverride(true)}
-                className="flex items-center gap-1 text-xs font-medium hover:underline"
-                style={{ color: "#00A1E4" }}
+                className="flex items-center gap-1 text-xs font-medium hover:underline text-accent"
               >
                 <Plus className="w-3 h-3" />
                 Add
