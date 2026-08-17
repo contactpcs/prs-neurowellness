@@ -28,7 +28,7 @@ const DISPLAY_DAYS = [
 
 const SLOT_DURATIONS = [15, 20, 30, 45, 60];
 
-const BRAND_GRADIENT = "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)";
+const BRAND_GRADIENT = "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

@@ -60,7 +60,7 @@ type TabId = "overview" | "files" | "purchases" | "payments" | "notifications" |
 // ─── styles ───────────────────────────────────────────────────────
 
 const BRAND_PRIMARY = "#00A1E4";
-const BRAND = "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)";
+const BRAND = "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)";
 const inputCls =
   "w-full rounded-lg border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 transition-all focus:outline-none focus:ring-2 focus:border-sky-400 hover:border-neutral-300";
 const labelCls = "text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-1.5 block";

@@ -155,7 +155,7 @@ function PatientDashboard() {
         {(nextAppt || pendingAssessments.length > 0) && (
           <div
             className="rounded-xl overflow-hidden"
-            style={{ background: "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)" }}
+            style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
           >
             <div className="px-4 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -327,7 +327,7 @@ function PatientDashboard() {
               <Link
                 href={`/patient/consent/${pendingAssessments[0].permission_id}`}
                 className="mt-auto w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium"
-                style={{ background: "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)" }}
+                style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
               >
                 Review &amp; sign <ChevronRight className="w-3.5 h-3.5" />
               </Link>
@@ -350,7 +350,7 @@ function PatientDashboard() {
               <Zap className="w-3 h-3 text-orange-400" />
               NW Assistant can find the best available slot for you.
             </div>
-            <Link href="/patient/appointments/request" className="mt-auto w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium hover:opacity-90 transition-opacity" style={{ background: "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)" }}>
+            <Link href="/patient/appointments/request" className="mt-auto w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium hover:opacity-90 transition-opacity" style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}>
               <Zap className="w-3.5 h-3.5" /> Book appointment
             </Link>
           </div>
@@ -433,7 +433,7 @@ function PatientDashboard() {
                     <p className="text-[10px] text-gray-500">Days to next</p>
                   </div>
                 </div>
-                <button className="mt-3 w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium" style={{ background: "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)" }}>
+                <button className="mt-3 w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium" style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}>
                   <MessageSquare className="w-3.5 h-3.5" /> Message Dr. {doctor.last_name}
                 </button>
               </div>
@@ -714,7 +714,7 @@ function PrsAssessmentCard({ pending, instances, doctor }: {
         <Link
           href={`/patient/assessment/${activePerm.permission_id}`}
           className="flex items-center justify-center gap-1.5 w-full text-white py-2 rounded-lg text-xs font-medium"
-          style={{ background: "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)" }}
+          style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
         >
           <PlayCircle className="w-3.5 h-3.5" />
           {completedScales > 0 ? "Continue assessment" : "Start assessment"}

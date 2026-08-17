@@ -72,7 +72,7 @@ const DAY_LABELS  = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const CAL_START   = 8;
 const CAL_END     = 15;
 const HOUR_PX     = 64;
-const BRAND       = "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)";
+const BRAND       = "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)";
 
 const APPT_STYLE: Record<string, { bg: string; border: string; text: string }> = {
   confirmed:   { bg: "#f0fdf4", border: "#4ade80", text: "#15803d" },

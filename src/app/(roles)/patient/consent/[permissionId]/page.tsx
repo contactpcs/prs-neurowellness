@@ -159,7 +159,7 @@ export default function PatientConsentPage() {
             onClick={handleContinue}
             disabled={!agreed || isSubmitting}
             className="flex-2 flex-1 flex items-center justify-center gap-1.5 py-2.5 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-medium transition-colors"
-            style={{ background: "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)" }}
+            style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
           >
             <ShieldCheck className="w-3.5 h-3.5" />
             {isSubmitting ? "Redirecting…" : "Sign & Continue to Assessment"}

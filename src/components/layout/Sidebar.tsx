@@ -146,7 +146,7 @@ function SidebarInner() {
       )}
     <aside
       className={cn(
-        "fixed left-0 top-0 h-full flex flex-col z-40",
+        "fixed left-0 top-0 h-full flex flex-col z-40 bg-sidebar-bg",
         // Desktop: width toggle (no transition to avoid layout thrash)
         isCollapsed ? "md:w-16" : "md:w-64",
         // Mobile: always full width, slide in/out
@@ -155,7 +155,7 @@ function SidebarInner() {
         "transition-transform duration-150 ease-in-out",
         isMobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
       )}
-      style={{ willChange: "transform", background: "linear-gradient(180deg, #00A1E4 0%, #17749B 100%)" }}
+      style={{ willChange: "transform" }}
     >
       {/* Logo + toggle */}
       <div className="h-16 border-b border-white/20 flex-shrink-0 flex items-center">
@@ -211,7 +211,7 @@ function SidebarInner() {
               <span className="relative flex-shrink-0">
                 <item.icon className={cn("h-4.5 w-4.5", isActive ? "text-white" : "text-blue-300")} />
                 {!expanded && count > 0 && (
-                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 ring-2 ring-[#00A1E4]" />
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 ring-2 ring-sidebar-bg" />
                 )}
               </span>
               {expanded && (

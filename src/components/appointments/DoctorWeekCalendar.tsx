@@ -17,7 +17,7 @@ const DISPLAY_DAYS = [
   { label: "Sunday",    short: "Sun", dow: 0 },
 ];
 
-const BRAND_GRADIENT = "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)";
+const BRAND_GRADIENT = "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)";
 
 function getMondayOf(d: Date): Date {
   const day = d.getDay();

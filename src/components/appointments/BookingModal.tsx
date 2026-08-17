@@ -7,7 +7,7 @@ import { ENDPOINTS } from "@/lib/api/endpoints";
 import { doctorsService } from "@/lib/api/services";
 import type { AvailabilitySlot, PatientListItem } from "@/types/domain.types";
 
-const BRAND_GRADIENT = "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)";
+const BRAND_GRADIENT = "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)";
 
 const APPT_TYPES = [
   { value: "doctor_consultation", label: "Doctor Consultation" },

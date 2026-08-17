@@ -15,7 +15,7 @@ import type { Appointment, AvailabilitySlot, AppointmentStatus } from "@/types/d
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const BRAND = "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)";
+const BRAND = "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)";
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 

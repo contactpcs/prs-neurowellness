@@ -157,7 +157,7 @@ export default function DoctorPatientsPage() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="h-9 w-9 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"
-                          style={{ background: "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)" }}>
+                          style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}>
                           {p.first_name?.[0]}{p.last_name?.[0]}
                         </div>
                         <div>

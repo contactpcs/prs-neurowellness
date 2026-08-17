@@ -28,7 +28,7 @@ type TabId = "overview" | "finance" | "settings" | "partnership";
 // ─── constants ────────────────────────────────────────────────────
 
 const ACTIVE_STATUSES = new Set(["scheduled", "confirmed", "checked_in", "in_progress"]);
-const BRAND    = "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)";
+const BRAND    = "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)";
 const BRAND_PX = "#00A1E4";
 
 const TABS: { id: TabId; label: string; Icon: React.ElementType }[] = [

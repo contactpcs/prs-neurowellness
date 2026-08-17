@@ -16,7 +16,7 @@ import type { AppointmentStatus, AppointmentType } from "@/types/domain.types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const BRAND = "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)";
+const BRAND = "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)";
 
 const STATUS_CONFIG: Record<AppointmentStatus, { label: string; bg: string; text: string; border: string }> = {
   scheduled:   { label: "Scheduled",   bg: "#fffbeb", text: "#92400e", border: "#fbbf24" },
