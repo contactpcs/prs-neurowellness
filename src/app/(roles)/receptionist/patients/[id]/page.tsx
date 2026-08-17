@@ -1,19 +1,55 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, User, Mail, Phone, Calendar, MapPin,
   Stethoscope, CheckCircle, XCircle, Loader2, UserCheck,
-  Heart, AlertCircle, ClipboardList, Check,
+  Heart, AlertCircle, ClipboardList, Check, CalendarPlus,
 } from "lucide-react";
 import { staffService } from "@/lib/api/services/staff.service";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { adminService } from "@/lib/api/services/admin.service";
+import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { useReceptionPatient, useClinics } from "@/lib/hooks";
 import { Card, CardHeader, CardContent, PageLoader } from "@/components/ui";
 import { PatientJourneySections, type PatientJourneyDetail } from "@/components/admin/PatientJourneySections";
-import type { DoctorListItem } from "@/types/domain.types";
+import type { DoctorListItem, Appointment } from "@/types/domain.types";
+
+const TABS = ["Overview", "Appointments", "Timeline"] as const;
+type Tab = (typeof TABS)[number];
+
+function fmt12(t: string): string {
+  if (!t) return "";
+  const [h, m] = t.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+function fmtDate(d: string): string {
+  return new Date(d + "T00:00:00").toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+const APPT_STATUS_TONE: Record<string, { bg: string; text: string }> = {
+  scheduled:   { bg: "bg-warning-50",  text: "text-warning-700" },
+  confirmed:   { bg: "bg-primary-50",  text: "text-primary-700" },
+  checked_in:  { bg: "bg-success-50",  text: "text-success-700" },
+  in_progress: { bg: "bg-primary-100", text: "text-primary-800" },
+  completed:   { bg: "bg-success-50",  text: "text-success-700" },
+  cancelled:   { bg: "bg-danger-50",   text: "text-danger-700" },
+  no_show:     { bg: "bg-neutral-100", text: "text-neutral-600" },
+  rescheduled: { bg: "bg-neutral-100", text: "text-neutral-600" },
+};
+
+function ApptStatusChip({ status }: { status: string }) {
+  const tone = APPT_STATUS_TONE[status] ?? APPT_STATUS_TONE.scheduled;
+  return (
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${tone.bg} ${tone.text}`}>
+      {status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+    </span>
+  );
+}
 
 // Matches patients/service.py _REGISTRATION_STEPS exactly — same stepper used
 // on the admin/regional-admin/clinic-admin patient-detail views.
@@ -65,10 +101,21 @@ export default function PatientDetailPage() {
   const [toast, setToast]             = useState<{ msg: string; ok: boolean } | null>(null);
   const [journeyDetail, setJourneyDetail] = useState<Record<string, unknown> | null>(null);
   const [journeyError, setJourneyError]   = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("Overview");
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [apptsLoading, setApptsLoading] = useState(true);
 
   const { patient, isLoading: patientLoading, refresh: refreshPatient } = useReceptionPatient(id);
   const { clinics } = useClinics();
   const isLoading = patientLoading || doctorsLoading;
+
+  useEffect(() => {
+    setApptsLoading(true);
+    appointmentsService.list({ patient_id: id, limit: 100 })
+      .then((res) => setAppointments(res.appointments))
+      .catch(() => setAppointments([]))
+      .finally(() => setApptsLoading(false));
+  }, [id]);
 
   useEffect(() => {
     setJourneyDetail(null);
@@ -154,18 +201,19 @@ export default function PatientDetailPage() {
   const clinic = resolvedClinic || patient.clinic_name || patient.clinic_city;
 
   return (
-    <div className="space-y-6">
-      {/* Back */}
-      <button
-        onClick={() => router.back()}
-        className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 transition-colors"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back to Patients
-      </button>
+    <div className="space-y-5">
+      {/* Breadcrumb */}
+      <nav className="flex items-center gap-1.5 text-xs">
+        <Link href="/receptionist/dashboard" className="text-neutral-400 hover:text-neutral-600">Receptionist</Link>
+        <span className="text-neutral-300">/</span>
+        <Link href="/receptionist/patients" className="text-neutral-400 hover:text-neutral-600">All Patients</Link>
+        <span className="text-neutral-300">/</span>
+        <span className="text-neutral-700 font-medium">{name}</span>
+      </nav>
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white transition-all ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
+        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-dropdown text-sm font-medium text-white transition-all ${toast.ok ? "bg-success-500" : "bg-danger-500"}`}>
           {toast.ok ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
           {toast.msg}
         </div>
@@ -173,33 +221,69 @@ export default function PatientDetailPage() {
 
       {/* Patient header */}
       <Card>
-        <CardContent className="flex flex-col sm:flex-row sm:items-center gap-4 py-5">
-          <div className="w-14 h-14 rounded-full bg-blue-600 flex items-center justify-center text-white text-lg font-bold flex-shrink-0">
+        <CardContent className="flex flex-col sm:flex-row sm:items-center gap-5 py-6">
+          <div className="w-[66px] h-[66px] rounded-full bg-brand-gradient flex items-center justify-center text-white text-xl font-bold flex-shrink-0">
             {initials}
           </div>
           <div className="flex-1 min-w-0">
-            <h1 className="text-xl font-bold text-neutral-900">{name}</h1>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-xl font-bold text-neutral-900">{name}</h1>
+              {patient.status && (
+                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border capitalize ${statusBadge(patient.status)}`}>
+                  {patient.status}
+                </span>
+              )}
+              {patient.mrn && (
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-neutral-100 text-neutral-600">
+                  MRN: {patient.mrn}
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-neutral-500 mt-1">
+              {[patient.age ? `${patient.age} Years` : null, patient.gender, patient.phone].filter(Boolean).join(" · ")}
+            </p>
             {clinic && (
-              <p className="flex items-center gap-1 text-xs text-blue-600 font-medium mt-0.5">
+              <p className="flex items-center gap-1 text-xs text-primary-600 font-medium mt-1">
                 <MapPin className="h-3 w-3" />{clinic}
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {patient.status && (
-              <span className={`px-3 py-1 rounded-full text-xs font-medium border capitalize ${statusBadge(patient.status)}`}>
-                {patient.status}
-              </span>
-            )}
-            {patient.mrn && (
-              <span className="px-3 py-1 rounded-full text-xs font-mono bg-neutral-100 text-neutral-600">
-                MRN: {patient.mrn}
-              </span>
-            )}
+          <div className="flex gap-2 flex-shrink-0">
+            <button
+              onClick={() => router.back()}
+              className="h-[38px] px-3.5 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-sm font-medium hover:bg-neutral-50 transition-colors flex items-center gap-1.5"
+            >
+              <ArrowLeft className="h-4 w-4" /> Back
+            </button>
+            <Link
+              href="/receptionist/appointments"
+              className="h-[38px] px-4 rounded-lg bg-brand-gradient text-white text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-1.5 whitespace-nowrap"
+            >
+              <CalendarPlus className="h-4 w-4" /> Book Appointment
+            </Link>
           </div>
         </CardContent>
       </Card>
 
+      {/* Tabs */}
+      <div className="flex gap-1.5 flex-wrap">
+        {TABS.map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={
+              tab === t
+                ? "h-8 px-3.5 rounded-full text-xs font-medium bg-brand-gradient text-white"
+                : "h-8 px-3.5 rounded-full text-xs font-medium border border-neutral-300 bg-white text-neutral-600"
+            }
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {tab === "Overview" && (
+      <>
       {/* Approve / Reject actions for pending patients */}
       {isPending && (
         <Card>
@@ -394,44 +478,76 @@ export default function PatientDetailPage() {
         </Card>
       )}
 
-      {/* Session History */}
-      {patient.recent_sessions && patient.recent_sessions.length > 0 && (
+      </>
+      )}
+
+      {tab === "Appointments" && (
         <Card>
-          <CardHeader><h3 className="text-sm font-semibold text-neutral-700">Recent Sessions</h3></CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-neutral-50 border-b border-neutral-100">
-                  <tr className="text-left text-xs font-medium text-neutral-500 uppercase tracking-wide">
-                    <th className="px-5 py-3">Date</th>
-                    <th className="px-5 py-3">Title</th>
-                    <th className="px-5 py-3">Type</th>
-                    <th className="px-5 py-3">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {patient.recent_sessions.map((s) => (
-                    <tr key={s.id} className="hover:bg-neutral-50">
-                      <td className="px-5 py-3 text-neutral-700">
-                        {s.session_date
-                          ? new Date(s.session_date).toLocaleDateString("en-IN", {
-                              day: "numeric", month: "short", year: "numeric",
-                            })
-                          : "—"}
-                      </td>
-                      <td className="px-5 py-3 text-neutral-700">{s.title || "—"}</td>
-                      <td className="px-5 py-3 text-neutral-600 capitalize">{s.session_type || "—"}</td>
-                      <td className="px-5 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium border capitalize ${statusBadge(s.status)}`}>
-                          {s.status || "unknown"}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {apptsLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="w-5 h-5 border-2 border-neutral-200 border-t-primary-500 rounded-full animate-spin" />
             </div>
-          </CardContent>
+          ) : appointments.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center px-6">
+              <Calendar className="w-8 h-8 text-neutral-200 mb-2" />
+              <p className="text-sm font-medium text-neutral-400">No appointments yet</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <div style={{ minWidth: 640 }}>
+                <div className="grid gap-3 px-5 py-2.5 bg-neutral-50 border-b border-neutral-100" style={{ gridTemplateColumns: "1.2fr 1.2fr 1fr 1fr" }}>
+                  {["Date / Time", "Doctor", "Visit Type", "Status"].map((h) => (
+                    <span key={h} className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide">{h}</span>
+                  ))}
+                </div>
+                {[...appointments]
+                  .sort((a, b) => b.appointment_date.localeCompare(a.appointment_date))
+                  .map((a) => (
+                    <div key={a.appointment_id} className="grid gap-3 items-center px-5 py-3 border-b border-neutral-100 last:border-0" style={{ gridTemplateColumns: "1.2fr 1.2fr 1fr 1fr" }}>
+                      <span className="text-xs text-neutral-700">{fmtDate(a.appointment_date)}, {fmt12(a.start_time)}</span>
+                      <span className="text-xs text-neutral-700">{a.doctor_name ? `Dr. ${a.doctor_name}` : "—"}</span>
+                      <span className="text-xs text-neutral-600 capitalize truncate">{(a.appointment_type ?? "").replace(/_/g, " ")}</span>
+                      <ApptStatusChip status={a.status} />
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {tab === "Timeline" && (
+        <Card>
+          {!patient.recent_sessions || patient.recent_sessions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center px-6">
+              <ClipboardList className="w-8 h-8 text-neutral-200 mb-2" />
+              <p className="text-sm font-medium text-neutral-400">No session history yet</p>
+            </div>
+          ) : (
+            <div className="px-6 py-5">
+              {[...patient.recent_sessions]
+                .sort((a, b) => (b.session_date ?? "").localeCompare(a.session_date ?? ""))
+                .map((s, i, arr) => (
+                  <div key={s.id} className="flex gap-4">
+                    <div className="flex flex-col items-center flex-shrink-0">
+                      <div className="w-2.5 h-2.5 rounded-full bg-primary-500 mt-1.5" />
+                      {i < arr.length - 1 && <div className="w-0.5 flex-1 bg-neutral-200 min-h-[30px]" />}
+                    </div>
+                    <div className="pb-5">
+                      <p className="text-[11px] font-semibold text-neutral-400">
+                        {s.session_date
+                          ? new Date(s.session_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+                          : "—"}
+                      </p>
+                      <p className="text-sm text-neutral-800 mt-0.5">
+                        {s.title || "Session"}{s.session_type ? ` — ${s.session_type}` : ""}
+                        {s.status ? ` (${s.status})` : ""}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
         </Card>
       )}
 

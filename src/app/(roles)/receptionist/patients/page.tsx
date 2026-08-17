@@ -15,20 +15,27 @@ const COLUMNS = ["Patient", "Age", "Gender", "Contact", "Assigned Doctor", "Last
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function ReceptionistPatientsPage() {
   const [search, setSearch] = useState("");
+  const [gender, setGender] = useState("");
+  const [doctor, setDoctor] = useState("");
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const { patients, isLoading } = useReceptionPatients();
 
+  const doctorOptions = Array.from(new Set(patients.map((p) => p.doctor_name).filter(Boolean))) as string[];
+
   const filtered = patients.filter((p) => {
     const haystack = `${p.full_name} ${p.phone ?? ""} ${p.doctor_name ?? ""}`.toLowerCase();
-    return haystack.includes(search.toLowerCase());
+    if (!haystack.includes(search.toLowerCase())) return false;
+    if (gender && (p.gender || "").toLowerCase() !== gender.toLowerCase()) return false;
+    if (doctor && p.doctor_name !== doctor) return false;
+    return true;
   });
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageSafe = Math.min(page, totalPages);
   const pageItems = filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
 
-  useEffect(() => { setPage(1); }, [search]);
+  useEffect(() => { setPage(1); }, [search, gender, doctor]);
 
   const handleRegistered = (_patient: PatientListItem) => {
     setShowModal(false);
@@ -37,27 +44,53 @@ export default function ReceptionistPatientsPage() {
   if (isLoading) return <PageLoader />;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">All Patients</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{patients.length} registered patients</p>
+    <div className="space-y-5">
+      {/* Breadcrumb + header */}
+      <div>
+        <nav className="flex items-center gap-1.5 mb-1.5 text-xs">
+          <span className="text-neutral-700 font-medium">All Patients</span>
+        </nav>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-neutral-900">All Patients</h1>
+            <p className="text-sm text-neutral-500 mt-0.5">{patients.length} registered patients</p>
+          </div>
+          <Button onClick={() => setShowModal(true)} className="flex-shrink-0">
+            <UserPlus className="h-4 w-4 mr-1.5" /><span className="hidden sm:inline">Register Patient</span><span className="sm:hidden">Register</span>
+          </Button>
         </div>
-        <Button onClick={() => setShowModal(true)} className="flex-shrink-0">
-          <UserPlus className="h-4 w-4 mr-1.5" /><span className="hidden sm:inline">Register Patient</span><span className="sm:hidden">Register</span>
-        </Button>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
-        <Input
-          placeholder="Search by name, phone or doctor…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
+      {/* Search + filters */}
+      <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="relative flex-[0_1_300px] min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+          <Input
+            placeholder="Search by name, phone or doctor…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <select
+          value={gender}
+          onChange={(e) => setGender(e.target.value)}
+          className="h-[38px] px-3 rounded-lg border border-neutral-300 bg-white text-sm text-neutral-700"
+        >
+          <option value="">All Genders</option>
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+        </select>
+        <select
+          value={doctor}
+          onChange={(e) => setDoctor(e.target.value)}
+          className="h-[38px] px-3 rounded-lg border border-neutral-300 bg-white text-sm text-neutral-700"
+        >
+          <option value="">All Doctors</option>
+          {doctorOptions.map((d) => (
+            <option key={d} value={d}>{d.startsWith("Dr.") ? d : `Dr. ${d}`}</option>
+          ))}
+        </select>
       </div>
 
       {/* Patient list */}
@@ -84,7 +117,7 @@ export default function ReceptionistPatientsPage() {
               >
                 {/* Patient */}
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="h-9 w-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-semibold text-sm flex-shrink-0">
+                  <div className="h-9 w-9 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-semibold text-sm flex-shrink-0">
                     {initials}
                   </div>
                   <p className="text-sm font-medium text-neutral-900 truncate">{name}</p>
@@ -158,7 +191,7 @@ export default function ReceptionistPatientsPage() {
                   key={n}
                   onClick={() => setPage(n)}
                   className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
-                    n === pageSafe ? "bg-blue-600 text-white" : "text-neutral-600 hover:bg-neutral-100"
+                    n === pageSafe ? "bg-brand-gradient text-white" : "text-neutral-600 hover:bg-neutral-100"
                   }`}
                 >
                   {n}

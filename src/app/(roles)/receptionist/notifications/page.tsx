@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Bell, CheckCircle, Loader2 } from "lucide-react";
+import { Bell, Check, Loader2, CheckCheck } from "lucide-react";
 import { receptionService } from "@/lib/api/services/reception.service";
-import { Card, PageLoader, Button } from "@/components/ui";
+import { Card, PageLoader } from "@/components/ui";
 import type { Notification } from "@/types/domain.types";
 
 function timeAgo(dateStr: string) {
@@ -18,6 +18,17 @@ function timeAgo(dateStr: string) {
 
 function categoryLabel(type: string) {
   return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+const TONE_BY_KEYWORD: { match: RegExp; bg: string; text: string }[] = [
+  { match: /cancel|reject|delay|overdue/i, bg: "bg-danger-50",  text: "text-danger-700" },
+  { match: /pending|awaiting|approval/i,   bg: "bg-warning-50", text: "text-warning-700" },
+  { match: /approve|confirm|checked.?in|complete|paid/i, bg: "bg-success-50", text: "text-success-700" },
+];
+
+function toneFor(type: string) {
+  const found = TONE_BY_KEYWORD.find((t) => t.match.test(type));
+  return found ? { bg: found.bg, text: found.text } : { bg: "bg-primary-50", text: "text-primary-700" };
 }
 
 export default function ReceptionistNotificationsPage() {
@@ -66,55 +77,68 @@ export default function ReceptionistNotificationsPage() {
   if (isLoading) return <PageLoader />;
 
   return (
-    <div className="space-y-6 max-w-3xl">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900 flex items-center gap-2">
-            Notifications
-            {unread > 0 && (
-              <span className="text-xs font-semibold text-white bg-red-500 rounded-full px-2 py-0.5">{unread}</span>
-            )}
-          </h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{notifications.length} total</p>
+    <div className="flex flex-col gap-5">
+      {/* Breadcrumb + header */}
+      <div>
+        <nav className="flex items-center gap-1.5 mb-1.5 text-xs">
+          <span className="text-neutral-700 font-medium">Notifications</span>
+        </nav>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <h1 className="text-2xl font-bold text-neutral-900">Notifications</h1>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-neutral-500">{unread} unread of {notifications.length}</span>
+            <button
+              onClick={handleMarkAllRead}
+              disabled={markingAll || unread === 0}
+              className="h-[38px] px-3.5 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+            >
+              {markingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
+              Mark all as read
+            </button>
+          </div>
         </div>
-        {unread > 0 && (
-          <Button onClick={handleMarkAllRead} disabled={markingAll} variant="outline">
-            {markingAll && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
-            Mark all as read
-          </Button>
-        )}
       </div>
 
       <Card>
-        <div className="divide-y divide-neutral-100">
-          {notifications.length === 0 && (
-            <div className="px-6 py-14 text-center">
-              <Bell className="h-8 w-8 text-neutral-200 mx-auto mb-2" />
-              <p className="text-sm text-neutral-400">No notifications yet.</p>
-            </div>
-          )}
-
-          {notifications.map((n) => (
-            <div key={n.id} className={`flex items-start gap-3 px-5 py-4 ${!n.is_read ? "bg-blue-50/40" : ""}`}>
-              <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${!n.is_read ? "bg-blue-500" : "bg-transparent"}`} />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">{categoryLabel(n.type)}</p>
-                <p className="text-sm text-neutral-800 mt-0.5 leading-snug">{n.message}</p>
-                <p className="text-xs text-neutral-400 mt-1">{n.created_at ? timeAgo(n.created_at) : ""}</p>
-              </div>
-              {!n.is_read && (
-                <button
-                  onClick={() => handleMarkRead(n.id)}
-                  disabled={markingId === n.id}
-                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium flex-shrink-0 disabled:opacity-50"
-                >
-                  {markingId === n.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
-                  Mark read
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
+        {notifications.length === 0 ? (
+          <div className="px-6 py-14 text-center">
+            <Bell className="h-8 w-8 text-neutral-200 mx-auto mb-2" />
+            <p className="text-sm text-neutral-400">No notifications yet.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-neutral-100">
+            {notifications.map((n) => {
+              const tone = toneFor(n.type);
+              return (
+                <div key={n.id} className={`flex gap-3 px-5 py-4 ${!n.is_read ? "bg-primary-50/40" : ""}`}>
+                  <div className={`w-[34px] h-[34px] rounded-lg ${tone.bg} ${tone.text} flex items-center justify-center flex-shrink-0`}>
+                    <Bell className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${tone.bg} ${tone.text}`}>
+                        {categoryLabel(n.type)}
+                      </span>
+                      {!n.is_read && <span className="w-1.5 h-1.5 rounded-full bg-primary-500" />}
+                    </div>
+                    <p className="text-sm text-neutral-800 leading-snug">{n.title ? `${n.title} — ` : ""}{n.message}</p>
+                    <p className="text-xs text-neutral-400 mt-1">{n.created_at ? timeAgo(n.created_at) : ""}</p>
+                  </div>
+                  {!n.is_read && (
+                    <button
+                      onClick={() => handleMarkRead(n.id)}
+                      disabled={markingId === n.id}
+                      title="Mark as read"
+                      className="w-7 h-7 rounded-md border border-neutral-300 bg-white text-neutral-500 flex items-center justify-center flex-shrink-0 self-center hover:bg-neutral-50 disabled:opacity-50 transition-colors"
+                    >
+                      {markingId === n.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </Card>
     </div>
   );
