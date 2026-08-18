@@ -1,18 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { Cpu, ChevronRight } from "lucide-react";
+import { Cpu, Clock, ChevronRight } from "lucide-react";
 import { Card } from "@/components/ui";
 
-// Clinic-admin settings hub. One section today — Clinic Devices — laid out as
-// a list of links so more sections (hours, billing, staff policy, ...) slot in
-// the same way later without restructuring the page.
+// Clinic-admin settings hub, laid out as a list of links so more sections
+// (billing, staff policy, ...) slot in the same way later without
+// restructuring the page.
 const SETTINGS_SECTIONS = [
   {
     href: "/clinic-admin/settings/devices",
     icon: Cpu,
     label: "Clinic Devices",
     description: "Which neuromodulation devices this clinic owns, and how many",
+  },
+  {
+    href: "/clinic-admin/settings/device-schedules",
+    icon: Clock,
+    label: "Device Schedule",
+    description: "When device sessions can run each week, and how many at once",
   },
 ];
 

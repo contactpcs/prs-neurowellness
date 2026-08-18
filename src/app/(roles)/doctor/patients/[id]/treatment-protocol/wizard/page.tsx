@@ -7,6 +7,7 @@ import {
   Cpu, ClipboardCheck, MapPin, BarChart2, ClipboardList, Calendar,
 } from "lucide-react";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
+import { clinicDevicesService } from "@/lib/api/services/clinicDevices.service";
 import { useAuth } from "@/lib/hooks";
 import { Card, CardContent, Input, Select, Button, PageLoader } from "@/components/ui";
 import { PlacementMap } from "./PlacementMap";
@@ -104,6 +105,7 @@ export default function TreatmentProtocolWizardPage() {
   const [scaleCatalogue, setScaleCatalogue] = useState<ScaleRead[]>([]);
   const [customScaleText, setCustomScaleText] = useState("");
   const [preview, setPreview] = useState<SchedulePreview | null>(null);
+  const [clinicDeviceId, setClinicDeviceId] = useState<string | null>(null);
   const [deviceSchedules, setDeviceSchedules] = useState<DeviceScheduleRead[]>([]);
   const [deviceOverrides, setDeviceOverrides] = useState<DeviceOverrideRead[]>([]);
   const [deviceSlots, setDeviceSlots] = useState<DeviceSlotRead[]>([]);
@@ -222,20 +224,32 @@ export default function TreatmentProtocolWizardPage() {
     return () => clearTimeout(t);
   }, [step, state.startDate, state.sessionCount, state.sessionsPerWeek, state.followUpEveryN, state.skipDates, state.extraDates]);
 
-  // ─── Step 7: Availability panel (clinic device-schedule + overrides + slot capacity) ───
+  // ─── Step 7: Availability panel (device schedule + overrides + slot capacity) ───
+  // Every pool below belongs to the ONE device this protocol prescribes
+  // (state.deviceId), not the whole clinic — resolve its clinic_device_id
+  // (the clinic's inventory row for that device) once, then scope every call
+  // to it. A clinic with several devices of different modalities has an
+  // independent pool per device; this panel only ever shows this protocol's.
   useEffect(() => {
-    if (step !== 6 || !user?.clinic_id) return;
-    treatmentProtocolService.listDeviceSchedules(user.clinic_id).then(setDeviceSchedules).catch(() => setDeviceSchedules([]));
-  }, [step, user?.clinic_id]);
+    if (step !== 6 || !user?.clinic_id || !state.deviceId) { setClinicDeviceId(null); return; }
+    clinicDevicesService.list(user.clinic_id, true)
+      .then((rows) => setClinicDeviceId(rows.find((r) => r.device_id === state.deviceId)?.clinic_device_id ?? null))
+      .catch(() => setClinicDeviceId(null));
+  }, [step, user?.clinic_id, state.deviceId]);
 
   useEffect(() => {
-    if (step !== 6 || !user?.clinic_id || !state.startDate) return;
-    treatmentProtocolService.listDeviceOverrides(user.clinic_id, state.startDate).then(setDeviceOverrides).catch(() => setDeviceOverrides([]));
+    if (step !== 6 || !user?.clinic_id || !clinicDeviceId) return;
+    treatmentProtocolService.listDeviceSchedule(user.clinic_id, clinicDeviceId).then(setDeviceSchedules).catch(() => setDeviceSchedules([]));
+  }, [step, user?.clinic_id, clinicDeviceId]);
+
+  useEffect(() => {
+    if (step !== 6 || !user?.clinic_id || !clinicDeviceId || !state.startDate) return;
+    treatmentProtocolService.listDeviceOverrides(user.clinic_id, clinicDeviceId, state.startDate).then(setDeviceOverrides).catch(() => setDeviceOverrides([]));
     const toDate = new Date(state.startDate + "T00:00:00Z");
     toDate.setUTCDate(toDate.getUTCDate() + 7);
-    treatmentProtocolService.listDeviceAvailability(user.clinic_id, state.startDate, toDate.toISOString().slice(0, 10))
+    treatmentProtocolService.listDeviceAvailability(user.clinic_id, clinicDeviceId, state.startDate, toDate.toISOString().slice(0, 10))
       .then(setDeviceSlots).catch(() => setDeviceSlots([]));
-  }, [step, user?.clinic_id, state.startDate]);
+  }, [step, user?.clinic_id, clinicDeviceId, state.startDate]);
 
   // ─── Placement node clicks ───
   const maxCathodes = validation?.maxCathodes ?? (isHD ? 4 : 1);

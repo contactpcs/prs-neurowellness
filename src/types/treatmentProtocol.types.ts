@@ -67,9 +67,12 @@ export interface ClinicDeviceUpdate {
 }
 
 // ─── Clinic device schedule (availability panel, Step 7) ───
+// One pool per DEVICE the clinic owns (clinic_device_id), not one blanket
+// number for the whole clinic — see backend SQL/v1/41_device_capacity_per_device.sql.
 export interface DeviceScheduleRead {
   schedule_id: string;
   clinic_id: string;
+  clinic_device_id: string;
   day_of_week: number; // 0=Sun..6=Sat
   start_time: string;
   end_time: string;
@@ -83,11 +86,49 @@ export interface DeviceScheduleRead {
 export interface DeviceOverrideRead {
   override_id: string;
   clinic_id: string;
+  clinic_device_id: string;
   override_date: string;
   is_available: boolean;
   start_time?: string | null;
   end_time?: string | null;
   capacity?: number | null;
+  reason?: string | null;
+}
+
+// One entry per device the clinic owns, for the Settings admin screen — every
+// device it could set a schedule for, with the week it has so far (empty if
+// unset yet).
+export interface ClinicDeviceScheduleOverview {
+  clinic_device_id: string;
+  device_id: string;
+  device_name?: string | null;
+  modality?: string | null;
+  quantity: number;
+  week: DeviceScheduleRead[];
+}
+
+// Request shapes — mirror backend DeviceScheduleItem/Replace/OverrideCreate.
+export interface DeviceScheduleItem {
+  day_of_week: number; // 0=Sun..6=Sat
+  start_time: string;  // "HH:MM:SS"
+  end_time: string;
+  slot_duration_minutes: number;
+  break_start?: string | null;
+  break_end?: string | null;
+  capacity: number;
+  is_active: boolean;
+}
+
+export interface DeviceScheduleReplace {
+  items: DeviceScheduleItem[];
+}
+
+export interface DeviceOverrideCreate {
+  override_date: string;
+  is_available: boolean;
+  start_time?: string | null;
+  end_time?: string | null;
+  capacity?: number | null; // null inherits the weekly capacity
   reason?: string | null;
 }
 

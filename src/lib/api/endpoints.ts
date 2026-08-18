@@ -237,11 +237,20 @@ export const ENDPOINTS = {
     PLAN: (planId: string) => `/treatment-plans/${planId}`,
   },
 
-  // ─── Clinic device schedule (Treatment Protocol wizard step 7 availability panel) ───
+  // ─── Clinic device schedule (Treatment Protocol wizard step 7 availability panel,
+  // and Settings → Device Schedule for clinic-admin CRUD) ───
+  // One pool per DEVICE the clinic owns (clinic_device_id), not one blanket
+  // number for the whole clinic — see backend SQL/v1/41_device_capacity_per_device.sql.
   CLINIC_DEVICE: {
-    SCHEDULES: (clinicId: string) => `/clinics/${clinicId}/device-schedules`,
-    OVERRIDES: (clinicId: string) => `/clinics/${clinicId}/device-schedule-overrides`,
-    AVAILABILITY: (clinicId: string) => `/clinics/${clinicId}/device-availability`,
+    OVERVIEW: (clinicId: string) => `/clinics/${clinicId}/device-schedules`, // GET — every device this clinic owns + its week
+    SCHEDULE: (clinicId: string, clinicDeviceId: string) =>
+      `/clinics/${clinicId}/devices/${clinicDeviceId}/schedule`, // GET one device's week, PUT atomic replace {items:[...]}
+    OVERRIDES: (clinicId: string, clinicDeviceId: string) =>
+      `/clinics/${clinicId}/devices/${clinicDeviceId}/schedule/overrides`, // GET list, POST create
+    DELETE_OVERRIDE: (clinicId: string, clinicDeviceId: string, overrideId: string) =>
+      `/clinics/${clinicId}/devices/${clinicDeviceId}/schedule/overrides/${overrideId}`,
+    AVAILABILITY: (clinicId: string, clinicDeviceId: string) =>
+      `/clinics/${clinicId}/devices/${clinicDeviceId}/availability`,
   },
 
   // ─── Clinic device inventory (Settings → Clinic Devices) ───

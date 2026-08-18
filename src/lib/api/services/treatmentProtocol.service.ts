@@ -8,6 +8,7 @@ import type {
   DeviceSessionPrsCreate, FollowUpPrsCreate, PrsResponseRead,
   TreatmentCycleRead, TreatmentPlanRead,
   DeviceScheduleRead, DeviceOverrideRead, DeviceSlotRead,
+  DeviceScheduleReplace, DeviceOverrideCreate, ClinicDeviceScheduleOverview,
 } from "@/types/treatmentProtocol.types";
 
 /** Treatment Protocol wizard — backend/app/modules/treatment_protocols
@@ -199,21 +200,44 @@ export const treatmentProtocolService = {
     return plan.plan_id;
   },
 
-  // ─── Clinic device schedule (Step 7 availability panel) ───
-  async listDeviceSchedules(clinicId: string): Promise<DeviceScheduleRead[]> {
-    const { data } = await apiClient.get(ENDPOINTS.CLINIC_DEVICE.SCHEDULES(clinicId));
+  // ─── Clinic device schedule — one pool per DEVICE the clinic owns, not one
+  // blanket number for the whole clinic (backend SQL/v1/41_device_capacity_per_device.sql) ───
+  async listDeviceScheduleOverview(clinicId: string): Promise<ClinicDeviceScheduleOverview[]> {
+    const { data } = await apiClient.get(ENDPOINTS.CLINIC_DEVICE.OVERVIEW(clinicId));
     return Array.isArray(data) ? data : [];
   },
 
-  async listDeviceOverrides(clinicId: string, fromDate?: string): Promise<DeviceOverrideRead[]> {
-    const { data } = await apiClient.get(ENDPOINTS.CLINIC_DEVICE.OVERRIDES(clinicId), { params: { from_date: fromDate } });
+  async listDeviceSchedule(clinicId: string, clinicDeviceId: string): Promise<DeviceScheduleRead[]> {
+    const { data } = await apiClient.get(ENDPOINTS.CLINIC_DEVICE.SCHEDULE(clinicId, clinicDeviceId));
     return Array.isArray(data) ? data : [];
   },
 
-  async listDeviceAvailability(clinicId: string, fromDate: string, toDate?: string, onlyAvailable = false): Promise<DeviceSlotRead[]> {
-    const { data } = await apiClient.get(ENDPOINTS.CLINIC_DEVICE.AVAILABILITY(clinicId), {
+  async listDeviceOverrides(clinicId: string, clinicDeviceId: string, fromDate?: string): Promise<DeviceOverrideRead[]> {
+    const { data } = await apiClient.get(ENDPOINTS.CLINIC_DEVICE.OVERRIDES(clinicId, clinicDeviceId), { params: { from_date: fromDate } });
+    return Array.isArray(data) ? data : [];
+  },
+
+  async listDeviceAvailability(
+    clinicId: string, clinicDeviceId: string, fromDate: string, toDate?: string, onlyAvailable = false
+  ): Promise<DeviceSlotRead[]> {
+    const { data } = await apiClient.get(ENDPOINTS.CLINIC_DEVICE.AVAILABILITY(clinicId, clinicDeviceId), {
       params: { from_date: fromDate, to_date: toDate || fromDate, only_available: onlyAvailable },
     });
     return Array.isArray(data) ? data : [];
+  },
+
+  // ─── Settings → Device Schedule (clinic-admin CRUD) ───
+  async replaceDeviceSchedule(clinicId: string, clinicDeviceId: string, body: DeviceScheduleReplace): Promise<DeviceScheduleRead[]> {
+    const { data } = await apiClient.put(ENDPOINTS.CLINIC_DEVICE.SCHEDULE(clinicId, clinicDeviceId), body);
+    return Array.isArray(data) ? data : [];
+  },
+
+  async addDeviceOverride(clinicId: string, clinicDeviceId: string, body: DeviceOverrideCreate): Promise<DeviceOverrideRead> {
+    const { data } = await apiClient.post(ENDPOINTS.CLINIC_DEVICE.OVERRIDES(clinicId, clinicDeviceId), body);
+    return data;
+  },
+
+  async deleteDeviceOverride(clinicId: string, clinicDeviceId: string, overrideId: string): Promise<void> {
+    await apiClient.delete(ENDPOINTS.CLINIC_DEVICE.DELETE_OVERRIDE(clinicId, clinicDeviceId, overrideId));
   },
 };
