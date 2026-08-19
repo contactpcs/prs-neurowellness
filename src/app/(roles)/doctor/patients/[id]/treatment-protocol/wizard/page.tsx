@@ -103,7 +103,6 @@ export default function TreatmentProtocolWizardPage() {
   const [placements, setPlacements] = useState<PlacementRead[]>([]);
   const [dosingRows, setDosingRows] = useState<DosingRead[]>([]);
   const [scaleCatalogue, setScaleCatalogue] = useState<ScaleRead[]>([]);
-  const [customScaleText, setCustomScaleText] = useState("");
   const [preview, setPreview] = useState<SchedulePreview | null>(null);
   const [clinicDeviceId, setClinicDeviceId] = useState<string | null>(null);
   const [deviceSchedules, setDeviceSchedules] = useState<DeviceScheduleRead[]>([]);
@@ -548,7 +547,6 @@ export default function TreatmentProtocolWizardPage() {
               {step === 5 && (
                 <ScalesStep
                   catalogue={scaleCatalogue} assigned={state.scales}
-                  customText={customScaleText} onCustomText={setCustomScaleText}
                   onAdd={(a) => set("scales", [...state.scales, a])}
                   onRemove={(i) => set("scales", state.scales.filter((_, j) => j !== i))}
                   onCadence={(i, cadence) => set("scales", state.scales.map((s, j) => (j === i ? { ...s, cadence } : s)))}
@@ -955,9 +953,9 @@ function DosingStep({
 // Step 6 — Scales
 // ─────────────────────────────────────────────────────────────────────────
 function ScalesStep({
-  catalogue, assigned, customText, onCustomText, onAdd, onRemove, onCadence,
+  catalogue, assigned, onAdd, onRemove, onCadence,
 }: {
-  catalogue: ScaleRead[]; assigned: AssignedScale[]; customText: string; onCustomText: (v: string) => void;
+  catalogue: ScaleRead[]; assigned: AssignedScale[];
   onAdd: (a: AssignedScale) => void; onRemove: (i: number) => void; onCadence: (i: number, c: string) => void;
 }) {
   const usedIds = assigned.map((a) => a.scale_id).filter(Boolean);
@@ -974,14 +972,6 @@ function ScalesStep({
           <div key={i} className="flex items-center gap-3 px-3.5 py-2.5">
             <span className="text-sm font-semibold text-neutral-900 flex-1">
               {a.displayName}
-              {!a.scale_id && (
-                <span
-                  className="ml-2 text-xs font-medium text-amber-700"
-                  title="Not in the scale catalogue, so it cannot be released as a PRS task. Add it to the catalogue first."
-                >
-                  · not catalogued — will not be saved
-                </span>
-              )}
             </span>
             <div className="w-52">
               <Select value={a.cadence} onChange={(e) => onCadence(i, e.target.value)} options={CADENCE_OPTIONS.map((c) => ({ value: c, label: c }))} />
@@ -1005,19 +995,15 @@ function ScalesStep({
             </button>
           ))}
         </div>
-        <div className="mt-3">
-          <Input
-            placeholder="Or type a scale not listed and press Enter"
-            value={customText}
-            onChange={(e) => onCustomText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && customText.trim()) {
-                onAdd({ scale_code: customText.trim(), cadence: "At re-assessment only", displayName: customText.trim() });
-                onCustomText("");
-              }
-            }}
-          />
-        </div>
+        {/* The free-text "type a scale not listed" box is gone deliberately.
+            Scales come from the PRS catalogue (reference.prs_scales) and
+            protocol_scales has an FK into it, so a typed name cannot be
+            released to the patient as a questionnaire — it was accepted by the
+            form and then silently dropped at submit. A scale that is genuinely
+            missing belongs in the PRS catalogue first. */}
+        <p className="mt-3 text-xs text-neutral-400">
+          Scales come from the PRS catalogue. To prescribe one that is not listed, add it to PRS first.
+        </p>
       </div>
     </div>
   );
