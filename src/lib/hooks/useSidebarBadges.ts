@@ -6,6 +6,7 @@ import { staffService } from "@/lib/api/services/staff.service";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { staffRequestsService } from "@/lib/api/services/staffRequests.service";
 import { clinicRequestsService } from "@/lib/api/services/clinicRequests.service";
+import { notificationsService } from "@/lib/api/services/notifications.service";
 
 // Sidebar nav badges — one pending count per role's "needs your action"
 // item, refreshed on mount and on every SSE push (AuthProvider's generic
@@ -20,7 +21,8 @@ import { clinicRequestsService } from "@/lib/api/services/clinicRequests.service
 // /api/v1/reception/* module, which 403s for clinical_assistant.
 export type BadgeKey =
   | "patientApprovals" | "receptionPatientApprovals" | "staffRequests"
-  | "staffApprovals" | "clinicRequests" | "doctorPendingAppointments" | "receptionUnreadNotifications";
+  | "staffApprovals" | "clinicRequests" | "doctorPendingAppointments" | "receptionUnreadNotifications"
+  | "doctorUnreadNotifications";
 
 const FETCHERS: Record<BadgeKey, () => Promise<number>> = {
   patientApprovals: async () => (await staffService.getPendingPatients()).total,
@@ -30,6 +32,7 @@ const FETCHERS: Record<BadgeKey, () => Promise<number>> = {
   clinicRequests: async () => (await clinicRequestsService.list({ status: "pending" })).length,
   doctorPendingAppointments: async () => (await appointmentsService.list({ status: "selected" })).total,
   receptionUnreadNotifications: async () => receptionService.getUnreadCount(),
+  doctorUnreadNotifications: async () => (await notificationsService.getNotifications({ limit: 1 })).unread_count,
 };
 
 export function useSidebarBadges(keys: BadgeKey[]): Record<string, number> {

@@ -224,13 +224,13 @@ export default function DoctorDashboard() {
     const q = searchQuery.toLowerCase();
     return [...appointments]
       .filter((a) => {
-        if (a.appointment_date < todayStr) return false;
+        if ((a.appointment_date || "") < todayStr) return false;
         if (a.status === "cancelled" || a.status === "completed") return false;
         if (q) return (a.patient_name || "").toLowerCase().includes(q) || (a.reason || "").toLowerCase().includes(q);
         return true;
       })
       .sort((a, b) => {
-        const dc = a.appointment_date.localeCompare(b.appointment_date);
+        const dc = (a.appointment_date || "").localeCompare(b.appointment_date || "");
         return dc !== 0 ? dc : (a.start_time || "").localeCompare(b.start_time || "");
       })
       .slice(0, 1);

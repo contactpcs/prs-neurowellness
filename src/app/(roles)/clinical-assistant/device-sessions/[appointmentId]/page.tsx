@@ -13,6 +13,21 @@ import type { Appointment } from "@/types/domain.types";
 import type { ProtocolDetail } from "@/types/treatmentProtocol.types";
 import type { ConsentBlock } from "@/types/deviceSession.types";
 
+/** Mirrors TreatmentProtocolPanel's convention: the wizard writes
+ * "Reason: <label> — <note>" into the one free-text notes field the real
+ * ProtocolCreate schema has. */
+function splitReason(notes?: string | null): { reason: string; note: string } {
+  if (!notes) return { reason: "Initial protocol", note: "" };
+  const m = notes.match(/^Reason:\s*([^—]+)—\s*([\s\S]*)$/);
+  if (m) return { reason: m[1].trim(), note: m[2].trim() };
+  return { reason: "Initial protocol", note: notes };
+}
+
+function fmtDate(iso?: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
 const CONTRAINDICATION_ITEMS = [
   { code: "skull_injury", label: "No known skull injury or fracture" },
   { code: "implants", label: "No implanted metal or electronic devices" },
@@ -193,18 +208,39 @@ export default function DeviceSessionChecklistPage() {
           </Card>
 
           <Card>
-            <CardHeader><h3 className="text-sm font-semibold text-neutral-900">Protocol set by doctor</h3></CardHeader>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-neutral-900">Protocol set by doctor</h3>
+                {protocol?.status && (
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${
+                    protocol.status === "active" ? "bg-green-50 text-green-700" : "bg-neutral-100 text-neutral-600"
+                  }`}>
+                    {protocol.status}
+                  </span>
+                )}
+              </div>
+            </CardHeader>
             <CardContent>
-              <DetailFieldList
-                data={{
-                  modality: protocol?.modality,
-                  device: protocol?.device_name,
-                  current_ma: protocol?.prescribed_current_ma,
-                  duration_min: protocol?.prescribed_duration_min,
-                  ramp_seconds: protocol?.ramp_seconds,
-                  session: protocol ? `Session of ${protocol.session_count}` : undefined,
-                }}
-              />
+              {!protocol ? (
+                <p className="text-xs text-neutral-400">No treatment protocol linked to this appointment yet.</p>
+              ) : (
+                <DetailFieldList
+                  data={{
+                    doctor: protocol.doctor_name,
+                    modality: protocol.modality,
+                    device: protocol.device_name,
+                    current_ma: protocol.prescribed_current_ma,
+                    duration_min: protocol.prescribed_duration_min,
+                    ramp_seconds: protocol.ramp_seconds,
+                    sessions_per_week: protocol.sessions_per_week,
+                    session: `Session of ${protocol.session_count}`,
+                    follow_up_every: protocol.follow_up_every_n ? `Every ${protocol.follow_up_every_n} sessions` : "None scheduled",
+                    effective_from: fmtDate(protocol.activated_at || protocol.created_at),
+                    reason_for_protocol: splitReason(protocol.notes).reason,
+                    doctors_note: splitReason(protocol.notes).note || "—",
+                  }}
+                />
+              )}
             </CardContent>
           </Card>
 

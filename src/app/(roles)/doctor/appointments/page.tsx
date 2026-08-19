@@ -35,7 +35,8 @@ function fmt12(t: string): string {
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-function fmtDate(d: string): string {
+function fmtDate(d?: string | null): string {
+  if (!d) return "—";
   return new Date(d + "T00:00:00").toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" });
 }
 
@@ -85,8 +86,8 @@ export default function DoctorAppointmentsPage() {
       .filter((a) => status === "all" || a.status === status)
       .filter((a) => !query || `${a.appointment_id} ${a.patient_name ?? ""} ${a.appointment_type ?? ""}`.toLowerCase().includes(query))
       .sort((a, b) => {
-        const dc = b.appointment_date.localeCompare(a.appointment_date);
-        return dc !== 0 ? dc : a.start_time.localeCompare(b.start_time);
+        const dc = (b.appointment_date || "").localeCompare(a.appointment_date || "");
+        return dc !== 0 ? dc : (a.start_time || "").localeCompare(b.start_time || "");
       });
   }, [appointments, status, q]);
 
@@ -128,6 +129,52 @@ export default function DoctorAppointmentsPage() {
           </button>
         ))}
       </div>
+
+      {/* selected appointment detail */}
+      {sel && (
+        <div className="bg-white rounded-xl border border-neutral-200/80 shadow-card overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-100">
+            <h3 className="text-[13px] font-semibold text-neutral-900">
+              Appointment Details · {sel.appointment_id.slice(0, 8)}
+            </h3>
+            <StatusPill status={sel.status} />
+          </div>
+          <div className="p-5 flex flex-col gap-4">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-neutral-900">{sel.patient_name ?? "Patient"}</h2>
+                  <Link href={`/doctor/patients/${sel.patient_id}`}>
+                    <Eye className="w-3.5 h-3.5 text-neutral-400 hover:text-neutral-600 transition-colors" />
+                  </Link>
+                </div>
+                <p className="text-xs text-neutral-500 mt-1 capitalize">{(sel.appointment_type ?? "").replace(/_/g, " ")}</p>
+                <p className="text-sm font-semibold text-neutral-700 mt-2">{fmtDate(sel.appointment_date)} · {fmt12(sel.start_time)}</p>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <Link href={`/doctor/appointments/${sel.appointment_id}`}>
+                  <button className="h-9 px-4 rounded-lg bg-action-orange text-white text-xs font-semibold hover:bg-action-orange-dark transition-colors">
+                    {sel.status === "checked_in" ? "Start Visit" : "View Patient"}
+                  </button>
+                </Link>
+                {!locked && (
+                  <Link href={`/doctor/appointments/${sel.appointment_id}`}>
+                    <button className="h-9 px-3.5 rounded-lg border border-neutral-300 bg-white text-neutral-600 text-xs font-medium hover:bg-neutral-50 transition-colors">
+                      Manage
+                    </button>
+                  </Link>
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-neutral-100">
+              <Field label="Reason" value={sel.reason || "—"} />
+              <Field label="Booked By" value={humanize(sel.booked_by_role || "—")} />
+              <Field label="Created" value={sel.created_at ? new Date(sel.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"} />
+              <Field label="Notes" value={sel.notes || "—"} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* table */}
       <div className="bg-white rounded-xl border border-neutral-200/80 shadow-card overflow-hidden">
@@ -171,52 +218,6 @@ export default function DoctorAppointmentsPage() {
           </div>
         )}
       </div>
-
-      {/* selected appointment detail */}
-      {sel && (
-        <div className="bg-white rounded-xl border border-neutral-200/80 shadow-card overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-100">
-            <h3 className="text-[13px] font-semibold text-neutral-900">
-              Appointment Details · {sel.appointment_id.slice(0, 8)}
-            </h3>
-            <StatusPill status={sel.status} />
-          </div>
-          <div className="p-5 flex flex-col gap-4">
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-bold text-neutral-900">{sel.patient_name ?? "Patient"}</h2>
-                  <Link href={`/doctor/patients/${sel.patient_id}`}>
-                    <Eye className="w-3.5 h-3.5 text-neutral-400 hover:text-neutral-600 transition-colors" />
-                  </Link>
-                </div>
-                <p className="text-xs text-neutral-500 mt-1 capitalize">{(sel.appointment_type ?? "").replace(/_/g, " ")}</p>
-                <p className="text-sm font-semibold text-neutral-700 mt-2">{fmtDate(sel.appointment_date)} · {fmt12(sel.start_time)}</p>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                <Link href={`/doctor/appointments/${sel.appointment_id}`}>
-                  <button className="h-9 px-4 rounded-lg bg-action-orange text-white text-xs font-semibold hover:bg-action-orange-dark transition-colors">
-                    {sel.status === "checked_in" ? "Start Visit" : "View Patient"}
-                  </button>
-                </Link>
-                {!locked && (
-                  <Link href={`/doctor/appointments/${sel.appointment_id}`}>
-                    <button className="h-9 px-3.5 rounded-lg border border-neutral-300 bg-white text-neutral-600 text-xs font-medium hover:bg-neutral-50 transition-colors">
-                      Manage
-                    </button>
-                  </Link>
-                )}
-              </div>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-neutral-100">
-              <Field label="Reason" value={sel.reason || "—"} />
-              <Field label="Booked By" value={humanize(sel.booked_by_role || "—")} />
-              <Field label="Created" value={new Date(sel.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} />
-              <Field label="Notes" value={sel.notes || "—"} />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
