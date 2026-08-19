@@ -131,10 +131,15 @@ export default function TreatmentProtocolWizardPage() {
         anodeSite: detail.placement?.anode_site || null,
         cathodeSites: detail.placement?.cathode_site ? [detail.placement.cathode_site] : (detail.placement?.return_sites || []),
         dosingId: detail.dosing_id || null,
-        currentMa: String((detail.device_settings as any)?.current_ma ?? ""),
-        sessionDurationMin: String((detail.device_settings as any)?.duration_min ?? ""),
-        rampSeconds: String((detail.device_settings as any)?.ramp_seconds ?? "30"),
+        // Read the prescription from its typed columns, falling back to
+        // device_settings only for protocols written before the dose moved out
+        // of that jsonb bag. Without the fallback, amending an older protocol
+        // silently starts with empty dose fields.
+        currentMa: String(detail.prescribed_current_ma ?? (detail.device_settings as any)?.current_ma ?? ""),
+        sessionDurationMin: String(detail.prescribed_duration_min ?? (detail.device_settings as any)?.duration_min ?? ""),
+        rampSeconds: String(detail.ramp_seconds ?? (detail.device_settings as any)?.ramp_seconds ?? "30"),
         sessionCount: String(detail.session_count),
+        sessionsPerWeek: detail.sessions_per_week ?? s.sessionsPerWeek,
         followUpEveryN: detail.follow_up_every_n ? String(detail.follow_up_every_n) : "",
       }));
     }).catch(() => setErr("Couldn't load the current protocol to modify.")).finally(() => setPrefillLoading(false));
@@ -314,10 +319,20 @@ export default function TreatmentProtocolWizardPage() {
         sessionCount: parseInt(state.sessionCount) || 20,
       });
 
-      const deviceSettings: Record<string, unknown> = {};
-      if (state.currentMa) deviceSettings.current_ma = parseFloat(state.currentMa);
-      if (state.sessionDurationMin) deviceSettings.duration_min = parseInt(state.sessionDurationMin);
-      if (state.rampSeconds) deviceSettings.ramp_seconds = parseInt(state.rampSeconds);
+      // Step 5's numbers are the PRESCRIPTION, not a deviation from it, so they
+      // go in the typed, range-checked columns. They used to be written only
+      // into device_settings — an untyped jsonb bag — which left
+      // prescribed_current_ma and prescribed_duration_min NULL and made every
+      // activation fail: fn_check_protocol_prescription_complete refuses to
+      // make a protocol live without a current, a duration and a cadence,
+      // because a clinical assistant reads those off the screen and sets them
+      // on the machine.
+      //
+      // device_settings keeps its original meaning: per-patient DEVIATIONS
+      // from the catalogue dose, which is genuinely open-ended.
+      const currentMa = state.currentMa ? parseFloat(state.currentMa) : null;
+      const durationMin = state.sessionDurationMin ? parseInt(state.sessionDurationMin) : null;
+      const rampSeconds = state.rampSeconds ? parseInt(state.rampSeconds) : 30;
 
       const payload: ProtocolCreate = {
         plan_id: planId,
@@ -330,9 +345,23 @@ export default function TreatmentProtocolWizardPage() {
         sessions_per_week: state.sessionsPerWeek,
         skip_dates: state.skipDates,
         extra_dates: state.extraDates,
+        // Step 2. Recorded so "what was this patient treated for" is
+        // answerable later; previously selected, used to rank suggestions,
+        // and then discarded.
+        conditions: state.conditionIds.map((condition_id) => ({ condition_id })),
         diagnosis_ids: state.diagnosisIds,
-        scales: state.scales.map(({ scale_id, scale_code, cadence }) => ({ scale_id, scale_code, cadence })),
-        device_settings: deviceSettings,
+        // Only catalogued scales can be prescribed: protocol_scales.scale_id is
+        // NOT NULL with an FK into reference.neuromod_scales, because a scale
+        // the catalogue does not know cannot be released to the patient as a
+        // PRS task. A free-typed name is dropped here rather than silently
+        // accepted and stored nowhere — see the warning shown on step 6.
+        scales: state.scales
+          .filter((s): s is typeof s & { scale_id: string } => Boolean(s.scale_id))
+          .map(({ scale_id, cadence }) => ({ scale_id, cadence })),
+        prescribed_current_ma: currentMa,
+        prescribed_duration_min: durationMin,
+        ramp_seconds: rampSeconds,
+        device_settings: {},
         notes: finalNotes,
       };
 
@@ -939,7 +968,17 @@ function ScalesStep({
       <div className="border border-neutral-200 rounded-lg divide-y divide-neutral-100">
         {assigned.map((a, i) => (
           <div key={i} className="flex items-center gap-3 px-3.5 py-2.5">
-            <span className="text-sm font-semibold text-neutral-900 flex-1">{a.displayName}</span>
+            <span className="text-sm font-semibold text-neutral-900 flex-1">
+              {a.displayName}
+              {!a.scale_id && (
+                <span
+                  className="ml-2 text-xs font-medium text-amber-700"
+                  title="Not in the scale catalogue, so it cannot be released as a PRS task. Add it to the catalogue first."
+                >
+                  · not catalogued — will not be saved
+                </span>
+              )}
+            </span>
             <div className="w-52">
               <Select value={a.cadence} onChange={(e) => onCadence(i, e.target.value)} options={CADENCE_OPTIONS.map((c) => ({ value: c, label: c }))} />
             </div>

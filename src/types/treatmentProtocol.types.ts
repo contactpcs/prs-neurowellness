@@ -298,19 +298,42 @@ export interface ProtocolScaleAssignment {
   cadence: string;
 }
 
+export interface ProtocolConditionAssignment {
+  /** Exactly one of these two — never both, never neither.
+   *  (chk_protocol_conditions_shape: num_nonnulls(condition_id, other_text) = 1) */
+  condition_id?: string | null;
+  other_text?: string | null;
+}
+
 export interface ProtocolCreate {
-  plan_id: string;
+  /** A protocol hangs off a protocol INSTANCE (a course of device treatment),
+   *  and only optionally off a treatment PLAN (the anamnesis/history record).
+   *  Exactly one is required — the backend enforces the same rule via
+   *  chk_treatment_protocols_has_parent. */
+  instance_id?: string | null;
+  plan_id?: string | null;
   device_id: string;
   placement_id: string;
   dosing_id: string;
   session_count: number;
   follow_up_every_n?: number | null;
   start_date: string;
+  /** 1 | 2 | 3 | 5 | 7 only — chk_treatment_protocols_sessions_per_week. */
   sessions_per_week: number;
   skip_dates: string[];
   extra_dates: string[];
+  conditions: ProtocolConditionAssignment[];
   diagnosis_ids: string[];
   scales: ProtocolScaleAssignment[];
+  /** Step 5, the prescribed dose. Optional at create so a half-finished draft
+   *  can be saved, but ACTIVATION FAILS without current + duration + cadence:
+   *  a clinical assistant reads these off the screen and sets them on the
+   *  machine, so a NULL current is an unanswerable question at the bedside. */
+  prescribed_current_ma?: number | null;
+  prescribed_duration_min?: number | null;
+  ramp_seconds?: number;
+  /** Which consultation authored this. Provenance only. */
+  authored_in_appointment_id?: string | null;
   device_settings: Record<string, unknown>;
   notes?: string | null;
 }
@@ -318,18 +341,54 @@ export interface ProtocolCreate {
 export interface ProtocolUpdate {
   session_count?: number;
   follow_up_every_n?: number | null;
+  /** Editable on a draft so an incomplete step 5 can be completed before
+   *  activation, which then requires all three. */
+  prescribed_current_ma?: number | null;
+  prescribed_duration_min?: number | null;
+  ramp_seconds?: number | null;
+  sessions_per_week?: number | null;
   device_settings?: Record<string, unknown>;
   notes?: string | null;
 }
 
+export interface ProtocolInstanceCreate {
+  cycle_id: string;
+  notes?: string | null;
+}
+
+export interface ProtocolInstanceRead {
+  instance_id: string;
+  cycle_id: string;
+  patient_id: string;
+  created_by: string;
+  instance_number: number;
+  status: string;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+  clinic_id?: string | null;
+  doctor_id?: string | null;
+  patient_name?: string | null;
+  created_by_name?: string | null;
+  protocol_count: number;
+}
+
 export interface ProtocolRead {
   protocol_id: string;
-  plan_id: string;
+  /** Nullable since the protocol was re-parented onto protocol_instances. */
+  plan_id?: string | null;
+  instance_id?: string | null;
+  instance_number?: number | null;
+  instance_status?: string | null;
   device_id: string;
   set_by: string;
   session_count: number;
   follow_up_every_n?: number | null;
   status: "draft" | "active" | "cancelled" | "completed" | string;
+  prescribed_current_ma?: number | null;
+  prescribed_duration_min?: number | null;
+  ramp_seconds?: number | null;
+  sessions_per_week?: number | null;
   device_settings: Record<string, unknown>;
   notes?: string | null;
   activated_at?: string | null;
