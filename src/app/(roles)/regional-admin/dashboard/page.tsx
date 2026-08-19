@@ -181,11 +181,11 @@ export default function RegionalAdminDashboardPage() {
 
   // ── Appointments ──
   const todayStr = new Date().toISOString().slice(0, 10);
-  const todaysAppointments = appointments.filter((a) => a.appointment_date === todayStr).sort((a, b) => a.start_time.localeCompare(b.start_time));
+  const todaysAppointments = appointments.filter((a) => a.appointment_date === todayStr).sort((a, b) => (a.start_time ?? "").localeCompare(b.start_time ?? ""));
   const upcomingAppointments = appointments.filter((a) => a.appointment_date > todayStr)
-    .sort((a, b) => a.appointment_date.localeCompare(b.appointment_date) || a.start_time.localeCompare(b.start_time)).slice(0, 5);
+    .sort((a, b) => (a.appointment_date ?? "").localeCompare(b.appointment_date ?? "") || (a.start_time ?? "").localeCompare(b.start_time ?? "")).slice(0, 5);
   const recentCheckins = appointments.filter((a) => a.appointment_date === todayStr && a.status === "checked_in")
-    .sort((a, b) => b.start_time.localeCompare(a.start_time));
+    .sort((a, b) => (b.start_time ?? "").localeCompare(a.start_time ?? ""));
 
   const todayDow = new Date().getDay();
 
@@ -195,13 +195,13 @@ export default function RegionalAdminDashboardPage() {
   const paymentStatusCounts = (["pending", "paid", "waived", "failed", "refunded"] as const).map((status) => ({
     status, count: payments.filter((p) => p.status === status).length,
   })).filter((s) => s.count > 0);
-  const recentPayments = [...payments].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5);
+  const recentPayments = [...payments].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")).slice(0, 5);
 
   // ── Inventory (flagged low-stock) ──
   const lowStockItems = inventory.filter((i) => i.quantity < LOW_STOCK_THRESHOLD);
 
   // ── Latest orders ──
-  const latestOrders = [...orders].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5);
+  const latestOrders = [...orders].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")).slice(0, 5);
 
   return (
     <div className="space-y-6">

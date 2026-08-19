@@ -85,8 +85,8 @@ export default function DoctorAppointmentsPage() {
       .filter((a) => status === "all" || a.status === status)
       .filter((a) => !query || `${a.appointment_id} ${a.patient_name ?? ""} ${a.appointment_type ?? ""}`.toLowerCase().includes(query))
       .sort((a, b) => {
-        const dc = b.appointment_date.localeCompare(a.appointment_date);
-        return dc !== 0 ? dc : a.start_time.localeCompare(b.start_time);
+        const dc = (b.appointment_date ?? "").localeCompare(a.appointment_date ?? "");
+        return dc !== 0 ? dc : (a.start_time ?? "").localeCompare(b.start_time ?? "");
       });
   }, [appointments, status, q]);
 

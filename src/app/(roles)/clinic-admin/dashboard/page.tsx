@@ -169,16 +169,16 @@ export default function ClinicAdminDashboardPage() {
 
   const todaysAppointments = appointments
     .filter((a) => a.appointment_date === todayStr)
-    .sort((a, b) => a.start_time.localeCompare(b.start_time));
+    .sort((a, b) => (a.start_time ?? "").localeCompare(b.start_time ?? ""));
   const upcomingAppointments = appointments
     .filter((a) => a.appointment_date > todayStr)
-    .sort((a, b) => a.appointment_date.localeCompare(b.appointment_date) || a.start_time.localeCompare(b.start_time))
+    .sort((a, b) => (a.appointment_date ?? "").localeCompare(b.appointment_date ?? "") || (a.start_time ?? "").localeCompare(b.start_time ?? ""))
     .slice(0, 5);
   // No checked_in_at on AppointmentRead — start_time is the closest real
   // field to sort "recent" check-ins by (same-day, so this is a fine proxy).
   const recentCheckins = appointments
     .filter((a) => a.appointment_date === todayStr && a.status === "checked_in")
-    .sort((a, b) => b.start_time.localeCompare(a.start_time));
+    .sort((a, b) => (b.start_time ?? "").localeCompare(a.start_time ?? ""));
 
   // ── Staff working hours (doctors only) ──
   const todayDow = new Date().getDay(); // 0=Sunday...6=Saturday
@@ -190,13 +190,13 @@ export default function ClinicAdminDashboardPage() {
   const paymentStatusCounts = (["pending", "paid", "waived", "failed", "refunded"] as const).map((status) => ({
     status, count: payments.filter((p) => p.status === status).length,
   })).filter((s) => s.count > 0);
-  const recentPayments = [...payments].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5);
+  const recentPayments = [...payments].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")).slice(0, 5);
 
   // ── Inventory ──
   const productName = (id: string) => products.find((p) => p.product_id === id)?.name ?? id;
 
   // ── Latest orders ──
-  const latestOrders = [...orders].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5);
+  const latestOrders = [...orders].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")).slice(0, 5);
 
   return (
     <div className="space-y-6">

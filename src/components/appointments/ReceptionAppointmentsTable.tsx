@@ -73,8 +73,8 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
       .filter((a) => !statusFilter || a.status === statusFilter)
       .filter((a) => !query || `${a.appointment_id} ${a.patient_name ?? ""} ${a.doctor_name ?? ""}`.toLowerCase().includes(query))
       .sort((a, b) => {
-        const dc = b.appointment_date.localeCompare(a.appointment_date);
-        return dc !== 0 ? dc : a.start_time.localeCompare(b.start_time);
+        const dc = (b.appointment_date ?? "").localeCompare(a.appointment_date ?? "");
+        return dc !== 0 ? dc : (a.start_time ?? "").localeCompare(b.start_time ?? "");
       });
   }, [appointments, doctorFilter, statusFilter, q]);
 
