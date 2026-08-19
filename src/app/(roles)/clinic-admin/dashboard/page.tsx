@@ -165,7 +165,6 @@ export default function ClinicAdminDashboardPage() {
   // ── Appointments ──
   const todayStr = new Date().toISOString().slice(0, 10);
   const patientName = (id: string) => { const p = patients.find((x) => x.id === id); return p ? `${p.first_name} ${p.last_name}` : id; };
-  const staffName = (id: string) => { const s = staff.find((x) => x.id === id); return s ? `${s.first_name} ${s.last_name}` : id; };
 
   const todaysAppointments = appointments
     .filter((a) => a.appointment_date === todayStr)
@@ -248,8 +247,8 @@ export default function ClinicAdminDashboardPage() {
                 {todaysAppointments.map((a) => (
                   <div key={a.appointment_id} className="flex items-center justify-between px-5 py-3">
                     <div>
-                      <p className="text-sm font-medium text-neutral-900">{patientName(a.patient_id)}</p>
-                      <p className="text-xs text-neutral-400">Today {timeLabel(a.start_time)} · Dr. {staffName(a.doctor_id)}</p>
+                      <p className="text-sm font-medium text-neutral-900">{a.patient_name ?? "Patient"}</p>
+                      <p className="text-xs text-neutral-400">Today {timeLabel(a.start_time)} · Dr. {a.doctor_name ?? "—"}</p>
                     </div>
                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${APPT_STATUS_STYLES[a.status] ?? "bg-neutral-100 text-neutral-600"}`}>
                       {a.status.replace(/_/g, " ")}
@@ -259,8 +258,8 @@ export default function ClinicAdminDashboardPage() {
                 {upcomingAppointments.map((a) => (
                   <div key={a.appointment_id} className="flex items-center justify-between px-5 py-3">
                     <div>
-                      <p className="text-sm font-medium text-neutral-900">{patientName(a.patient_id)}</p>
-                      <p className="text-xs text-neutral-400">{a.appointment_date} {timeLabel(a.start_time)} · Dr. {staffName(a.doctor_id)}</p>
+                      <p className="text-sm font-medium text-neutral-900">{a.patient_name ?? "Patient"}</p>
+                      <p className="text-xs text-neutral-400">{a.appointment_date} {timeLabel(a.start_time)} · Dr. {a.doctor_name ?? "—"}</p>
                     </div>
                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${APPT_STATUS_STYLES[a.status] ?? "bg-neutral-100 text-neutral-600"}`}>
                       {a.status.replace(/_/g, " ")}
@@ -286,8 +285,8 @@ export default function ClinicAdminDashboardPage() {
                 {recentCheckins.map((a) => (
                   <div key={a.appointment_id} className="flex items-center justify-between px-5 py-3">
                     <div>
-                      <p className="text-sm font-medium text-neutral-900">{patientName(a.patient_id)}</p>
-                      <p className="text-xs text-neutral-400">{timeLabel(a.start_time)} · Dr. {staffName(a.doctor_id)}</p>
+                      <p className="text-sm font-medium text-neutral-900">{a.patient_name ?? "Patient"}</p>
+                      <p className="text-xs text-neutral-400">{timeLabel(a.start_time)} · Dr. {a.doctor_name ?? "—"}</p>
                     </div>
                     <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-teal-100 text-teal-700">Checked In</span>
                   </div>
