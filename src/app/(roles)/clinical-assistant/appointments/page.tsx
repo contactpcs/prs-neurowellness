@@ -212,7 +212,13 @@ export default function ClinicalAssistantAppointmentsPage() {
             {list.map((r) => (
               <button
                 key={r.appointment_id}
-                onClick={() => router.push(`/clinical-assistant/sessions/${r.appointment_id}`)}
+                onClick={() => router.push(
+                  r.status === "in_progress" || r.status === "paused"
+                    ? `/clinical-assistant/device-sessions/${r.appointment_id}/live`
+                    : r.status === "completed"
+                      ? `/clinical-assistant/device-sessions/${r.appointment_id}/summary`
+                      : `/clinical-assistant/device-sessions/${r.appointment_id}`
+                )}
                 className="w-full flex items-center gap-3 px-3.5 py-3 hover:bg-neutral-50 transition text-left"
               >
                 <div className="h-9 w-9 rounded-full bg-purple-50 flex items-center justify-center shrink-0">
