@@ -245,7 +245,7 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted }: A
     if (recordState !== "loading" || mode !== "patient" || questions.length === 0) return;
 
     anamnesisService
-      .start({ patient_id: patientId, taken_by: "patient" })
+      .start({ patient_id: patientId, taken_by: "patient", assessment_stage: "general_registration" })
       .then((r) => {
         setAnamnesisId(r.anamnesis_id);
         setMeta({ completed_at: null, taken_by: "patient" });
@@ -356,7 +356,7 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted }: A
     try {
       // Fetch questions alongside start if not already loaded
       const [r, qs] = await Promise.all([
-        anamnesisService.start({ patient_id: patientId, taken_by: "doctor_on_behalf" }),
+        anamnesisService.start({ patient_id: patientId, taken_by: "doctor_on_behalf", assessment_stage: "main_clinical" }),
         questions.length === 0 ? anamnesisService.getQuestions().catch(() => [] as AnamnesisQuestion[]) : Promise.resolve(questions),
       ]);
       if (questions.length === 0 && qs.length > 0) {

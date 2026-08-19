@@ -5,6 +5,7 @@ import type { AnamnesisRecord } from "@/types/domain.types";
 export type AnamnesisStartPayload = {
   patient_id: string;
   taken_by: "patient" | "doctor_on_behalf";
+  assessment_stage: "general_registration" | "main_clinical";
 };
 
 export type AnamnesisSaveResponsePayload = {
@@ -78,7 +79,10 @@ export const anamnesisService = {
   },
 
   async start(payload: AnamnesisStartPayload): Promise<{ anamnesis_id: string; status: "in_progress" | "completed"; resumed: boolean }> {
-    const { data } = await apiClient.post(ENDPOINTS.ANAMNESIS.START(payload.patient_id), { taken_by: payload.taken_by });
+    const { data } = await apiClient.post(ENDPOINTS.ANAMNESIS.START(payload.patient_id), {
+      taken_by: payload.taken_by,
+      assessment_stage: payload.assessment_stage,
+    });
     return { anamnesis_id: data.anamnesis_id, status: data.status, resumed: false };
   },
 

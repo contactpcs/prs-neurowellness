@@ -304,6 +304,7 @@ export interface AnamnesisRecord {
   patient_id: string;
   submitted_by: string | null;
   taken_by: string;
+  assessment_stage: "general_registration" | "main_clinical";
   status: "in_progress" | "completed";
   completed_at: string | null;
   responses?: AnamnesisResponse[];
