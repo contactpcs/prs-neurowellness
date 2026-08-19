@@ -1,6 +1,6 @@
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
-import type { Appointment, AppointmentStatus, AppointmentType } from "@/types/domain.types";
+import type { Appointment, AppointmentStatus, AppointmentType, AvailabilitySlot } from "@/types/domain.types";
 
 export interface AppointmentListParams {
   date_from?: string;
@@ -33,6 +33,13 @@ export interface AppointmentReschedulePayload {
 
 export interface AppointmentCancelPayload {
   cancellation_reason: string;
+}
+
+export interface MyBookPayload {
+  appointment_date: string;
+  start_time: string;
+  reason?: string;
+  patient_complaint?: string;
 }
 
 /** AppointmentRead now includes patient_name/doctor_name (profiles join) and
@@ -144,5 +151,37 @@ export const appointmentsService = {
   async getHistory(id: string): Promise<unknown[]> {
     const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.HISTORY(id));
     return Array.isArray(data) ? data : [];
+  },
+
+  // ── patient self-service — the real booking flow (select → pay) ──────────
+  // Clinic, doctor and patient are all resolved server-side from the
+  // caller's own record (scheduling/router.py "/me/appointments/*"); these
+  // never take an id or send ownership fields.
+
+  async myList(includePast = false): Promise<Appointment[]> {
+    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.MY_LIST, { params: { include_past: includePast } });
+    return extractList(data);
+  },
+
+  async myAvailability(fromDate: string, toDate: string): Promise<AvailabilitySlot[]> {
+    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.MY_AVAILABILITY, {
+      params: { from_date: fromDate, to_date: toDate },
+    });
+    return Array.isArray(data) ? data : [];
+  },
+
+  async bookInitial(payload: MyBookPayload): Promise<Appointment> {
+    const { data } = await apiClient.post(ENDPOINTS.APPOINTMENTS.MY_BOOK_INITIAL, payload);
+    return mapAppointment(data);
+  },
+
+  async bookFollowUp(payload: MyBookPayload): Promise<Appointment> {
+    const { data } = await apiClient.post(ENDPOINTS.APPOINTMENTS.MY_BOOK_FOLLOWUP, payload);
+    return mapAppointment(data);
+  },
+
+  async myCancel(id: string, reason: string): Promise<Appointment> {
+    const { data } = await apiClient.patch(ENDPOINTS.APPOINTMENTS.MY_CANCEL(id), { reason });
+    return mapAppointment(data);
   },
 };

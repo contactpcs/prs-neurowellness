@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { appointmentRequestsService } from "@/lib/api/services/appointmentRequests.service";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { staffService } from "@/lib/api/services/staff.service";
 import { receptionService } from "@/lib/api/services/reception.service";
@@ -20,11 +19,10 @@ import { clinicRequestsService } from "@/lib/api/services/clinicRequests.service
 // staffService, while receptionist reads from the role-restricted
 // /api/v1/reception/* module, which 403s for clinical_assistant.
 export type BadgeKey =
-  | "appointmentRequests" | "patientApprovals" | "receptionPatientApprovals" | "staffRequests"
+  | "patientApprovals" | "receptionPatientApprovals" | "staffRequests"
   | "staffApprovals" | "clinicRequests" | "doctorPendingAppointments" | "receptionUnreadNotifications";
 
 const FETCHERS: Record<BadgeKey, () => Promise<number>> = {
-  appointmentRequests: async () => (await appointmentRequestsService.list({ status: "pending" })).total,
   patientApprovals: async () => (await staffService.getPendingPatients()).total,
   receptionPatientApprovals: async () => (await receptionService.getPendingPatients()).total,
   staffRequests: async () => (await staffRequestsService.list({ status: "pending" })).length,

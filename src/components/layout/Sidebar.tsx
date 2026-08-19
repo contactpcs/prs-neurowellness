@@ -37,14 +37,12 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
   ],
   clinical_assistant: [
     { label: "Dashboard",   href: "/clinical-assistant/dashboard",            icon: LayoutDashboard },
-    { label: "Appt. Reqs.", href: "/clinical-assistant/appointment-requests", icon: CalendarDays, badge: "appointmentRequests" },
     { label: "All Patients",href: "/clinical-assistant/patients",             icon: Users },
     { label: "Approvals",   href: "/clinical-assistant/approvals",            icon: ClipboardCheck, badge: "patientApprovals" },
     { label: "Profile",     href: "/clinical-assistant/profile",              icon: UserCircle },
   ],
   receptionist: [
     { label: "Dashboard",   href: "/receptionist/dashboard",            icon: LayoutDashboard },
-    { label: "Appt. Reqs.", href: "/receptionist/appointment-requests", icon: CalendarDays, badge: "appointmentRequests" },
     { label: "Appointments",href: "/receptionist/appointments",         icon: Calendar },
     { label: "All Patients",href: "/receptionist/patients",             icon: Users },
     { label: "Approvals",   href: "/receptionist/approvals",            icon: ClipboardCheck, badge: "receptionPatientApprovals" },

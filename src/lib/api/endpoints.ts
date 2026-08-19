@@ -285,16 +285,14 @@ export const ENDPOINTS = {
     RESCHEDULE: (id: string) => `/appointments/${id}/reschedule`, // real
     NO_SHOW: (id: string) => `/appointments/${id}/status`,  // real — PATCH {status:"no_show"}
     REQUEST_RESCHEDULE: (id: string) => `/appointments/${id}/request-reschedule`, // real — POST, patient-only
-  },
-
-  // ─── Appointment Requests ───
-  APPOINTMENT_REQUESTS: {
-    LIST: "/appointment-requests",   // real
-    CREATE: "/appointment-requests", // real
-    GET: (id: string) => `/appointment-requests/${id}`, // real
-    APPROVE: (id: string) => `/appointment-requests/${id}/decision`, // real — PATCH {decision:"approved", ...}
-    REJECT: (id: string) => `/appointment-requests/${id}/decision`,  // real — PATCH {decision:"rejected", review_notes}
-    CANCEL: (id: string) => `/appointment-requests/${id}/decision`,  // real — PATCH {decision:"cancelled_by_patient"}
+    // Patient self-service — clinic/doctor/patient are all resolved
+    // server-side from the caller's own record (scheduling/router.py's
+    // "/me/appointments/*" block), so these never take an id in the path.
+    MY_LIST: "/me/appointments",
+    MY_AVAILABILITY: "/me/appointments/availability", // GET ?from_date&to_date
+    MY_BOOK_INITIAL: "/me/appointments/initial",       // POST {appointment_date, start_time, reason?, patient_complaint?}
+    MY_BOOK_FOLLOWUP: "/me/appointments/follow-up",    // POST — same body shape
+    MY_CANCEL: (id: string) => `/me/appointments/${id}/cancel`, // PATCH {reason}
   },
 
   // ─── Doctor Notes ───

@@ -1,17 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import {
-  CalendarDays, Clock, Plus, CheckCircle, XCircle, AlertCircle,
+  CalendarDays, Clock, Plus, CheckCircle, XCircle,
   ChevronRight, Loader2, RefreshCw,
 } from "lucide-react";
-import { useAuth } from "@/lib/hooks";
-import { useAppointmentRequests, useSubmitAppointmentRequest } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
+import { BookAppointmentModal } from "@/components/appointments/BookAppointmentModal";
 import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
-import { STATUS_LABEL } from "@/lib/appointmentStatus";
-import type { Appointment, AppointmentRequest } from "@/types/domain.types";
+import { STATUS_LABEL, ACTIVE_APPOINTMENT_STATUSES } from "@/lib/appointmentStatus";
+import type { Appointment, AppointmentType } from "@/types/domain.types";
 
 const STATUS_COLOR: Record<string, string> = {
   planned:     "bg-neutral-100 text-neutral-500",
@@ -25,20 +23,6 @@ const STATUS_COLOR: Record<string, string> = {
   rescheduled: "bg-yellow-50 text-yellow-700",
 };
 
-const REQ_COLOR: Record<string, string> = {
-  pending:              "bg-amber-50 text-amber-700",
-  approved:             "bg-green-50 text-green-700",
-  rejected:             "bg-red-50 text-red-600",
-  cancelled_by_patient: "bg-neutral-100 text-neutral-500",
-  expired:              "bg-neutral-100 text-neutral-400",
-};
-
-const URGENCY_COLOR: Record<string, string> = {
-  normal:    "bg-neutral-100 text-neutral-600",
-  urgent:    "bg-orange-50 text-orange-700",
-  emergency: "bg-red-50 text-red-700",
-};
-
 function fmtDate(d?: string | null) {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
@@ -49,16 +33,12 @@ function fmtTime(t?: string | null) {
 }
 
 export default function PatientAppointmentsPage() {
-  const { user } = useAuth();
-  const { requests, isLoading: reqLoading, refresh: refreshReqs } = useAppointmentRequests();
-  const { cancel } = useSubmitAppointmentRequest();
-
-  const [appts, setAppts]           = useState<Appointment[]>([]);
+  const [appts, setAppts]             = useState<Appointment[]>([]);
   const [apptLoading, setApptLoading] = useState(true);
-  const [tab, setTab]               = useState<"upcoming" | "all">("upcoming");
-  const [cancellingId, setCancellingId] = useState<string | null>(null);
-  const [payingId, setPayingId]     = useState<string | null>(null);
-  const [toast, setToast]           = useState<{ msg: string; ok: boolean } | null>(null);
+  const [tab, setTab]                 = useState<"upcoming" | "all">("upcoming");
+  const [toast, setToast]             = useState<{ msg: string; ok: boolean } | null>(null);
+  const [showBook, setShowBook]       = useState(false);
+  const [payingId, setPayingId]       = useState<string | null>(null);
 
   const showToast = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
@@ -66,48 +46,39 @@ export default function PatientAppointmentsPage() {
   };
 
   const loadAppointments = useCallback(async () => {
-    if (!user?.id) return;
     setApptLoading(true);
     try {
-      const { appointments } = await appointmentsService.list({ patient_id: user.id, limit: 50 });
-      setAppts(appointments);
+      setAppts(await appointmentsService.myList(true));
     } catch {
       // silent
     } finally {
       setApptLoading(false);
     }
-  }, [user?.id]);
+  }, []);
 
   useEffect(() => { loadAppointments(); }, [loadAppointments]);
 
-  // Live update — a request approval/reschedule pushes here via SSE.
   useEffect(() => {
-    const onAppointmentEvent = () => { loadAppointments(); refreshReqs(); };
+    const onAppointmentEvent = () => loadAppointments();
     window.addEventListener("sse:appointment", onAppointmentEvent);
     return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
-  }, [loadAppointments, refreshReqs]);
+  }, [loadAppointments]);
 
   const now = new Date();
   const upcoming = appts.filter((a) => {
-    const d = new Date(`${a.appointment_date}T${a.start_time}`);
-    return d >= now && !["cancelled", "no_show"].includes(a.status);
+    const d = new Date(`${a.appointment_date}T${a.start_time || "00:00"}`);
+    return d >= now && !["cancelled", "no_show", "completed"].includes(a.status);
   });
   const displayAppts = tab === "upcoming" ? upcoming : appts;
 
-  const pendingReqs = requests.filter((r) => r.status === "pending");
-
-  const handleCancelRequest = async (id: string) => {
-    setCancellingId(id);
-    try {
-      await cancel(id);
-      refreshReqs();
-      showToast("Request cancelled.", true);
-    } catch {
-      showToast("Failed to cancel request.", false);
-    } finally {
-      setCancellingId(null);
-    }
-  };
+  // Same gate the backend enforces (book_initial / book_follow_up): a
+  // completed initial unlocks follow-ups; an initial still in flight blocks
+  // booking anything new until it resolves.
+  const hasCompletedInitial = appts.some((a) => a.appointment_type === "initial" && a.status === "completed");
+  const hasActiveInitial = appts.some(
+    (a) => a.appointment_type === "initial" && ACTIVE_APPOINTMENT_STATUSES.includes(a.status),
+  );
+  const bookableType: AppointmentType | null = hasActiveInitial ? null : hasCompletedInitial ? "follow_up" : "initial";
 
   return (
     <div className="space-y-6">
@@ -122,52 +93,23 @@ export default function PatientAppointmentsPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">My Appointments</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">View upcoming visits and request new appointments</p>
+          <p className="text-sm text-neutral-500 mt-0.5">Book a slot, pay, and you're confirmed.</p>
         </div>
-        <Link
-          href="/patient/appointments/request"
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex-shrink-0"
-        >
-          <Plus className="h-4 w-4" />
-          <span className="hidden sm:inline">Request Appointment</span>
-          <span className="sm:hidden">Request</span>
-        </Link>
+        {bookableType ? (
+          <button
+            onClick={() => setShowBook(true)}
+            className="flex items-center gap-2 bg-brand-gradient text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex-shrink-0"
+          >
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">{bookableType === "initial" ? "Book Initial Consultation" : "Book Follow-up"}</span>
+            <span className="sm:hidden">Book</span>
+          </button>
+        ) : (
+          <span className="text-xs text-neutral-400 flex-shrink-0 max-w-[220px] text-right">
+            You already have an initial consultation in progress.
+          </span>
+        )}
       </div>
-
-      {/* Pending requests banner */}
-      {pendingReqs.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3">
-          <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-amber-800">
-              {pendingReqs.length} appointment {pendingReqs.length === 1 ? "request" : "requests"} pending review
-            </p>
-            <p className="text-xs text-amber-600 mt-0.5">Reception will confirm a date and time shortly.</p>
-          </div>
-        </div>
-      )}
-
-      {/* Appointment Requests */}
-      {requests.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-base font-semibold text-neutral-800">Appointment Requests</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {requests.map((req) => (
-              <RequestCard
-                key={req.request_id}
-                req={req}
-                onCancel={req.status === "pending" ? handleCancelRequest : undefined}
-                cancelling={cancellingId === req.request_id}
-              />
-            ))}
-          </div>
-          {reqLoading && (
-            <div className="flex justify-center py-4">
-              <Loader2 className="h-5 w-5 animate-spin text-neutral-400" />
-            </div>
-          )}
-        </section>
-      )}
 
       {/* Appointments */}
       <section className="space-y-3">
@@ -210,7 +152,7 @@ export default function PatientAppointmentsPage() {
               {tab === "upcoming" ? "No upcoming appointments" : "No appointments yet"}
             </p>
             <p className="text-sm text-neutral-400 mt-1">
-              Use the button above to request an appointment with your doctor.
+              {bookableType ? "Use the button above to book a slot." : "Your current appointment needs to be resolved first."}
             </p>
           </div>
         ) : (
@@ -222,12 +164,25 @@ export default function PatientAppointmentsPage() {
         )}
       </section>
 
+      {showBook && bookableType && (
+        <BookAppointmentModal
+          isOpen
+          appointmentType={bookableType}
+          onClose={() => setShowBook(false)}
+          onBooked={(created) => {
+            setShowBook(false);
+            loadAppointments();
+            setPayingId(created.appointment_id);
+          }}
+        />
+      )}
+
       {payingId && (
         <MockPaymentModal
           isOpen
           appointmentId={payingId}
           onClose={() => setPayingId(null)}
-          onPaid={() => { setPayingId(null); loadAppointments(); }}
+          onPaid={() => { setPayingId(null); loadAppointments(); showToast("Appointment booked and paid.", true); }}
         />
       )}
     </div>
@@ -254,10 +209,12 @@ function AppointmentCard({ appt, onPayClick }: { appt: Appointment; onPayClick: 
             <CalendarDays className="h-3 w-3" />
             {fmtDate(appt.appointment_date)}
           </span>
-          <span className="flex items-center gap-1">
-            <Clock className="h-3 w-3" />
-            {fmtTime(appt.start_time)}
-          </span>
+          {appt.start_time && (
+            <span className="flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              {fmtTime(appt.start_time)}
+            </span>
+          )}
           {appt.appointment_type && (
             <span className="capitalize">{appt.appointment_type.replace(/_/g, " ")}</span>
           )}
@@ -275,54 +232,6 @@ function AppointmentCard({ appt, onPayClick }: { appt: Appointment; onPayClick: 
         </button>
       ) : (
         <ChevronRight className="h-4 w-4 text-neutral-300 flex-shrink-0" />
-      )}
-    </div>
-  );
-}
-
-function RequestCard({
-  req,
-  onCancel,
-  cancelling,
-}: {
-  req: AppointmentRequest;
-  onCancel?: (id: string) => void;
-  cancelling?: boolean;
-}) {
-  return (
-    <div className="bg-white border border-neutral-200 rounded-xl px-4 py-4 flex items-start gap-4">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${REQ_COLOR[req.status] ?? "bg-neutral-100 text-neutral-500"}`}>
-            {req.status}
-          </span>
-          <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${URGENCY_COLOR[req.urgency]}`}>
-            {req.urgency}
-          </span>
-        </div>
-        <p className="text-sm text-neutral-700 mt-1.5 line-clamp-2">{req.patient_complaint}</p>
-        <div className="flex items-center gap-3 mt-1.5 text-xs text-neutral-400">
-          <span>Preferred: {fmtDate(req.preferred_date_1)}</span>
-          <span>Requested {fmtDate(req.created_at)}</span>
-        </div>
-        {req.status === "rejected" && req.review_notes && (
-          <p className="text-xs text-red-600 mt-1.5">Note: {req.review_notes}</p>
-        )}
-        {req.status === "approved" && (
-          <p className="text-xs text-green-700 mt-1.5 font-medium">
-            Appointment confirmed — check your upcoming appointments.
-          </p>
-        )}
-      </div>
-      {onCancel && (
-        <button
-          onClick={() => onCancel(req.request_id)}
-          disabled={cancelling}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-neutral-200 text-xs text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 flex-shrink-0"
-        >
-          {cancelling ? <Loader2 className="h-3 w-3 animate-spin" /> : <XCircle className="h-3 w-3" />}
-          Cancel
-        </button>
       )}
     </div>
   );
