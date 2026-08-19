@@ -11,6 +11,10 @@ import type {
   AdminStaffMember,
   RegisterStaffPayload,
   AdminPatient,
+  BillableItem,
+  BillableItemCategory,
+  BillableItemCreatePayload,
+  BillableItemUpdatePayload,
 } from "@/types/admin.types";
 
 /** Real backend has no `is_active` boolean — clinics carry a `status` enum
@@ -64,6 +68,24 @@ export const adminService = {
 
   async assignRegionalAdmin(regionId: string, payload: RegionalAdminAssignPayload): Promise<AdminRegion> {
     const { data } = await apiClient.post(`/regions/${regionId}/assign-admin`, payload);
+    return data;
+  },
+
+  // ─── Billable Items (pricing catalog) ───
+  async getBillableItems(params?: { activeOnly?: boolean; category?: BillableItemCategory; clinicId?: string }): Promise<BillableItem[]> {
+    const { data } = await apiClient.get(ENDPOINTS.BILLABLE_ITEMS.LIST, {
+      params: { active_only: params?.activeOnly, category: params?.category, clinic_id: params?.clinicId },
+    });
+    return Array.isArray(data) ? data : [];
+  },
+
+  async createBillableItem(payload: BillableItemCreatePayload): Promise<BillableItem> {
+    const { data } = await apiClient.post(ENDPOINTS.BILLABLE_ITEMS.LIST, payload);
+    return data;
+  },
+
+  async updateBillableItem(itemId: string, payload: BillableItemUpdatePayload): Promise<BillableItem> {
+    const { data } = await apiClient.patch(ENDPOINTS.BILLABLE_ITEMS.ITEM(itemId), payload);
     return data;
   },
 

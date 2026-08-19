@@ -37,6 +37,12 @@ export const ENDPOINTS = {
     PROFILE: "/auth/me", // real — GET only, no PUT (no profile-edit endpoint exists)
   },
 
+  // ─── Billable Items (super_admin pricing catalog) ───
+  BILLABLE_ITEMS: {
+    LIST: "/billable-items",                          // real — GET list (?active_only, ?category), POST create
+    ITEM: (itemId: string) => `/billable-items/${itemId}`, // real — GET one, PATCH update. No DELETE — deactivate instead.
+  },
+
   // ─── Doctors ───
   DOCTORS: {
     DASHBOARD: "/doctors/dashboard", // NOT AVAILABLE — no aggregate endpoint, composed client-side

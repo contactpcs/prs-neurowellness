@@ -97,6 +97,57 @@ export interface AdminRegion {
   created_at?: string;
 }
 
+// ─── Billable Items (Settings → Pricing catalog) ─────────────────────
+// Mirrors backend/app/modules/admin/schemas.py BillableItem* exactly.
+// category='appointment' -> appointment_type set, device_id null.
+// category='device_session' -> device_id set, appointment_type null.
+
+export type BillableItemCategory = "appointment" | "device_session";
+
+export interface BillableItem {
+  item_id: string;
+  item_code: string;
+  category: BillableItemCategory;
+  appointment_type?: string | null;
+  device_id?: string | null;
+  /** null = platform default price. Set = an override for that one clinic only. */
+  clinic_id?: string | null;
+  name: string;
+  description?: string | null;
+  price: number;
+  currency: string;
+  duration_minutes?: number | null;
+  is_active: boolean;
+  created_by?: string | null;
+  updated_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BillableItemCreatePayload {
+  item_code: string;
+  category: BillableItemCategory;
+  appointment_type?: string | null;
+  device_id?: string | null;
+  clinic_id?: string | null;
+  name: string;
+  description?: string | null;
+  price: number;
+  currency?: string;
+  duration_minutes?: number | null;
+}
+
+// category/appointment_type/device_id are not editable after creation —
+// reprice by deactivating this row and creating a new active one instead.
+export interface BillableItemUpdatePayload {
+  name?: string;
+  description?: string | null;
+  price?: number;
+  currency?: string;
+  duration_minutes?: number | null;
+  is_active?: boolean;
+}
+
 export interface RegionalAdminAssignPayload {
   clinic_id: string;
   email: string;
