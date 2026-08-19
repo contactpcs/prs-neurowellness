@@ -255,12 +255,10 @@ export type AppointmentStatus =
   | "scheduled" | "confirmed" | "checked_in" | "in_progress"
   | "completed" | "cancelled" | "no_show" | "rescheduled";
 
-// Matches the real DB CHECK (SQL/06b_appointment_tables.sql) — Anava's
-// clinical-flow phases, not v1's generic consultation/follow_up/assessment/
-// emergency/video set.
+// Matches backend's APPOINTMENT_TYPES pattern (scheduling/schemas.py) —
+// the only 4 values the API accepts.
 export type AppointmentType =
-  | "initial_assessment" | "doctor_consultation" | "ca_session"
-  | "treatment_session" | "follow_up" | "demo_visit" | "teleconsult";
+  | "initial" | "follow_up" | "device_session" | "protocol_followup";
 
 export interface Appointment {
   appointment_id: string;

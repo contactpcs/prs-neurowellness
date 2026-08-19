@@ -9,13 +9,12 @@ import type { AvailabilitySlot, PatientListItem } from "@/types/domain.types";
 
 const BRAND_GRADIENT = "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)";
 
+// Device sessions book against clinic device capacity (separate flow) and
+// protocol_followup is set by the doctor mid-protocol — neither is bookable
+// from this doctor-calendar modal. Only these two apply here.
 const APPT_TYPES = [
-  { value: "doctor_consultation", label: "Doctor Consultation" },
-  { value: "initial_assessment",  label: "Initial Assessment" },
-  { value: "follow_up",           label: "Follow-up" },
-  { value: "ca_session",          label: "CA Session" },
-  { value: "treatment_session",   label: "Treatment Session" },
-  { value: "teleconsult",         label: "Teleconsult" },
+  { value: "initial",   label: "Initial" },
+  { value: "follow_up", label: "Follow-up" },
 ];
 
 function fmt12(t: string): string {
@@ -41,7 +40,7 @@ export function BookingModal({
   const [fetched,   setFetched]   = useState(!!patientsProp);
   const [search,    setSearch]    = useState("");
   const [patient,   setPatient]   = useState<PatientListItem | null>(null);
-  const [apptType,  setApptType]  = useState("doctor_consultation");
+  const [apptType,  setApptType]  = useState("follow_up");
   const [reason,    setReason]    = useState("");
   const [notes,     setNotes]     = useState("");
   const [busy,      setBusy]      = useState(false);

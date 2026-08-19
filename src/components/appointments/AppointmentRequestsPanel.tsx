@@ -30,13 +30,11 @@ const STATUS_COLOR: Record<string, string> = {
   cancelled: "bg-neutral-100 text-neutral-500",
 };
 
+// Device sessions and protocol_followup aren't set through this approval
+// flow — see BookingModal.tsx for the same reasoning.
 const APPT_TYPES: { value: AppointmentType; label: string }[] = [
-  { value: "doctor_consultation", label: "Doctor Consultation" },
-  { value: "initial_assessment",  label: "Initial Assessment" },
-  { value: "follow_up",           label: "Follow-up" },
-  { value: "ca_session",          label: "CA Session" },
-  { value: "treatment_session",   label: "Treatment Session" },
-  { value: "teleconsult",         label: "Teleconsult" },
+  { value: "initial",   label: "Initial" },
+  { value: "follow_up", label: "Follow-up" },
 ];
 
 function fmtDate(d?: string | null) {
@@ -74,7 +72,7 @@ export function AppointmentRequestsPanel() {
   const [approveForm, setApproveForm] = useState({
     appointment_date: "",
     start_time: "",
-    appointment_type: "doctor_consultation" as AppointmentType,
+    appointment_type: "follow_up" as AppointmentType,
     notes: "",
   });
   const [rejectNotes, setRejectNotes] = useState("");
@@ -190,7 +188,7 @@ export function AppointmentRequestsPanel() {
     setApproveForm({
       appointment_date: dates[0] ?? "",
       start_time: "",
-      appointment_type: "doctor_consultation",
+      appointment_type: "follow_up",
       notes: "",
     });
     setApproveModal({

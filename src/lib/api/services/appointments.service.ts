@@ -57,7 +57,7 @@ function mapAppointment(a: Record<string, unknown>): Appointment {
     start_at: date && start ? `${date}T${start}` : "",
     end_at: date && end ? `${date}T${end}` : "",
     status: (a.status as AppointmentStatus) ?? "scheduled",
-    appointment_type: (a.appointment_type as AppointmentType) ?? "doctor_consultation",
+    appointment_type: (a.appointment_type as AppointmentType) ?? "follow_up",
     reason: a.reason ? String(a.reason) : undefined,
     notes: a.notes ? String(a.notes) : undefined,
     patient_complaint: a.patient_complaint ? String(a.patient_complaint) : undefined,

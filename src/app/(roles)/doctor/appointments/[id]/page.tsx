@@ -308,7 +308,7 @@ export default function AppointmentDetailPage() {
                   {appointment.patient_name ?? "Patient"}
                 </h1>
                 <p className="text-sm text-neutral-500 mt-0.5 capitalize">
-                  {(appointment.appointment_type ?? "doctor_consultation").replace(/_/g, " ")}
+                  {(appointment.appointment_type ?? "follow_up").replace(/_/g, " ")}
                 </p>
               </div>
               <StatusBadge status={status} />
@@ -527,7 +527,7 @@ export default function AppointmentDetailPage() {
               <MetaRow label="Status" value={STATUS_CONFIG[status].label} />
               <MetaRow
                 label="Type"
-                value={(appointment.appointment_type ?? "doctor_consultation").replace(/_/g, " ")}
+                value={(appointment.appointment_type ?? "follow_up").replace(/_/g, " ")}
                 capitalize
               />
               <MetaRow
