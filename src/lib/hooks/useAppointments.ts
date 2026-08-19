@@ -7,7 +7,6 @@ import {
   fetchTodayAppointments,
   fetchUpcomingAppointments,
   fetchAppointmentById,
-  confirmAppointment,
   checkInAppointment,
   startAppointment,
   completeAppointment,
@@ -78,8 +77,11 @@ export function useAppointmentDetail(id: string) {
     if (id) dispatch(fetchAppointmentById(id));
   }, [dispatch, id]);
 
-  const confirm    = useCallback(() => dispatch(confirmAppointment(id)).unwrap(),    [dispatch, id]);
   const checkIn    = useCallback(() => dispatch(checkInAppointment(id)).unwrap(),    [dispatch, id]);
+  // After the mock payment screen confirms, re-fetch so the detail view
+  // picks up the new 'paid' status — no dedicated pay thunk needed, this
+  // reuses the same fetch the page already does on mount.
+  const refresh    = useCallback(() => dispatch(fetchAppointmentById(id)).unwrap(), [dispatch, id]);
   const start      = useCallback(() => dispatch(startAppointment(id)).unwrap(),      [dispatch, id]);
   const complete   = useCallback(() => dispatch(completeAppointment(id)).unwrap(),   [dispatch, id]);
   const noShow     = useCallback(() => dispatch(markNoShow(id)).unwrap(),            [dispatch, id]);
@@ -93,7 +95,7 @@ export function useAppointmentDetail(id: string) {
     [dispatch, id],
   );
 
-  return { appointment, confirm, checkIn, start, complete, noShow, cancel, reschedule };
+  return { appointment, checkIn, start, complete, noShow, cancel, reschedule, refresh };
 }
 
 export { setFilters };

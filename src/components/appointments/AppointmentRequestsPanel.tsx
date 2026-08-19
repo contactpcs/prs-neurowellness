@@ -123,7 +123,7 @@ export function AppointmentRequestsPanel() {
         notes: approveForm.notes || undefined,
       });
       setApproveModal(null);
-      setApproveForm({ appointment_date: "", start_time: "", appointment_type: "doctor_consultation", notes: "" });
+      setApproveForm({ appointment_date: "", start_time: "", appointment_type: "initial", notes: "" });
       setSlots([]);
       refreshPending();
       showToast("Appointment confirmed and patient notified.", true);

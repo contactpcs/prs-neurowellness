@@ -15,6 +15,7 @@ import {
   useMyDoctorNotes,
 } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
+import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
 import { PatientDashboardSkeleton } from "@/components/ui";
 import { VerifyChannelBanner } from "@/components/auth/VerifyChannelBanner";
 import { computeProfileCompletion } from "@/lib/profileCompletion";
@@ -68,17 +69,17 @@ function PatientDashboard() {
   const { notes: doctorNotes } = useMyDoctorNotes();
 
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [payingId, setPayingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    appointmentsService.getUpcoming().then(setAppointments).catch(() => {});
-  }, []);
+  const reloadAppointments = () => appointmentsService.getUpcoming().then(setAppointments).catch(() => {});
+
+  useEffect(() => { reloadAppointments(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Live update — a request approval pushes here via SSE.
   useEffect(() => {
-    const onAppointmentEvent = () => { appointmentsService.getUpcoming().then(setAppointments).catch(() => {}); };
-    window.addEventListener("sse:appointment", onAppointmentEvent);
-    return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
-  }, []);
+    window.addEventListener("sse:appointment", reloadAppointments);
+    return () => window.removeEventListener("sse:appointment", reloadAppointments);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (dashLoading || assessLoading) return <PatientDashboardSkeleton />;
 
@@ -93,11 +94,12 @@ function PatientDashboard() {
   const scoreInstances = summary?.instances ?? [];
 
   const upcomingAppts = appointments
-    .filter((a) => ["scheduled", "confirmed"].includes(a.status))
+    .filter((a) => ["selected", "paid", "checked_in", "in_progress"].includes(a.status))
     .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
 
   const nextAppt = upcomingAppts[0];
   const daysToNext = nextAppt ? daysUntil(nextAppt.start_at) : null;
+  const hasUnpaidAppt = appointments.some((a) => a.status === "selected");
 
   const completedAppts = appointments.filter((a) => a.status === "completed").length;
   const totalPlannedAppts = appointments.length;
@@ -199,6 +201,14 @@ function PatientDashboard() {
                       {formatTime(nextAppt.start_time)}
                     </p>
                   </div>
+                )}
+                {nextAppt?.status === "selected" && (
+                  <button
+                    onClick={() => setPayingId(nextAppt.appointment_id)}
+                    className="bg-white text-[#09172E] rounded-lg px-3.5 py-2 text-xs font-semibold hover:bg-blue-50 transition-colors"
+                  >
+                    Pay Now
+                  </button>
                 )}
                 {doctor && (
                   <div className="bg-white/10 rounded-lg px-3 py-2 hidden sm:flex items-center gap-2 text-white">
@@ -390,7 +400,7 @@ function PatientDashboard() {
                       <p className="text-[10px] text-gray-500 mt-0.5">
                         {formatTime(appt.start_time)}
                         {appt.doctor_name ? ` · Dr. ${appt.doctor_name.split(" ").pop()}` : ""}
-                        {" · "}{appt.appointment_type === "teleconsult" ? "Online" : "In-person"}
+                        {" · In-person"}
                       </p>
                     </div>
                     <AppointmentStatusBadge status={appt.status} />
@@ -480,7 +490,7 @@ function PatientDashboard() {
               <ProgressBar label="PRS assessment" value={prsProgress} max={100} unit="%" />
               <ProgressBar label="Profile setup" value={profilePct} max={100} unit="%" />
             </div>
-            {completedAppts > 0 && (
+            {completedAppts > 0 && !hasUnpaidAppt && (
               <div className="mx-4 mb-3 bg-green-50 border border-green-100 rounded-lg px-3 py-2 flex items-center gap-2">
                 <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
                   <Check className="w-3 h-3 text-white" />
@@ -494,6 +504,15 @@ function PatientDashboard() {
           </div>
         </div>
       </div>
+
+      {payingId && (
+        <MockPaymentModal
+          isOpen
+          appointmentId={payingId}
+          onClose={() => setPayingId(null)}
+          onPaid={() => { setPayingId(null); reloadAppointments(); }}
+        />
+      )}
     </div>
   );
 }
@@ -523,8 +542,9 @@ function StatCard({ icon, label, value, sub, highlight }: {
 
 function AppointmentStatusBadge({ status }: { status: string }) {
   const base = "text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap";
-  if (status === "confirmed") return <span className={`${base} text-green-700 bg-green-50`}>Confirmed</span>;
-  if (status === "scheduled") return <span className={`${base} text-yellow-700 bg-yellow-50`}>Pending</span>;
+  if (status === "paid") return <span className={`${base} text-green-700 bg-green-50`}>Paid</span>;
+  if (status === "selected") return <span className={`${base} text-yellow-700 bg-yellow-50`}>Awaiting Payment</span>;
+  if (status === "checked_in" || status === "in_progress") return <span className={`${base} text-blue-700 bg-blue-50`}>Checked In</span>;
   if (status === "completed") return <span className={`${base} text-gray-600 bg-gray-100`}>Completed</span>;
   if (status === "cancelled") return <span className={`${base} text-red-600 bg-red-50`}>Cancelled</span>;
   return <span className={`${base} text-gray-500 bg-gray-50`}>{status}</span>;

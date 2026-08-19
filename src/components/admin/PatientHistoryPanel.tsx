@@ -52,8 +52,9 @@ function severityBg(level?: string) {
 }
 
 const APPT_BADGE: Record<string, string> = {
-  confirmed:   "bg-green-100 text-green-700",
-  scheduled:   "bg-amber-100 text-amber-700",
+  planned:     "bg-gray-100 text-gray-600",
+  selected:    "bg-amber-100 text-amber-700",
+  paid:        "bg-green-100 text-green-700",
   checked_in:  "bg-blue-100 text-blue-700",
   in_progress: "bg-blue-200 text-blue-900",
   cancelled:   "bg-red-100 text-red-700",
@@ -258,7 +259,7 @@ export function PatientHistoryPanel({ patientId, clinicId }: { patientId: string
                 className="text-sm border border-neutral-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
               >
                 <option value="">All Statuses</option>
-                {(["scheduled","confirmed","checked_in","completed","cancelled","no_show","rescheduled"] as const).map((s) => (
+                {(["planned","selected","paid","checked_in","in_progress","completed","cancelled","no_show","rescheduled"] as const).map((s) => (
                   <option key={s} value={s}>{statusLabel(s)}</option>
                 ))}
               </select>

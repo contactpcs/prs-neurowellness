@@ -75,8 +75,9 @@ const HOUR_PX     = 64;
 const BRAND       = "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)";
 
 const APPT_STYLE: Record<string, { bg: string; border: string; text: string }> = {
-  confirmed:   { bg: "#f0fdf4", border: "#4ade80", text: "#15803d" },
-  scheduled:   { bg: "#fffbeb", border: "#fbbf24", text: "#92400e" },
+  planned:     { bg: "#fafafa", border: "#d4d4d8", text: "#52525b" },
+  selected:    { bg: "#fffbeb", border: "#fbbf24", text: "#92400e" },
+  paid:        { bg: "#f0fdf4", border: "#4ade80", text: "#15803d" },
   checked_in:  { bg: "#eff6ff", border: "#60a5fa", text: "#1e40af" },
   in_progress: { bg: "#dbeafe", border: "#3b82f6", text: "#1e3a8a" },
   cancelled:   { bg: "#fff1f2", border: "#f87171", text: "#991b1b" },
@@ -86,8 +87,9 @@ const APPT_STYLE: Record<string, { bg: string; border: string; text: string }> =
 };
 
 const STATUS_DOT: Record<string, string> = {
-  confirmed:  "#22c55e",
-  scheduled:  "#f59e0b",
+  planned:    "#a3a3a3",
+  selected:   "#f59e0b",
+  paid:       "#22c55e",
   checked_in: "#3b82f6",
   cancelled:  "#ef4444",
   completed:  "#94a3b8",
@@ -314,7 +316,7 @@ export default function DoctorDashboard() {
           const top    = timeToMins(appt.start_time) - CAL_START * 60;
           const height = Math.max(timeToMins(appt.end_time) - timeToMins(appt.start_time), 24);
           if (top < 0 || top >= gridHeight) return null;
-          const sty = APPT_STYLE[appt.status] ?? APPT_STYLE.scheduled;
+          const sty = APPT_STYLE[appt.status] ?? APPT_STYLE.selected;
           return (
             <div
               key={appt.appointment_id}

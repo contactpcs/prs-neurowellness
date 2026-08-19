@@ -5,28 +5,14 @@ import Link from "next/link";
 import { Printer, CalendarPlus, X, CalendarDays } from "lucide-react";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { receptionService } from "@/lib/api/services/reception.service";
+import { STATUS_LABEL, STATUS_TONE } from "@/lib/appointmentStatus";
+import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
 import type { Appointment, AppointmentStatus, DoctorListItem } from "@/types/domain.types";
 
-const STATUS_TONE: Record<string, { bg: string; text: string }> = {
-  scheduled:   { bg: "bg-warning-50",  text: "text-warning-700" },
-  confirmed:   { bg: "bg-primary-50",  text: "text-primary-700" },
-  checked_in:  { bg: "bg-success-50",  text: "text-success-700" },
-  in_progress: { bg: "bg-primary-100", text: "text-primary-800" },
-  completed:   { bg: "bg-success-50",  text: "text-success-700" },
-  cancelled:   { bg: "bg-danger-50",   text: "text-danger-700" },
-  no_show:     { bg: "bg-neutral-100", text: "text-neutral-600" },
-  rescheduled: { bg: "bg-neutral-100", text: "text-neutral-600" },
-};
-
-function statusLabel(s: string): string {
-  return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function StatusChip({ status }: { status: string }) {
-  const tone = STATUS_TONE[status] ?? STATUS_TONE.scheduled;
+function StatusChip({ status }: { status: AppointmentStatus }) {
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${tone.bg} ${tone.text}`}>
-      {statusLabel(status)}
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${STATUS_TONE[status]}`}>
+      {STATUS_LABEL[status]}
     </span>
   );
 }
@@ -43,7 +29,7 @@ function fmtDate(d: string): string {
 }
 
 const STATUS_FILTERS: (AppointmentStatus | "")[] = [
-  "", "scheduled", "confirmed", "checked_in", "completed", "cancelled",
+  "", "selected", "paid", "checked_in", "in_progress", "completed", "cancelled", "no_show",
 ];
 
 export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
@@ -54,6 +40,7 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
   const [doctorFilter, setDoctorFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<AppointmentStatus | "">("");
   const [confirming,   setConfirming]   = useState<Appointment | null>(null);
+  const [payingFor,    setPayingFor]    = useState<Appointment | null>(null);
   const [busy,         setBusy]         = useState(false);
 
   const load = useCallback(async () => {
@@ -146,7 +133,7 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
         >
           <option value="">All Statuses</option>
           {STATUS_FILTERS.filter(Boolean).map((s) => (
-            <option key={s} value={s}>{statusLabel(s)}</option>
+            <option key={s} value={s}>{STATUS_LABEL[s as AppointmentStatus]}</option>
           ))}
         </select>
 
@@ -187,9 +174,10 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
                 ))}
               </div>
               {filtered.map((a) => {
-                const arrived   = a.status === "checked_in";
-                const cancelled = a.status === "cancelled";
-                const locked    = ["completed", "in_progress"].includes(a.status) || arrived;
+                const cancelled        = a.status === "cancelled";
+                const awaitingPayment  = a.status === "selected";
+                const readyForCheckIn  = a.status === "paid";
+                const locked           = ["completed", "in_progress", "checked_in", "no_show", "rescheduled"].includes(a.status);
                 return (
                   <div key={a.appointment_id} className="grid gap-3 items-center px-5 py-3 border-b border-neutral-100 last:border-0" style={{ gridTemplateColumns: "1.3fr 1.2fr 1fr 0.9fr 1fr 170px" }}>
                     <p className="text-sm font-medium text-neutral-900 truncate">{a.patient_name ?? "Patient"}</p>
@@ -212,13 +200,23 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
                         </Link>
                       ) : (
                         <>
-                          <button
-                            disabled={busy}
-                            onClick={() => doCheckIn(a)}
-                            className="h-7 px-2.5 rounded-md bg-success-500 text-white text-xs font-medium hover:bg-success-700 transition-colors disabled:opacity-50"
-                          >
-                            Check-In
-                          </button>
+                          {awaitingPayment ? (
+                            <button
+                              disabled={busy}
+                              onClick={() => setPayingFor(a)}
+                              className="h-7 px-2.5 rounded-md bg-warning-500 text-white text-xs font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+                            >
+                              Collect Payment
+                            </button>
+                          ) : readyForCheckIn ? (
+                            <button
+                              disabled={busy}
+                              onClick={() => doCheckIn(a)}
+                              className="h-7 px-2.5 rounded-md bg-success-500 text-white text-xs font-medium hover:bg-success-700 transition-colors disabled:opacity-50"
+                            >
+                              Check-In
+                            </button>
+                          ) : null}
                           <button
                             onClick={() => setConfirming(a)}
                             title="Cancel"
@@ -264,6 +262,15 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
             </div>
           </div>
         </div>
+      )}
+
+      {payingFor && (
+        <MockPaymentModal
+          isOpen
+          appointmentId={payingFor.appointment_id}
+          onClose={() => setPayingFor(null)}
+          onPaid={() => { setPayingFor(null); load(); }}
+        />
       )}
     </div>
   );

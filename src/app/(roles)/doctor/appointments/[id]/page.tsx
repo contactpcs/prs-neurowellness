@@ -5,11 +5,12 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ChevronLeft, Calendar, Clock, User, Stethoscope,
-  CheckCircle2, UserCheck, Play, CheckSquare,
+  CreditCard, UserCheck, Play, CheckSquare,
   XCircle, RotateCcw, AlertOctagon, Pencil, Save, X,
 } from "lucide-react";
 import { useAppointmentDetail } from "@/lib/hooks/useAppointments";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
+import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
 import type { AppointmentStatus, AppointmentType } from "@/types/domain.types";
@@ -19,14 +20,15 @@ import type { AppointmentStatus, AppointmentType } from "@/types/domain.types";
 const BRAND = "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)";
 
 const STATUS_CONFIG: Record<AppointmentStatus, { label: string; bg: string; text: string; border: string }> = {
-  scheduled:   { label: "Scheduled",   bg: "#fffbeb", text: "#92400e", border: "#fbbf24" },
-  confirmed:   { label: "Confirmed",   bg: "#f0fdf4", text: "#15803d", border: "#4ade80" },
-  checked_in:  { label: "Checked In",  bg: "#eff6ff", text: "#1e40af", border: "#60a5fa" },
-  in_progress: { label: "In Progress", bg: "#dbeafe", text: "#1e3a8a", border: "#3b82f6" },
-  completed:   { label: "Completed",   bg: "#f8fafc", text: "#475569", border: "#cbd5e1" },
-  cancelled:   { label: "Cancelled",   bg: "#fff1f2", text: "#991b1b", border: "#f87171" },
-  no_show:     { label: "No Show",     bg: "#fafafa", text: "#52525b", border: "#a1a1aa" },
-  rescheduled: { label: "Rescheduled", bg: "#f5f3ff", text: "#4c1d95", border: "#a78bfa" },
+  planned:     { label: "Planned",         bg: "#fafafa", text: "#52525b", border: "#d4d4d8" },
+  selected:    { label: "Awaiting Payment", bg: "#fffbeb", text: "#92400e", border: "#fbbf24" },
+  paid:        { label: "Paid",            bg: "#f0fdf4", text: "#15803d", border: "#4ade80" },
+  checked_in:  { label: "Checked In",      bg: "#eff6ff", text: "#1e40af", border: "#60a5fa" },
+  in_progress: { label: "In Progress",     bg: "#dbeafe", text: "#1e3a8a", border: "#3b82f6" },
+  completed:   { label: "Completed",       bg: "#f8fafc", text: "#475569", border: "#cbd5e1" },
+  cancelled:   { label: "Cancelled",       bg: "#fff1f2", text: "#991b1b", border: "#f87171" },
+  no_show:     { label: "No Show",         bg: "#fafafa", text: "#52525b", border: "#a1a1aa" },
+  rescheduled: { label: "Rescheduled",     bg: "#f5f3ff", text: "#4c1d95", border: "#a78bfa" },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -211,12 +213,13 @@ function RescheduleModal({
 export default function AppointmentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { appointment, confirm, checkIn, start, complete, noShow, cancel, reschedule } = useAppointmentDetail(id);
+  const { appointment, checkIn, start, complete, noShow, cancel, reschedule, refresh } = useAppointmentDetail(id);
 
   const [busy,            setBusy]            = useState(false);
   const [actionError,     setActionError]     = useState("");
   const [showCancel,      setShowCancel]      = useState(false);
   const [showReschedule,  setShowReschedule]  = useState(false);
+  const [showPay,         setShowPay]         = useState(false);
   const [editingNotes,    setEditingNotes]    = useState(false);
   const [notesVal,        setNotesVal]        = useState("");
   const [history,         setHistory]         = useState<any[]>([]);
@@ -275,14 +278,15 @@ export default function AppointmentDetailPage() {
 
   // Status-based action availability — mirrors the server's allowed-from
   // matrix (scheduling/service.py::_ALLOWED_FROM) so a visible button never
-  // 400s when clicked.
-  const canConfirm    = status === "scheduled";
-  const canCheckIn    = ["scheduled", "confirmed"].includes(status);
+  // 400s when clicked. 'paid' is reachable only through the payment
+  // confirmation flow (payments/router.py), never a direct status PATCH.
+  const canPay        = status === "selected";
+  const canCheckIn    = status === "paid";
   const canStart      = status === "checked_in";
   const canComplete   = status === "in_progress";
-  const canNoShow     = ["scheduled", "confirmed", "checked_in"].includes(status);
-  const canCancel     = ["scheduled", "confirmed", "checked_in", "in_progress"].includes(status);
-  const canReschedule = ["scheduled", "confirmed", "checked_in", "in_progress"].includes(status);
+  const canNoShow     = ["selected", "paid", "checked_in"].includes(status);
+  const canCancel     = ["planned", "selected", "paid", "checked_in", "in_progress"].includes(status);
+  const canReschedule = ["selected", "paid", "checked_in", "in_progress"].includes(status);
 
   const cfg = STATUS_CONFIG[status];
 
@@ -444,13 +448,13 @@ export default function AppointmentDetailPage() {
             )}
 
             <div className="space-y-2">
-              {canConfirm && (
+              {canPay && (
                 <ActionBtn
-                  icon={CheckCircle2}
-                  label="Confirm"
-                  color="green"
+                  icon={CreditCard}
+                  label="Collect Payment"
+                  color="orange"
                   busy={busy}
-                  onClick={() => run(confirm, "Confirm")}
+                  onClick={() => setShowPay(true)}
                 />
               )}
               {canCheckIn && (
@@ -508,7 +512,7 @@ export default function AppointmentDetailPage() {
                 />
               )}
 
-              {["completed", "cancelled", "no_show", "rescheduled"].includes(status) && (
+              {["planned", "completed", "cancelled", "no_show", "rescheduled"].includes(status) && (
                 <div
                   className="w-full text-center text-xs py-2 rounded-lg font-medium"
                   style={{ background: cfg.bg, color: cfg.text }}
@@ -566,6 +570,14 @@ export default function AppointmentDetailPage() {
             setShowReschedule(false);
             run(() => reschedule(date, time, reason), "Reschedule");
           }}
+        />
+      )}
+      {showPay && (
+        <MockPaymentModal
+          isOpen
+          appointmentId={id}
+          onClose={() => setShowPay(false)}
+          onPaid={() => { setShowPay(false); refresh(); }}
         />
       )}
     </div>

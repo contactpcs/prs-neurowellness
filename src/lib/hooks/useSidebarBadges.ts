@@ -30,7 +30,7 @@ const FETCHERS: Record<BadgeKey, () => Promise<number>> = {
   staffRequests: async () => (await staffRequestsService.list({ status: "pending" })).length,
   staffApprovals: async () => (await staffRequestsService.list({ status: "pending" })).length,
   clinicRequests: async () => (await clinicRequestsService.list({ status: "pending" })).length,
-  doctorPendingAppointments: async () => (await appointmentsService.list({ status: "scheduled" })).total,
+  doctorPendingAppointments: async () => (await appointmentsService.list({ status: "selected" })).total,
   receptionUnreadNotifications: async () => receptionService.getUnreadCount(),
 };
 

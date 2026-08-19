@@ -39,8 +39,9 @@ const ORDER_STATUS_STYLES: Record<string, string> = {
   cancelled: "bg-neutral-200 text-neutral-600",
 };
 const APPT_STATUS_STYLES: Record<string, string> = {
-  scheduled: "bg-blue-100 text-blue-700",
-  confirmed: "bg-blue-100 text-blue-700",
+  planned: "bg-neutral-100 text-neutral-600",
+  selected: "bg-amber-100 text-amber-700",
+  paid: "bg-blue-100 text-blue-700",
   checked_in: "bg-teal-100 text-teal-700",
   in_progress: "bg-amber-100 text-amber-700",
   completed: "bg-green-100 text-green-700",

@@ -278,7 +278,6 @@ export const ENDPOINTS = {
     GET: (id: string) => `/appointments/${id}`, // real
     UPDATE: (id: string) => `/appointments/${id}`, // real — PATCH {notes?, patient_complaint?, appointment_type?}
     HISTORY: (id: string) => `/appointments/${id}/audit-log`, // real
-    CONFIRM: (id: string) => `/appointments/${id}/status`, // real — PATCH {status:"confirmed"}
     CHECK_IN: (id: string) => `/appointments/${id}/status`, // real — PATCH {status:"checked_in"}
     START: (id: string) => `/appointments/${id}/status`,    // real — PATCH {status:"in_progress"}
     COMPLETE: (id: string) => `/appointments/${id}/status`, // real — PATCH {status:"completed"}

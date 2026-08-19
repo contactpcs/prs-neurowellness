@@ -9,11 +9,14 @@ import {
 import { useAuth } from "@/lib/hooks";
 import { useAppointmentRequests, useSubmitAppointmentRequest } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
+import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
+import { STATUS_LABEL } from "@/lib/appointmentStatus";
 import type { Appointment, AppointmentRequest } from "@/types/domain.types";
 
 const STATUS_COLOR: Record<string, string> = {
-  scheduled:   "bg-blue-50 text-blue-700",
-  confirmed:   "bg-cyan-50 text-cyan-700",
+  planned:     "bg-neutral-100 text-neutral-500",
+  selected:    "bg-amber-50 text-amber-700",
+  paid:        "bg-cyan-50 text-cyan-700",
   checked_in:  "bg-purple-50 text-purple-700",
   in_progress: "bg-orange-50 text-orange-700",
   completed:   "bg-green-50 text-green-700",
@@ -54,6 +57,7 @@ export default function PatientAppointmentsPage() {
   const [apptLoading, setApptLoading] = useState(true);
   const [tab, setTab]               = useState<"upcoming" | "all">("upcoming");
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [payingId, setPayingId]     = useState<string | null>(null);
   const [toast, setToast]           = useState<{ msg: string; ok: boolean } | null>(null);
 
   const showToast = (msg: string, ok: boolean) => {
@@ -212,16 +216,25 @@ export default function PatientAppointmentsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {displayAppts.map((a) => (
-              <AppointmentCard key={a.appointment_id} appt={a} />
+              <AppointmentCard key={a.appointment_id} appt={a} onPayClick={() => setPayingId(a.appointment_id)} />
             ))}
           </div>
         )}
       </section>
+
+      {payingId && (
+        <MockPaymentModal
+          isOpen
+          appointmentId={payingId}
+          onClose={() => setPayingId(null)}
+          onPaid={() => { setPayingId(null); loadAppointments(); }}
+        />
+      )}
     </div>
   );
 }
 
-function AppointmentCard({ appt }: { appt: Appointment }) {
+function AppointmentCard({ appt, onPayClick }: { appt: Appointment; onPayClick: () => void }) {
   return (
     <div className="bg-white border border-neutral-200 rounded-xl px-4 py-4 flex items-center gap-4">
       <div className="bg-blue-50 rounded-xl p-2.5 flex-shrink-0">
@@ -233,7 +246,7 @@ function AppointmentCard({ appt }: { appt: Appointment }) {
             {appt.doctor_name ?? "Your Doctor"}
           </p>
           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[appt.status] ?? "bg-neutral-100 text-neutral-500"}`}>
-            {appt.status.replace(/_/g, " ")}
+            {STATUS_LABEL[appt.status] ?? appt.status.replace(/_/g, " ")}
           </span>
         </div>
         <div className="flex items-center gap-3 mt-1 text-xs text-neutral-500">
@@ -253,7 +266,16 @@ function AppointmentCard({ appt }: { appt: Appointment }) {
           <p className="text-xs text-neutral-400 mt-0.5 truncate">{appt.reason}</p>
         )}
       </div>
-      <ChevronRight className="h-4 w-4 text-neutral-300 flex-shrink-0" />
+      {appt.status === "selected" ? (
+        <button
+          onClick={onPayClick}
+          className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-brand-gradient text-white text-xs font-semibold hover:opacity-90 transition-opacity"
+        >
+          Pay Now
+        </button>
+      ) : (
+        <ChevronRight className="h-4 w-4 text-neutral-300 flex-shrink-0" />
+      )}
     </div>
   );
 }

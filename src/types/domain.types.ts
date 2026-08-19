@@ -251,8 +251,14 @@ export interface AvailabilitySlot {
 
 // ─── Appointments ─────────────────────────────────────────────────
 
+// Matches backend's core.appointments status FSM exactly (scheduling/service.py
+// _ALLOWED_FROM, locked in DB by SQL/v1/43_mock_payment_lifecycle_lock.sql's
+// chk_appointments_status). 'planned' only occurs for protocol-born types
+// (device_session/protocol_followup) before a slot is claimed; a patient- or
+// staff-booked initial/follow_up starts directly at 'selected'. 'scheduled'/
+// 'confirmed' never occur — payment is what confirms a visit now.
 export type AppointmentStatus =
-  | "scheduled" | "confirmed" | "checked_in" | "in_progress"
+  | "planned" | "selected" | "paid" | "checked_in" | "in_progress"
   | "completed" | "cancelled" | "no_show" | "rescheduled";
 
 // Matches backend's APPOINTMENT_TYPES pattern (scheduling/schemas.py) —

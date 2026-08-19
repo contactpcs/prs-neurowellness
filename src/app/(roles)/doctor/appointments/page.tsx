@@ -5,34 +5,23 @@ import Link from "next/link";
 import { Search, Eye } from "lucide-react";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
+import { STATUS_LABEL, STATUS_TONE } from "@/lib/appointmentStatus";
 import type { Appointment, AppointmentStatus } from "@/types/domain.types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const STATUS_TONE: Record<string, { bg: string; text: string }> = {
-  scheduled:   { bg: "bg-warning-50",  text: "text-warning-700" },
-  confirmed:   { bg: "bg-success-50",  text: "text-success-700" },
-  checked_in:  { bg: "bg-primary-50",  text: "text-primary-700" },
-  in_progress: { bg: "bg-primary-100", text: "text-primary-800" },
-  completed:   { bg: "bg-neutral-100", text: "text-neutral-600" },
-  cancelled:   { bg: "bg-danger-50",   text: "text-danger-700" },
-  no_show:     { bg: "bg-neutral-100", text: "text-neutral-600" },
-  rescheduled: { bg: "bg-neutral-100", text: "text-neutral-600" },
-};
-
 const STATUS_FILTERS: (AppointmentStatus | "all")[] = [
-  "all", "scheduled", "confirmed", "checked_in", "completed", "cancelled",
+  "all", "selected", "paid", "checked_in", "in_progress", "completed", "cancelled", "no_show",
 ];
 
-function statusLabel(s: string): string {
+function humanize(s: string): string {
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function StatusPill({ status }: { status: string }) {
-  const tone = STATUS_TONE[status] ?? STATUS_TONE.scheduled;
+function StatusPill({ status }: { status: AppointmentStatus }) {
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${tone.bg} ${tone.text}`}>
-      {statusLabel(status)}
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${STATUS_TONE[status]}`}>
+      {STATUS_LABEL[status]}
     </span>
   );
 }
@@ -135,7 +124,7 @@ export default function DoctorAppointmentsPage() {
                 : "h-8 px-3.5 rounded-full text-[11.5px] font-medium bg-neutral-100 text-neutral-600"
             }
           >
-            {s === "all" ? "All" : statusLabel(s)}
+            {s === "all" ? "All" : STATUS_LABEL[s]}
           </button>
         ))}
       </div>
@@ -221,7 +210,7 @@ export default function DoctorAppointmentsPage() {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-neutral-100">
               <Field label="Reason" value={sel.reason || "—"} />
-              <Field label="Booked By" value={statusLabel(sel.booked_by_role || "—")} />
+              <Field label="Booked By" value={humanize(sel.booked_by_role || "—")} />
               <Field label="Created" value={new Date(sel.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} />
               <Field label="Notes" value={sel.notes || "—"} />
             </div>

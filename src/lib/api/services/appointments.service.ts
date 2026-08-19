@@ -56,7 +56,7 @@ function mapAppointment(a: Record<string, unknown>): Appointment {
     end_time: end,
     start_at: date && start ? `${date}T${start}` : "",
     end_at: date && end ? `${date}T${end}` : "",
-    status: (a.status as AppointmentStatus) ?? "scheduled",
+    status: (a.status as AppointmentStatus) ?? "planned",
     appointment_type: (a.appointment_type as AppointmentType) ?? "follow_up",
     reason: a.reason ? String(a.reason) : undefined,
     notes: a.notes ? String(a.notes) : undefined,
@@ -74,7 +74,7 @@ function extractList(data: unknown): Appointment[] {
 }
 
 async function setStatus(id: string, status: AppointmentStatus, extra?: Record<string, unknown>): Promise<Appointment> {
-  const { data } = await apiClient.patch(ENDPOINTS.APPOINTMENTS.CONFIRM(id), { status, ...extra });
+  const { data } = await apiClient.patch(ENDPOINTS.APPOINTMENTS.CHECK_IN(id), { status, ...extra });
   return mapAppointment(data);
 }
 
@@ -108,10 +108,6 @@ export const appointmentsService = {
   async update(id: string, payload: { notes?: string; patient_complaint?: string; appointment_type?: AppointmentType }): Promise<Appointment> {
     const { data } = await apiClient.patch(ENDPOINTS.APPOINTMENTS.UPDATE(id), payload);
     return mapAppointment(data);
-  },
-
-  async confirm(id: string): Promise<Appointment> {
-    return setStatus(id, "confirmed");
   },
 
   async checkIn(id: string): Promise<Appointment> {

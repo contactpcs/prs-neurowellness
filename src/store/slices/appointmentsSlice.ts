@@ -49,11 +49,6 @@ export const fetchAppointmentById = createAsyncThunk<Appointment, string>(
   async (id) => appointmentsService.getById(id),
 );
 
-export const confirmAppointment = createAsyncThunk<Appointment, string>(
-  "appointments/confirm",
-  async (id) => appointmentsService.confirm(id),
-);
-
 export const checkInAppointment = createAsyncThunk<Appointment, string>(
   "appointments/checkIn",
   async (id) => appointmentsService.checkIn(id),
@@ -112,7 +107,6 @@ function markStatus(state: AppointmentsState, appointmentId: string, status: App
 }
 
 const MUTATION_FULFILLED = [
-  confirmAppointment.fulfilled.type,
   checkInAppointment.fulfilled.type,
   startAppointment.fulfilled.type,
   completeAppointment.fulfilled.type,
