@@ -179,9 +179,11 @@ export const anamnesisService = {
     return withResponses(data);
   },
 
-  async getForPatient(patientId: string): Promise<AnamnesisRecord | null> {
+  async getForPatient(patientId: string, assessmentStage?: "general_registration" | "main_clinical"): Promise<AnamnesisRecord | null> {
     try {
-      const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.FOR_PATIENT(patientId));
+      const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.FOR_PATIENT(patientId), {
+        params: assessmentStage ? { assessment_stage: assessmentStage } : undefined,
+      });
       return withResponses(data);
     } catch (err: unknown) {
       if ((err as { response?: { status?: number } })?.response?.status === 404) return null;

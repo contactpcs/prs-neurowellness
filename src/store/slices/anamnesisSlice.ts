@@ -89,7 +89,10 @@ export const fetchPatientAnamnesis = createAsyncThunk<
 >(
   "anamnesis/fetchForPatient",
   async (patientId) => {
-    const record = await anamnesisService.getForPatient(patientId);
+    // Sole consumer is the doctor's clinical Anamnesis tab — scoped to the
+    // main_clinical record, distinct from the general_registration one
+    // shown on the separate Registration Record panel.
+    const record = await anamnesisService.getForPatient(patientId, "main_clinical");
     return { patientId, record };
   },
   {

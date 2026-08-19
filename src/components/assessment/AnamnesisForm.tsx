@@ -199,7 +199,7 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted }: A
       const getter =
         mode === "patient"
           ? anamnesisService.getMyAnamnesis()
-          : anamnesisService.getForPatient(patientId);
+          : anamnesisService.getForPatient(patientId, "main_clinical");
       return getter.catch((e: { response?: { status?: number } }) =>
         e?.response?.status === 404 ? null : Promise.reject(e)
       );
