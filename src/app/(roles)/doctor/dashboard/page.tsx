@@ -55,12 +55,14 @@ function toDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function timeToMins(t: string): number {
+function timeToMins(t: string | null | undefined): number {
+  if (!t) return 0;
   const [h, m] = t.split(":").map(Number);
   return h * 60 + (m || 0);
 }
 
-function fmt12(t: string): string {
+function fmt12(t: string | null | undefined): string {
+  if (!t) return "";
   const [h, m] = t.split(":").map(Number);
   const ampm = h >= 12 ? "PM" : "AM";
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
@@ -229,7 +231,7 @@ export default function DoctorDashboard() {
       })
       .sort((a, b) => {
         const dc = a.appointment_date.localeCompare(b.appointment_date);
-        return dc !== 0 ? dc : a.start_time.localeCompare(b.start_time);
+        return dc !== 0 ? dc : (a.start_time || "").localeCompare(b.start_time || "");
       })
       .slice(0, 1);
   }, [appointments, todayStr, searchQuery]);
@@ -283,7 +285,11 @@ export default function DoctorDashboard() {
   // ── time-grid column renderer (shared by Week + Day) ─────────────
 
   const renderTimeColumn = (dateStr: string, colIdx: number) => {
-    const dayAppts = apptByDay[dateStr] || [];
+    // Device-session appointments start life as 'planned' with a date and no
+    // start_time (fn_generate_protocol_sessions) until the patient claims a
+    // slot — they have no position on a time axis, so they're excluded here
+    // rather than crashing timeToMins/fmt12 on a null time.
+    const dayAppts = (apptByDay[dateStr] || []).filter((a) => a.start_time && a.end_time);
     const hasSlots = (slotsByDate[dateStr] ?? []).some((s) => s.is_available);
     return (
       <div

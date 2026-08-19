@@ -316,6 +316,7 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted }: A
           patient_id: patientId,
           submitted_by: null,
           taken_by: mode === "doctor" ? "doctor_on_behalf" : "patient",
+          assessment_stage: mode === "doctor" ? "main_clinical" : "general_registration",
           chief_complaint: null, main_symptoms: null, initial_symptoms: null,
           diagnosis_related: null, diagnosis_details: null, symptoms_start: null,
           symptoms_duration: null, symptoms_frequency: null, symptoms_intensity: null,

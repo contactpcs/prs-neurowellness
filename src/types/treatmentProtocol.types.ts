@@ -254,10 +254,15 @@ export interface DosingRead {
 
 // ─── Step 6 — Scales ───
 export interface ScaleRead {
+  /** reference.prs_scales.scale_id — a TEXT key like "GAD-7/2026", not a UUID.
+   *  Sourced from the PRS catalogue since 51: it is what the questionnaire
+   *  engine actually renders, so a scale outside it cannot be prescribed. */
   scale_id: string;
   scale_code: string;
   scale_name: string;
-  prs_scale_id?: string | null;
+  is_common_scale?: boolean;
+  applicable_for?: string | null;
+  is_required?: boolean;
   display_order: number;
 }
 
@@ -293,8 +298,10 @@ export interface SchedulePreview {
 
 // ─── Step 8 — Protocol lifecycle ───
 export interface ProtocolScaleAssignment {
-  scale_id?: string | null;
-  scale_code?: string | null;
+  /** A PRS scale_id. Required — protocol_scales has an FK into
+   *  reference.prs_scales, and a free-typed name cannot be released to the
+   *  patient as a task. */
+  scale_id: string;
   cadence: string;
 }
 

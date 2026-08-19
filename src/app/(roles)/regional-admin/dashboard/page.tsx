@@ -74,7 +74,8 @@ function DashboardSkeleton() {
   );
 }
 
-function timeLabel(t: string) {
+function timeLabel(t: string | null | undefined) {
+  if (!t) return "No time booked yet";
   const [h, m] = t.split(":").map(Number);
   const period = h >= 12 ? "PM" : "AM";
   const hour12 = h % 12 === 0 ? 12 : h % 12;
