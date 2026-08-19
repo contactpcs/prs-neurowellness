@@ -213,6 +213,18 @@ export const ENDPOINTS = {
     SCALES: "/neuromod/scales",
   },
 
+  // ─── Protocol instances — a COURSE of device treatment within a cycle ───
+  // This is what "Start New Treatment Protocol" creates. NOT a treatment
+  // cycle: a cycle is the episode of care and is limited to one active per
+  // patient, so creating one per protocol always failed with
+  // "Patient already has an active treatment cycle".
+  PROTOCOL_INSTANCES: {
+    LIST: "/protocol-instances",
+    CREATE: "/protocol-instances",
+    DETAIL: (id: string) => `/protocol-instances/${id}`,
+    STATUS: (id: string) => `/protocol-instances/${id}/status`,
+  },
+
   // ─── Treatment Protocols (wizard steps 7-8 + lifecycle + PRS) ───
   TREATMENT_PROTOCOLS: {
     SCHEDULE_PREVIEW: "/treatment-protocols/schedule-preview",

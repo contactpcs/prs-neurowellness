@@ -313,10 +313,14 @@ export default function TreatmentProtocolWizardPage() {
         ? `Reason: ${reasonLabel || "Other"} — ${reasonNote}${state.protocolNote ? ` | ${state.protocolNote}` : ""}`
         : (state.protocolNote || null);
 
-      const planId = await treatmentProtocolService.resolveOrCreatePlanId({
+      // A protocol belongs to a protocol INSTANCE — one course of device
+      // treatment — not to a treatment cycle. The cycle is the episode of
+      // care and allows one active per patient, so opening a cycle per
+      // protocol always failed with "Patient already has an active treatment
+      // cycle". This reuses the patient's cycle and opens (or reuses) an
+      // instance on it.
+      const instanceId = await treatmentProtocolService.resolveOrCreateInstanceId({
         patientId, doctorId: user.doctor_id, clinicId: user.clinic_id,
-        deviceType: selectedDevice?.modality || "tDCS",
-        sessionCount: parseInt(state.sessionCount) || 20,
       });
 
       // Step 5's numbers are the PRESCRIPTION, not a deviation from it, so they
@@ -335,7 +339,7 @@ export default function TreatmentProtocolWizardPage() {
       const rampSeconds = state.rampSeconds ? parseInt(state.rampSeconds) : 30;
 
       const payload: ProtocolCreate = {
-        plan_id: planId,
+        instance_id: instanceId,
         device_id: state.deviceId,
         placement_id: state.placementId,
         dosing_id: state.dosingId,

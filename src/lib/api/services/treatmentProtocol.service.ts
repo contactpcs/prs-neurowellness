@@ -158,11 +158,61 @@ export const treatmentProtocolService = {
     return Array.isArray(data) ? data : [];
   },
 
-  // ─── plan_id resolution (treatment_protocols has a hard FK to treatment_plans,
-  // which itself needs a treatment_cycles row — neither is part of the 22
-  // neuromod/protocol endpoints, but ProtocolCreate.plan_id is required, so
-  // this bridges the two modules rather than leaving protocol creation
-  // permanently blocked on a manual step nothing in the wizard UI covers). ───
+  // ─── protocol instances ───
+
+  async listProtocolInstances(params: { patientId?: string; cycleId?: string; status?: string } = {}) {
+    const { data } = await apiClient.get(ENDPOINTS.PROTOCOL_INSTANCES.LIST, {
+      params: { patient_id: params.patientId, cycle_id: params.cycleId, status: params.status },
+    });
+    return Array.isArray(data) ? data : [];
+  },
+
+  /** Resolves the CYCLE for a patient, then opens a protocol instance on it.
+   *
+   *  A treatment CYCLE is the episode of care — one active per patient, and
+   *  long-lived. A protocol INSTANCE is one course of device treatment, and a
+   *  cycle can have several over time. "Start New Treatment Protocol" means a
+   *  new instance, never a new cycle; creating a cycle each time is what
+   *  produced "Patient already has an active treatment cycle".
+   *
+   *  A cycle is only created when the patient genuinely has none.
+   */
+  async resolveOrCreateInstanceId(opts: {
+    patientId: string;
+    doctorId: string;
+    clinicId: string;
+  }): Promise<string> {
+    const { data: cycles } = await apiClient.get<TreatmentCycleRead[]>(ENDPOINTS.CLINICAL.CYCLES, {
+      params: { patient_id: opts.patientId },
+    });
+    let cycle = (Array.isArray(cycles) ? cycles : []).find((c) => c.status !== "completed" && c.status !== "cancelled");
+    if (!cycle) {
+      const { data } = await apiClient.post(ENDPOINTS.CLINICAL.CYCLES, {
+        patient_id: opts.patientId,
+        doctor_id: opts.doctorId,
+        clinic_id: opts.clinicId,
+        cycle_type: "initial",
+        cycle_number: 1,
+      });
+      cycle = data;
+    }
+
+    // uq_protocol_instances_one_active allows one draft/active instance per
+    // cycle, so reuse the open one rather than colliding with it.
+    const open = await this.listProtocolInstances({ cycleId: cycle!.cycle_id });
+    const existing = open.find((i: any) => i.status === "draft" || i.status === "active");
+    if (existing) return existing.instance_id;
+
+    const { data: created } = await apiClient.post(ENDPOINTS.PROTOCOL_INSTANCES.CREATE, {
+      cycle_id: cycle!.cycle_id,
+    });
+    return created.instance_id;
+  },
+
+  // ─── plan_id resolution — KEPT for the amend path and for anything still
+  // creating a protocol against a plan. Since 45 a protocol hangs off an
+  // instance and plan_id is optional, so new pushes use
+  // resolveOrCreateInstanceId above instead. ───
   async resolveOrCreatePlanId(opts: {
     patientId: string;
     doctorId: string;
