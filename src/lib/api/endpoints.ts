@@ -307,6 +307,35 @@ export const ENDPOINTS = {
     MY_CANCEL: (id: string) => `/me/appointments/${id}/cancel`, // PATCH {reason}
   },
 
+  // ─── Device Sessions (tDCS live-session execution — backend/app/modules/
+  // device_sessions, ships alongside SQL/v1/53_device_session_records.sql).
+  // Keyed by appointment_id, the same id the CA device-session queue
+  // (clinical-assistant/appointments) already has in hand — there is no
+  // separate device-session id in the URL space. ───
+  DEVICE_SESSIONS: {
+    DETAIL: (appointmentId: string) => `/device-sessions/${appointmentId}`,
+    CHECKLIST: (appointmentId: string) => `/device-sessions/${appointmentId}/checklist`,
+    START: (appointmentId: string) => `/device-sessions/${appointmentId}/start`,
+    PAUSE: (appointmentId: string) => `/device-sessions/${appointmentId}/pause`,
+    RESUME: (appointmentId: string) => `/device-sessions/${appointmentId}/resume`,
+    STOP: (appointmentId: string) => `/device-sessions/${appointmentId}/stop`,
+    COMPLETE: (appointmentId: string) => `/device-sessions/${appointmentId}/complete`,
+    DEVICE_FIT: (appointmentId: string) => `/device-sessions/${appointmentId}/device-fit`,
+    SYMPTOMS: (appointmentId: string) => `/device-sessions/${appointmentId}/symptoms`,
+    ADVERSE_EVENTS: (appointmentId: string) => `/device-sessions/${appointmentId}/adverse-events`,
+    NOTES: (appointmentId: string) => `/device-sessions/${appointmentId}/notes`,
+    ACTIVITIES: (appointmentId: string) => `/device-sessions/${appointmentId}/activities`,
+    SCALES: (appointmentId: string) => `/device-sessions/${appointmentId}/scales`,
+    SCALE: (appointmentId: string, protocolScaleId: string) => `/device-sessions/${appointmentId}/scales/${protocolScaleId}`,
+    FEEDBACK: (appointmentId: string) => `/device-sessions/${appointmentId}/feedback`,
+    MEDIA_CONSENT: (appointmentId: string) => `/device-sessions/${appointmentId}/media/consent`,
+    MEDIA: (appointmentId: string) => `/device-sessions/${appointmentId}/media`,
+    NEXT_SESSION: (appointmentId: string) => `/device-sessions/${appointmentId}/next-session`,
+    EVENTS: (appointmentId: string) => `/device-sessions/${appointmentId}/events`,
+    SOS: (appointmentId: string) => `/device-sessions/${appointmentId}/sos`,
+    SOS_ACK: (appointmentId: string, sosId: string) => `/device-sessions/${appointmentId}/sos/${sosId}/ack`,
+  },
+
   // ─── Doctor Notes ───
   // Real backend only supports create + get-by-note-id (session-keyed, many
   // required fields the old payload never had). No list-by-patient, no

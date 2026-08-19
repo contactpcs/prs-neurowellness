@@ -26,7 +26,8 @@ const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
 interface DoctorSchedule { day_of_week: number; start_time: string; end_time: string; slot_duration_minutes: number }
 interface ScheduleOverride { override_id: string; override_date: string; is_available: boolean; reason: string | null }
 
-function timeLabel(t: string) {
+function timeLabel(t: string | null | undefined) {
+  if (!t) return "No time booked yet";
   const [h, m] = t.split(":").map(Number);
   const period = h >= 12 ? "PM" : "AM";
   const hour12 = h % 12 === 0 ? 12 : h % 12;
@@ -192,7 +193,7 @@ export function AppointmentsSection({ clinicId }: { clinicId: string }) {
               <div key={a.appointment_id} className="flex items-center justify-between px-6 py-4">
                 <div>
                   <p className="text-sm font-medium text-neutral-900">{a.patient_name ?? "Unknown patient"}</p>
-                  <p className="text-xs text-neutral-400 mt-0.5">{a.appointment_date} · {timeLabel(a.start_time)}–{timeLabel(a.end_time)} · Dr. {a.doctor_name ?? "Unknown"}</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">{a.appointment_date} · {a.start_time && a.end_time ? `${timeLabel(a.start_time)}–${timeLabel(a.end_time)}` : "No time booked yet"} · Dr. {a.doctor_name ?? "Unknown"}</p>
                   <p className="text-xs text-neutral-400 capitalize">{a.appointment_type.replace(/_/g, " ")}</p>
                 </div>
                 <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize flex-shrink-0 ${APPT_STATUS_STYLES[a.status] ?? "bg-neutral-100 text-neutral-600"}`}>

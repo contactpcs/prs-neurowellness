@@ -32,7 +32,8 @@ function formatDate(iso?: string | null) {
   return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
-function fmt12(t: string) {
+function fmt12(t: string | null | undefined) {
+  if (!t) return "No time booked yet";
   const [h, m] = t.split(":").map(Number);
   const ampm = h >= 12 ? "PM" : "AM";
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
