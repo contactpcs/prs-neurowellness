@@ -128,7 +128,7 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
   useEffect(() => {
     setIsLoading(true);
     treatmentProtocolService.listProtocols({ patientId })
-      .then((list) => setProtocols(list.slice().sort((a, b) => a.created_at.localeCompare(b.created_at))))
+      .then((list) => setProtocols(list.slice().sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""))))
       .catch(() => setProtocols([]))
       .finally(() => setIsLoading(false));
   }, [patientId]);

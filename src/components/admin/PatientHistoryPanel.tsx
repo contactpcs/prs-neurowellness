@@ -192,7 +192,7 @@ export function PatientHistoryPanel({ patientId, clinicId }: { patientId: string
       if (filterStatus   && a.status !== filterStatus)            return false;
       return true;
     })
-    .sort((a, b) => b.appointment_date.localeCompare(a.appointment_date));
+    .sort((a, b) => (b.appointment_date ?? "").localeCompare(a.appointment_date ?? ""));
 
   const TABS: { id: Tab; label: string; Icon: React.ElementType }[] = [
     { id: "appointments",   label: "Appointments",          Icon: Calendar     },

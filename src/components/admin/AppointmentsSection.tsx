@@ -131,8 +131,9 @@ export function AppointmentsSection({ clinicId }: { clinicId: string }) {
       return (a.patient_name ?? "").toLowerCase().includes(search.toLowerCase());
     })
     .sort((a, b) => {
-      const dateCmp = tab === "past" ? b.appointment_date.localeCompare(a.appointment_date) : a.appointment_date.localeCompare(b.appointment_date);
-      return dateCmp || a.start_time.localeCompare(b.start_time);
+      const ad = a.appointment_date ?? "", bd = b.appointment_date ?? "";
+      const dateCmp = tab === "past" ? bd.localeCompare(ad) : ad.localeCompare(bd);
+      return dateCmp || (a.start_time ?? "").localeCompare(b.start_time ?? "");
     });
 
   return (
