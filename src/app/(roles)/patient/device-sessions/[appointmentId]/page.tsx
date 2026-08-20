@@ -32,10 +32,9 @@ function VisualsView({ onBack }: { onBack: () => void }) {
   return (
     <div className="relative h-full overflow-hidden">
       <button onClick={onBack} className="absolute top-4 left-4 z-10 flex items-center gap-1.5 text-sm text-white/90"><ArrowLeft className="h-4 w-4" /> Back</button>
-      <div
-        className="absolute inset-0 animate-[pulse_10s_ease-in-out_infinite]"
-        style={{ background: "linear-gradient(135deg, #00A1E4, #6366f1, #09172E)", backgroundSize: "200% 200%" }}
-      />
+      {/* Same two brand stops as bg-brand-gradient (tailwind.config.ts) — no third
+         color invented for this ambient background. */}
+      <div className="absolute inset-0 bg-brand-gradient animate-[pulse_10s_ease-in-out_infinite]" />
     </div>
   );
 }

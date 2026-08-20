@@ -289,6 +289,16 @@ export interface Appointment {
   booked_by_role: string;
   created_at: string;
   updated_at: string;
+  /** Set only for appointment_type = device_session | protocol_followup —
+   *  the protocol course this appointment was generated from (30/32/41).
+   *  NULL for a manually-booked consultation. */
+  protocol_id?: string | null;
+  /** Which unit of the clinic's inventory this device session runs on —
+   *  set only for appointment_type = device_session (41). */
+  clinic_device_id?: string | null;
+  /** Ordinal within the protocol's course — set for device_session and
+   *  protocol_followup rows (30). */
+  session_number?: number | null;
 }
 
 // ─── Anamnesis ────────────────────────────────────────────────────

@@ -73,6 +73,9 @@ function mapAppointment(a: Record<string, unknown>): Appointment {
     booked_by_role: String(a.booked_by_role ?? ""),
     created_at: String(a.created_at ?? ""),
     updated_at: String(a.updated_at ?? a.created_at ?? ""),
+    protocol_id: a.protocol_id ? String(a.protocol_id) : null,
+    clinic_device_id: a.clinic_device_id ? String(a.clinic_device_id) : null,
+    session_number: typeof a.session_number === "number" ? a.session_number : null,
   };
 }
 

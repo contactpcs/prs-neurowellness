@@ -40,7 +40,7 @@ export function SignatureCapture({
     if (ctx) {
       ctx.lineWidth = 2;
       ctx.lineCap = "round";
-      ctx.strokeStyle = "#171717";
+      ctx.strokeStyle = "#171717"; // neutral-900 — canvas 2D API needs a literal, not a CSS var
       ctx.lineTo(x, y);
       ctx.stroke();
     }

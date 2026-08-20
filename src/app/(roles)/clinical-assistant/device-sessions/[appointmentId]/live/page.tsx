@@ -80,7 +80,7 @@ export default function DeviceSessionLivePage() {
     if (!appointmentId) return;
     appointmentsService.getById(appointmentId).then(async (appt) => {
       setAppointment(appt);
-      const protocolId = (appt as unknown as { protocol_id?: string }).protocol_id;
+      const protocolId = appt.protocol_id;
       if (protocolId) setProtocol(await treatmentProtocolService.getProtocolDetail(protocolId));
     });
   }, [appointmentId]);

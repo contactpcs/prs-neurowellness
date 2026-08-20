@@ -81,7 +81,7 @@ export default function DeviceSessionChecklistPage() {
     appointmentsService.getById(appointmentId)
       .then(async (appt) => {
         setAppointment(appt);
-        const protocolId = (appt as unknown as { protocol_id?: string }).protocol_id;
+        const protocolId = appt.protocol_id;
         if (protocolId) {
           const detail = await treatmentProtocolService.getProtocolDetail(protocolId);
           setProtocol(detail);
@@ -113,8 +113,16 @@ export default function DeviceSessionChecklistPage() {
   }
   if (!appointment || isLoading) return <PageLoader />;
 
-  const anodeSite = protocol?.placement?.anode_site ?? null;
-  const cathodeSites = [protocol?.placement?.cathode_site, ...(protocol?.placement?.return_sites ?? [])].filter(Boolean) as string[];
+  // A protocol uses either a catalogue placement (protocol.placement,
+  // singular anode_site/cathode_site/return_sites) or a custom montage
+  // (protocol.custom_montage, plural anode_sites/cathode_sites arrays) —
+  // never both (chk_protocol_plan_one_placement, 54). Read whichever is set.
+  const anodeSite = protocol?.placement?.anode_site
+    ?? protocol?.custom_montage?.anode_sites?.[0]
+    ?? null;
+  const cathodeSites = protocol?.placement
+    ? [protocol.placement.cathode_site, ...(protocol.placement.return_sites ?? [])].filter(Boolean) as string[]
+    : (protocol?.custom_montage?.cathode_sites ?? []);
 
   const prescribedIntensity = protocol?.prescribed_current_ma ?? null;
   const prescribedDuration = protocol?.prescribed_duration_min ?? null;
