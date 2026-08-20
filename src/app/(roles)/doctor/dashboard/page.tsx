@@ -397,7 +397,7 @@ export default function DoctorDashboard() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 mb-1.5">
                       <p className="text-base font-bold text-neutral-900 leading-tight truncate">{appt.patient_name || "—"}</p>
-                      <Link href={`/doctor/patients/${appt.patient_id}`} className="flex-shrink-0">
+                      <Link href={`/doctor/patients/${appt.patient_public_id ?? appt.patient_id}`} className="flex-shrink-0">
                         <Eye className="w-3.5 h-3.5 text-neutral-400 hover:text-neutral-600 transition-colors" />
                       </Link>
                     </div>

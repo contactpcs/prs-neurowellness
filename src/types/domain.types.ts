@@ -274,6 +274,9 @@ export interface Appointment {
   doctor_id: string;
   doctor_name?: string;
   doctor_public_id?: string | null;
+  /** patients.patient_id — GET /doctor/patients/{id} and other patient-scoped
+   *  routes expect this, not patient_id above (which is profiles.id). */
+  patient_public_id?: string | null;
   appointment_date: string;
   start_time: string;
   end_time: string;

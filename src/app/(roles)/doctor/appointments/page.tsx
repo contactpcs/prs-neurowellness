@@ -144,7 +144,7 @@ export default function DoctorAppointmentsPage() {
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-bold text-neutral-900">{sel.patient_name ?? "Patient"}</h2>
-                  <Link href={`/doctor/patients/${sel.patient_id}`}>
+                  <Link href={`/doctor/patients/${sel.patient_public_id ?? sel.patient_id}`}>
                     <Eye className="w-3.5 h-3.5 text-neutral-400 hover:text-neutral-600 transition-colors" />
                   </Link>
                 </div>

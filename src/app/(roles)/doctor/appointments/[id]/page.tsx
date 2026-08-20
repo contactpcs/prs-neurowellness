@@ -330,7 +330,7 @@ export default function AppointmentDetailPage() {
               <div className="flex items-center gap-2.5 text-sm text-neutral-700">
                 <User className="w-4 h-4 text-neutral-400 flex-shrink-0" />
                 <Link
-                  href={`/doctor/patients/${appointment.patient_id}`}
+                  href={`/doctor/patients/${appointment.patient_public_id ?? appointment.patient_id}`}
                   className="hover:underline font-medium text-accent"
                 >
                   View patient profile
