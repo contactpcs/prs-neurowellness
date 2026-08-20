@@ -2,9 +2,10 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { Printer, CalendarPlus, X, CalendarDays } from "lucide-react";
+import { Printer, CalendarPlus, X, CalendarDays, Download } from "lucide-react";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { receptionService } from "@/lib/api/services/reception.service";
+import { paymentsService, saveBlobAsFile } from "@/lib/api/services/payments.service";
 import { STATUS_LABEL, STATUS_TONE } from "@/lib/appointmentStatus";
 import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
 import type { Appointment, AppointmentStatus, DoctorListItem } from "@/types/domain.types";
@@ -42,6 +43,7 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
   const [confirming,   setConfirming]   = useState<Appointment | null>(null);
   const [payingFor,    setPayingFor]    = useState<Appointment | null>(null);
   const [busy,         setBusy]         = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -83,6 +85,15 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
     try { await appointmentsService.checkIn(a.appointment_id); await load(); }
     catch { /* ignore */ }
     finally { setBusy(false); }
+  };
+
+  const handleDownloadReceipt = async (a: Appointment) => {
+    setDownloadingId(a.appointment_id);
+    try {
+      const blob = await paymentsService.downloadReceipt(a.appointment_id);
+      saveBlobAsFile(blob, `receipt-${a.appointment_id}.pdf`);
+    } catch { /* ignore */ }
+    finally { setDownloadingId(null); }
   };
 
   const doCancel = async () => {
@@ -178,6 +189,7 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
                 const awaitingPayment  = a.status === "selected";
                 const readyForCheckIn  = a.status === "paid";
                 const locked           = ["completed", "in_progress", "checked_in", "no_show", "rescheduled"].includes(a.status);
+                const hasPayment       = !["planned", "selected", "cancelled"].includes(a.status);
                 return (
                   <div key={a.appointment_id} className="grid gap-3 items-center px-5 py-3 border-b border-neutral-100 last:border-0" style={{ gridTemplateColumns: "1.3fr 1.2fr 1fr 0.9fr 1fr 170px" }}>
                     <p className="text-sm font-medium text-neutral-900 truncate">{a.patient_name ?? "Patient"}</p>
@@ -189,9 +201,17 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
                     <p className="text-xs text-neutral-600 capitalize truncate">{(a.appointment_type ?? "").replace(/_/g, " ")}</p>
                     <StatusChip status={a.status} />
                     <div className="flex gap-1.5">
-                      {locked ? (
-                        <span className="text-xs text-neutral-300">—</span>
-                      ) : cancelled ? (
+                      {hasPayment && (
+                        <button
+                          disabled={downloadingId === a.appointment_id}
+                          onClick={() => handleDownloadReceipt(a)}
+                          title="Download Receipt"
+                          className="h-7 w-7 rounded-md border border-neutral-200 bg-white text-neutral-600 flex items-center justify-center hover:bg-neutral-50 transition-colors disabled:opacity-50"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {locked ? null : cancelled ? (
                         <Link
                           href="/receptionist/dashboard"
                           className="h-7 px-2.5 rounded-md border border-neutral-300 bg-white text-neutral-600 text-xs font-medium hover:bg-neutral-50 transition-colors flex items-center"

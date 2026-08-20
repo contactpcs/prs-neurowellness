@@ -21,6 +21,20 @@ function extractErrorMessage(err: any, fallback: string): string {
 // becomes bookable the moment this form saves, no code change needed.
 const LEGACY_APPOINTMENT_TYPES = ["initial", "follow_up", "device_session", "protocol_followup"];
 
+// This value is matched byte-for-byte against core.appointments.appointment_type
+// (see resolve_price in backend/app/modules/admin/repository.py) — a display
+// label like "Initial Appointment" will never match the code "initial" the
+// booking flow actually sends, silently falling back to the placeholder
+// price. Forcing lowercase/underscore here can't fix a wrong *choice* of
+// code, but it does stop whitespace/case slips on an otherwise-correct one.
+function slugifyAppointmentType(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 function ItemsSkeleton() {
   return (
     <div className="space-y-3">
@@ -50,6 +64,7 @@ function CreateItemForm({
   onClose: () => void;
 }) {
   const [category, setCategory] = useState<BillableItemCategory>("appointment");
+  const [customType, setCustomType] = useState(false);
   const [form, setForm] = useState({
     item_code: "",
     name: "",
@@ -140,21 +155,52 @@ function CreateItemForm({
       {category === "appointment" ? (
         <div>
           <label className="block text-xs font-medium text-neutral-600 mb-1">Appointment Type *</label>
-          <Input
-            value={form.appointment_type}
-            onChange={(e) => set("appointment_type", e.target.value)}
-            placeholder="e.g. initial, follow_up, or a new type"
-            list="appointment-type-suggestions"
-            required
-          />
-          <datalist id="appointment-type-suggestions">
-            {typeSuggestions.map((t) => (
-              <option key={t} value={t} />
-            ))}
-          </datalist>
-          <p className="mt-1 text-xs text-neutral-400">
-            Pick an existing type, or type a new one — it becomes bookable the moment this saves.
-          </p>
+          {!customType ? (
+            <>
+              <Select
+                value={form.appointment_type}
+                onChange={(e) => set("appointment_type", e.target.value)}
+                options={typeSuggestions.map((t) => ({ value: t, label: t }))}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomType(true);
+                  set("appointment_type", "");
+                }}
+                className="mt-1 text-xs text-indigo-600 hover:text-indigo-700"
+              >
+                + Introduce a new appointment type
+              </button>
+            </>
+          ) : (
+            <>
+              <Input
+                value={form.appointment_type}
+                onChange={(e) => set("appointment_type", slugifyAppointmentType(e.target.value))}
+                placeholder="e.g. premium_consult"
+                required
+              />
+              <div className="mt-1 flex items-start justify-between gap-2">
+                <p className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">
+                  This must be the exact code the booking flow will send — not a display label. Put the human-readable text in
+                  <strong> Name</strong> below instead. A mismatch (e.g. &quot;Initial Appointment&quot; instead of
+                  &quot;initial&quot;) silently falls back to the placeholder price, no error shown.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomType(false);
+                  set("appointment_type", LEGACY_APPOINTMENT_TYPES[0]);
+                }}
+                className="mt-1 text-xs text-neutral-500 hover:text-neutral-700"
+              >
+                Choose an existing type instead
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <Select

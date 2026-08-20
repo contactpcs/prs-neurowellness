@@ -58,12 +58,59 @@ function WaiveModal({ payment, onConfirm, onClose }: {
   );
 }
 
+function RefundModal({ payment, onConfirm, onClose }: {
+  payment: Payment;
+  onConfirm: (reason?: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function confirm() {
+    setLoading(true);
+    setError(null);
+    try {
+      await onConfirm(reason || undefined);
+      onClose();
+    } catch (err: any) {
+      setError(err?.response?.data?.error?.message || err?.response?.data?.detail || "Failed to refund payment");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-neutral-700">
+        Mark this payment of <strong>{payment.currency} {payment.amount}</strong> as refunded? This only updates
+        the record — it does not move money. Refund the patient separately before confirming.
+      </p>
+      <div>
+        <label className="block text-xs font-medium text-neutral-600 mb-1">Reason (optional)</label>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          rows={3}
+          className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+        />
+      </div>
+      {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+      <div className="flex justify-end gap-3">
+        <Button type="button" variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
+        <Button type="button" disabled={loading} onClick={confirm}>{loading ? "Refunding…" : "Mark as Refunded"}</Button>
+      </div>
+    </div>
+  );
+}
+
 export default function ClinicAdminPaymentsPage() {
   const [paymentId, setPaymentId] = useState("");
   const [payment, setPayment] = useState<Payment | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showWaive, setShowWaive] = useState(false);
+  const [showRefund, setShowRefund] = useState(false);
 
   async function handleLookup(e: React.FormEvent) {
     e.preventDefault();
@@ -86,7 +133,16 @@ export default function ClinicAdminPaymentsPage() {
     setPayment(updated);
   }
 
+  async function handleRefund(reason?: string) {
+    if (!payment) return;
+    const updated = await paymentsService.refund(payment.payment_id, reason);
+    setPayment(updated);
+  }
+
   const canWaive = payment && (payment.status === "pending" || payment.status === "failed");
+  // Distinct from canWaive: refund reverses a *completed* payment, waive
+  // writes off one that was never collected — only one ever applies.
+  const canRefund = payment && payment.status === "paid";
 
   return (
     <div className="space-y-6">
@@ -130,15 +186,24 @@ export default function ClinicAdminPaymentsPage() {
                 <div className="flex items-center justify-between px-4 py-2.5"><span className="text-neutral-500">Waived Reason</span><span className="text-neutral-800 font-medium">{payment.waived_reason}</span></div>
               )}
             </div>
-            {canWaive && (
-              <Button onClick={() => setShowWaive(true)}>Waive Payment</Button>
-            )}
+            <div className="flex gap-2">
+              {canWaive && (
+                <Button onClick={() => setShowWaive(true)}>Waive Payment</Button>
+              )}
+              {canRefund && (
+                <Button variant="outline" onClick={() => setShowRefund(true)}>Refund Payment</Button>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}
 
       <Modal isOpen={showWaive} onClose={() => setShowWaive(false)} title="Waive Payment">
         {payment && <WaiveModal payment={payment} onConfirm={handleWaive} onClose={() => setShowWaive(false)} />}
+      </Modal>
+
+      <Modal isOpen={showRefund} onClose={() => setShowRefund(false)} title="Refund Payment">
+        {payment && <RefundModal payment={payment} onConfirm={handleRefund} onClose={() => setShowRefund(false)} />}
       </Modal>
     </div>
   );
