@@ -22,7 +22,7 @@ import { invalidatePatientAnamnesis } from "@/store/slices/anamnesisSlice";
 import type { DoctorNote } from "@/lib/api/services/doctorNotes.service";
 import type { Permission, AssessmentInstance, AnamnesisRecord } from "@/types/domain.types";
 import { EEGReportList, EEGUploadForm, NEDFUploadForm } from "@/components/eeg";
-import { TreatmentProtocolPanel } from "@/components/doctor/TreatmentProtocolPanel";
+import { TreatmentProtocolPanel, DeviceSessionsPanel } from "@/components/doctor/TreatmentProtocolPanel";
 
 function statusClass(status: Permission["status"]): string {
   switch (status) {
@@ -56,6 +56,7 @@ function buildSections(
     { id: "notes", name: "Doctor's Notes", status: hasDoctorNote ? "done" : null },
     { id: "medical-history", name: "Medical History", status: "link" },
     { id: "treatment-protocol", name: "Treatment Protocol", status: null },
+    { id: "sessions", name: "Sessions", status: null },
     { id: "treatment-plan", name: "Treatment Plan", status: "locked" },
     { id: "final-report", name: "Final Report", status: "locked" },
   ];
@@ -68,7 +69,7 @@ export default function DoctorPatientDetailPage() {
   const searchParams = useSearchParams();
 
   const dispatch = useAppDispatch();
-  const patient = useDoctorPatient(id);
+  const { patient, isLoading: patientLoading, isError: patientError, error: patientErrorMessage } = useDoctorPatient(id);
   const { patients: patientList } = useDoctorPatients();
   const assessments = usePatientPermissions(id);
   const { instances: scoreInstances, total: totalAssessments } = usePatientScoresSummary(id);
@@ -76,7 +77,7 @@ export default function DoctorPatientDetailPage() {
   const { note: doctorNote, isLoading: noteLoading, save: saveNote } = usePatientNote(id);
   const [headerSearch, setHeaderSearch] = useState("");
 
-  const isLoading = !patient;
+  const isLoading = patientLoading;
 
   const selectedSection = searchParams.get("section") ?? "anamnesis";
   const tabParam = parseInt(searchParams.get("tab") ?? "0", 10);
@@ -173,6 +174,21 @@ export default function DoctorPatientDetailPage() {
   };
 
   if (isLoading) return <PatientDetailSkeleton />;
+
+  if (patientError || !patient) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 text-center px-4">
+        <p className="text-sm font-medium text-neutral-600">Couldn&apos;t load this patient.</p>
+        <p className="text-xs text-neutral-400">{patientErrorMessage || "Please try again."}</p>
+        <button
+          onClick={() => router.push("/doctor/patients")}
+          className="px-4 py-2 text-sm font-medium text-white bg-neutral-900 rounded-lg hover:bg-neutral-800 transition-colors"
+        >
+          Back to patients
+        </button>
+      </div>
+    );
+  }
 
   const fullName = patient?.full_name || "Patient";
   const currentIdx = patientList.findIndex((p) => p.id === id);
@@ -450,6 +466,8 @@ export default function DoctorPatientDetailPage() {
                 </div>
               ) : selectedSection === "treatment-protocol" ? (
                 <TreatmentProtocolPanel patientId={id} />
+              ) : selectedSection === "sessions" ? (
+                <DeviceSessionsPanel patientId={id} />
               ) : selectedSection === "notes" ? (
                 <div className="space-y-4">
                   <div className="flex items-start justify-between">

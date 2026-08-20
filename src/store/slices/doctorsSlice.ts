@@ -114,9 +114,9 @@ const doctorsSlice = createSlice({
       })
       .addCase(
         fetchDoctorPatient.fulfilled,
-        (state, action: PayloadAction<any>) => {
+        (state, action: PayloadAction<any, string, { arg: string }>) => {
           state.patientDetailStatus = "succeeded";
-          state.patientDetail[action.payload.id || "current"] = action.payload;
+          state.patientDetail[action.meta.arg] = action.payload;
         }
       )
       .addCase(fetchDoctorPatient.rejected, (state, action) => {
@@ -151,6 +151,8 @@ export const selectDoctorPatients       = (s: RootState) => s.doctors.patients;
 export const selectDoctorPatientsTotal  = (s: RootState) => s.doctors.patientsTotal;
 export const selectDoctorPatientsStatus = (s: RootState) => s.doctors.patientsStatus;
 export const selectDoctorPatientDetail = (s: RootState) => s.doctors.patientDetail;
+export const selectDoctorPatientDetailStatus = (s: RootState) => s.doctors.patientDetailStatus;
+export const selectDoctorPatientDetailError = (s: RootState) => s.doctors.patientDetailError;
 export const selectPatientResults = (s: RootState) => s.doctors.results;
 export const selectPatientResultStatus = (instanceId: string) => (s: RootState) =>
   s.doctors.resultsStatus[instanceId] ?? "idle";

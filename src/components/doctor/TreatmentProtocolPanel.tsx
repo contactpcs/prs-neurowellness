@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronRight, Plus } from "lucide-react";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
-import { Card, CardContent, Badge, PageLoader, Button } from "@/components/ui";
-import type { ProtocolRead, ProtocolDetail } from "@/types/treatmentProtocol.types";
+import { Card, CardContent, Badge, PageLoader, Button, DetailFieldList } from "@/components/ui";
+import { deviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
+import type { ProtocolRead, ProtocolDetail, ProtocolSessionRead } from "@/types/treatmentProtocol.types";
 
 function fmtDate(iso?: string | null): string {
   if (!iso) return "—";
@@ -80,6 +81,94 @@ function ElectrodeChips({ detail }: { detail: ProtocolDetail }) {
   );
 }
 
+/** Device sessions (and follow-up appointments) generated from the active
+ * protocol — click a row to expand its full detail inline. Follow-ups are
+ * shown separately since they're a different appointment_type ("protocol_
+ * followup") from device sessions, booked either directly by the patient
+ * or auto-scheduled by the protocol's follow-up cadence. */
+function SessionsList({ detail }: { detail: ProtocolDetail }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  const sessions = detail.sessions.slice().sort((a, b) => (a.session_number ?? 0) - (b.session_number ?? 0));
+  const followUps = detail.follow_ups.slice().sort((a, b) => (a.appointment_date || "").localeCompare(b.appointment_date || ""));
+
+  const Row = ({ s, label }: { s: ProtocolSessionRead; label: string }) => {
+    const open = openId === s.appointment_id;
+    return (
+      <div key={s.appointment_id} className="border-b border-neutral-100 last:border-0">
+        <button
+          onClick={() => setOpenId(open ? null : s.appointment_id)}
+          className="w-full grid grid-cols-[70px_1fr_1fr_1fr_140px] gap-3 items-center px-4 py-3 text-left hover:bg-neutral-50 transition-colors"
+        >
+          <span className="text-sm font-bold text-neutral-900">{label}</span>
+          <span className="text-sm text-neutral-700">{fmtDate(s.appointment_date)}</span>
+          <span className="text-sm text-neutral-600">{s.start_time || "—"}</span>
+          <span className="text-sm text-neutral-600">{s.ca_id ? "Assigned" : "—"}</span>
+          <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium w-fit ${deviceSessionTone(s.status)}`}>
+            {deviceSessionLabel(s.status)}
+          </span>
+        </button>
+        {open && (
+          <div className="px-4 pb-3">
+            <DetailFieldList
+              data={{
+                appointment_id: s.appointment_id,
+                appointment_type: s.appointment_type,
+                session_number: s.session_number,
+                date: s.appointment_date,
+                start_time: s.start_time,
+                end_time: s.end_time,
+                status: deviceSessionLabel(s.status),
+              }}
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="p-0">
+          <div className="px-4 py-3 border-b border-neutral-100">
+            <h3 className="text-sm font-semibold text-neutral-900">Device Sessions ({sessions.length})</h3>
+            <p className="text-xs text-neutral-400 mt-0.5">Generated from this protocol. Click a row for details.</p>
+          </div>
+          {sessions.length === 0 ? (
+            <p className="text-sm text-neutral-400 px-4 py-8 text-center">No device sessions scheduled yet.</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-[70px_1fr_1fr_1fr_140px] gap-3 px-4 py-2 bg-neutral-50 text-[10px] font-semibold text-neutral-500 uppercase tracking-wide">
+                <span>Session</span><span>Date</span><span>Time</span><span>Assistant</span><span>Status</span>
+              </div>
+              {sessions.map((s) => <Row key={s.appointment_id} s={s} label={s.session_number != null ? `#${s.session_number}` : "—"} />)}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-0">
+          <div className="px-4 py-3 border-b border-neutral-100">
+            <h3 className="text-sm font-semibold text-neutral-900">Follow-up Appointments ({followUps.length})</h3>
+            <p className="text-xs text-neutral-400 mt-0.5">Protocol follow-ups — booked by the patient or scheduled by the protocol&apos;s follow-up cadence.</p>
+          </div>
+          {followUps.length === 0 ? (
+            <p className="text-sm text-neutral-400 px-4 py-8 text-center">No follow-up appointments booked yet.</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-[70px_1fr_1fr_1fr_140px] gap-3 px-4 py-2 bg-neutral-50 text-[10px] font-semibold text-neutral-500 uppercase tracking-wide">
+                <span>Follow-up</span><span>Date</span><span>Time</span><span>Assistant</span><span>Status</span>
+              </div>
+              {followUps.map((s, i) => <Row key={s.appointment_id} s={s} label={`#${i + 1}`} />)}
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function ProtocolFacts({ detail, title }: { detail: ProtocolDetail; title: string }) {
   const first = detail.sessions[0]?.appointment_date;
   const last = detail.sessions[detail.sessions.length - 1]?.appointment_date;
@@ -120,10 +209,11 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
 
   const [protocols, setProtocols] = useState<ProtocolRead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [tab, setTab] = useState<"active" | "history">("active");
+  const [tab, setTab] = useState<"active" | "sessions" | "history">("active");
   const [historyDetailId, setHistoryDetailId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ProtocolDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   useEffect(() => {
     setIsLoading(true);
@@ -137,13 +227,24 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
   const shownId = tab === "history" && historyDetailId ? historyDetailId : active?.protocol_id;
 
   useEffect(() => {
-    if (!shownId) { setDetail(null); return; }
+    if (!shownId) { setDetail(null); setDetailError(null); return; }
     setDetailLoading(true);
+    setDetailError(null);
     treatmentProtocolService.getProtocolDetail(shownId)
-      .then(setDetail)
-      .catch(() => setDetail(null))
+      .then((d) => setDetail(d))
+      .catch((err) => { setDetail(null); setDetailError(err instanceof Error ? err.message : "Failed to load protocol detail"); })
       .finally(() => setDetailLoading(false));
   }, [shownId]);
+
+  const DetailPending = () => (
+    detailLoading ? (
+      <p className="text-sm text-neutral-400 px-2">Loading…</p>
+    ) : (
+      <div className="border border-danger-100 bg-danger-50 rounded-lg px-4 py-3 text-sm text-danger-700">
+        {detailError || "Couldn't load protocol detail."}
+      </div>
+    )
+  );
 
   if (isLoading) return <PageLoader />;
 
@@ -227,6 +328,12 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
               Active Protocol
             </button>
             <button
+              onClick={() => setTab("sessions")}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === "sessions" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"}`}
+            >
+              Sessions{detail && tab !== "history" ? ` (${detail.sessions.length})` : ""}
+            </button>
+            <button
               onClick={() => { setTab("history"); setHistoryDetailId(null); }}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === "history" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"}`}
             >
@@ -235,14 +342,18 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
           </div>
 
           {tab === "active" && (
-            detailLoading || !detail ? (
-              <p className="text-sm text-neutral-400 px-2">Loading…</p>
+            !detail ? (
+              <DetailPending />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <ProtocolFacts detail={detail} title={`Protocol v${versionNumber(active!)}`} />
                 <ElectrodeChips detail={detail} />
               </div>
             )
+          )}
+
+          {tab === "sessions" && (
+            !detail ? <DetailPending /> : <SessionsList detail={detail} />
           )}
 
           {tab === "history" && !historyDetailId && (
@@ -280,8 +391,8 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
           )}
 
           {tab === "history" && historyDetailId && (
-            detailLoading || !detail ? (
-              <p className="text-sm text-neutral-400 px-2">Loading…</p>
+            !detail ? (
+              <DetailPending />
             ) : (
               <div className="space-y-4">
                 <button
@@ -335,6 +446,79 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
             )
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+/** Standalone "Sessions" journey section — sits between Treatment Protocol
+ * and Treatment Plan in the patient workspace. Reuses SessionsList so the
+ * device-session/follow-up table stays identical to the one embedded in the
+ * Treatment Protocol panel's own Sessions tab. */
+export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
+  const router = useRouter();
+  const [protocols, setProtocols] = useState<ProtocolRead[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [detail, setDetail] = useState<ProtocolDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsLoading(true);
+    treatmentProtocolService.listProtocols({ patientId })
+      .then((list) => setProtocols(list.slice().sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""))))
+      .catch(() => setProtocols([]))
+      .finally(() => setIsLoading(false));
+  }, [patientId]);
+
+  const active = protocols.find((p) => p.status === "active") ?? protocols[protocols.length - 1] ?? null;
+
+  useEffect(() => {
+    if (!active) { setDetail(null); setDetailError(null); return; }
+    setDetailLoading(true);
+    setDetailError(null);
+    treatmentProtocolService.getProtocolDetail(active.protocol_id)
+      .then((d) => setDetail(d))
+      .catch((err) => { setDetail(null); setDetailError(err instanceof Error ? err.message : "Failed to load protocol detail"); })
+      .finally(() => setDetailLoading(false));
+  }, [active]);
+
+  if (isLoading) return <PageLoader />;
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold text-neutral-900">Sessions</h1>
+        <p className="text-sm text-neutral-500 mt-0.5">
+          Device sessions and follow-up appointments generated from{active?.patient_name ? ` ${active.patient_name}'s` : " this patient's"} active treatment protocol.
+        </p>
+      </div>
+
+      {!active ? (
+        <Card>
+          <CardContent className="space-y-4">
+            <div className="border border-dashed border-neutral-200 rounded-xl py-14 text-center">
+              <p className="text-sm font-bold text-neutral-900">No treatment protocol yet</p>
+              <p className="text-sm text-neutral-400 mt-1.5 max-w-md mx-auto">
+                Sessions are generated from a treatment protocol — assign one first.
+              </p>
+            </div>
+            <button
+              onClick={() => router.push(`/doctor/patients/${patientId}/treatment-protocol/wizard?mode=new`)}
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-orange-500 text-white font-semibold text-sm hover:bg-orange-600 transition-colors"
+            >
+              <Plus className="h-4 w-4" />Start New Treatment Protocol
+            </button>
+          </CardContent>
+        </Card>
+      ) : detailLoading ? (
+        <p className="text-sm text-neutral-400 px-2">Loading…</p>
+      ) : !detail ? (
+        <div className="border border-danger-100 bg-danger-50 rounded-lg px-4 py-3 text-sm text-danger-700">
+          {detailError || "Couldn't load session detail."}
+        </div>
+      ) : (
+        <SessionsList detail={detail} />
       )}
     </div>
   );

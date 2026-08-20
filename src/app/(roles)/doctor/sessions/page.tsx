@@ -5,28 +5,17 @@ import { useRouter } from "next/navigation";
 import { Activity } from "lucide-react";
 import { PageLoader } from "@/components/ui";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
+import { deviceSessionLabel, deviceSessionTone, isSessionFinished } from "@/lib/utils/deviceSessionStatus";
 import type { ProtocolRead, ProtocolSessionRead } from "@/types/treatmentProtocol.types";
 
-type Row = { protocol: ProtocolRead; next: ProtocolSessionRead | null };
-
-const STATUS_TONE: Record<string, string> = {
-  completed: "bg-green-50 text-green-700",
-  scheduled: "bg-amber-50 text-amber-700",
-  in_progress: "bg-primary-50 text-primary-700",
-  missed: "bg-red-50 text-red-700",
-  cancelled: "bg-neutral-100 text-neutral-600",
-};
-
-function statusLabel(s: string) {
-  return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
+type Row = { protocol: ProtocolRead; sessions: ProtocolSessionRead[]; current: ProtocolSessionRead | null };
 
 function fmtDate(iso?: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-const FILTERS = ["All", "Scheduled", "In Progress", "Completed", "Missed"] as const;
+const FILTERS = ["All", "Not Yet Started", "In Progress", "Completed", "Missed"] as const;
 
 export default function DoctorSessionsPage() {
   const router = useRouter();
@@ -41,12 +30,12 @@ export default function DoctorSessionsPage() {
         const protocols = await treatmentProtocolService.listProtocols({ status: "active" });
         const withSessions = await Promise.all(
           protocols.map(async (protocol) => {
-            const sessions = await treatmentProtocolService.listProtocolSessions(protocol.protocol_id).catch(() => []);
-            const next =
-              sessions.find((s) => s.status === "in_progress") ||
-              sessions.find((s) => s.status === "scheduled") ||
-              null;
-            return { protocol, next };
+            const detail = await treatmentProtocolService.getProtocolDetail(protocol.protocol_id).catch(() => null);
+            const sessions = (detail?.sessions ?? []).slice().sort((a, b) => (a.session_number ?? 0) - (b.session_number ?? 0));
+            // The device session currently "up" — the earliest one that
+            // hasn't finished yet (in progress or still not started).
+            const current = sessions.find((s) => !isSessionFinished(s.status)) ?? sessions[sessions.length - 1] ?? null;
+            return { protocol, sessions, current };
           })
         );
         if (!cancelled) setRows(withSessions);
@@ -59,8 +48,8 @@ export default function DoctorSessionsPage() {
 
   const filtered = rows.filter((r) => {
     if (filter === "All") return true;
-    const label = filter === "In Progress" ? "in_progress" : filter.toLowerCase();
-    return r.next?.status === label;
+    const label = deviceSessionLabel(r.current?.status);
+    return label === filter;
   });
 
   if (isLoading) return <PageLoader />;
@@ -69,7 +58,7 @@ export default function DoctorSessionsPage() {
     <div className="flex flex-col gap-5">
       <div>
         <h1 className="text-2xl font-bold text-neutral-900">Sessions</h1>
-        <p className="text-sm text-neutral-500 mt-0.5">Next scheduled device session across all patients on active treatment.</p>
+        <p className="text-sm text-neutral-500 mt-0.5">Device sessions generated from each patient&apos;s active treatment protocol.</p>
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
@@ -103,10 +92,10 @@ export default function DoctorSessionsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {filtered.map(({ protocol, next }) => (
+                {filtered.map(({ protocol, sessions, current }) => (
                   <tr
                     key={protocol.protocol_id}
-                    onClick={() => protocol.patient_id && router.push(`/doctor/patients/${protocol.patient_id}/treatment-protocol`)}
+                    onClick={() => protocol.patient_id && router.push(`/doctor/patients/${protocol.patient_id}?section=sessions`)}
                     className="hover:bg-neutral-50 cursor-pointer transition-colors"
                   >
                     <td className="px-5 py-4">
@@ -118,18 +107,18 @@ export default function DoctorSessionsPage() {
                       </div>
                     </td>
                     <td className="px-5 py-4 text-neutral-700">
-                      {next?.session_number != null ? `#${next.session_number} / ${protocol.session_count}` : "—"}
+                      {current?.session_number != null ? `#${current.session_number} / ${sessions.length}` : sessions.length ? `— / ${sessions.length}` : "—"}
                     </td>
-                    <td className="px-5 py-4 text-neutral-600">{fmtDate(next?.appointment_date)}</td>
-                    <td className="px-5 py-4 text-neutral-600">{next?.start_time || "—"}</td>
+                    <td className="px-5 py-4 text-neutral-600">{fmtDate(current?.appointment_date)}</td>
+                    <td className="px-5 py-4 text-neutral-600">{current?.start_time || "—"}</td>
                     <td className="px-5 py-4">
-                      <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${next ? STATUS_TONE[next.status] || "bg-neutral-100 text-neutral-600" : "bg-neutral-100 text-neutral-400"}`}>
-                        {next ? statusLabel(next.status) : "No sessions left"}
+                      <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${deviceSessionTone(current?.status)}`}>
+                        {sessions.length ? deviceSessionLabel(current?.status) : "No sessions scheduled"}
                       </span>
                     </td>
                     <td className="px-5 py-2 text-right">
                       <button
-                        onClick={(e) => { e.stopPropagation(); protocol.patient_id && router.push(`/doctor/patients/${protocol.patient_id}/treatment-protocol`); }}
+                        onClick={(e) => { e.stopPropagation(); protocol.patient_id && router.push(`/doctor/patients/${protocol.patient_id}?section=sessions`); }}
                         className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-action-orange hover:bg-action-orange-dark transition-colors"
                       >
                         Open
