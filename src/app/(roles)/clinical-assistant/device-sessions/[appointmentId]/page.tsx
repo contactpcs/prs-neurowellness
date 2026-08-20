@@ -136,7 +136,13 @@ export default function DeviceSessionChecklistPage() {
   const allContraindicationsChecked = CONTRAINDICATION_ITEMS.every((i) => contraindications[i.code]);
   const allPatientConsentChecked = PATIENT_CONSENT_STATEMENTS.every((s) => patientConsent[s.code]);
   const allCaDeclarationChecked = CA_DECLARATION_STATEMENTS.every((s) => caDeclaration[s.code]);
-  const paymentOk = session?.payment_verified || (proceedWithoutPayment && paymentOverrideReason.trim().length > 0);
+  // "Paid" on the underlying appointment (a real payment record via the
+  // Razorpay webhook, per scheduling's AppointmentStatusUpdate) satisfies
+  // this step on its own — session.payment_verified only exists to record
+  // a CA's explicit override when the appointment ISN'T paid yet.
+  const paymentOk = appointment.status === "paid"
+    || session?.payment_verified
+    || (proceedWithoutPayment && paymentOverrideReason.trim().length > 0);
 
   const missing: string[] = [];
   if (!paymentOk) missing.push("Payment verification");
@@ -150,7 +156,7 @@ export default function DeviceSessionChecklistPage() {
 
   const persistChecklist = async () => {
     await saveChecklist({
-      payment_verified: session?.payment_verified ?? false,
+      payment_verified: paymentOk,
       payment_override_reason: proceedWithoutPayment ? paymentOverrideReason : null,
       device_brand: deviceBrand || null,
       device_serial_number: deviceSerial || null,
@@ -267,7 +273,7 @@ export default function DeviceSessionChecklistPage() {
             <CardHeader><h3 className="text-sm font-semibold text-neutral-900">1. Payment & Appointment Verification</h3></CardHeader>
             <CardContent className="space-y-3">
               <p className="text-sm text-neutral-600">Status: <span className="font-medium">{appointment.status}</span></p>
-              {!session?.payment_verified && (
+              {!paymentOk && (
                 <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
                   <label className="flex items-start gap-2 text-sm">
                     <input type="checkbox" checked={proceedWithoutPayment} onChange={(e) => setProceedWithoutPayment(e.target.checked)} className="mt-0.5" />

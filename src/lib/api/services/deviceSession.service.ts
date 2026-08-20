@@ -30,7 +30,10 @@ export const deviceSessionService = {
   },
 
   async pause(appointmentId: string, reason: PauseStopReason, detail?: string): Promise<DeviceSessionRead> {
-    const { data } = await apiClient.post(ENDPOINTS.DEVICE_SESSIONS.PAUSE(appointmentId), { reason, detail });
+    const { data } = await apiClient.post(ENDPOINTS.DEVICE_SESSIONS.PAUSE(appointmentId), {
+      pause_stop_reason: reason,
+      pause_stop_reason_detail: detail,
+    });
     return data;
   },
 
@@ -40,7 +43,10 @@ export const deviceSessionService = {
   },
 
   async stop(appointmentId: string, reason: PauseStopReason, detail?: string): Promise<DeviceSessionRead> {
-    const { data } = await apiClient.post(ENDPOINTS.DEVICE_SESSIONS.STOP(appointmentId), { reason, detail });
+    const { data } = await apiClient.post(ENDPOINTS.DEVICE_SESSIONS.STOP(appointmentId), {
+      pause_stop_reason: reason,
+      pause_stop_reason_detail: detail,
+    });
     return data;
   },
 
