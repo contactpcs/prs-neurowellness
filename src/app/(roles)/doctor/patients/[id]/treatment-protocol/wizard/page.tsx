@@ -1156,7 +1156,10 @@ function ScheduleStep({
         return sameHours ? `${dayRange}, ${first.start_time.slice(0, 5)}–${last.end_time.slice(0, 5)}` : `${activeSchedules.length} day(s) configured`;
       })()
     : "Not configured";
-  const maxCapacity = deviceSlots.length ? Math.max(...deviceSlots.map((s) => s.capacity)) : activeSchedules[0]?.capacity;
+  // Capacity now lives only on DeviceSlotRead (derived from clinic_devices.
+  // quantity at read time) — the weekly DeviceScheduleRead rows no longer
+  // carry their own number to fall back to.
+  const maxCapacity = deviceSlots.length ? Math.max(...deviceSlots.map((s) => s.capacity)) : undefined;
   const closedOverrides = deviceOverrides.filter((o) => !o.is_available);
 
   return (

@@ -249,6 +249,39 @@ export interface AvailabilitySlot {
   is_available: boolean;
 }
 
+// Device capacity is counted, not a binary lock like a doctor's slot —
+// "available" means fewer than capacity have booked it.
+export interface DeviceSlot {
+  date: string;
+  start_time: string;
+  end_time: string;
+  capacity: number;
+  booked: number;
+  remaining: number;
+  is_available: boolean;
+}
+
+export interface DeviceBusyInterval {
+  start_time: string;
+  end_time: string;
+}
+
+// Continuous booked/free view of one device's day for a specific planned
+// session — red/green timeline instead of a discrete slot list.
+// duration_minutes is that appointment's own required length (resolved
+// server-side from reference.billable_items), not chosen by the patient.
+export interface DeviceDayAvailability {
+  date: string;
+  is_open: boolean;
+  open_start: string | null;
+  open_end: string | null;
+  break_start: string | null;
+  break_end: string | null;
+  capacity: number | null;
+  duration_minutes: number;
+  busy: DeviceBusyInterval[];
+}
+
 // ─── Appointments ─────────────────────────────────────────────────
 
 // Matches backend's core.appointments status FSM exactly (scheduling/service.py

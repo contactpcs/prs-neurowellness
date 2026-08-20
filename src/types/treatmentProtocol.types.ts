@@ -76,10 +76,8 @@ export interface DeviceScheduleRead {
   day_of_week: number; // 0=Sun..6=Sat
   start_time: string;
   end_time: string;
-  slot_duration_minutes: number;
   break_start?: string | null;
   break_end?: string | null;
-  capacity: number;
   is_active: boolean;
 }
 
@@ -112,10 +110,8 @@ export interface DeviceScheduleItem {
   day_of_week: number; // 0=Sun..6=Sat
   start_time: string;  // "HH:MM:SS"
   end_time: string;
-  slot_duration_minutes: number;
   break_start?: string | null;
   break_end?: string | null;
-  capacity: number;
   is_active: boolean;
 }
 

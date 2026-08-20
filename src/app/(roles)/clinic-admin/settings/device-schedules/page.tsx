@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Clock, Plus, Trash2, CalendarX, Cpu, ChevronDown, ChevronUp } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
-import { Card, CardContent, Button, Input, Select, Modal, Skeleton, Badge } from "@/components/ui";
+import { Card, CardContent, Button, Input, Modal, Skeleton, Badge } from "@/components/ui";
 import { extractErrorMessage } from "@/lib/api/errors";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import type {
@@ -23,8 +23,6 @@ const DISPLAY_DAYS = [
   { label: "Sunday",    short: "Sun", dow: 0 },
 ];
 
-const SLOT_DURATIONS = [15, 20, 30, 45, 60].map((d) => ({ value: String(d), label: `${d} min` }));
-
 function toHHMM(t: string | null | undefined): string {
   return t ? t.slice(0, 5) : "";
 }
@@ -32,25 +30,6 @@ function toHHMM(t: string | null | undefined): string {
 function todayStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-// Working minutes in a day, minus any break — the ingredient for the
-// suggested-capacity hint. Pure arithmetic, mirrors the note in backend
-// SQL/v1/41_device_capacity_per_device.sql: capacity stays admin-typed,
-// this is only ever a shown default, never enforced.
-function suggestedCapacity(
-  quantity: number, startTime: string, endTime: string, slotMinutes: number, breakStart: string, breakEnd: string
-): number | null {
-  if (!startTime || !endTime || !slotMinutes) return null;
-  const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
-  let windowMin = toMin(endTime) - toMin(startTime);
-  if (windowMin <= 0) return null;
-  if (breakStart && breakEnd) {
-    const b = toMin(breakEnd) - toMin(breakStart);
-    if (b > 0) windowMin -= b;
-  }
-  const slotsPerDevice = Math.floor(windowMin / slotMinutes);
-  return Math.max(0, quantity * slotsPerDevice);
 }
 
 function ScheduleSkeleton() {
@@ -72,23 +51,19 @@ interface DayCfg {
   enabled: boolean;
   start_time: string;
   end_time: string;
-  slot_duration_minutes: string;
   break_start: string;
   break_end: string;
-  capacity: string;
 }
 
 function EditWeeklyScheduleForm({
   clinicId,
   clinicDeviceId,
-  quantity,
   existing,
   onSaved,
   onClose,
 }: {
   clinicId: string;
   clinicDeviceId: string;
-  quantity: number;
   existing: DeviceScheduleRead[];
   onSaved: (rows: DeviceScheduleRead[]) => void;
   onClose: () => void;
@@ -101,10 +76,8 @@ function EditWeeklyScheduleForm({
         enabled: !!row,
         start_time: toHHMM(row?.start_time) || "08:00",
         end_time: toHHMM(row?.end_time) || "17:00",
-        slot_duration_minutes: String(row?.slot_duration_minutes ?? 30),
         break_start: toHHMM(row?.break_start),
         break_end: toHHMM(row?.break_end),
-        capacity: row ? String(row.capacity) : "",
       };
     }
     return init;
@@ -118,24 +91,14 @@ function EditWeeklyScheduleForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const enabledDays = DISPLAY_DAYS.filter((dd) => cfg[dd.dow]?.enabled);
-    for (const dd of enabledDays) {
-      const c = cfg[dd.dow];
-      const cap = parseInt(c.capacity, 10);
-      if (!Number.isFinite(cap) || cap < 1) {
-        setError(`${dd.label}: capacity must be at least 1`);
-        return;
-      }
-    }
     const items: DeviceScheduleItem[] = enabledDays.map((dd) => {
       const c = cfg[dd.dow];
       return {
         day_of_week: dd.dow,
         start_time: c.start_time + ":00",
         end_time: c.end_time + ":00",
-        slot_duration_minutes: Number(c.slot_duration_minutes),
         break_start: c.break_start ? c.break_start + ":00" : null,
         break_end: c.break_end ? c.break_end + ":00" : null,
-        capacity: parseInt(c.capacity, 10),
         is_active: true,
       };
     });
@@ -157,9 +120,6 @@ function EditWeeklyScheduleForm({
       <div className="max-h-[55vh] overflow-y-auto space-y-3 pr-1">
         {DISPLAY_DAYS.map((dd) => {
           const c = cfg[dd.dow];
-          const suggested = suggestedCapacity(
-            quantity, c.start_time, c.end_time, Number(c.slot_duration_minutes) || 0, c.break_start, c.break_end
-          );
           return (
             <div
               key={dd.dow}
@@ -171,7 +131,7 @@ function EditWeeklyScheduleForm({
                 <input
                   type="checkbox"
                   checked={c.enabled}
-                  onChange={(e) => patch(dd.dow, { enabled: e.target.checked, capacity: e.target.checked && !c.capacity && suggested ? String(suggested) : c.capacity })}
+                  onChange={(e) => patch(dd.dow, { enabled: e.target.checked })}
                   className="rounded border-neutral-300"
                 />
                 <span className={`text-sm font-semibold ${c.enabled ? "text-neutral-900" : "text-neutral-400"}`}>
@@ -195,31 +155,6 @@ function EditWeeklyScheduleForm({
                     onChange={(e) => patch(dd.dow, { end_time: e.target.value })}
                     required
                   />
-                  <Select
-                    label="Slot duration"
-                    value={c.slot_duration_minutes}
-                    onChange={(e) => patch(dd.dow, { slot_duration_minutes: e.target.value })}
-                    options={SLOT_DURATIONS}
-                  />
-                  <div>
-                    <Input
-                      label="Capacity *"
-                      type="number"
-                      min={1}
-                      value={c.capacity}
-                      onChange={(e) => patch(dd.dow, { capacity: e.target.value })}
-                      required
-                    />
-                    {suggested !== null && (
-                      <button
-                        type="button"
-                        onClick={() => patch(dd.dow, { capacity: String(suggested) })}
-                        className="mt-1 text-[11px] text-blue-600 hover:underline"
-                      >
-                        Suggested: {suggested} ({quantity} device{quantity === 1 ? "" : "s"} × hours ÷ slot)
-                      </button>
-                    )}
-                  </div>
                   <Input
                     label="Break start (opt)"
                     type="time"
@@ -276,7 +211,7 @@ function AddOverrideForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (capacity && (!Number.isFinite(parseInt(capacity, 10)) || parseInt(capacity, 10) < 1)) {
-      setError("Capacity must be at least 1, or left blank to inherit the weekly template");
+      setError("Capacity must be at least 1, or left blank to use the number of devices owned");
       return;
     }
     setSubmitting(true);
@@ -332,7 +267,7 @@ function AddOverrideForm({
 
       <div>
         <label className="block text-sm font-medium text-neutral-700 mb-1.5">Capacity override</label>
-        <Input type="number" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} placeholder="Leave blank to inherit weekly capacity" />
+        <Input type="number" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} placeholder="Leave blank to use the number of devices owned" />
       </div>
 
       <div>
@@ -450,8 +385,6 @@ function DeviceCard({
                         <span className="text-neutral-400 text-xs ml-2">break {toHHMM(row.break_start)}–{toHHMM(row.break_end)}</span>
                       )}
                     </span>
-                    <span className="text-neutral-400 text-xs mr-4">{row.slot_duration_minutes}m slots</span>
-                    <span className="text-xs font-medium text-blue-700 bg-blue-50 rounded-full px-2 py-0.5">capacity {row.capacity}</span>
                   </div>
                 );
               })}
@@ -512,7 +445,6 @@ function DeviceCard({
         <EditWeeklyScheduleForm
           clinicId={clinicId}
           clinicDeviceId={device.clinic_device_id}
-          quantity={device.quantity}
           existing={device.week}
           onSaved={(week) => onWeekSaved(device.clinic_device_id, week)}
           onClose={() => setEditOpen(false)}
