@@ -220,6 +220,44 @@ export interface ElectrodeValidationResult {
   warnings: string[];
 }
 
+// ─── Step 4 — Custom montages (core.protocol_custom_montages, 38) ───
+// A doctor-authored montage, saved when the 10-20 map's freeform electrode
+// combination has no match in the curated reference.*_placements library.
+// Validated with the same electrode-shape rule a catalogue placement gets
+// (backend re-runs validate_electrodes at write time), then usable in place
+// of placement_id + dosing_id when creating a protocol (54).
+export interface CustomMontageCreate {
+  device_id: string;
+  montage_name: string;
+  /** Exactly 1 site — chk_pcm_electrode_shape. */
+  anode_sites: string[];
+  /** 1–4 sites — chk_pcm_electrode_shape. */
+  cathode_sites: string[];
+  condition_id?: string | null;
+  description?: string | null;
+  /** Required — a montage departing from the validated library carries the
+   *  reason it was chosen as part of the clinical record. */
+  clinical_reasoning: string;
+}
+
+export interface CustomMontageRead {
+  custom_montage_id: string;
+  created_by: string;
+  clinic_id?: string | null;
+  device_id: string;
+  condition_id?: string | null;
+  montage_name: string;
+  anode_sites: string[];
+  cathode_sites: string[];
+  description?: string | null;
+  clinical_reasoning: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  device_name?: string | null;
+  modality?: string | null;
+}
+
 // ─── Step 5 — Dosing ───
 export interface DosingRead {
   dosing_id: string;
@@ -313,15 +351,22 @@ export interface ProtocolConditionAssignment {
 }
 
 export interface ProtocolCreate {
-  /** A protocol hangs off a protocol INSTANCE (a course of device treatment),
-   *  and only optionally off a treatment PLAN (the anamnesis/history record).
-   *  Exactly one is required — the backend enforces the same rule via
-   *  chk_treatment_protocols_has_parent. */
-  instance_id?: string | null;
-  plan_id?: string | null;
+  /** A protocol hangs off a protocol INSTANCE (a course of device treatment)
+   *  — its only parent since 48, which dropped plan_id from protocol_plan
+   *  entirely. */
+  instance_id: string;
   device_id: string;
-  placement_id: string;
-  dosing_id: string;
+  /** Exactly one of placement_id (catalogue) or custom_montage_id
+   *  (doctor-authored, 38/54) — chk_protocol_plan_one_placement.
+   *  dosing_id is required with placement_id, and must be omitted with
+   *  custom_montage_id — chk_protocol_plan_dosing_requires_catalogue_
+   *  placement (54). A custom montage has no catalogued dosing row to
+   *  point at; the prescription is carried entirely by
+   *  prescribed_current_ma/prescribed_duration_min/ramp_seconds below,
+   *  which have always been independent of dosing_id (39). */
+  placement_id?: string | null;
+  dosing_id?: string | null;
+  custom_montage_id?: string | null;
   session_count: number;
   follow_up_every_n?: number | null;
   start_date: string;
@@ -382,8 +427,6 @@ export interface ProtocolInstanceRead {
 
 export interface ProtocolRead {
   protocol_id: string;
-  /** Nullable since the protocol was re-parented onto protocol_instances. */
-  plan_id?: string | null;
   instance_id?: string | null;
   instance_number?: number | null;
   instance_status?: string | null;
@@ -413,6 +456,7 @@ export interface ProtocolRead {
   placement_id?: string | null;
   placement_summary?: string | null;
   dosing_id?: string | null;
+  custom_montage_id?: string | null;
   appointment_count: number;
 }
 
@@ -431,6 +475,9 @@ export interface ProtocolSessionRead {
 export interface ProtocolDetail extends ProtocolRead {
   placement?: PlacementRead | null;
   dosing?: DosingRead | null;
+  /** Hydrated when custom_montage_id is set instead of placement_id/
+   *  dosing_id — mutually exclusive with placement/dosing above. */
+  custom_montage?: CustomMontageRead | null;
   sessions: ProtocolSessionRead[];
   follow_ups: ProtocolSessionRead[];
 }

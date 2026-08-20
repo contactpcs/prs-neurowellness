@@ -13,7 +13,7 @@ import { Card, CardContent, Input, Select, Button, PageLoader } from "@/componen
 import { PlacementMap } from "./PlacementMap";
 import type {
   DeviceRead, ConditionRead, DiagnosisRead, DiagnosisResolution, PlacementRead, DosingRead, ScaleRead,
-  SchedulePreview, ProtocolCreate, ProtocolScaleAssignment, ProtocolRead,
+  SchedulePreview, ProtocolCreate, ProtocolScaleAssignment, ProtocolRead, CustomMontageCreate,
   DeviceScheduleRead, DeviceOverrideRead, DeviceSlotRead,
 } from "@/types/treatmentProtocol.types";
 
@@ -33,6 +33,12 @@ interface WizardState {
   placementId: string | null;
   anodeSite: string | null;
   cathodeSites: string[];
+  /** "custom" once a freeform combination with no catalogue match has been
+   *  saved as a custom montage (customMontageId set) — see Step 4. Dosing
+   *  (Step 5) becomes manual-only in this mode: no dosingId, current/
+   *  duration/ramp are the sole prescription (54). */
+  montageMode: "catalogue" | "custom";
+  customMontageId: string | null;
   dosingId: string | null;
   currentMa: string;
   sessionDurationMin: string;
@@ -53,6 +59,7 @@ function emptyState(): WizardState {
   return {
     deviceId: null, conditionIds: [], diagnosisIds: [],
     placementId: null, anodeSite: null, cathodeSites: [],
+    montageMode: "catalogue", customMontageId: null,
     dosingId: null, currentMa: "", sessionDurationMin: "", rampSeconds: "30",
     sessionCount: "20", sessionsPerWeek: 5, followUpEveryN: "",
     startDate: todayIso(), skipDates: [], extraDates: [],
@@ -269,7 +276,11 @@ export default function TreatmentProtocolWizardPage() {
     const matched = placements.find((p) => p.anode_site === anodeSite
       && (p.cathode_site ? [p.cathode_site].join(",") === cathodeSites.join(",") : (p.return_sites || []).slice().sort().join(",") === cathodeSites.slice().sort().join(",")));
 
-    setState((s) => ({ ...s, anodeSite, cathodeSites, placementId: matched ? matched.placement_id : null }));
+    // Redrawing the map always returns to catalogue mode — a previously
+    // saved custom montage is a snapshot of one specific combination, and
+    // this new combination (matched or not) supersedes it until the doctor
+    // explicitly saves a new one via the "Save as Custom Montage" panel.
+    setState((s) => ({ ...s, anodeSite, cathodeSites, placementId: matched ? matched.placement_id : null, montageMode: "catalogue", customMontageId: null }));
 
     if (state.deviceId && anodeSite) {
       try {
@@ -282,8 +293,38 @@ export default function TreatmentProtocolWizardPage() {
   };
 
   const applyPlacement = (p: PlacementRead) => {
-    setState((s) => ({ ...s, placementId: p.placement_id, anodeSite: p.anode_site || null, cathodeSites: p.cathode_site ? [p.cathode_site] : (p.return_sites || []) }));
+    setState((s) => ({
+      ...s, placementId: p.placement_id, anodeSite: p.anode_site || null,
+      cathodeSites: p.cathode_site ? [p.cathode_site] : (p.return_sites || []),
+      montageMode: "catalogue", customMontageId: null,
+    }));
     setValidation(null);
+  };
+
+  // ─── Custom montage — save the freeform combination the doctor drew ───
+  const [savingMontage, setSavingMontage] = useState(false);
+  const [montageErr, setMontageErr] = useState<string | null>(null);
+  const saveCustomMontage = async (montageName: string, clinicalReasoning: string, description: string) => {
+    if (!state.deviceId || !state.anodeSite || state.cathodeSites.length === 0) return;
+    setMontageErr(null);
+    setSavingMontage(true);
+    try {
+      const body: CustomMontageCreate = {
+        device_id: state.deviceId,
+        montage_name: montageName,
+        anode_sites: [state.anodeSite],
+        cathode_sites: state.cathodeSites,
+        condition_id: primaryConditionId || undefined,
+        description: description || undefined,
+        clinical_reasoning: clinicalReasoning,
+      };
+      const created = await treatmentProtocolService.createCustomMontage(body);
+      setState((s) => ({ ...s, placementId: null, customMontageId: created.custom_montage_id, montageMode: "custom" }));
+    } catch (e: any) {
+      setMontageErr(e?.response?.data?.detail?.message || e?.response?.data?.message || "Couldn't save this montage — try a different name.");
+    } finally {
+      setSavingMontage(false);
+    }
   };
 
   // ─── Nav guards ───
@@ -291,8 +332,10 @@ export default function TreatmentProtocolWizardPage() {
     0: !!state.deviceId,
     1: state.conditionIds.length > 0,
     2: state.diagnosisIds.length > 0,
-    3: !!state.placementId,
-    4: !!state.dosingId && !!state.sessionCount,
+    3: !!state.placementId || !!state.customMontageId,
+    4: state.montageMode === "custom"
+      ? !!state.currentMa && !!state.sessionDurationMin && !!state.sessionCount
+      : !!state.dosingId && !!state.sessionCount,
     5: true,
     6: !!preview,
     7: false,
@@ -304,7 +347,8 @@ export default function TreatmentProtocolWizardPage() {
   // ─── Push ───
   const handlePush = async () => {
     if (!user?.doctor_id || !user?.clinic_id) { setErr("Your account has no doctor/clinic assignment — cannot create a protocol."); return; }
-    if (!state.deviceId || !state.placementId || !state.dosingId) return;
+    if (!state.deviceId || (!state.placementId && !state.customMontageId)) return;
+    if (state.montageMode === "catalogue" && !state.dosingId) return;
     setErr(null);
     setPushing(true);
     try {
@@ -340,8 +384,14 @@ export default function TreatmentProtocolWizardPage() {
       const payload: ProtocolCreate = {
         instance_id: instanceId,
         device_id: state.deviceId,
-        placement_id: state.placementId,
-        dosing_id: state.dosingId,
+        // Exactly one of placement_id (catalogue) or custom_montage_id
+        // (doctor-authored, 38/54). dosing_id only accompanies the
+        // catalogue path — a custom montage has no catalogued dose to
+        // point at, so the manual prescribed_* columns below are its sole
+        // dose source.
+        ...(state.montageMode === "custom"
+          ? { custom_montage_id: state.customMontageId }
+          : { placement_id: state.placementId, dosing_id: state.dosingId }),
         session_count: Math.max(1, Math.min(90, parseInt(state.sessionCount) || 20)),
         follow_up_every_n: state.followUpEveryN ? parseInt(state.followUpEveryN) : undefined,
         start_date: state.startDate,
@@ -526,6 +576,9 @@ export default function TreatmentProtocolWizardPage() {
                 <PlacementStep
                   placements={placements} state={state} validation={validation}
                   onApply={applyPlacement}
+                  onSaveCustomMontage={saveCustomMontage}
+                  savingMontage={savingMontage}
+                  montageErr={montageErr}
                 />
               )}
               {step === 4 && (
@@ -826,17 +879,35 @@ function DiagnosisStep({
 // Step 4 — Placement
 // ─────────────────────────────────────────────────────────────────────────
 function PlacementStep({
-  placements, state, validation, onApply,
+  placements, state, validation, onApply, onSaveCustomMontage, savingMontage, montageErr,
 }: {
   placements: PlacementRead[]; state: WizardState;
   validation: { valid: boolean; errors: string[]; warnings: string[]; maxCathodes: number } | null;
   onApply: (p: PlacementRead) => void;
+  onSaveCustomMontage: (name: string, clinicalReasoning: string, description: string) => Promise<void>;
+  savingMontage: boolean;
+  montageErr: string | null;
 }) {
+  const [showCustomForm, setShowCustomForm] = useState(false);
+  const [montageName, setMontageName] = useState("");
+  const [clinicalReasoning, setClinicalReasoning] = useState("");
+  const [description, setDescription] = useState("");
+
+  const hasFreeformCombo = state.anodeSite && state.cathodeSites.length > 0;
+  const isCustomSaved = state.montageMode === "custom" && !!state.customMontageId;
+
+  const handleSave = async () => {
+    if (!montageName.trim() || !clinicalReasoning.trim()) return;
+    await onSaveCustomMontage(montageName.trim(), clinicalReasoning.trim(), description.trim());
+    setShowCustomForm(false);
+    setMontageName(""); setClinicalReasoning(""); setDescription("");
+  };
+
   return (
     <div className="space-y-4">
       <div>
         <h2 className="text-base font-bold text-neutral-900">4 · Electrode Placement</h2>
-        <p className="text-sm text-neutral-500 mt-1">Pick a catalogued montage, or click nodes on the map at right to check a combination against the device's electrode rule.</p>
+        <p className="text-sm text-neutral-500 mt-1">Pick a catalogued montage, or click nodes on the map at right to draw your own and save it as a custom montage.</p>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -855,13 +926,39 @@ function PlacementStep({
         {placements.length === 0 && <p className="text-sm text-neutral-400">No catalogued montages for this device/condition yet.</p>}
       </div>
 
-      {!state.placementId && (state.anodeSite || state.cathodeSites.length > 0) && (
-        <div className="flex items-start gap-2.5 border border-amber-100 bg-amber-50 rounded-lg px-3.5 py-2.5">
-          <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-800 leading-relaxed">
-            This combination isn&apos;t in the catalogue for this device — it can be rule-checked but not saved as-is.
-            Select a library montage above to continue.
-          </p>
+      {isCustomSaved && (
+        <div className="flex items-start gap-2.5 border border-blue-100 bg-blue-50 rounded-lg px-3.5 py-2.5">
+          <ShieldCheck className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-blue-800 leading-relaxed">Custom montage saved — this protocol will use it instead of a catalogue placement. Redraw the map to change it.</p>
+        </div>
+      )}
+
+      {!state.placementId && !isCustomSaved && hasFreeformCombo && (
+        <div className="space-y-3">
+          <div className="flex items-start gap-2.5 border border-amber-100 bg-amber-50 rounded-lg px-3.5 py-2.5">
+            <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-800 leading-relaxed">
+              This combination isn&apos;t in the catalogue for this device. Select a library montage above,
+              or save it as a custom montage to continue with it.
+            </p>
+          </div>
+
+          {!showCustomForm ? (
+            <Button variant="outline" size="sm" onClick={() => setShowCustomForm(true)}>Save as Custom Montage</Button>
+          ) : (
+            <div className="border border-neutral-200 rounded-lg p-3.5 space-y-2.5">
+              <Input label="Montage name" value={montageName} onChange={(e) => setMontageName(e.target.value)} placeholder="e.g. Left DLPFC — modified" />
+              <Input label="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} />
+              <Input label="Clinical reasoning" value={clinicalReasoning} onChange={(e) => setClinicalReasoning(e.target.value)} placeholder="Why this montage departs from the catalogue" />
+              {montageErr && <p className="text-xs text-red-600">{montageErr}</p>}
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleSave} disabled={savingMontage || !montageName.trim() || !clinicalReasoning.trim()}>
+                  {savingMontage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Save Montage
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setShowCustomForm(false)}>Cancel</Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -887,20 +984,25 @@ function DosingStep({
   onField: <K extends keyof WizardState>(k: K, v: WizardState[K]) => void;
   onReset: () => void;
 }) {
-  const selected = dosingRows.find((d) => d.dosing_id === state.dosingId) || null;
+  const isCustom = state.montageMode === "custom";
+  const selected = isCustom ? null : dosingRows.find((d) => d.dosing_id === state.dosingId) || null;
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-bold text-neutral-900">5 · Stimulation Parameters</h2>
-          <p className="text-sm text-neutral-500 mt-1">Catalogue dose for this montage — override below only for a documented per-patient deviation.</p>
+          <p className="text-sm text-neutral-500 mt-1">
+            {isCustom
+              ? "This protocol uses a custom montage — there's no catalogued dose to reference. Enter the prescribed parameters manually."
+              : "Catalogue dose for this montage — override below only for a documented per-patient deviation."}
+          </p>
         </div>
         {selected && (
           <Button variant="outline" size="sm" onClick={onReset} className="flex-shrink-0">Reset to suggested</Button>
         )}
       </div>
 
-      {dosingRows.length > 1 && (
+      {!isCustom && dosingRows.length > 1 && (
         <div className="flex flex-wrap gap-2">
           {dosingRows.map((d) => (
             <button
@@ -1205,11 +1307,18 @@ function ReviewStep({
     },
     {
       key: "placement", icon: MapPin, title: "Placement", step: 3,
-      preview: state.anodeSite ? `${state.anodeSite} → ${state.cathodeSites.join(", ") || "—"}` : "—",
+      preview: state.anodeSite
+        ? `${state.anodeSite} → ${state.cathodeSites.join(", ") || "—"}${state.montageMode === "custom" ? " (custom)" : ""}`
+        : "—",
       rows: [
         ["Anode", state.anodeSite || "—"],
         ["Cathode", state.cathodeSites.join(", ") || "—"],
-        ["Placement ID", state.placementId ? "Catalogued montage selected" : "—"],
+        [
+          "Montage source",
+          state.montageMode === "custom"
+            ? "Custom montage (doctor-authored)"
+            : state.placementId ? "Catalogued montage selected" : "—",
+        ],
       ],
     },
     {

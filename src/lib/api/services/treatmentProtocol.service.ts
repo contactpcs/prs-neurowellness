@@ -5,6 +5,7 @@ import type {
   PlacementRead, ElectrodeValidationRequest, ElectrodeValidationResult,
   DosingRead, ScaleRead, SchedulePreviewRequest, SchedulePreview,
   ProtocolCreate, ProtocolUpdate, ProtocolRead, ProtocolDetail, ProtocolSessionRead,
+  CustomMontageCreate, CustomMontageRead,
   DeviceSessionPrsCreate, FollowUpPrsCreate, PrsResponseRead,
   TreatmentCycleRead, TreatmentPlanRead,
   DeviceScheduleRead, DeviceOverrideRead, DeviceSlotRead,
@@ -73,6 +74,36 @@ export const treatmentProtocolService = {
 
   async validatePlacement(body: ElectrodeValidationRequest): Promise<ElectrodeValidationResult> {
     const { data } = await apiClient.post(ENDPOINTS.NEUROMOD.PLACEMENTS_VALIDATE, body);
+    return data;
+  },
+
+  // ─── Step 4 — Custom montages (doctor-authored, when the freeform 10-20
+  // combination has no catalogue match) ───
+  async createCustomMontage(body: CustomMontageCreate): Promise<CustomMontageRead> {
+    const { data } = await apiClient.post(ENDPOINTS.NEUROMOD.CUSTOM_MONTAGES, body);
+    return data;
+  },
+
+  async listCustomMontages(params?: {
+    deviceId?: string; conditionId?: string; createdBy?: string; clinicId?: string; activeOnly?: boolean;
+  }): Promise<CustomMontageRead[]> {
+    const { data } = await apiClient.get(ENDPOINTS.NEUROMOD.CUSTOM_MONTAGES, {
+      params: {
+        device_id: params?.deviceId, condition_id: params?.conditionId,
+        created_by: params?.createdBy, clinic_id: params?.clinicId,
+        active_only: params?.activeOnly ?? true,
+      },
+    });
+    return Array.isArray(data) ? data : [];
+  },
+
+  async getCustomMontage(customMontageId: string): Promise<CustomMontageRead> {
+    const { data } = await apiClient.get(ENDPOINTS.NEUROMOD.CUSTOM_MONTAGE(customMontageId));
+    return data;
+  },
+
+  async deactivateCustomMontage(customMontageId: string): Promise<CustomMontageRead> {
+    const { data } = await apiClient.post(ENDPOINTS.NEUROMOD.CUSTOM_MONTAGE_DEACTIVATE(customMontageId));
     return data;
   },
 

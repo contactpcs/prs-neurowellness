@@ -217,6 +217,13 @@ export const ENDPOINTS = {
     PLACEMENTS_VALIDATE: "/neuromod/placements/validate",
     DOSING: "/neuromod/dosing",
     SCALES: "/neuromod/scales",
+    // Doctor-authored montages (core.protocol_custom_montages, 38) — saved
+    // when a freeform 10-20 electrode combination has no catalogue match,
+    // then usable in place of placement_id/dosing_id when creating a
+    // protocol (54).
+    CUSTOM_MONTAGES: "/neuromod/custom-montages",
+    CUSTOM_MONTAGE: (customMontageId: string) => `/neuromod/custom-montages/${customMontageId}`,
+    CUSTOM_MONTAGE_DEACTIVATE: (customMontageId: string) => `/neuromod/custom-montages/${customMontageId}/deactivate`,
   },
 
   // ─── Protocol instances — a COURSE of device treatment within a cycle ───
