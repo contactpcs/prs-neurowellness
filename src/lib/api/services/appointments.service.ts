@@ -1,6 +1,6 @@
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
-import type { Appointment, AppointmentStatus, AppointmentType, AvailabilitySlot } from "@/types/domain.types";
+import type { Appointment, AppointmentStatus, AppointmentType, AvailabilitySlot, DeviceSlot, DeviceDayAvailability } from "@/types/domain.types";
 
 export interface AppointmentListParams {
   date_from?: string;
@@ -186,5 +186,27 @@ export const appointmentsService = {
   async myCancel(id: string, reason: string): Promise<Appointment> {
     const { data } = await apiClient.patch(ENDPOINTS.APPOINTMENTS.MY_CANCEL(id), { reason });
     return mapAppointment(data);
+  },
+
+  // Claiming a slot for an already-existing 'planned' protocol/device
+  // session — distinct from bookInitial/bookFollowUp, which create a new
+  // appointment. This just gives a planned row a time (planned -> selected).
+  async claimSlot(id: string, payload: { start_time: string; appointment_date?: string }): Promise<Appointment> {
+    const { data } = await apiClient.patch(ENDPOINTS.APPOINTMENTS.CLAIM_SLOT(id), payload);
+    return mapAppointment(data);
+  },
+
+  async deviceAvailability(appointmentId: string, fromDate: string, toDate: string): Promise<DeviceSlot[]> {
+    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.MY_DEVICE_AVAILABILITY(appointmentId), {
+      params: { from_date: fromDate, to_date: toDate },
+    });
+    return Array.isArray(data) ? data : [];
+  },
+
+  // Continuous booked/free view for the timeline picker — always the
+  // appointment's own planned date, no date param.
+  async deviceDayAvailability(appointmentId: string): Promise<DeviceDayAvailability> {
+    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.DEVICE_DAY_AVAILABILITY(appointmentId));
+    return data;
   },
 };

@@ -1,15 +1,34 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
-  CalendarDays, Clock, Plus, CheckCircle, XCircle,
-  ChevronRight, Loader2, RefreshCw,
+  CalendarDays, Clock, Plus,
+  ChevronRight, Loader2, RefreshCw, Syringe, ClipboardList,
 } from "lucide-react";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { BookAppointmentModal } from "@/components/appointments/BookAppointmentModal";
-import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
+import { PatientMonthCalendar } from "@/components/appointments/PatientMonthCalendar";
 import { STATUS_LABEL, ACTIVE_APPOINTMENT_STATUSES } from "@/lib/appointmentStatus";
 import type { Appointment, AppointmentType } from "@/types/domain.types";
+
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function KpiCard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub?: string }) {
+  return (
+    <div className="bg-white rounded-xl p-4 border border-neutral-100 shadow-sm">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        {icon}
+        <p className="text-sm text-neutral-500">{label}</p>
+      </div>
+      <p className="text-xl font-bold text-neutral-800">{value}</p>
+      {sub && <p className="text-xs text-neutral-400 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
 
 const STATUS_COLOR: Record<string, string> = {
   planned:     "bg-neutral-100 text-neutral-500",
@@ -33,17 +52,11 @@ function fmtTime(t?: string | null) {
 }
 
 export default function PatientAppointmentsPage() {
+  const router = useRouter();
   const [appts, setAppts]             = useState<Appointment[]>([]);
   const [apptLoading, setApptLoading] = useState(true);
-  const [tab, setTab]                 = useState<"upcoming" | "all">("upcoming");
-  const [toast, setToast]             = useState<{ msg: string; ok: boolean } | null>(null);
   const [showBook, setShowBook]       = useState(false);
-  const [payingId, setPayingId]       = useState<string | null>(null);
-
-  const showToast = (msg: string, ok: boolean) => {
-    setToast({ msg, ok });
-    setTimeout(() => setToast(null), 3500);
-  };
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr());
 
   const loadAppointments = useCallback(async () => {
     setApptLoading(true);
@@ -69,8 +82,6 @@ export default function PatientAppointmentsPage() {
     const d = new Date(`${a.appointment_date}T${a.start_time || "00:00"}`);
     return d >= now && !["cancelled", "no_show", "completed"].includes(a.status);
   });
-  const displayAppts = tab === "upcoming" ? upcoming : appts;
-
   // Same gate the backend enforces (book_initial / book_follow_up): a
   // completed initial unlocks follow-ups; an initial still in flight blocks
   // booking anything new until it resolves.
@@ -80,15 +91,36 @@ export default function PatientAppointmentsPage() {
   );
   const bookableType: AppointmentType | null = hasActiveInitial ? null : hasCompletedInitial ? "follow_up" : "initial";
 
+  // KPIs: soonest upcoming visit the protocol plan calls for, and the
+  // doctor-planned device sessions still ahead.
+  const nextProtocolVisit = useMemo(
+    () =>
+      upcoming
+        .filter((a) => a.appointment_type === "protocol_followup")
+        .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())[0] ?? null,
+    [upcoming],
+  );
+  const upcomingDeviceSessions = useMemo(
+    () =>
+      upcoming
+        .filter((a) => a.appointment_type === "device_session")
+        .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()),
+    [upcoming],
+  );
+
+  const dayAppts = appts.filter((a) => a.appointment_date === selectedDate);
+
+  // A day with exactly one appointment goes straight to its detail page —
+  // no point making the patient click twice. Multiple on the same day still
+  // land on the picker list below so they can choose which one.
+  function handleSelectDate(dateStr: string) {
+    setSelectedDate(dateStr);
+    const onThatDay = appts.filter((a) => a.appointment_date === dateStr);
+    if (onThatDay.length === 1) router.push(`/patient/appointments/${onThatDay[0].appointment_id}`);
+  }
+
   return (
     <div className="space-y-6">
-      {toast && (
-        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
-          {toast.ok ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-          {toast.msg}
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -111,58 +143,58 @@ export default function PatientAppointmentsPage() {
         )}
       </div>
 
-      {/* Appointments */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex gap-2">
-            <button
-              onClick={() => setTab("upcoming")}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                tab === "upcoming" ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-              }`}
-            >
-              Upcoming {upcoming.length > 0 && `(${upcoming.length})`}
-            </button>
-            <button
-              onClick={() => setTab("all")}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                tab === "all" ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-              }`}
-            >
-              All
-            </button>
-          </div>
-          <button
-            onClick={loadAppointments}
-            className="p-1.5 rounded-lg hover:bg-neutral-100 text-neutral-400 hover:text-neutral-600 transition-colors"
-            title="Refresh"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </button>
-        </div>
+      {/* KPIs */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <KpiCard
+          icon={<ClipboardList className="h-4 w-4 text-purple-500" />}
+          label="Next Protocol Visit"
+          value={nextProtocolVisit ? fmtDate(nextProtocolVisit.appointment_date) : "None scheduled"}
+          sub={nextProtocolVisit ? fmtTime(nextProtocolVisit.start_time) : "Your doctor sets this as your protocol progresses."}
+        />
+        <KpiCard
+          icon={<Syringe className="h-4 w-4 text-orange-500" />}
+          label="Device Sessions Planned"
+          value={String(upcomingDeviceSessions.length)}
+          sub={upcomingDeviceSessions[0] ? `Next: ${fmtDate(upcomingDeviceSessions[0].appointment_date)}` : "None planned by your doctor yet."}
+        />
+      </div>
 
-        {apptLoading ? (
-          <div className="flex justify-center py-10">
-            <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
-          </div>
-        ) : displayAppts.length === 0 ? (
-          <div className="bg-white border border-neutral-200 rounded-xl px-6 py-12 text-center">
-            <CalendarDays className="h-10 w-10 text-neutral-300 mx-auto mb-3" />
-            <p className="font-medium text-neutral-600">
-              {tab === "upcoming" ? "No upcoming appointments" : "No appointments yet"}
+      {/* Calendar + day detail */}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4">
+        <PatientMonthCalendar appointments={appts} selectedDate={selectedDate} onSelectDate={handleSelectDate} />
+
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-neutral-900">
+              {selectedDate === todayStr() ? "Today" : fmtDate(selectedDate)}
             </p>
-            <p className="text-sm text-neutral-400 mt-1">
-              {bookableType ? "Use the button above to book a slot." : "Your current appointment needs to be resolved first."}
-            </p>
+            <button
+              onClick={loadAppointments}
+              className="p-1.5 rounded-lg hover:bg-neutral-100 text-neutral-400 hover:text-neutral-600 transition-colors"
+              title="Refresh"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </button>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {displayAppts.map((a) => (
-              <AppointmentCard key={a.appointment_id} appt={a} onPayClick={() => setPayingId(a.appointment_id)} />
-            ))}
-          </div>
-        )}
-      </section>
+
+          {apptLoading ? (
+            <div className="flex justify-center py-10">
+              <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
+            </div>
+          ) : dayAppts.length === 0 ? (
+            <div className="bg-white border border-neutral-200 rounded-xl px-4 py-8 text-center">
+              <CalendarDays className="h-8 w-8 text-neutral-300 mx-auto mb-2" />
+              <p className="text-sm text-neutral-500">No appointments this day.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {dayAppts.map((a) => (
+                <AppointmentRow key={a.appointment_id} appt={a} onClick={() => router.push(`/patient/appointments/${a.appointment_id}`)} />
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
 
       {showBook && bookableType && (
         <BookAppointmentModal
@@ -172,26 +204,22 @@ export default function PatientAppointmentsPage() {
           onBooked={(created) => {
             setShowBook(false);
             loadAppointments();
-            setPayingId(created.appointment_id);
+            router.push(`/patient/appointments/${created.appointment_id}`);
           }}
-        />
-      )}
-
-      {payingId && (
-        <MockPaymentModal
-          isOpen
-          appointmentId={payingId}
-          onClose={() => setPayingId(null)}
-          onPaid={() => { setPayingId(null); loadAppointments(); showToast("Appointment booked and paid.", true); }}
         />
       )}
     </div>
   );
 }
 
-function AppointmentCard({ appt, onPayClick }: { appt: Appointment; onPayClick: () => void }) {
+// Whole row navigates to the appointment's detail page — that page is
+// where payment/status/reschedule now live, this list is just a picker.
+function AppointmentRow({ appt, onClick }: { appt: Appointment; onClick: () => void }) {
   return (
-    <div className="bg-white border border-neutral-200 rounded-xl px-4 py-4 flex items-center gap-4">
+    <button
+      onClick={onClick}
+      className="w-full text-left bg-white border border-neutral-200 rounded-xl px-4 py-4 flex items-center gap-4 hover:border-neutral-300 transition-colors"
+    >
       <div className="bg-blue-50 rounded-xl p-2.5 flex-shrink-0">
         <CalendarDays className="h-5 w-5 text-blue-600" />
       </div>
@@ -223,16 +251,7 @@ function AppointmentCard({ appt, onPayClick }: { appt: Appointment; onPayClick: 
           <p className="text-xs text-neutral-400 mt-0.5 truncate">{appt.reason}</p>
         )}
       </div>
-      {appt.status === "selected" ? (
-        <button
-          onClick={onPayClick}
-          className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-brand-gradient text-white text-xs font-semibold hover:opacity-90 transition-opacity"
-        >
-          Pay Now
-        </button>
-      ) : (
-        <ChevronRight className="h-4 w-4 text-neutral-300 flex-shrink-0" />
-      )}
-    </div>
+      <ChevronRight className="h-4 w-4 text-neutral-300 flex-shrink-0" />
+    </button>
   );
 }
