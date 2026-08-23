@@ -339,17 +339,21 @@ export default function DeviceSessionChecklistPage() {
           <Card>
             <CardHeader><h3 className="text-sm font-semibold text-neutral-900">5. Contraindication & Fitness Checklist</h3></CardHeader>
             <CardContent className="space-y-2">
-              {CONTRAINDICATION_ITEMS.map((item) => (
-                <label key={item.code} className="flex items-start gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={!!contraindications[item.code]}
-                    onChange={(e) => setContraindications((prev) => ({ ...prev, [item.code]: e.target.checked }))}
-                    className="mt-0.5"
-                  />
-                  {item.label}
-                </label>
-              ))}
+              <ul className="text-sm text-neutral-600 list-disc pl-5 space-y-1">
+                {CONTRAINDICATION_ITEMS.map((item) => <li key={item.code}>{item.label}</li>)}
+              </ul>
+              <label className="flex items-start gap-2 text-sm font-medium pt-1">
+                <input
+                  type="checkbox"
+                  checked={allContraindicationsChecked}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setContraindications(Object.fromEntries(CONTRAINDICATION_ITEMS.map((i) => [i.code, checked])));
+                  }}
+                  className="mt-0.5"
+                />
+                I confirm all of the above
+              </label>
               <p className="text-xs text-neutral-400 pt-1">If any item cannot be confirmed, do not start — refer back to the doctor.</p>
             </CardContent>
           </Card>
@@ -359,33 +363,41 @@ export default function DeviceSessionChecklistPage() {
             <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-neutral-500 uppercase">Patient consent</p>
-                {PATIENT_CONSENT_STATEMENTS.map((s) => (
-                  <label key={s.code} className="flex items-start gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={!!patientConsent[s.code]}
-                      onChange={(e) => setPatientConsent((prev) => ({ ...prev, [s.code]: e.target.checked }))}
-                      className="mt-0.5"
-                    />
-                    {s.label}
-                  </label>
-                ))}
+                <ul className="text-sm text-neutral-600 list-disc pl-5 space-y-1">
+                  {PATIENT_CONSENT_STATEMENTS.map((s) => <li key={s.code}>{s.label}</li>)}
+                </ul>
+                <label className="flex items-start gap-2 text-sm font-medium">
+                  <input
+                    type="checkbox"
+                    checked={allPatientConsentChecked}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setPatientConsent(Object.fromEntries(PATIENT_CONSENT_STATEMENTS.map((s) => [s.code, checked])));
+                    }}
+                    className="mt-0.5"
+                  />
+                  I confirm all of the above
+                </label>
                 <SignatureCapture onCapture={handlePatientSignature} disabled={!allPatientConsentChecked} />
                 {session?.patient_consent && <p className="text-xs text-success-600 flex items-center gap-1"><ShieldCheck className="h-3.5 w-3.5" /> Signed</p>}
               </div>
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-neutral-500 uppercase">CA declaration</p>
-                {CA_DECLARATION_STATEMENTS.map((s) => (
-                  <label key={s.code} className="flex items-start gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={!!caDeclaration[s.code]}
-                      onChange={(e) => setCaDeclaration((prev) => ({ ...prev, [s.code]: e.target.checked }))}
-                      className="mt-0.5"
-                    />
-                    {s.label}
-                  </label>
-                ))}
+                <ul className="text-sm text-neutral-600 list-disc pl-5 space-y-1">
+                  {CA_DECLARATION_STATEMENTS.map((s) => <li key={s.code}>{s.label}</li>)}
+                </ul>
+                <label className="flex items-start gap-2 text-sm font-medium">
+                  <input
+                    type="checkbox"
+                    checked={allCaDeclarationChecked}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setCaDeclaration(Object.fromEntries(CA_DECLARATION_STATEMENTS.map((s) => [s.code, checked])));
+                    }}
+                    className="mt-0.5"
+                  />
+                  I confirm all of the above
+                </label>
                 <SignatureCapture onCapture={handleCaSignature} disabled={!allCaDeclarationChecked} />
                 {session?.ca_declaration && <p className="text-xs text-success-600 flex items-center gap-1"><ShieldCheck className="h-3.5 w-3.5" /> Signed</p>}
               </div>

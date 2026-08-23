@@ -80,8 +80,6 @@ export default function DoctorPatientDetailPage() {
   const isLoading = patientLoading;
 
   const selectedSection = searchParams.get("section") ?? "anamnesis";
-  const tabParam = parseInt(searchParams.get("tab") ?? "0", 10);
-  const selectedAssessmentTab = Number.isFinite(tabParam) && tabParam >= 0 ? tabParam : 0;
 
   const updateQuery = useCallback(
     (updates: Record<string, string | null>) => {
@@ -98,10 +96,6 @@ export default function DoctorPatientDetailPage() {
 
   const setSelectedSection = useCallback(
     (s: string) => updateQuery({ section: s === "anamnesis" ? null : s }),
-    [updateQuery],
-  );
-  const setSelectedAssessmentTab = useCallback(
-    (idx: number) => updateQuery({ tab: idx === 0 ? null : String(idx) }),
     [updateQuery],
   );
   const [basicOpen, setBasicOpen] = useState(true);
@@ -313,32 +307,8 @@ export default function DoctorPatientDetailPage() {
           </div>
         </div>
 
-        {/* Assessment Tabs and Content */}
+        {/* Assessment Content */}
         <div className="space-y-6">
-          {/* Tabs */}
-          <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto pb-1 scrollbar-none">
-            <div className="px-4 py-2 bg-neutral-900 text-white font-medium rounded-lg text-sm">
-              Today's Activity
-            </div>
-            {assessments.slice(0, 2).map((a, idx) => (
-              <button
-                key={idx}
-                onClick={() => setSelectedAssessmentTab(idx)}
-                className={`px-4 py-2 font-medium rounded-lg text-sm flex items-center gap-2 transition-colors ${
-                  selectedAssessmentTab === idx
-                    ? "bg-neutral-900 text-white"
-                    : "bg-white text-neutral-700 border border-neutral-200 hover:border-neutral-300"
-                }`}
-              >
-                {a.disease_name}
-                {a.status === "completed" && <Check className="w-4 h-4" />}
-              </button>
-            ))}
-            <button className="px-3 py-2 border border-neutral-300 text-neutral-600 rounded-lg hover:bg-neutral-50 transition-colors">
-              <Plus className="w-5 h-5" />
-            </button>
-          </div>
-
           {/* Main Content Area */}
           <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 min-h-96">
             {/* Left Sidebar - Assessment Sections */}
