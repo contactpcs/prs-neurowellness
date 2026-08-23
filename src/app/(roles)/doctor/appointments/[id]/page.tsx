@@ -60,6 +60,37 @@ function StatusBadge({ status }: { status: AppointmentStatus }) {
   );
 }
 
+// ─── Device session notice ────────────────────────────────────────────────────
+
+function DeviceSessionNotice({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+        <div className="flex items-start justify-between px-5 py-4 border-b border-neutral-100">
+          <h3 className="text-base font-semibold text-neutral-900">Device Session</h3>
+          <button onClick={onClose} className="p-1 text-neutral-400 hover:text-neutral-600 rounded-lg hover:bg-neutral-100">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="px-5 py-4">
+          <p className="text-sm text-neutral-600">
+            This appointment is a device session. It is started and completed by the clinical assistant running it, not by the doctor.
+          </p>
+        </div>
+        <div className="flex items-center justify-end px-5 py-4 border-t border-neutral-100">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-opacity hover:opacity-90"
+            style={{ background: BRAND }}
+          >
+            Got it
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Cancel dialog ────────────────────────────────────────────────────────────
 
 function CancelDialog({
@@ -220,6 +251,7 @@ export default function AppointmentDetailPage() {
   const [showCancel,      setShowCancel]      = useState(false);
   const [showReschedule,  setShowReschedule]  = useState(false);
   const [showPay,         setShowPay]         = useState(false);
+  const [showDeviceNotice, setShowDeviceNotice] = useState(false);
   const [editingNotes,    setEditingNotes]    = useState(false);
   const [notesVal,        setNotesVal]        = useState("");
   const [history,         setHistory]         = useState<any[]>([]);
@@ -275,6 +307,13 @@ export default function AppointmentDetailPage() {
   // appointment.doctor_id is profiles.id — /doctors/{doctor_id}/availability
   // expects doctors.doctor_id (public ID) instead, hence doctor_public_id.
   const docId  = appointment.doctor_public_id;
+
+  // A device_session has no treating doctor by design (scheduling/service.py
+  // _authorize_transition: "administered by a clinical assistant... has NO
+  // treating doctor"). Only a clinical_assistant/super_admin may start or
+  // complete one, so clicking Start/Complete here (doctor-only route) opens
+  // an explanatory popup instead of hitting the API and surfacing a raw 403.
+  const isDeviceSession = appointment.appointment_type === "device_session";
 
   // Status-based action availability — mirrors the server's allowed-from
   // matrix (scheduling/service.py::_ALLOWED_FROM) so a visible button never
@@ -472,7 +511,7 @@ export default function AppointmentDetailPage() {
                   label="Start Consultation"
                   color="brand"
                   busy={busy}
-                  onClick={() => run(start, "Start")}
+                  onClick={() => (isDeviceSession ? setShowDeviceNotice(true) : run(start, "Start"))}
                 />
               )}
               {canComplete && (
@@ -481,7 +520,7 @@ export default function AppointmentDetailPage() {
                   label="Mark Complete"
                   color="green"
                   busy={busy}
-                  onClick={() => run(complete, "Complete")}
+                  onClick={() => (isDeviceSession ? setShowDeviceNotice(true) : run(complete, "Complete"))}
                 />
               )}
               {canReschedule && (
@@ -551,6 +590,7 @@ export default function AppointmentDetailPage() {
       </div>
 
       {/* Modals */}
+      {showDeviceNotice && <DeviceSessionNotice onClose={() => setShowDeviceNotice(false)} />}
       {showCancel && (
         <CancelDialog
           busy={busy}

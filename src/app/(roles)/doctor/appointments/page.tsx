@@ -10,9 +10,21 @@ import type { Appointment, AppointmentStatus } from "@/types/domain.types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const STATUS_FILTERS: (AppointmentStatus | "all")[] = [
-  "all", "selected", "paid", "checked_in", "in_progress", "completed", "cancelled", "no_show",
+// "device_sessions" is a type filter, not a status one — a device session has
+// no treating doctor (scheduling/service.py) and is run by a clinical
+// assistant, not started/completed from here, so it lives in its own filter
+// rather than mixed into the regular initial/follow_up/protocol_followup list.
+type FilterValue = AppointmentStatus | "all" | "device_sessions";
+
+const STATUS_FILTERS: FilterValue[] = [
+  "all", "selected", "paid", "checked_in", "in_progress", "completed", "cancelled", "no_show", "device_sessions",
 ];
+
+function filterLabel(f: FilterValue): string {
+  if (f === "all") return "All";
+  if (f === "device_sessions") return "Device Sessions";
+  return STATUS_LABEL[f];
+}
 
 function humanize(s: string): string {
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -56,7 +68,7 @@ function Field({ label, value }: { label: string; value: string }) {
 export default function DoctorAppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading,      setLoading]      = useState(true);
-  const [status,       setStatus]       = useState<AppointmentStatus | "all">("all");
+  const [status,       setStatus]       = useState<FilterValue>("all");
   const [q,            setQ]            = useState("");
   const [selId,        setSelId]        = useState<string | null>(null);
 
@@ -83,10 +95,17 @@ export default function DoctorAppointmentsPage() {
   const filtered = useMemo(() => {
     const query = q.toLowerCase();
     return [...appointments]
-      .filter((a) => status === "all" || a.status === status)
+      .filter((a) =>
+        status === "device_sessions"
+          ? a.appointment_type === "device_session"
+          : a.appointment_type !== "device_session" && (status === "all" || a.status === status)
+      )
       .filter((a) => !query || `${a.appointment_id} ${a.patient_name ?? ""} ${a.appointment_type ?? ""}`.toLowerCase().includes(query))
       .sort((a, b) => {
-        const dc = (b.appointment_date || "").localeCompare(a.appointment_date || "");
+        // Date-wise then time-wise, chronological (soonest first) — was
+        // sorting newest-date-first, which mixed dates and times in a way
+        // that didn't read as a straightforward schedule.
+        const dc = (a.appointment_date || "").localeCompare(b.appointment_date || "");
         return dc !== 0 ? dc : (a.start_time || "").localeCompare(b.start_time || "");
       });
   }, [appointments, status, q]);
@@ -125,7 +144,7 @@ export default function DoctorAppointmentsPage() {
                 : "h-8 px-3.5 rounded-full text-[11.5px] font-medium bg-neutral-100 text-neutral-600"
             }
           >
-            {s === "all" ? "All" : STATUS_LABEL[s]}
+            {filterLabel(s)}
           </button>
         ))}
       </div>

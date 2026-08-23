@@ -254,14 +254,6 @@ export const ENDPOINTS = {
     PRS_LIST: (id: string) => `/treatment-protocols/${id}/prs`,
   },
 
-  // ─── Clinical (treatment cycles/plans — treatment_protocols.plan_id FK dependency) ───
-  CLINICAL: {
-    CYCLES: "/treatment-cycles",
-    CYCLE_STATUS: (cycleId: string) => `/treatment-cycles/${cycleId}/status`,
-    PLANS: "/treatment-plans",
-    PLAN: (planId: string) => `/treatment-plans/${planId}`,
-  },
-
   // ─── Clinic device schedule (Treatment Protocol wizard step 7 availability panel,
   // and Settings → Device Schedule for clinic-admin CRUD) ───
   // One pool per DEVICE the clinic owns (clinic_device_id), not one blanket

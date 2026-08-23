@@ -7,7 +7,6 @@ import type {
   ProtocolCreate, ProtocolUpdate, ProtocolRead, ProtocolDetail, ProtocolSessionRead,
   CustomMontageCreate, CustomMontageRead,
   DeviceSessionPrsCreate, FollowUpPrsCreate, PrsResponseRead,
-  TreatmentCycleRead, TreatmentPlanRead,
   DeviceScheduleRead, DeviceOverrideRead, DeviceSlotRead,
   DeviceScheduleReplace, DeviceOverrideCreate, ClinicDeviceScheduleOverview,
 } from "@/types/treatmentProtocol.types";
@@ -191,94 +190,34 @@ export const treatmentProtocolService = {
 
   // ─── protocol instances ───
 
-  async listProtocolInstances(params: { patientId?: string; cycleId?: string; status?: string } = {}) {
+  async listProtocolInstances(params: { patientId?: string; status?: string } = {}) {
     const { data } = await apiClient.get(ENDPOINTS.PROTOCOL_INSTANCES.LIST, {
-      params: { patient_id: params.patientId, cycle_id: params.cycleId, status: params.status },
+      params: { patient_id: params.patientId, status: params.status },
     });
     return Array.isArray(data) ? data : [];
   },
 
-  /** Resolves the CYCLE for a patient, then opens a protocol instance on it.
-   *
-   *  A treatment CYCLE is the episode of care — one active per patient, and
-   *  long-lived. A protocol INSTANCE is one course of device treatment, and a
-   *  cycle can have several over time. "Start New Treatment Protocol" means a
-   *  new instance, never a new cycle; creating a cycle each time is what
-   *  produced "Patient already has an active treatment cycle".
-   *
-   *  A cycle is only created when the patient genuinely has none.
+  /** Opens (or reuses) the patient's protocol instance directly — no more
+   *  separate treatment-cycle step. The backend retired core.treatment_cycles
+   *  (58): protocol_instances now carries patient/doctor/clinic itself and
+   *  enforces one open (draft/active) instance per PATIENT, so "Start New
+   *  Treatment Protocol" just means reuse-or-create on that rule.
    */
   async resolveOrCreateInstanceId(opts: {
     patientId: string;
     doctorId: string;
     clinicId: string;
   }): Promise<string> {
-    const { data: cycles } = await apiClient.get<TreatmentCycleRead[]>(ENDPOINTS.CLINICAL.CYCLES, {
-      params: { patient_id: opts.patientId },
-    });
-    let cycle = (Array.isArray(cycles) ? cycles : []).find((c) => c.status !== "completed" && c.status !== "cancelled");
-    if (!cycle) {
-      const { data } = await apiClient.post(ENDPOINTS.CLINICAL.CYCLES, {
-        patient_id: opts.patientId,
-        doctor_id: opts.doctorId,
-        clinic_id: opts.clinicId,
-        cycle_type: "initial",
-        cycle_number: 1,
-      });
-      cycle = data;
-    }
-
-    // uq_protocol_instances_one_active allows one draft/active instance per
-    // cycle, so reuse the open one rather than colliding with it.
-    const open = await this.listProtocolInstances({ cycleId: cycle!.cycle_id });
+    const open = await this.listProtocolInstances({ patientId: opts.patientId });
     const existing = open.find((i: any) => i.status === "draft" || i.status === "active");
     if (existing) return existing.instance_id;
 
     const { data: created } = await apiClient.post(ENDPOINTS.PROTOCOL_INSTANCES.CREATE, {
-      cycle_id: cycle!.cycle_id,
-    });
-    return created.instance_id;
-  },
-
-  // ─── plan_id resolution — KEPT for the amend path and for anything still
-  // creating a protocol against a plan. Since 45 a protocol hangs off an
-  // instance and plan_id is optional, so new pushes use
-  // resolveOrCreateInstanceId above instead. ───
-  async resolveOrCreatePlanId(opts: {
-    patientId: string;
-    doctorId: string;
-    clinicId: string;
-    deviceType: string;
-    sessionCount: number;
-  }): Promise<string> {
-    const { data: cycles } = await apiClient.get<TreatmentCycleRead[]>(ENDPOINTS.CLINICAL.CYCLES, { params: { patient_id: opts.patientId } });
-    let cycle = (Array.isArray(cycles) ? cycles : []).find((c) => c.status !== "completed" && c.status !== "cancelled");
-    if (!cycle) {
-      const { data } = await apiClient.post(ENDPOINTS.CLINICAL.CYCLES, {
-        patient_id: opts.patientId,
-        doctor_id: opts.doctorId,
-        clinic_id: opts.clinicId,
-        cycle_type: "initial",
-        cycle_number: 1,
-      });
-      cycle = data;
-    }
-
-    const { data: plans } = await apiClient.get<TreatmentPlanRead[]>(ENDPOINTS.CLINICAL.PLANS, {
-      params: { patient_id: opts.patientId, cycle_id: cycle!.cycle_id },
-    });
-    const existingPlan = (Array.isArray(plans) ? plans : []).find((p) => p.status === "active" && p.cycle_id === cycle!.cycle_id);
-    if (existingPlan) return existingPlan.plan_id;
-
-    const { data: plan } = await apiClient.post<TreatmentPlanRead>(ENDPOINTS.CLINICAL.PLANS, {
       patient_id: opts.patientId,
       doctor_id: opts.doctorId,
-      cycle_id: cycle!.cycle_id,
-      device_type: opts.deviceType,
-      sessions_prescribed: opts.sessionCount,
-      standard_sessions: opts.sessionCount,
+      clinic_id: opts.clinicId,
     });
-    return plan.plan_id;
+    return created.instance_id;
   },
 
   // ─── Clinic device schedule — one pool per DEVICE the clinic owns, not one
