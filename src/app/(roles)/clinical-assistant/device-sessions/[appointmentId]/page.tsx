@@ -11,7 +11,7 @@ import { PlacementMap } from "@/app/(roles)/doctor/patients/[id]/treatment-proto
 import { SignatureCapture } from "@/components/deviceSession/SignatureCapture";
 import type { Appointment } from "@/types/domain.types";
 import type { ProtocolDetail } from "@/types/treatmentProtocol.types";
-import type { ConsentBlock } from "@/types/deviceSession.types";
+import type { ConsentBlock, DeviceSessionChecklistUpdate } from "@/types/deviceSession.types";
 
 /** Mirrors TreatmentProtocolPanel's convention: the wizard writes
  * "Reason: <label> — <note>" into the one free-text notes field the real
