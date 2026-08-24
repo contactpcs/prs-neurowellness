@@ -140,6 +140,13 @@ export default function DeviceSessionLivePage() {
   const nextSessionDone = !!session.next_session_confirmation;
   const timerDone = remaining <= 0;
   const canComplete = timerDone && deviceFitDone && scalesResolved && feedbackDone && nextSessionDone;
+  const missingGates = [
+    !timerDone && "timer hasn't reached 0",
+    !deviceFitDone && "device-fit checklist incomplete",
+    !scalesResolved && "scales not yet resolved",
+    !feedbackDone && "patient feedback not recorded",
+    !nextSessionDone && "next session not confirmed",
+  ].filter(Boolean) as string[];
 
   const handleSaveFeedback = async () => {
     if (!feedbackComfort || !feedbackFeltAfter || !feedbackNextIntensity) return;
@@ -206,7 +213,7 @@ export default function DeviceSessionLivePage() {
                 size="sm"
                 onClick={async () => { await complete(); router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`); }}
                 disabled={!canComplete}
-                title={!canComplete ? "Complete the timer, device-fit checklist, scales, feedback and next-session confirmation first" : undefined}
+                title={missingGates.length ? `Still needed: ${missingGates.join(", ")}` : undefined}
               >
                 <CheckCircle2 className="h-3.5 w-3.5" /> Mark Session as Completed
               </Button>
@@ -214,6 +221,11 @@ export default function DeviceSessionLivePage() {
           </div>
 
           <CountdownTimer remainingSeconds={remaining} totalSeconds={totalSeconds} sessionStatus={session.session_status} />
+          {missingGates.length > 0 && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+              Still needed before completing: {missingGates.join(", ")}.
+            </p>
+          )}
 
           {session.session_status === "paused" && (
             <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
