@@ -94,12 +94,35 @@ export default function DeviceSessionLivePage() {
   const rampSec = protocol?.ramp_seconds ?? 0;
   const totalSeconds = prescribedDuration * 60 + rampSec * 2;
 
+  // Ticks once a second so `remaining` (and therefore canComplete's
+  // timerDone gate below) actually reaches 0 in real time — CountdownTimer
+  // has its own internal tick for the DISPLAY, but that's a separate
+  // component's local state; this page's own `remaining` was a useMemo
+  // that only recomputed on session/totalSeconds changes, so it stayed
+  // frozen at whatever it was right after the last reload and "Mark as
+  // Completed" could stay disabled forever even once the visible timer hit
+  // 00:00.
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (session?.session_status !== "in_progress") return;
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [session?.session_status]);
+
   const remaining = useMemo(() => {
     if (!session) return totalSeconds;
     if (!session.started_at) return totalSeconds;
+    if (session.session_status === "paused" && session.paused_at) {
+      const elapsedMs = new Date(session.paused_at).getTime() - new Date(session.started_at).getTime();
+      return Math.max(0, Math.round(totalSeconds - elapsedMs / 1000));
+    }
     const elapsedMs = Date.now() - new Date(session.started_at).getTime();
     return Math.max(0, Math.round(totalSeconds - elapsedMs / 1000));
-  }, [session, totalSeconds]);
+    // tick is a deliberate dependency, not read in the body — it forces
+    // this memo to recompute every second while in_progress instead of
+    // staying frozen at the value from the last session reload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, totalSeconds, tick]);
 
   if (!appointment || isLoading || !session) return <PageLoader />;
 
