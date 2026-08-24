@@ -106,6 +106,12 @@ export default function DeviceSessionChecklistPage() {
     if (session.actual_ramp_down_sec != null) setRampDown(String(session.actual_ramp_down_sec));
     setMontageVerified(session.montage_verified);
     setContraindications(session.contraindication_checklist ?? {});
+    if (session.patient_consent) {
+      setPatientConsent(Object.fromEntries(session.patient_consent.statements.map((s) => [s.code, s.confirmed])));
+    }
+    if (session.ca_declaration) {
+      setCaDeclaration(Object.fromEntries(session.ca_declaration.statements.map((s) => [s.code, s.confirmed])));
+    }
   }, [session]);
 
   if (loadError) {
@@ -154,23 +160,30 @@ export default function DeviceSessionChecklistPage() {
 
   const canStart = missing.length === 0;
 
+  // Every field the "sync from session" effect above can overwrite on
+  // reload. Any saveChecklist call that omits one of these risks the next
+  // reload stomping an unsaved local checkbox/input back to whatever was
+  // last persisted — see currentChecklistFields' callers for why every
+  // save goes through here instead of a partial payload.
+  const currentChecklistFields = (): DeviceSessionChecklistUpdate => ({
+    payment_verified: paymentOk,
+    payment_override_reason: proceedWithoutPayment ? paymentOverrideReason : null,
+    device_brand: deviceBrand || null,
+    device_serial_number: deviceSerial || null,
+    actual_intensity_ma: intensity ? Number(intensity) : null,
+    intensity_deviates: intensityDeviates,
+    actual_duration_min: duration ? Number(duration) : null,
+    duration_deviates: durationDeviates,
+    actual_ramp_up_sec: rampUp ? Number(rampUp) : null,
+    ramp_up_deviates: rampUpDeviates,
+    actual_ramp_down_sec: rampDown ? Number(rampDown) : null,
+    ramp_down_deviates: rampDownDeviates,
+    montage_verified: montageVerified,
+    contraindication_checklist: contraindications,
+  });
+
   const persistChecklist = async () => {
-    await saveChecklist({
-      payment_verified: paymentOk,
-      payment_override_reason: proceedWithoutPayment ? paymentOverrideReason : null,
-      device_brand: deviceBrand || null,
-      device_serial_number: deviceSerial || null,
-      actual_intensity_ma: intensity ? Number(intensity) : null,
-      intensity_deviates: intensityDeviates,
-      actual_duration_min: duration ? Number(duration) : null,
-      duration_deviates: durationDeviates,
-      actual_ramp_up_sec: rampUp ? Number(rampUp) : null,
-      ramp_up_deviates: rampUpDeviates,
-      actual_ramp_down_sec: rampDown ? Number(rampDown) : null,
-      ramp_down_deviates: rampDownDeviates,
-      montage_verified: montageVerified,
-      contraindication_checklist: contraindications,
-    });
+    await saveChecklist(currentChecklistFields());
   };
 
   const handlePatientSignature = async (dataUrl: string) => {
@@ -179,7 +192,11 @@ export default function DeviceSessionChecklistPage() {
       signature: dataUrl,
       signed_at: new Date().toISOString(),
     };
-    await saveChecklist({ patient_consent: block });
+    // Includes every other field, not just patient_consent — otherwise the
+    // reload this triggers refetches session and the sync effect stomps
+    // any checkbox/input the CA had filled in but not yet saved back to
+    // whatever was last persisted (the actual bug this fixes).
+    await saveChecklist({ ...currentChecklistFields(), patient_consent: block });
   };
 
   const handleCaSignature = async (dataUrl: string) => {
@@ -188,7 +205,7 @@ export default function DeviceSessionChecklistPage() {
       signature: dataUrl,
       signed_at: new Date().toISOString(),
     };
-    await saveChecklist({ ca_declaration: block });
+    await saveChecklist({ ...currentChecklistFields(), ca_declaration: block });
   };
 
   const handleStart = async () => {
