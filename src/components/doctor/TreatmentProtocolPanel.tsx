@@ -6,6 +6,7 @@ import { ArrowLeft, ChevronRight, Plus } from "lucide-react";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { Card, CardContent, Badge, PageLoader, Button, DetailFieldList } from "@/components/ui";
 import { deviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
+import { SessionReviewPanel } from "@/components/doctor/SessionReviewPanel";
 import type { ProtocolRead, ProtocolDetail, ProtocolSessionRead } from "@/types/treatmentProtocol.types";
 
 function fmtDate(iso?: string | null): string {
@@ -86,17 +87,17 @@ function ElectrodeChips({ detail }: { detail: ProtocolDetail }) {
  * shown separately since they're a different appointment_type ("protocol_
  * followup") from device sessions, booked either directly by the patient
  * or auto-scheduled by the protocol's follow-up cadence. */
-function SessionsList({ detail }: { detail: ProtocolDetail }) {
+function SessionsList({ detail, onOpenSession }: { detail: ProtocolDetail; onOpenSession?: (appointmentId: string) => void }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const sessions = detail.sessions.slice().sort((a, b) => (a.session_number ?? 0) - (b.session_number ?? 0));
   const followUps = detail.follow_ups.slice().sort((a, b) => (a.appointment_date || "").localeCompare(b.appointment_date || ""));
 
-  const Row = ({ s, label }: { s: ProtocolSessionRead; label: string }) => {
+  const Row = ({ s, label, openable }: { s: ProtocolSessionRead; label: string; openable?: boolean }) => {
     const open = openId === s.appointment_id;
     return (
       <div key={s.appointment_id} className="border-b border-neutral-100 last:border-0">
         <button
-          onClick={() => setOpenId(open ? null : s.appointment_id)}
+          onClick={() => (openable && onOpenSession ? onOpenSession(s.appointment_id) : setOpenId(open ? null : s.appointment_id))}
           className="w-full grid grid-cols-[70px_1fr_1fr_1fr_140px] gap-3 items-center px-4 py-3 text-left hover:bg-neutral-50 transition-colors"
         >
           <span className="text-sm font-bold text-neutral-900">{label}</span>
@@ -141,7 +142,7 @@ function SessionsList({ detail }: { detail: ProtocolDetail }) {
               <div className="grid grid-cols-[70px_1fr_1fr_1fr_140px] gap-3 px-4 py-2 bg-neutral-50 text-[10px] font-semibold text-neutral-500 uppercase tracking-wide">
                 <span>Session</span><span>Date</span><span>Time</span><span>Assistant</span><span>Status</span>
               </div>
-              {sessions.map((s) => <Row key={s.appointment_id} s={s} label={s.session_number != null ? `#${s.session_number}` : "—"} />)}
+              {sessions.map((s) => <Row key={s.appointment_id} s={s} label={s.session_number != null ? `#${s.session_number}` : "—"} openable />)}
             </>
           )}
         </CardContent>
@@ -214,6 +215,7 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
   const [detail, setDetail] = useState<ProtocolDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [openSessionId, setOpenSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     setIsLoading(true);
@@ -353,7 +355,22 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
           )}
 
           {tab === "sessions" && (
-            !detail ? <DetailPending /> : <SessionsList detail={detail} />
+            !detail ? (
+              <DetailPending />
+            ) : openSessionId && detail.sessions.some((s) => s.appointment_id === openSessionId) ? (
+              <SessionReviewPanel
+                patientId={patientId}
+                patientName={active?.patient_name}
+                protocol={detail}
+                session={detail.sessions.find((s) => s.appointment_id === openSessionId)!}
+                sessions={detail.sessions}
+                onBack={() => setOpenSessionId(null)}
+                onSelectSession={setOpenSessionId}
+                onOpenProtocol={() => { setOpenSessionId(null); setTab("active"); }}
+              />
+            ) : (
+              <SessionsList detail={detail} onOpenSession={setOpenSessionId} />
+            )
           )}
 
           {tab === "history" && !historyDetailId && (
@@ -462,6 +479,7 @@ export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
   const [detail, setDetail] = useState<ProtocolDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [openSessionId, setOpenSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     setIsLoading(true);
@@ -484,6 +502,20 @@ export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
   }, [active]);
 
   if (isLoading) return <PageLoader />;
+
+  if (detail && openSessionId && detail.sessions.some((s) => s.appointment_id === openSessionId)) {
+    return (
+      <SessionReviewPanel
+        patientId={patientId}
+        patientName={active?.patient_name}
+        protocol={detail}
+        session={detail.sessions.find((s) => s.appointment_id === openSessionId)!}
+        sessions={detail.sessions}
+        onBack={() => setOpenSessionId(null)}
+        onSelectSession={setOpenSessionId}
+      />
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -518,7 +550,7 @@ export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
           {detailError || "Couldn't load session detail."}
         </div>
       ) : (
-        <SessionsList detail={detail} />
+        <SessionsList detail={detail} onOpenSession={setOpenSessionId} />
       )}
     </div>
   );
