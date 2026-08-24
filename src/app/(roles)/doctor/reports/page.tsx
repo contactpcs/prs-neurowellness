@@ -91,7 +91,7 @@ export default function DoctorReportsPage() {
             {protocols.map((p) => (
               <div
                 key={p.protocol_id}
-                onClick={() => p.patient_id && router.push(`/doctor/patients/${p.patient_id}/treatment-protocol`)}
+                onClick={() => p.patient_id && router.push(`/doctor/patients/${p.patient_public_id ?? p.patient_id}/treatment-protocol`)}
                 className="flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-neutral-50 cursor-pointer transition-colors"
               >
                 <div>

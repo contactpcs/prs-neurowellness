@@ -95,7 +95,7 @@ export default function DoctorSessionsPage() {
                 {filtered.map(({ protocol, sessions, current }) => (
                   <tr
                     key={protocol.protocol_id}
-                    onClick={() => protocol.patient_id && router.push(`/doctor/patients/${protocol.patient_id}?section=sessions`)}
+                    onClick={() => protocol.patient_id && router.push(`/doctor/patients/${protocol.patient_public_id ?? protocol.patient_id}?section=sessions`)}
                     className="hover:bg-neutral-50 cursor-pointer transition-colors"
                   >
                     <td className="px-5 py-4">
@@ -118,7 +118,7 @@ export default function DoctorSessionsPage() {
                     </td>
                     <td className="px-5 py-2 text-right">
                       <button
-                        onClick={(e) => { e.stopPropagation(); protocol.patient_id && router.push(`/doctor/patients/${protocol.patient_id}?section=sessions`); }}
+                        onClick={(e) => { e.stopPropagation(); protocol.patient_id && router.push(`/doctor/patients/${protocol.patient_public_id ?? protocol.patient_id}?section=sessions`); }}
                         className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-action-orange hover:bg-action-orange-dark transition-colors"
                       >
                         Open

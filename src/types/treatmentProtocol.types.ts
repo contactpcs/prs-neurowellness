@@ -445,6 +445,9 @@ export interface ProtocolRead {
   modality?: string | null;
   company_name?: string | null;
   patient_id?: string | null;
+  /** patients.patient_id — GET /doctor/patients/{id} and other patient-scoped
+   *  routes expect this, not patient_id above (which is profiles.id). */
+  patient_public_id?: string | null;
   patient_name?: string | null;
   doctor_id?: string | null;
   doctor_name?: string | null;
