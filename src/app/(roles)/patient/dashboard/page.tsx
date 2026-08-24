@@ -360,7 +360,7 @@ function PatientDashboard() {
               <Zap className="w-3 h-3 text-orange-400" />
               NW Assistant can find the best available slot for you.
             </div>
-            <Link href="/patient/appointments/request" className="mt-auto w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium hover:opacity-90 transition-opacity" style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}>
+            <Link href="/patient/appointments" className="mt-auto w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium hover:opacity-90 transition-opacity" style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}>
               <Zap className="w-3.5 h-3.5" /> Book appointment
             </Link>
           </div>
