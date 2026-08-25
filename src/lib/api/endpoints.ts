@@ -52,6 +52,7 @@ export const ENDPOINTS = {
     PATIENT_RESULT: (_patientId: string, instanceId: string) => `/prs-assessment-instances/${instanceId}/results`, // real (patientId unused, instance-keyed)
     GRANT_ASSESSMENT: (_patientId: string) => `/patient-scale-assignments`, // real, but per-scale POST (see doctors.service.ts)
     AVAILABILITY: "/doctors/availability", // NOT AVAILABLE — real toggle needs PATCH /doctors/{own_doctor_id}, id not resolvable here
+    VISIT_SUMMARY: (patientId: string, appointmentId: string) => `/patients/${patientId}/visits/${appointmentId}/summary`, // real
   },
 
   // ─── Patients (patient-role self views) ───

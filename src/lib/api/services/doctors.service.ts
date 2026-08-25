@@ -1,7 +1,23 @@
 import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
-import type { DoctorDashboard, PatientListItem, PatientDetail } from "@/types/domain.types";
+import type { DoctorDashboard, PatientListItem, PatientDetail, AnamnesisRecord } from "@/types/domain.types";
+import type { ProtocolRead } from "@/types/treatmentProtocol.types";
 import { fetchInstanceScoreDetail, type InstanceScoreDetail } from "./scores.service";
+
+/** GET /patients/{id}/visits/{appointmentId}/summary — everything tied to
+ * one visit. `inherited: true` on a PRS/protocol record means it's carried
+ * forward from an earlier visit, not authored at this one; anamnesis is
+ * never inherited (null means "no anamnesis taken" at this visit, except
+ * the initial visit which always resolves to version 1). */
+export type VisitSummary = {
+  appointment_id: string;
+  appointment_type: string;
+  appointment_date: string;
+  registration: PatientDetail | null;
+  anamnesis: (AnamnesisRecord & { inherited?: boolean }) | null;
+  prs_instances: Array<Record<string, unknown> & { instance_id: string; inherited?: boolean }>;
+  protocols: Array<ProtocolRead & { inherited?: boolean; lineage?: ProtocolRead[] }>;
+};
 
 /** PatientRead now joins profiles for first_name/last_name/email/phone. */
 function mapPatient(p: Record<string, unknown>): PatientListItem {
@@ -46,6 +62,11 @@ export const doctorsService = {
 
   async getPatientResult(_patientId: string, instanceId: string): Promise<InstanceScoreDetail> {
     return fetchInstanceScoreDetail(instanceId);
+  },
+
+  async getVisitSummary(patientId: string, appointmentId: string): Promise<VisitSummary> {
+    const { data } = await apiClient.get(ENDPOINTS.DOCTORS.VISIT_SUMMARY(patientId, appointmentId));
+    return data;
   },
 
   /** Real backend has no single grant-assessment call — POST one

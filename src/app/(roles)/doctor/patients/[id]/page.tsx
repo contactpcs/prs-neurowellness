@@ -27,6 +27,7 @@ import { SessionTabsBar } from "@/components/doctor/SessionTabsBar";
 import { SessionFinalReportModal } from "@/components/doctor/SessionFinalReportModal";
 import { CompareSessionsModal } from "@/components/doctor/CompareSessionsModal";
 import { usePatientClinicalSessions } from "@/lib/hooks/usePatientClinicalSessions";
+import { usePatientVisitSummary } from "@/lib/hooks/usePatientVisitSummary";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import type { ProtocolRead } from "@/types/treatmentProtocol.types";
 import { TreatmentPlanPanel } from "@/components/doctor/TreatmentPlanPanel";
@@ -103,6 +104,14 @@ export default function DoctorPatientDetailPage() {
     ? clinicalSessions.findIndex((s) => s.appointment.appointment_id === sessionId)
     : clinicalSessions.findIndex((s) => s.appointment.appointment_type === "initial");
   const currentSession = currentSessionIdx >= 0 ? clinicalSessions[currentSessionIdx] : null;
+  // Per-visit bundle for the currently selected toggle — anamnesis here is
+  // that visit's own (or null, "no anamnesis taken"), never the patient-wide
+  // "latest" usePatientAnamnesis returns. Refetches on toggle switch so
+  // Follow-up 1's own record can never bleed into what Initial shows.
+  const { summary: visitSummary, isLoading: visitSummaryLoading, reload: reloadVisitSummary } = usePatientVisitSummary(
+    id,
+    currentSession?.appointment.appointment_id ?? null,
+  );
   const isLatestSession = currentSessionIdx >= 0 && currentSessionIdx === clinicalSessions.length - 1;
   // Don't gate anything until the session list has actually loaded (avoids
   // a flash of "locked" on first render), and don't gate at all if there's
@@ -432,7 +441,7 @@ export default function DoctorPatientDetailPage() {
                 <ChevronRight className={`w-5 h-5 text-neutral-600 transition-transform duration-150 ${basicOpen ? "-rotate-90" : "rotate-0"}`} />
               </button>
               <div className={`overflow-y-auto space-y-0 transition-all duration-150 ${basicOpen ? "flex-1" : "hidden"}`}>
-                {buildSections(anamnesisRecord?.status ?? null, !!doctorNote?.note_text, !!sessionId, treatmentPlanLocked).map((section) => {
+                {buildSections(visitSummary?.anamnesis?.status ?? null, !!doctorNote?.note_text, !!sessionId, treatmentPlanLocked).map((section) => {
                   return (
                     <button
                       key={section.id}
@@ -485,10 +494,13 @@ export default function DoctorPatientDetailPage() {
                 <AnamnesisForm
                   patientId={id}
                   mode="doctor"
-                  initialRecord={anamnesisLoading ? undefined : anamnesisRecord}
-                  onSubmitted={() => dispatch(invalidatePatientAnamnesis(id))}
+                  initialRecord={visitSummaryLoading ? undefined : visitSummary?.anamnesis ?? null}
+                  onSubmitted={() => {
+                    dispatch(invalidatePatientAnamnesis(id));
+                    reloadVisitSummary();
+                  }}
                   lockedForSession={sessionLocked}
-                  appointmentId={sessionId}
+                  appointmentId={currentSession?.appointment.appointment_id ?? sessionId}
                 />
               ) : selectedSection === "brain-mapping" ? (
                 <div className="space-y-5">
