@@ -11,6 +11,7 @@ import {
 import { useAppointmentDetail } from "@/lib/hooks/useAppointments";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
+import { SESSION_TYPE_LABEL } from "@/lib/utils/sessionType";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
 import type { AppointmentStatus, AppointmentType } from "@/types/domain.types";
@@ -307,6 +308,7 @@ export default function AppointmentDetailPage() {
   // appointment.doctor_id is profiles.id — /doctors/{doctor_id}/availability
   // expects doctors.doctor_id (public ID) instead, hence doctor_public_id.
   const docId  = appointment.doctor_public_id;
+  const patientPublicId = appointment.patient_public_id ?? appointment.patient_id;
 
   // A device_session has no treating doctor by design (scheduling/service.py
   // _authorize_transition: "administered by a clinical assistant... has NO
@@ -396,6 +398,33 @@ export default function AppointmentDetailPage() {
                 <p className="text-sm text-amber-900">{appointment.patient_complaint}</p>
               </div>
             )}
+          </div>
+
+          {/* Clinical session — every session type is recorded in the patient's
+              clinical workspace (the same "Basic" sidebar throughout), scoped
+              to this appointment via ?session=. Device Sessions are the one
+              exception — those open the read-only session review instead. */}
+          <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+            <h2 className="text-sm font-semibold text-neutral-900 mb-1">Clinical Session — {SESSION_TYPE_LABEL[appointment.appointment_type]}</h2>
+            <p className="text-sm text-neutral-500 mb-4">
+              {appointment.appointment_type === "device_session"
+                ? "The treatment delivered, device readings, patient response, and safety checks for this device session are recorded read-only by the clinical assistant."
+                : "Anamnesis, Medical History, PRS, Brain Mapping, Doctor Notes, Diagnosis, and Treatment Protocol are recorded in the patient's clinical workspace."}
+              {status === "completed" && appointment.appointment_type !== "device_session" && " This session is complete — its data is frozen; open the workspace to view it or add a new Follow-up for further changes."}
+            </p>
+            <Link
+              href={
+                appointment.appointment_type === "device_session"
+                  ? `/doctor/patients/${patientPublicId}?section=sessions`
+                  : appointment.appointment_type === "initial"
+                    ? `/doctor/patients/${patientPublicId}`
+                    : `/doctor/patients/${patientPublicId}?session=${appointment.appointment_id}`
+              }
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-xs font-semibold"
+              style={{ background: BRAND }}
+            >
+              {appointment.appointment_type === "device_session" ? "Open Session Review" : "Open Clinical Workspace"}
+            </Link>
           </div>
 
           {/* Notes card */}

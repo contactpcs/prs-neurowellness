@@ -21,6 +21,16 @@ interface AnamnesisFormProps {
   mode: "patient" | "doctor";
   initialRecord?: AnamnesisRecord | null;
   onSubmitted?: () => void;
+  /** True when the doctor is viewing this from a session that is NOT the
+   * patient's current/latest one (e.g. looking at Consultation after
+   * Follow-up 1 exists). The anamnesis GET endpoint only ever returns the
+   * single latest version — there's no per-session history to fetch — so
+   * recording a new one from a frozen session's view would create a new
+   * version that then silently becomes "the" anamnesis shown everywhere,
+   * including under the earlier session it doesn't belong to. Locking this
+   * out is the only honest fix available without a backend history
+   * endpoint. */
+  lockedForSession?: boolean;
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -167,7 +177,7 @@ function QuestionField({
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted }: AnamnesisFormProps) {
+export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted, lockedForSession = false }: AnamnesisFormProps) {
   const dispatch = useAppDispatch();
   const [questions,   setQuestions]   = useState<AnamnesisQuestion[]>([]);
   const [sections,    setSections]    = useState<ReturnType<typeof groupBySection>>([]);
@@ -352,6 +362,10 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted }: A
   };
 
   // ── doctor: start on behalf ───────────────────────────────────────────────
+  // Always creates a BRAND NEW anamnesis_id (a new version) — never reopens
+  // an existing completed record for editing. Completed anamnesis rows are
+  // frozen; new clinical information from a later session becomes a new
+  // version instead, so `60 -> 45 -> 35`-style history is never lost.
   const handleStartOnBehalf = async () => {
     setError("");
     try {
@@ -366,6 +380,8 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted }: A
       }
       setAnamnesisId(r.anamnesis_id);
       setMeta({ completed_at: null, taken_by: "doctor_on_behalf" });
+      setRecord(null);
+      setResponses({});
       setRecordState("in_progress");
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -391,12 +407,18 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted }: A
         </div>
         <div>
           <p className="font-semibold text-neutral-800">Anamnesis not started</p>
-          <p className="text-sm text-neutral-500 mt-1">The patient has not yet begun their medical history intake. You can start it on their behalf.</p>
+          <p className="text-sm text-neutral-500 mt-1">
+            {lockedForSession
+              ? "The patient had not yet begun their medical history intake as of this session."
+              : "The patient has not yet begun their medical history intake. You can start it on their behalf."}
+          </p>
         </div>
         {error && <p className="text-sm text-red-600 max-w-xs">{error}</p>}
-        <Button onClick={handleStartOnBehalf}>
-          <Stethoscope className="w-4 h-4" /> Start on Patient's Behalf
-        </Button>
+        {!lockedForSession && (
+          <Button onClick={handleStartOnBehalf}>
+            <Stethoscope className="w-4 h-4" /> Start on Patient's Behalf
+          </Button>
+        )}
       </div>
     );
   }
@@ -413,23 +435,41 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted }: A
 
   // Doctor: edit while in_progress, read-only after submit
   // Patient: edit while in_progress, read-only after submit
-  const readOnly  = recordState === "completed";
+  // Also forced read-only when viewing a frozen (non-latest) session, even
+  // for a dangling in-progress draft — see lockedForSession above.
+  const readOnly  = recordState === "completed" || (mode === "doctor" && lockedForSession);
   const completed = recordState === "completed";
 
   // Show read-only summary view when completed
   if (completed && record) {
     return (
-      <AnamnesisReadOnlyView
-        record={record}
-        questions={questions}
-        takenBy={meta?.taken_by}
-        onEdit={mode === "doctor" ? () => setRecordState("in_progress") : undefined}
-      />
+      <>
+        {lockedForSession && (
+          <div className="mb-4 flex items-start gap-2 bg-neutral-100 border border-neutral-200 rounded-lg px-4 py-3 text-sm text-neutral-600">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-neutral-400" />
+            This session is frozen. Showing the latest anamnesis on record — new anamnesis can only be recorded from the patient&apos;s current session.
+          </div>
+        )}
+        <AnamnesisReadOnlyView
+          record={record}
+          questions={questions}
+          takenBy={meta?.taken_by}
+          onEdit={mode === "doctor" && !lockedForSession ? handleStartOnBehalf : undefined}
+          editLabel="Record New Anamnesis"
+        />
+      </>
     );
   }
 
   return (
     <div className="space-y-5">
+
+      {mode === "doctor" && lockedForSession && (
+        <div className="flex items-start gap-2 bg-neutral-100 border border-neutral-200 rounded-lg px-4 py-3 text-sm text-neutral-600">
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-neutral-400" />
+          This session is frozen — showing the anamnesis on record as read-only.
+        </div>
+      )}
 
       {/* Header */}
       <div className="bg-orange-50 border border-orange-200 rounded-xl px-5 py-4 flex items-center gap-3.5">

@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight, ChevronLeft, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save, StickyNote } from "lucide-react";
+import { ChevronRight, ChevronLeft, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save, StickyNote, FileText, Stethoscope } from "lucide-react";
 import { PatientDetailSkeleton, Button } from "@/components/ui";
 import { AnamnesisForm } from "@/components/assessment/AnamnesisForm";
 import { adminService } from "@/lib/api/services/admin.service";
@@ -23,6 +23,14 @@ import type { DoctorNote } from "@/lib/api/services/doctorNotes.service";
 import type { Permission, AssessmentInstance, AnamnesisRecord } from "@/types/domain.types";
 import { EEGReportList, EEGUploadForm, NEDFUploadForm } from "@/components/eeg";
 import { TreatmentProtocolPanel, DeviceSessionsPanel } from "@/components/doctor/TreatmentProtocolPanel";
+import { SessionTabsBar } from "@/components/doctor/SessionTabsBar";
+import { SessionFinalReportModal } from "@/components/doctor/SessionFinalReportModal";
+import { CompareSessionsModal } from "@/components/doctor/CompareSessionsModal";
+import { usePatientClinicalSessions } from "@/lib/hooks/usePatientClinicalSessions";
+import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
+import type { ProtocolRead } from "@/types/treatmentProtocol.types";
+import { TreatmentPlanPanel } from "@/components/doctor/TreatmentPlanPanel";
+import { isFinalReportGenerated, markFinalReportGenerated } from "@/lib/utils/finalReportLock";
 
 function statusClass(status: Permission["status"]): string {
   switch (status) {
@@ -47,9 +55,14 @@ function formatDateTime(iso: string) {
 function buildSections(
   anamnesisStatus: "in_progress" | "completed" | null,
   hasDoctorNote: boolean,
+  // Registration Record is the self-registration disease selection +
+  // anamnesis + general PRS — it only ever existed once, at intake, so it
+  // has no meaning under a Follow-up / Protocol Follow-up session context.
+  isFollowUpContext: boolean,
+  treatmentPlanLocked: boolean,
 ) {
   return [
-    { id: "registration-record", name: "Registration Record", status: null },
+    ...(isFollowUpContext ? [] : [{ id: "registration-record", name: "Registration Record", status: null }]),
     { id: "anamnesis", name: "Anamnesis", status: anamnesisStatus === "completed" ? "done" : anamnesisStatus === "in_progress" ? "start" : null },
     { id: "brain-mapping", name: "Brain Mapping", status: "start" },
     { id: "prs", name: "PRS", status: "start" },
@@ -57,8 +70,8 @@ function buildSections(
     { id: "medical-history", name: "Medical History", status: "link" },
     { id: "treatment-protocol", name: "Treatment Protocol", status: null },
     { id: "sessions", name: "Sessions", status: null },
-    { id: "treatment-plan", name: "Treatment Plan", status: "locked" },
-    { id: "final-report", name: "Final Report", status: "locked" },
+    { id: "treatment-plan", name: "Treatment Plan", status: treatmentPlanLocked ? "locked" : null },
+    { id: "final-report", name: "Final Report", status: null },
   ];
 }
 
@@ -79,7 +92,52 @@ export default function DoctorPatientDetailPage() {
 
   const isLoading = patientLoading;
 
-  const selectedSection = searchParams.get("section") ?? "anamnesis";
+  const rawSelectedSection = searchParams.get("section") ?? "anamnesis";
+  const sessionId = searchParams.get("session");
+  // Registration Record only exists for the Consultation — never render it
+  // under a Follow-up / Protocol Follow-up session context even if the URL
+  // still carries an old ?section=registration-record.
+  const selectedSection = sessionId && rawSelectedSection === "registration-record" ? "anamnesis" : rawSelectedSection;
+  const { sessions: clinicalSessions, isLoading: sessionsLoading } = usePatientClinicalSessions(id);
+  const currentSessionIdx = sessionId
+    ? clinicalSessions.findIndex((s) => s.appointment.appointment_id === sessionId)
+    : clinicalSessions.findIndex((s) => s.appointment.appointment_type === "initial");
+  const currentSession = currentSessionIdx >= 0 ? clinicalSessions[currentSessionIdx] : null;
+  const isLatestSession = currentSessionIdx >= 0 && currentSessionIdx === clinicalSessions.length - 1;
+  // Don't gate anything until the session list has actually loaded (avoids
+  // a flash of "locked" on first render), and don't gate at all if there's
+  // nothing to compare against yet.
+  const sessionLocked = !sessionsLoading && clinicalSessions.length > 0 && !isLatestSession;
+  const [finalReportFor, setFinalReportFor] = useState<typeof currentSession>(null);
+  const [showCompare, setShowCompare] = useState(false);
+  const [finalReportProtocol, setFinalReportProtocol] = useState<ProtocolRead | null>(null);
+  // Bumped whenever a Final Report is generated so isFinalReportGenerated()
+  // (backed by localStorage, not otherwise reactive) gets re-checked.
+  const [finalReportLockTick, setFinalReportLockTick] = useState(0);
+  const openFinalReport = useCallback((session: typeof currentSession) => {
+    if (!session) return;
+    markFinalReportGenerated(session.appointment.appointment_id);
+    setFinalReportLockTick((t) => t + 1);
+    setFinalReportFor(session);
+  }, []);
+  const treatmentPlanLocked = useMemo(
+    () => sessionLocked || (currentSession ? isFinalReportGenerated(currentSession.appointment.appointment_id) : false),
+    [sessionLocked, currentSession, finalReportLockTick],
+  );
+
+  useEffect(() => {
+    if (!finalReportFor) { setFinalReportProtocol(null); return; }
+    const cutoff = new Date(finalReportFor.appointment.appointment_date + "T23:59:59").getTime();
+    treatmentProtocolService
+      .listProtocols({ patientId: id })
+      .then((list) => {
+        const before = list
+          .filter((p) => p.created_at && new Date(p.created_at).getTime() <= cutoff)
+          .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+        setFinalReportProtocol(before[0] ?? null);
+      })
+      .catch(() => setFinalReportProtocol(null));
+  }, [finalReportFor, id]);
 
   const updateQuery = useCallback(
     (updates: Record<string, string | null>) => {
@@ -307,6 +365,59 @@ export default function DoctorPatientDetailPage() {
           </div>
         </div>
 
+        {/* Consultation / Follow-up / Protocol Follow-up session switcher */}
+        <SessionTabsBar patientId={id} activeSessionId={sessionId} onCompare={clinicalSessions.length >= 2 ? () => setShowCompare(true) : undefined} />
+
+        {/* Session context banner — only for a Follow-up / Protocol Follow-up
+            session; the Consultation view (no ?session=) doesn't need one. */}
+        {currentSession && sessionId && (
+          <div className={`rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap ${isLatestSession ? "bg-blue-50 border border-blue-100" : "bg-neutral-100 border border-neutral-200"}`}>
+            <div className="flex items-center gap-2 flex-1 min-w-[220px]">
+              {isLatestSession ? <Stethoscope className="w-4 h-4 text-blue-600 flex-shrink-0" /> : <Lock className="w-4 h-4 text-neutral-500 flex-shrink-0" />}
+              <div>
+                <p className="text-sm font-semibold text-neutral-900">{currentSession.label}</p>
+                <p className="text-xs text-neutral-500">
+                  {isLatestSession
+                    ? "Anything recorded here is new — it never changes a previous session's data."
+                    : "This session is frozen — a later session exists, so its data is read-only."}
+                </p>
+              </div>
+            </div>
+            {isLatestSession ? (
+              <button
+                onClick={() => setSelectedSection("anamnesis")}
+                className="px-3.5 py-2 rounded-lg bg-brand-gradient text-white text-xs font-semibold flex-shrink-0"
+              >
+                Record New Anamnesis
+              </button>
+            ) : (
+              <button
+                onClick={() => openFinalReport(currentSession)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-xs font-semibold flex-shrink-0"
+              >
+                <FileText className="w-3.5 h-3.5" /> Generate Final Report
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Consultation itself is frozen once any Follow-up exists */}
+        {!sessionId && clinicalSessions.length > 1 && (
+          <div className="rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap bg-neutral-100 border border-neutral-200">
+            <Lock className="w-4 h-4 text-neutral-500 flex-shrink-0" />
+            <div className="flex-1 min-w-[220px]">
+              <p className="text-sm font-semibold text-neutral-900">Consultation</p>
+              <p className="text-xs text-neutral-500">This session is frozen — a Follow-up already exists, so its data is read-only.</p>
+            </div>
+            <button
+              onClick={() => clinicalSessions[0] && openFinalReport(clinicalSessions[0])}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-xs font-semibold flex-shrink-0"
+            >
+              <FileText className="w-3.5 h-3.5" /> Generate Final Report
+            </button>
+          </div>
+        )}
+
         {/* Assessment Content */}
         <div className="space-y-6">
           {/* Main Content Area */}
@@ -321,11 +432,11 @@ export default function DoctorPatientDetailPage() {
                 <ChevronRight className={`w-5 h-5 text-neutral-600 transition-transform duration-150 ${basicOpen ? "-rotate-90" : "rotate-0"}`} />
               </button>
               <div className={`overflow-y-auto space-y-0 transition-all duration-150 ${basicOpen ? "flex-1" : "hidden"}`}>
-                {buildSections(anamnesisRecord?.status ?? null, !!doctorNote?.note_text).map((section) => {
+                {buildSections(anamnesisRecord?.status ?? null, !!doctorNote?.note_text, !!sessionId, treatmentPlanLocked).map((section) => {
                   return (
                     <button
                       key={section.id}
-                      onClick={() => setSelectedSection(section.id)}
+                      onClick={() => (section.id === "final-report" ? openFinalReport(currentSession) : setSelectedSection(section.id))}
                       className={`w-full px-4 py-4 text-left transition-colors border-l-4 flex items-center justify-between ${
                         selectedSection === section.id
                           ? "bg-blue-50 border-l-blue-500 text-blue-700"
@@ -376,6 +487,7 @@ export default function DoctorPatientDetailPage() {
                   mode="doctor"
                   initialRecord={anamnesisLoading ? undefined : anamnesisRecord}
                   onSubmitted={() => dispatch(invalidatePatientAnamnesis(id))}
+                  lockedForSession={sessionLocked}
                 />
               ) : selectedSection === "brain-mapping" ? (
                 <div className="space-y-5">
@@ -436,6 +548,16 @@ export default function DoctorPatientDetailPage() {
                 </div>
               ) : selectedSection === "treatment-protocol" ? (
                 <TreatmentProtocolPanel patientId={id} />
+              ) : selectedSection === "treatment-plan" ? (
+                <TreatmentPlanPanel
+                  patientId={id}
+                  currentSession={currentSession}
+                  sessionsUpToCurrent={currentSessionIdx >= 0 ? clinicalSessions.slice(0, currentSessionIdx + 1) : []}
+                  locked={treatmentPlanLocked}
+                  anamnesis={anamnesisRecord ?? null}
+                  doctorNoteText={doctorNote?.note_text ?? null}
+                  onGenerateFinalReport={() => openFinalReport(currentSession)}
+                />
               ) : selectedSection === "sessions" ? (
                 <DeviceSessionsPanel patientId={id} />
               ) : selectedSection === "notes" ? (
@@ -718,6 +840,27 @@ export default function DoctorPatientDetailPage() {
           {notepadEditing ? <span className="text-lg leading-none">✕</span> : <StickyNote className="w-5 h-5" />}
         </button>
       </div>
+
+      {finalReportFor && (
+        <SessionFinalReportModal
+          patientName={fullName}
+          mrn={patient?.mrn}
+          session={finalReportFor}
+          anamnesis={anamnesisRecord ?? null}
+          scoreSummary={(() => {
+            const latest = scoreInstances.slice().sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""))[0];
+            if (!latest) return null;
+            return `${latest.disease_score != null ? `Score ${latest.disease_score.toFixed(0)}/100` : ""}${latest.severity_label ? ` · ${latest.severity_label}` : ""}`.trim() || null;
+          })()}
+          doctorNoteText={doctorNote?.note_text ?? null}
+          protocol={finalReportProtocol}
+          onClose={() => setFinalReportFor(null)}
+        />
+      )}
+
+      {showCompare && (
+        <CompareSessionsModal patientId={id} sessions={clinicalSessions} onClose={() => setShowCompare(false)} />
+      )}
     </div>
   );
 }

@@ -10,6 +10,7 @@ interface AnamnesisReadOnlyViewProps {
   questions?: AnamnesisQuestion[];
   takenBy?: string;
   onEdit?: () => void;
+  editLabel?: string;
 }
 
 function fmt(ts: string | null | undefined) {
@@ -39,6 +40,7 @@ export function AnamnesisReadOnlyView({
   questions = [],
   takenBy,
   onEdit,
+  editLabel = "Edit",
 }: AnamnesisReadOnlyViewProps) {
   // Build a map of responses from the record
   const responseMap: Record<string, { value: string; values: string[] }> = {};
@@ -88,7 +90,7 @@ export function AnamnesisReadOnlyView({
         <h2 className="text-2xl font-bold text-neutral-900">Anamnesis</h2>
         {onEdit && (
           <Button variant="secondary" onClick={onEdit}>
-            <Pencil className="w-4 h-4" /> Edit
+            <Pencil className="w-4 h-4" /> {editLabel}
           </Button>
         )}
       </div>
