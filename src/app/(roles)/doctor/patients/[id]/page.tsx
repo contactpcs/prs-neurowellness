@@ -350,7 +350,7 @@ export default function DoctorPatientDetailPage() {
                   <span className="inline-block mt-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-sm font-medium rounded-lg">Basic 2/7</span>
                 </div>
                 <button
-                  onClick={() => router.push(`/doctor/patients/${id}/assessment/${nextAssessment.permission_id}`)}
+                  onClick={() => router.push(`/doctor/patients/${id}/assessment/${nextAssessment.permission_id}${sessionId ? `?session=${sessionId}` : ""}`)}
                   className="px-6 py-3 bg-orange-500 text-white font-semibold text-base rounded-full hover:bg-orange-600 transition-colors flex items-center gap-2 flex-shrink-0"
                 >
                   ▶ Start
@@ -488,6 +488,7 @@ export default function DoctorPatientDetailPage() {
                   initialRecord={anamnesisLoading ? undefined : anamnesisRecord}
                   onSubmitted={() => dispatch(invalidatePatientAnamnesis(id))}
                   lockedForSession={sessionLocked}
+                  appointmentId={sessionId}
                 />
               ) : selectedSection === "brain-mapping" ? (
                 <div className="space-y-5">
@@ -768,7 +769,7 @@ export default function DoctorPatientDetailPage() {
                               Pending
                             </span>
                           </div>
-                          <Link href={`/doctor/patients/${id}/assessment/${a.permission_id}`}>
+                          <Link href={`/doctor/patients/${id}/assessment/${a.permission_id}${sessionId ? `?session=${sessionId}` : ""}`}>
                             <Button size="sm" variant="secondary">
                               <PlayCircle className="h-4 w-4" /> Start Assessment
                             </Button>

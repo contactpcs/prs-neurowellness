@@ -382,6 +382,12 @@ export interface ProtocolCreate {
   ramp_seconds?: number;
   /** Which consultation authored this. Provenance only. */
   authored_in_appointment_id?: string | null;
+  /** Set to amend an existing protocol instead of starting a new lineage:
+   *  the created row inherits this protocol's version_major and gets
+   *  version_minor + 1, and the target is cancelled (its planned
+   *  appointments too) and flipped to status='superseded' in the same
+   *  request. Omit to start a new lineage at the instance's next major. */
+  supersedes_protocol_id?: string | null;
   device_settings: Record<string, unknown>;
   notes?: string | null;
 }
@@ -457,6 +463,13 @@ export interface ProtocolRead {
   dosing_id?: string | null;
   custom_montage_id?: string | null;
   appointment_count: number;
+  /** Amendment lineage: a new lineage starts at major "N", minor 0;
+   *  amending it (supersedes_protocol_id) inherits the major and bumps
+   *  minor. Display as `${version_major}` when minor is 0, else
+   *  `${version_major}.${version_minor}`. */
+  supersedes_protocol_id?: string | null;
+  version_major: number;
+  version_minor: number;
 }
 
 export interface ProtocolSessionRead {

@@ -31,6 +31,11 @@ interface AnamnesisFormProps {
    * out is the only honest fix available without a backend history
    * endpoint. */
   lockedForSession?: boolean;
+  /** The visit (appointment_id) this form is being recorded under, when
+   *  known — passed through to anamnesisService.start() so the doctor
+   *  portal's per-visit bundle can find this record later. Omit when no
+   *  visit context applies (e.g. the patient's own self-service flow). */
+  appointmentId?: string | null;
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -177,7 +182,7 @@ function QuestionField({
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted, lockedForSession = false }: AnamnesisFormProps) {
+export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted, lockedForSession = false, appointmentId = null }: AnamnesisFormProps) {
   const dispatch = useAppDispatch();
   const [questions,   setQuestions]   = useState<AnamnesisQuestion[]>([]);
   const [sections,    setSections]    = useState<ReturnType<typeof groupBySection>>([]);
@@ -371,7 +376,12 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted, loc
     try {
       // Fetch questions alongside start if not already loaded
       const [r, qs] = await Promise.all([
-        anamnesisService.start({ patient_id: patientId, taken_by: "doctor_on_behalf", assessment_stage: "main_clinical" }),
+        anamnesisService.start({
+          patient_id: patientId,
+          taken_by: "doctor_on_behalf",
+          assessment_stage: "main_clinical",
+          appointment_id: appointmentId,
+        }),
         questions.length === 0 ? anamnesisService.getQuestions().catch(() => [] as AnamnesisQuestion[]) : Promise.resolve(questions),
       ]);
       if (questions.length === 0 && qs.length > 0) {

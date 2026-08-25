@@ -351,6 +351,9 @@ export interface AnamnesisRecord {
   submitted_by: string | null;
   taken_by: string;
   assessment_stage: "general_registration" | "main_clinical";
+  /** The visit this anamnesis was captured/edited during. Null on records
+   *  predating this column, and on anamnesis taken outside a booked visit. */
+  appointment_id?: string | null;
   status: "in_progress" | "completed";
   completed_at: string | null;
   responses?: AnamnesisResponse[];

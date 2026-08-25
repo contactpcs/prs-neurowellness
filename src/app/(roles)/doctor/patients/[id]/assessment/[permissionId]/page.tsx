@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { AssessmentSkeleton } from "@/components/ui";
 import { AssessmentUI } from "@/components/assessment/AssessmentUI";
 import { useAssessmentSTT } from "@/lib/hooks/useAssessmentSTT";
@@ -96,6 +96,11 @@ function toPrsScaleQuestion(q: PrsAssessmentQuestion, allQuestions: PrsAssessmen
 export default function DoctorOnBehalfAssessmentPage() {
   const { id: patientId, permissionId } = useParams<{ id: string; permissionId: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Forwarded from the visit-toggle strip on the patient page (?session=)
+  // when the doctor opened this assessment from a specific visit, so the
+  // instance created below can be found again under that visit's bundle.
+  const sessionId = searchParams.get("session");
   const dispatch = useAppDispatch();
 
   const [scales, setScales] = useState<LoadedScale[]>([]);
@@ -127,6 +132,7 @@ export default function DoctorOnBehalfAssessmentPage() {
           disease_id: permission.disease_id,
           taken_by: "doctor_on_behalf",
           patient_id: patientId,
+          appointment_id: sessionId ?? undefined,
         });
 
         if (result.scales.length === 0) throw new Error("No scales found for this assessment");

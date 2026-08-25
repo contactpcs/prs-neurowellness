@@ -6,6 +6,9 @@ export type AnamnesisStartPayload = {
   patient_id: string;
   taken_by: "patient" | "doctor_on_behalf";
   assessment_stage: "general_registration" | "main_clinical";
+  /** The visit this anamnesis is being captured/edited during, for the
+   *  doctor portal's per-visit bundle. Omit when taken outside a visit. */
+  appointment_id?: string | null;
 };
 
 export type AnamnesisSaveResponsePayload = {
@@ -82,6 +85,7 @@ export const anamnesisService = {
     const { data } = await apiClient.post(ENDPOINTS.ANAMNESIS.START(payload.patient_id), {
       taken_by: payload.taken_by,
       assessment_stage: payload.assessment_stage,
+      appointment_id: payload.appointment_id ?? undefined,
     });
     return { anamnesis_id: data.anamnesis_id, status: data.status, resumed: false };
   },

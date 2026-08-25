@@ -416,13 +416,17 @@ export default function TreatmentProtocolWizardPage() {
         ramp_seconds: rampSeconds,
         device_settings: {},
         notes: finalNotes,
+        // Amending rather than replacing: the server inherits priorProtocolId's
+        // version_major, bumps version_minor, and — in the same request —
+        // cancels its planned sessions and flips it to 'superseded'. Replaces
+        // the old create+activate+cancel three-call dance below, which is no
+        // longer valid once the server marks the prior row 'superseded'
+        // (cancelProtocol only accepts draft/active).
+        ...(mode === "modify" && priorProtocolId ? { supersedes_protocol_id: priorProtocolId } : {}),
       };
 
       const created = await treatmentProtocolService.createProtocol(payload);
       await treatmentProtocolService.activateProtocol(created.protocol_id);
-      if (mode === "modify" && priorProtocolId) {
-        await treatmentProtocolService.cancelProtocol(priorProtocolId, finalNotes || "Superseded by a new protocol version.");
-      }
       setPushed(created);
     } catch (e: any) {
       setErr(describePushError(e));

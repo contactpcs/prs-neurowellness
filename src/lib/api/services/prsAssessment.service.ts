@@ -159,6 +159,10 @@ export const prsAssessmentService = {
     session_id?: string;
     cycle_id?: string;
     language_code?: string;
+    /** The visit this instance is assigned at, for the doctor portal's
+     *  per-visit bundle. Distinct from session_id — covers any appointment
+     *  type, not just a device session. */
+    appointment_id?: string;
   }): Promise<PrsAssessmentStartResult> {
     if (!payload.patient_id) throw new Error("patient_id is required to start an assessment.");
     const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_START, {
@@ -168,6 +172,7 @@ export const prsAssessmentService = {
       language_code: payload.language_code ?? "en",
       ...(payload.session_id ? { session_id: payload.session_id } : {}),
       ...(payload.cycle_id ? { cycle_id: payload.cycle_id } : {}),
+      ...(payload.appointment_id ? { appointment_id: payload.appointment_id } : {}),
     });
     const result = unwrap<PrsAssessmentStartResult>(data);
     return {
