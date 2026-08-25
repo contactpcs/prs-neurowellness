@@ -196,11 +196,13 @@ export const anamnesisService = {
   },
 };
 
-/** GET /patients/{id}/anamnesis returns the assessment row only —
- * saved answers live at GET /anamnesis/{id}/responses. Merge them so
- * consumers get a hydratable record in one call. Response-fetch failures
- * degrade to an answerless record rather than failing the whole load. */
-async function withResponses(record: AnamnesisRecord): Promise<AnamnesisRecord> {
+/** GET /patients/{id}/anamnesis (and the per-visit summary endpoint) return
+ * the assessment row only — saved answers live at GET /anamnesis/{id}/responses.
+ * Merge them so consumers get a hydratable record in one call.
+ * Response-fetch failures degrade to an answerless record rather than
+ * failing the whole load. Exported so usePatientVisitSummary can hydrate
+ * the visit-scoped anamnesis the same way. */
+export async function withResponses(record: AnamnesisRecord): Promise<AnamnesisRecord> {
   if (!record?.anamnesis_id) return record;
   try {
     const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.RESPONSES(record.anamnesis_id));
