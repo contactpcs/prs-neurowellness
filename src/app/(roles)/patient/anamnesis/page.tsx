@@ -32,6 +32,7 @@ export default function PatientAnamnesisPage() {
       <AnamnesisForm
         patientId={user.patient_id}
         mode="patient"
+        assessmentStage="main"
         onSubmitted={() => router.push("/patient/dashboard")}
       />
     </div>

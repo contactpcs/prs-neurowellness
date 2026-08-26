@@ -423,7 +423,7 @@ export const adminService = {
     let anamnesisResponses: Record<string, unknown>[] = [];
     try {
       const { data: assessment } = await apiClient.get(ENDPOINTS.ANAMNESIS.FOR_PATIENT(id), {
-        params: { assessment_stage: "general_registration" },
+        params: { assessment_stage: "registration" },
       });
       anamnesis = assessment;
       if (assessment?.anamnesis_id) {

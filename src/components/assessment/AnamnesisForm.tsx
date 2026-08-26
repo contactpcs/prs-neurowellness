@@ -8,7 +8,7 @@ import { AnamnesisReadOnlyView } from "@/components/assessment/AnamnesisReadOnly
 import { useAppDispatch } from "@/store/hooks";
 import { invalidateMyAnamnesis, invalidatePatientAnamnesis } from "@/store/slices/anamnesisSlice";
 import { invalidateDashboard } from "@/store/slices/patientsSlice";
-import type { AnamnesisQuestion } from "@/lib/api/services/anamnesis.service";
+import type { AnamnesisQuestion, AnamnesisStage } from "@/lib/api/services/anamnesis.service";
 import type { AnamnesisRecord } from "@/types/domain.types";
 
 // ── types ─────────────────────────────────────────────────────────────────────
@@ -19,6 +19,7 @@ type RecordState = "loading" | "no-record" | "in_progress" | "completed";
 interface AnamnesisFormProps {
   patientId: string;
   mode: "patient" | "doctor";
+  assessmentStage: AnamnesisStage;
   initialRecord?: AnamnesisRecord | null;
   onSubmitted?: () => void;
   /** True when the doctor is viewing this from a session that is NOT the
@@ -182,7 +183,7 @@ function QuestionField({
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted, lockedForSession = false, appointmentId = null }: AnamnesisFormProps) {
+export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord, onSubmitted, lockedForSession = false, appointmentId = null }: AnamnesisFormProps) {
   const dispatch = useAppDispatch();
   const [questions,   setQuestions]   = useState<AnamnesisQuestion[]>([]);
   const [sections,    setSections]    = useState<ReturnType<typeof groupBySection>>([]);
@@ -213,14 +214,14 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted, loc
       }
       const getter =
         mode === "patient"
-          ? anamnesisService.getMyAnamnesis()
-          : anamnesisService.getForPatient(patientId, "main_clinical");
+          ? anamnesisService.getMyAnamnesis(assessmentStage)
+          : anamnesisService.getForPatient(patientId, assessmentStage);
       return getter.catch((e: { response?: { status?: number } }) =>
         e?.response?.status === 404 ? null : Promise.reject(e)
       );
     };
 
-    Promise.all([anamnesisService.getQuestions(), fetchRecord()])
+    Promise.all([anamnesisService.getQuestions(assessmentStage), fetchRecord()])
       .then(([qs, record]) => {
         if (cancelled) return;
         setQuestions(qs);
@@ -252,7 +253,7 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted, loc
   // AFTER this form mounts (e.g. the doctor page's Redux-cached anamnesis)
   // re-syncs the form instead of leaving it stuck on the no-record state.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [patientId, mode, initialRecord]);
+  }, [patientId, mode, assessmentStage, initialRecord]);
 
   // ── auto-start for patient when no record ─────────────────────────────────
   useEffect(() => {
@@ -260,7 +261,7 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted, loc
     if (recordState !== "loading" || mode !== "patient" || questions.length === 0) return;
 
     anamnesisService
-      .start({ patient_id: patientId, taken_by: "patient", assessment_stage: "general_registration" })
+      .start({ patient_id: patientId, taken_by: "patient", assessment_stage: assessmentStage })
       .then((r) => {
         setAnamnesisId(r.anamnesis_id);
         setMeta({ completed_at: null, taken_by: "patient" });
@@ -270,7 +271,7 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted, loc
         setError(e?.response?.data?.detail ?? "Failed to start anamnesis. Please refresh.");
         setRecordState("no-record");
       });
-  }, [recordState, mode, questions.length, patientId]);
+  }, [recordState, mode, questions.length, patientId, assessmentStage]);
 
   // ── per-question auto-save (600 ms debounce) ──────────────────────────────
   const handleChange = useCallback((questionId: string, value: string | null, values: string[] | null) => {
@@ -331,7 +332,7 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted, loc
           patient_id: patientId,
           submitted_by: null,
           taken_by: mode === "doctor" ? "doctor_on_behalf" : "patient",
-          assessment_stage: mode === "doctor" ? "main_clinical" : "general_registration",
+          assessment_stage: assessmentStage,
           chief_complaint: null, main_symptoms: null, initial_symptoms: null,
           diagnosis_related: null, diagnosis_details: null, symptoms_start: null,
           symptoms_duration: null, symptoms_frequency: null, symptoms_intensity: null,
@@ -351,10 +352,10 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted, loc
       }));
       setRecordState("completed");
       if (mode === "patient") {
-        dispatch(invalidateMyAnamnesis());
+        dispatch(invalidateMyAnamnesis(assessmentStage));
         dispatch(invalidateDashboard());
       } else {
-        dispatch(invalidatePatientAnamnesis(patientId));
+        dispatch(invalidatePatientAnamnesis({ patientId, stage: assessmentStage }));
       }
       window.scrollTo({ top: 0, behavior: "smooth" });
       onSubmitted?.();
@@ -379,10 +380,10 @@ export function AnamnesisForm({ patientId, mode, initialRecord, onSubmitted, loc
         anamnesisService.start({
           patient_id: patientId,
           taken_by: "doctor_on_behalf",
-          assessment_stage: "main_clinical",
+          assessment_stage: assessmentStage,
           appointment_id: appointmentId,
         }),
-        questions.length === 0 ? anamnesisService.getQuestions().catch(() => [] as AnamnesisQuestion[]) : Promise.resolve(questions),
+        questions.length === 0 ? anamnesisService.getQuestions(assessmentStage).catch(() => [] as AnamnesisQuestion[]) : Promise.resolve(questions),
       ]);
       if (questions.length === 0 && qs.length > 0) {
         setQuestions(qs);

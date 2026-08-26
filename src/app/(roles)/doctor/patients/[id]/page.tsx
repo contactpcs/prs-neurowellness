@@ -87,7 +87,7 @@ export default function DoctorPatientDetailPage() {
   const { patients: patientList } = useDoctorPatients();
   const assessments = usePatientPermissions(id);
   const { instances: scoreInstances, total: totalAssessments } = usePatientScoresSummary(id);
-  const { record: anamnesisRecord, isLoading: anamnesisLoading } = usePatientAnamnesis(id);
+  const { record: anamnesisRecord, isLoading: anamnesisLoading } = usePatientAnamnesis(id, "main");
   const { note: doctorNote, isLoading: noteLoading, save: saveNote } = usePatientNote(id);
   const [headerSearch, setHeaderSearch] = useState("");
 
@@ -494,9 +494,10 @@ export default function DoctorPatientDetailPage() {
                 <AnamnesisForm
                   patientId={id}
                   mode="doctor"
+                  assessmentStage="main"
                   initialRecord={visitSummaryLoading ? undefined : visitSummary?.anamnesis ?? null}
                   onSubmitted={() => {
-                    dispatch(invalidatePatientAnamnesis(id));
+                    dispatch(invalidatePatientAnamnesis({ patientId: id, stage: "main" }));
                     reloadVisitSummary();
                   }}
                   lockedForSession={sessionLocked}

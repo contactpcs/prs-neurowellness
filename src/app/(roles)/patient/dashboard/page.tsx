@@ -64,7 +64,7 @@ export default function PatientDashboardPage() {
 function PatientDashboard() {
   const { dashboard, isLoading: dashLoading } = usePatientDashboard();
   const { assessments, isLoading: assessLoading } = useMyAssessments();
-  const { record: anamnesisRecord } = useMyAnamnesis();
+  const { record: anamnesisRecord } = useMyAnamnesis("registration");
   const { summary } = useMyScoresSummary();
   const { notes: doctorNotes } = useMyDoctorNotes();
 

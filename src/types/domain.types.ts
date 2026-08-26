@@ -350,7 +350,7 @@ export interface AnamnesisRecord {
   patient_id: string;
   submitted_by: string | null;
   taken_by: string;
-  assessment_stage: "general_registration" | "main_clinical";
+  assessment_stage: "registration" | "main";
   /** The visit this anamnesis was captured/edited during. Null on records
    *  predating this column, and on anamnesis taken outside a booked visit. */
   appointment_id?: string | null;

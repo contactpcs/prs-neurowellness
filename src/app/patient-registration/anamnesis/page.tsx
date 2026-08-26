@@ -39,6 +39,7 @@ export default function SelfRegistrationAnamnesisPage() {
         <AnamnesisForm
           patientId={user.patient_id!}
           mode="patient"
+          assessmentStage="registration"
           onSubmitted={() => router.push("/patient-registration/assessment")}
         />
       </div>

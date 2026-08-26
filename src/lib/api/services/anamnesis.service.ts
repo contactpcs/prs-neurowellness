@@ -2,10 +2,12 @@ import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type { AnamnesisRecord } from "@/types/domain.types";
 
+export type AnamnesisStage = "registration" | "main";
+
 export type AnamnesisStartPayload = {
   patient_id: string;
   taken_by: "patient" | "doctor_on_behalf";
-  assessment_stage: "general_registration" | "main_clinical";
+  assessment_stage: AnamnesisStage;
   /** The visit this anamnesis is being captured/edited during, for the
    *  doctor portal's per-visit bundle. Omit when taken outside a visit. */
   appointment_id?: string | null;
@@ -56,6 +58,7 @@ export type AnamnesisSubmitPayload = {
 
 export type AnamnesisQuestion = {
   question_id: string;
+  type: AnamnesisStage;
   section_number: number;
   section_title: string;
   question_code: string;
@@ -76,8 +79,8 @@ export type AnamnesisQuestion = {
 
 export const anamnesisService = {
   // Real GET /anamnesis-catalog shape matches this directly.
-  async getQuestions(): Promise<AnamnesisQuestion[]> {
-    const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.QUESTIONS);
+  async getQuestions(type?: AnamnesisStage): Promise<AnamnesisQuestion[]> {
+    const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.QUESTIONS, { params: type ? { type } : undefined });
     return Array.isArray(data) ? data : [];
   },
 
@@ -175,15 +178,17 @@ export const anamnesisService = {
   },
 
   // NOT AVAILABLE directly — resolved via the caller's own /patients record first.
-  async getMyAnamnesis(): Promise<AnamnesisRecord> {
+  async getMyAnamnesis(assessmentStage?: AnamnesisStage): Promise<AnamnesisRecord> {
     const patientsRes = await apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD);
     const own = Array.isArray(patientsRes.data) ? patientsRes.data[0] : undefined;
     if (!own?.patient_id) throw new Error("No patient record found for the current user.");
-    const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.FOR_PATIENT(own.patient_id));
+    const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.FOR_PATIENT(own.patient_id), {
+      params: assessmentStage ? { assessment_stage: assessmentStage } : undefined,
+    });
     return withResponses(data);
   },
 
-  async getForPatient(patientId: string, assessmentStage?: "general_registration" | "main_clinical"): Promise<AnamnesisRecord | null> {
+  async getForPatient(patientId: string, assessmentStage?: AnamnesisStage): Promise<AnamnesisRecord | null> {
     try {
       const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.FOR_PATIENT(patientId), {
         params: assessmentStage ? { assessment_stage: assessmentStage } : undefined,

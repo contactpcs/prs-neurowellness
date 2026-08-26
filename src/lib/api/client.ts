@@ -54,11 +54,28 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
+/** FastAPI/Pydantic validation errors (422) return `detail` as an array of
+ * {type, loc, msg, input, ctx} objects, not a string — every page's
+ * `err?.response?.data?.detail ?? "fallback"` pattern assumes a string and
+ * crashes React ("Objects are not valid as a React child") if ever rendered
+ * raw. Every other error path (NotFoundError, ValidationError, ...) already
+ * returns a plain string detail, so this only ever fires for the 422 case.
+ * Normalized once here rather than patched at every call site. */
+function isPydanticErrorList(x: unknown): x is Array<{ loc?: unknown[]; msg?: string }> {
+  return Array.isArray(x) && x.length > 0 && x.every((e) => e && typeof e === "object" && "msg" in e);
+}
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401) {
       clearSessionAndSignalLogout();
+    }
+    const detail = error.response?.data?.detail;
+    if (isPydanticErrorList(detail)) {
+      error.response.data.detail = detail
+        .map((e) => (Array.isArray(e.loc) && e.loc.length ? `${e.loc[e.loc.length - 1]}: ${e.msg}` : e.msg))
+        .join("; ");
     }
     return Promise.reject(error);
   }
