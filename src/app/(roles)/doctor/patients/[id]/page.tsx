@@ -30,7 +30,7 @@ import { usePatientClinicalSessions } from "@/lib/hooks/usePatientClinicalSessio
 import { usePatientVisitSummary } from "@/lib/hooks/usePatientVisitSummary";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import type { ProtocolRead } from "@/types/treatmentProtocol.types";
-import { TreatmentPlanPanel } from "@/components/doctor/TreatmentPlanPanel";
+import { TreatmentPlanFull } from "@/components/doctor/TreatmentPlanFull";
 import { isFinalReportGenerated, markFinalReportGenerated } from "@/lib/utils/finalReportLock";
 
 function statusClass(status: Permission["status"]): string {
@@ -563,13 +563,13 @@ export default function DoctorPatientDetailPage() {
               ) : selectedSection === "treatment-protocol" ? (
                 <TreatmentProtocolPanel patientId={id} />
               ) : selectedSection === "treatment-plan" ? (
-                <TreatmentPlanPanel
+                <TreatmentPlanFull
                   patientId={id}
-                  currentSession={currentSession}
-                  sessionsUpToCurrent={currentSessionIdx >= 0 ? clinicalSessions.slice(0, currentSessionIdx + 1) : []}
-                  locked={treatmentPlanLocked}
-                  anamnesis={anamnesisRecord ?? null}
+                  patient={patient}
+                  clinicalSessions={clinicalSessions}
+                  sessionLocked={sessionLocked}
                   doctorNoteText={doctorNote?.note_text ?? null}
+                  onNavigateSection={setSelectedSection}
                   onGenerateFinalReport={() => openFinalReport(currentSession)}
                 />
               ) : selectedSection === "sessions" ? (

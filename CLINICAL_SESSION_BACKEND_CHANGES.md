@@ -4,28 +4,21 @@ Companion doc to the doctor-side clinical session work (Initial Consultation →
 
 Frontend files referenced below all live under `prs-neurowellness/src/`. Backend files referenced below all live under `db-backend-architecture-anava/backend/app/` and `db-backend-architecture-anava/SQL/`.
 
+> **Update:** Item 1 below (anamnesis-to-session linkage) has since been **resolved** by a real `GET /patients/{id}/visits/{appointment_id}/summary` endpoint — see the note at the end of that section. Items 2, 4, and 6 are still open.
+
 ---
 
-## 1. Anamnesis — no way to link a version to a session, no way to fetch a past version
+## 1. Anamnesis — RESOLVED: visit-scoped summary endpoint now exists
 
-### Current state
+### Original problem
 - `core.anamnesis_assessments` (`SQL/v1/05_tables_core.sql`) is already **versioned correctly** — every submission is a new, immutable row (`anamnesis_id = ANA-{patient8}-{version}`), never an UPDATE. `anamnesis/repository.py` confirms insert-only behavior.
-- But the row is keyed only by `patient_id` + `assessment_stage` ("general_registration" | "main_clinical"). There is **no `appointment_id` / `session_id` column**.
-- The only read endpoint, `GET /patients/{id}/anamnesis` (`patients/router.py`, wrapped by `ENDPOINTS.ANAMNESIS.FOR_PATIENT` in `lib/api/endpoints.ts`), returns **only the latest version**. There is no history/list endpoint and no "get by id/version" endpoint exposed to the frontend.
+- But the row was keyed only by `patient_id` + `assessment_stage`, with no `appointment_id` / `session_id` column, and `GET /patients/{id}/anamnesis` only ever returned the latest version — no way to fetch what was on record for a specific past session.
+- Symptom: recording a new anamnesis from Follow-up 1 made that version show up everywhere, including under Consultation.
 
-### Why this matters
-The doctor workspace has a session tab bar (Consultation / Follow-up 1 / Follow-up 2 / Protocol Follow-up 1 / …, built in `lib/hooks/usePatientClinicalSessions.ts` + `components/doctor/SessionTabsBar.tsx`). Each tab is supposed to show its own frozen anamnesis. Because the API can only ever return "the latest," recording a new anamnesis from Follow-up 1 makes that version show up **everywhere**, including under Consultation — it looks like historical data changed, when really the UI just has no way to ask for "the one that belonged to Consultation."
-
-### Workaround shipped
-`components/assessment/AnamnesisForm.tsx` now takes a `lockedForSession` prop: the doctor can only record a new anamnesis from the patient's **current/latest** session tab (computed by `usePatientClinicalSessions`). Every earlier tab shows the anamnesis read-only with no edit/record action. This stops new *corrupting* writes, but every locked tab still displays the same "latest" anamnesis rather than its own true historical version — that data still exists in the DB (nothing was lost) but is not retrievable through the current API.
-
-### What's needed
-- Add `appointment_id UUID REFERENCES appointments(appointment_id)` (nullable, for legacy rows) to `core.anamnesis_assessments`, set at `POST /patients/{id}/anamnesis/start` time. The caller (frontend) would pass the appointment_id of the session being conducted.
-- One of:
-  - `GET /patients/{id}/anamnesis/history` → all versions for that patient/stage, each with `appointment_id`, `version`, `completed_at`.
-  - or `GET /anamnesis/{anamnesis_id}` → fetch one specific version by id.
-  - or a `?appointment_id=` filter on the existing `GET /patients/{id}/anamnesis`.
-- Frontend impact once available: fetch the anamnesis whose `appointment_id` matches the selected session tab instead of always "latest" — removes the `lockedForSession` read-only workaround entirely, since each tab would show its own real data instead of just being blocked from writing.
+### Resolution (already shipped, both sides)
+- Backend now exposes `GET /patients/{id}/visits/{appointment_id}/summary` (`ENDPOINTS.DOCTORS.VISIT_SUMMARY` in `lib/api/endpoints.ts`, called via `doctorsService.getVisitSummary`) — a bundle of `{ anamnesis, prs_instances, protocols, registration }` **scoped to that specific appointment**, with an `inherited` flag on each item distinguishing "recorded at this visit" from "carried over from an earlier one" (the initial visit always resolves anamnesis to version 1).
+- Frontend: `lib/hooks/usePatientVisitSummary.ts` wraps it, and `app/(roles)/doctor/patients/[id]/page.tsx` now feeds the Anamnesis section (`initialRecord={visitSummary?.anamnesis}`) from this per-visit summary instead of the old always-latest fetch. `AnamnesisForm.tsx` also now takes `assessmentStage` and `appointmentId` props so a new submission is explicitly tagged to the visit it belongs to. The `lockedForSession` prop (blocks recording a new anamnesis from a non-current session) is still in place and still correct to keep — it stops the doctor from writing into the wrong visit's slot even though reads are now accurate.
+- Remaining polish (not blocking): `components/doctor/CompareSessionsModal.tsx` and `lib/utils/clinicalSnapshot.ts` (`asOfSnapshot`) still reconstruct "PRS/protocol as of a date" via a **date-proximity heuristic** rather than calling `getVisitSummary` per session for the exact `prs_instances`/`protocols` bundle. `TreatmentPlanFull.tsx` *does* already call `getVisitSummary` per clinical session for its PRS-by-visit grid. Worth aligning `CompareSessionsModal` to the real per-visit data too — purely a frontend follow-up, no further backend work needed for this item.
 
 ---
 
@@ -38,7 +31,7 @@ The doctor workspace has a session tab bar (Consultation / Follow-up 1 / Follow-
 - What's actually live today: a single per-patient "notepad" (`usePatientNote` in the patient workspace) — one row, overwritten on every save. This directly **violates** the "never overwrite previous clinical data" rule the rest of this workflow enforces (Anamnesis, PRS, EEG, Protocol are all properly versioned; Doctor Notes is the one exception).
 
 ### Workaround shipped
-None — this was intentionally left as-is rather than building a UI that fakes session-scoping on top of a table that doesn't support it. `components/doctor/TreatmentPlanPanel.tsx` reads the same single overwritable note (`doctorNoteText` prop) as a stand-in, clearly not session-accurate.
+None — this was intentionally left as-is rather than building a UI that fakes session-scoping on top of a table that doesn't support it. `components/doctor/TreatmentPlanFull.tsx` reads the same single overwritable note (`doctorNoteText` prop) as a stand-in, clearly not session-accurate.
 
 ### What's needed
 - Wire real endpoints for `core.doctor_session_notes`:
@@ -58,10 +51,10 @@ None — this was intentionally left as-is rather than building a UI that fakes 
 - sorting by date/time,
 - treating the **last** one in that order as the only editable/"current" session — everything before it is frozen.
 
-This is a reasonable approximation and works today, but it's inference, not a backend-enforced fact. PRS (`prs_assessment_instances.session_id`) and EEG (`patient_eeg_files.session_id`) already link to a real `sessions` table; Anamnesis and Doctor Notes (see #1, #2) don't yet.
+This is a reasonable approximation and works today. Anamnesis and PRS now both resolve to a specific appointment via `getVisitSummary` (see #1), which removes most of the practical risk here; Doctor Notes (#2) still has no linkage at all.
 
-### What's needed (lower priority than #1/#2)
-- Once Anamnesis and Doctor Notes carry `appointment_id`, consider whether "which session is currently open/editable" should become an explicit backend concept (e.g. an `is_locked` / `closed_at` flag on the appointment, set when the next session starts) rather than the frontend inferring it from booking order. Not required for correctness today — flagging so a future edge case (e.g. two follow-ups booked for the same day, a cancelled-then-rebooked follow-up) doesn't silently produce a wrong "latest" session.
+### What's needed (lower priority)
+- Consider whether "which session is currently open/editable" should become an explicit backend concept (e.g. an `is_locked` / `closed_at` flag on the appointment, set when the next session starts) rather than the frontend inferring it from booking order. Not required for correctness today — flagging so a future edge case (e.g. two follow-ups booked for the same day, a cancelled-then-rebooked follow-up) doesn't silently produce a wrong "latest" session.
 
 ---
 
@@ -76,34 +69,53 @@ This is a reasonable approximation and works today, but it's inference, not a ba
 - A real endpoint, e.g. `POST /patients/{id}/sessions/{appointment_id}/final-report`, that generates and stores a report artifact (PDF and/or structured JSON snapshot of anamnesis/PRS/protocol/notes as of that session) server-side.
 - `GET /patients/{id}/sessions/{appointment_id}/final-report` to check existence / retrieve it.
 - A persisted flag (on the appointment, or a new `session_reports` table) replacing `finalReportLock.ts` as the source of truth for whether a stage is locked-by-report.
-- **This is the one item worth prioritizing highest** if any of these are picked up — right now "Generate Final Report" doesn't actually generate a stored report at all, and the lock it drives isn't durable.
 
 ---
 
-## 5. PRS / Brain Mapping "as of a session" — exact linkage vs. best-effort snapshot (nice-to-have)
+## 5. PRS / Brain Mapping "as of a session" — mostly resolved, one frontend follow-up left
 
 ### Current state
-PRS and EEG are already properly versioned and already carry `session_id` server-side (see #3) — this item is about **read ergonomics**, not data integrity. `lib/utils/clinicalSnapshot.ts` (`asOfSnapshot`) approximates "the PRS score / protocol version as of this session" by taking the latest `completed_at`/`created_at` on or before the session's date. Used by `CompareSessionsModal.tsx` ("View Changes") and `TreatmentPlanPanel.tsx` ("Progress Since …"). This is a reasonable trend indicator but not a guaranteed exact match to what was live at that specific appointment.
+PRS and EEG are already properly versioned and already carry `session_id` server-side (see #3). Since the `GET /patients/{id}/visits/{appointment_id}/summary` endpoint from #1 already returns exact `prs_instances` for a given appointment, this is **no longer a backend gap** — `TreatmentPlanFull.tsx` already uses it for the per-visit PRS grid. `lib/utils/clinicalSnapshot.ts` (`asOfSnapshot`, a date-proximity heuristic predating that endpoint) is still used by `CompareSessionsModal.tsx`, and should be swapped for real `getVisitSummary` calls too — see the note at the end of #1.
 
-### What's needed (optional polish)
-- Expose `appointment_id` (resolved from `session_id`) directly on the PRS instance and EEG report read models, or accept an `?appointment_id=` filter, so "PRS as of Follow-up 1" can be resolved exactly instead of by date proximity.
+### What's needed
+Nothing on the backend. Frontend-only: replace the remaining `asOfSnapshot` call site in `CompareSessionsModal.tsx` with `doctorsService.getVisitSummary`.
+
+---
+
+## 6. Treatment Plan — no persistence at all; editable state lives only in the browser
+
+### Current state
+- `components/doctor/TreatmentPlanFull.tsx` implements the full doctor Treatment Plan screen (goal, session/frequency targets, medication plan, CA instructions, notes, a Draft → Set → Reopen lifecycle, and an append-only "Plan log" of every finalised version) — but there is no backend table backing any of it.
+- `types/treatmentProtocol.types.ts` already declares a `TreatmentPlanRead` interface (`plan_id`, `patient_id`, `doctor_id`, `cycle_id`, `device_type`, `sessions_prescribed`, `standard_sessions`, `extended_sessions`, `status`, `parent_plan_id`) — strong evidence this was designed for once, but nothing in `endpoints.ts` or any service calls it, and a comment elsewhere in that file notes `plan_id` was actually **dropped** from `protocol_plan` in migration 48. So the concept exists in name only.
+- `lib/utils/treatmentPlanStore.ts` persists the whole plan object (including the finalise log) to **`localStorage`**, keyed by the active protocol's id — same pattern as `finalReportLock.ts`, but carrying much more data (free-text goal/instructions/notes, and a clinical audit log of every "finalised" plan version). This is the least defensible of all the localStorage workarounds in this doc: an append-only clinical log that only exists in one browser is not really an audit log.
+- The "Medication plan" field is free text only — there is no medication/prescription tracking module anywhere in this codebase (checked: no service, no type, no table reference). The Treatment Plan screen says so explicitly rather than fabricating a medication list.
+
+### What's needed
+- A real `treatment_plans` table (or resurrect/repurpose the existing `TreatmentPlanRead` shape) with fields for: goal, total sessions, sessions/week, review cadence, next review, medication plan text, CA instructions, notes, status (`draft`/`set`), `set_by`/`set_at`.
+- An append-only `treatment_plan_versions` (or similar) table for the "Plan log" — one row per finalise action, never updated, mirroring how `treatment_protocols` versions itself.
+- Endpoints: `GET /patients/{id}/treatment-plan` (current + log), `PUT /patients/{id}/treatment-plan` (save draft), `POST /patients/{id}/treatment-plan/finalize` (appends a new log entry, supersedes the previous one).
+- If medication tracking is ever wanted as structured data (not just a free-text plan field), that's a separate, larger module with no existing groundwork — flagging it here since the mockup this screen was built from assumed one exists.
 
 ---
 
 ## Suggested priority
 
 1. **Doctor Notes CRUD** (#2) — currently the only completely non-functional piece; the table already exists.
-2. **Anamnesis appointment linkage + a way to fetch a specific version** (#1) — directly fixes the "data appears to change across sessions" bug that prompted this doc.
-3. **Final Report persistence** (#4) — replaces a `localStorage` hack with a real, durable, auditable record; also the least defensible workaround of the three.
-4. **Session/appointment linkage as an explicit backend concept** (#3) and **exact PRS/EEG-as-of-session linkage** (#5) — both nice-to-have hardening, not blocking anything today.
+2. **Final Report persistence** (#4) — replaces a `localStorage` hack with a real, durable, auditable record.
+3. **Treatment Plan persistence** (#6) — same class of problem as #4, and the biggest single chunk of clinical data currently living only in `localStorage`.
+4. **Frontend follow-up to wire the remaining `asOfSnapshot` call site to `getVisitSummary`** (#5) — no backend work, just consistency cleanup.
+5. **Session/appointment linkage as an explicit backend concept** (#3) — nice-to-have hardening, not blocking anything today.
+
+Item 1 (anamnesis-to-session linkage) is done — see the update at the top of this document.
 
 ## Reference — files touched by the frontend-only implementation
 
 **Frontend**
 - `lib/hooks/usePatientClinicalSessions.ts` — session tab derivation
-- `components/doctor/SessionTabsBar.tsx`, `SessionFinalReportModal.tsx`, `CompareSessionsModal.tsx`, `TreatmentPlanPanel.tsx`
+- `lib/hooks/usePatientVisitSummary.ts` — per-visit anamnesis/PRS/protocol bundle (backed by the real `getVisitSummary` endpoint)
+- `components/doctor/SessionTabsBar.tsx`, `SessionFinalReportModal.tsx`, `CompareSessionsModal.tsx`, `TreatmentPlanFull.tsx`
 - `components/assessment/AnamnesisForm.tsx`, `AnamnesisReadOnlyView.tsx`
-- `lib/utils/finalReportLock.ts`, `lib/utils/clinicalSnapshot.ts`
+- `lib/utils/finalReportLock.ts`, `lib/utils/clinicalSnapshot.ts`, `lib/utils/treatmentPlanStore.ts`
 - `lib/api/services/anamnesis.service.ts`, `doctorNotes.service.ts` (stub)
 - `app/(roles)/doctor/patients/[id]/page.tsx`, `app/(roles)/doctor/appointments/[id]/page.tsx`
 
