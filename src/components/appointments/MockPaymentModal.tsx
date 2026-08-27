@@ -209,15 +209,30 @@ export function MockPaymentModal({ isOpen, onClose, appointmentId, onPaid }: Moc
         currency: created.currency,
         name: "Anava Clinic",
         description: priced.item_name,
-        // TEMPORARY TEST-ONLY: normally calls paymentsService.verifyPayment(...)
-        // here (client-side confirm, races the webhook — whichever lands
-        // first wins). Skipped on purpose right now so ONLY the Razorpay
-        // webhook can ever flip this payment to paid, with nothing else able
-        // to mask a real delivery failure. Restore the verifyPayment(...)
-        // call (see git history / MockPaymentModal before this comment) once
-        // webhook delivery is confirmed working end-to-end.
-        handler: () => {
-          pollUntilPaid(created.payment_id);
+        // Client-side confirm — races the webhook, whichever lands first
+        // wins (both paths bail early once status is already 'paid', see
+        // update_status/handle_webhook). Client-verify is instant but only
+        // as trustworthy as the browser's say-so and dies if the tab closes
+        // before it fires; the webhook is authoritative (signed, server-to-
+        // server) but depends on delivery reaching this endpoint. Keeping
+        // both — confirmed webhook delivery works (27 Aug 2026), so this is
+        // belt-and-suspenders, not a fallback covering for a broken webhook.
+        handler: (response: unknown) => {
+          const r = response as RazorpayCheckoutResponse;
+          paymentsService
+            .verifyPayment(created.payment_id, {
+              razorpay_order_id: r.razorpay_order_id,
+              razorpay_payment_id: r.razorpay_payment_id,
+              razorpay_signature: r.razorpay_signature,
+            })
+            .then((confirmed) => {
+              if (confirmed.status === "paid") setStage("success");
+              else pollUntilPaid(created.payment_id);
+            })
+            // Verify call itself failed (network blip, etc) — the webhook
+            // may still land independently, fall back to polling instead
+            // of surfacing a hard error for what could be a transient miss.
+            .catch(() => pollUntilPaid(created.payment_id));
         },
         modal: {
           // Razorpay's own payment.failed client event doesn't reliably
