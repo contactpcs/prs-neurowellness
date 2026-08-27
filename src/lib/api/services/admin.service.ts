@@ -15,6 +15,12 @@ import type {
   BillableItemCategory,
   BillableItemCreatePayload,
   BillableItemUpdatePayload,
+  PlatformFeeConfig,
+  PlatformFeeUpdatePayload,
+  CancellationPolicyTier,
+  CancellationPolicyTierCreatePayload,
+  CancellationPolicyTierUpdatePayload,
+  SessionType,
 } from "@/types/admin.types";
 
 /** Real backend has no `is_active` boolean — clinics carry a `status` enum
@@ -87,6 +93,39 @@ export const adminService = {
   async updateBillableItem(itemId: string, payload: BillableItemUpdatePayload): Promise<BillableItem> {
     const { data } = await apiClient.patch(ENDPOINTS.BILLABLE_ITEMS.ITEM(itemId), payload);
     return data;
+  },
+
+  // ─── Platform Fee (global % of base fee, per session_type) ───
+  async getPlatformFeeConfig(): Promise<PlatformFeeConfig[]> {
+    const { data } = await apiClient.get(ENDPOINTS.PLATFORM_FEE_CONFIG.LIST);
+    return Array.isArray(data) ? data : [];
+  },
+
+  async updatePlatformFeeConfig(sessionType: SessionType, payload: PlatformFeeUpdatePayload): Promise<PlatformFeeConfig> {
+    const { data } = await apiClient.patch(ENDPOINTS.PLATFORM_FEE_CONFIG.ITEM(sessionType), payload);
+    return data;
+  },
+
+  // ─── Cancellation Policy Tiers (per clinic override, per session_type) ───
+  async getCancellationPolicyTiers(params?: { sessionType?: SessionType; clinicId?: string }): Promise<CancellationPolicyTier[]> {
+    const { data } = await apiClient.get(ENDPOINTS.CANCELLATION_POLICY_TIERS.LIST, {
+      params: { session_type: params?.sessionType, clinic_id: params?.clinicId },
+    });
+    return Array.isArray(data) ? data : [];
+  },
+
+  async createCancellationPolicyTier(payload: CancellationPolicyTierCreatePayload): Promise<CancellationPolicyTier> {
+    const { data } = await apiClient.post(ENDPOINTS.CANCELLATION_POLICY_TIERS.LIST, payload);
+    return data;
+  },
+
+  async updateCancellationPolicyTier(tierId: string, payload: CancellationPolicyTierUpdatePayload): Promise<CancellationPolicyTier> {
+    const { data } = await apiClient.patch(ENDPOINTS.CANCELLATION_POLICY_TIERS.ITEM(tierId), payload);
+    return data;
+  },
+
+  async deleteCancellationPolicyTier(tierId: string): Promise<void> {
+    await apiClient.delete(ENDPOINTS.CANCELLATION_POLICY_TIERS.ITEM(tierId));
   },
 
   // ─── Admins (regional_admin / clinic_admin management view) ───

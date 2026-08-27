@@ -179,9 +179,24 @@ export default function ClinicAdminPaymentsPage() {
               </div>
             </div>
             <div className="divide-y divide-neutral-100 border border-neutral-100 rounded-lg overflow-hidden text-sm">
+              {payment.base_fee_amount != null && (
+                <div className="flex items-center justify-between px-4 py-2.5"><span className="text-neutral-500">Base Fee</span><span className="text-neutral-800 font-medium">{payment.currency} {payment.base_fee_amount.toLocaleString("en-IN")}</span></div>
+              )}
+              {payment.platform_fee_amount != null && (
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <span className="text-neutral-500">Platform &amp; Convenience Fee{payment.platform_fee_percent != null ? ` (${payment.platform_fee_percent}%)` : ""}</span>
+                  <span className="text-neutral-800 font-medium">{payment.currency} {payment.platform_fee_amount.toLocaleString("en-IN")}</span>
+                </div>
+              )}
               <div className="flex items-center justify-between px-4 py-2.5"><span className="text-neutral-500">Payment Method</span><span className="text-neutral-800 font-medium">{payment.payment_method ?? "—"}</span></div>
               <div className="flex items-center justify-between px-4 py-2.5"><span className="text-neutral-500">Session ID</span><span className="text-neutral-800 font-medium">{payment.session_id ?? "—"}</span></div>
               <div className="flex items-center justify-between px-4 py-2.5"><span className="text-neutral-500">Order ID</span><span className="text-neutral-800 font-medium">{payment.order_id ?? "—"}</span></div>
+              {payment.cancellation_refund_amount != null && (
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <span className="text-neutral-500">Cancellation Refund Due</span>
+                  <span className="text-neutral-800 font-medium">{payment.currency} {payment.cancellation_refund_amount.toLocaleString("en-IN")} ({payment.cancellation_refund_percent}%)</span>
+                </div>
+              )}
               {payment.waived_reason && (
                 <div className="flex items-center justify-between px-4 py-2.5"><span className="text-neutral-500">Waived Reason</span><span className="text-neutral-800 font-medium">{payment.waived_reason}</span></div>
               )}

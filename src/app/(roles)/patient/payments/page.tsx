@@ -69,9 +69,19 @@ export default function PatientPaymentsPage() {
                       <p className="text-sm font-semibold text-neutral-900">
                         {p.currency} {p.amount.toLocaleString("en-IN")}
                       </p>
+                      {p.base_fee_amount != null && p.platform_fee_amount != null && p.platform_fee_amount > 0 && (
+                        <p className="text-xs text-neutral-400">
+                          {p.currency} {p.base_fee_amount.toLocaleString("en-IN")} + {p.currency} {p.platform_fee_amount.toLocaleString("en-IN")} fee
+                        </p>
+                      )}
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${STATUS_STYLES[p.status]}`}>
                         {p.status}
                       </span>
+                      {p.cancellation_refund_amount != null && (
+                        <p className="text-xs text-neutral-500 mt-0.5">
+                          Refund due: {p.currency} {p.cancellation_refund_amount.toLocaleString("en-IN")} ({p.cancellation_refund_percent}%)
+                        </p>
+                      )}
                     </div>
                     {canDownload && (
                       <Button

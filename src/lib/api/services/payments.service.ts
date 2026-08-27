@@ -13,6 +13,15 @@ export interface Payment {
   waived_by: string | null;
   waived_reason: string | null;
   created_at: string;
+  /** Snapshot at order-creation time — null on store-order payments (no fee
+   * breakdown for those) and on any payment created before this existed. */
+  base_fee_amount: number | null;
+  platform_fee_percent: number | null;
+  platform_fee_amount: number | null;
+  /** Filled in only once the linked appointment has been cancelled. Not a
+   * gateway refund — the amount owed, not money actually moved back yet. */
+  cancellation_refund_percent: number | null;
+  cancellation_refund_amount: number | null;
 }
 
 /** Response from creating a real Razorpay order — carries the public key the
@@ -28,6 +37,10 @@ export interface PaymentAmount {
   amount: number;
   currency: string;
   item_name: string;
+  /** Consultation/session fee before the platform fee is added. */
+  base_fee_amount: number;
+  platform_fee_percent: number;
+  platform_fee_amount: number;
 }
 
 /** /me/payments — carries the appointment's type/date so the billing-history

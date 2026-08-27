@@ -11,7 +11,7 @@ import {
   LayoutDashboard, Users, ClipboardList,
   UserCircle, LogOut, Brain, ChevronLeft, Menu, Calendar, CalendarDays,
   ClipboardCheck, MapPin, Building2, UserCog, Settings, ShieldCheck,
-  ShoppingBag, Receipt, Bell, DollarSign, Activity, Syringe, BarChart2,
+  ShoppingBag, Receipt, Bell, DollarSign, Activity, Syringe, BarChart2, Percent,
 } from "lucide-react";
 
 interface NavItem {
@@ -66,6 +66,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { label: "Clinics",         href: "/admin/clinics",         icon: Building2 },
     { label: "Clinic Requests", href: "/admin/clinic-requests", icon: ClipboardList, badge: "clinicRequests" },
     { label: "Billable Items",  href: "/admin/billable-items",  icon: DollarSign },
+    { label: "Fees & Cancellation", href: "/admin/fee-config",  icon: Percent },
     { label: "Settings",        href: "/admin/settings",        icon: Settings },
   ],
   regional_admin: [

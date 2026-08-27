@@ -148,6 +148,51 @@ export interface BillableItemUpdatePayload {
   is_active?: boolean;
 }
 
+// ─── Platform Fee & Cancellation Policy (Settings → Fees & Cancellation) ──
+// Mirrors backend/app/modules/admin/schemas.py PlatformFee*/CancellationPolicyTier* exactly.
+
+export type SessionType = "appointment" | "device_session";
+
+/** One row per session_type, global — same percent for every clinic. */
+export interface PlatformFeeConfig {
+  session_type: SessionType;
+  fee_percent: number;
+  updated_by?: string | null;
+  updated_at: string;
+}
+
+export interface PlatformFeeUpdatePayload {
+  fee_percent: number;
+}
+
+/** clinic_id null = platform default tier, applies to every clinic with no
+ * tiers of its own for that session_type. Set = a complete override tier
+ * set for that one clinic (any one clinic-specific tier means the whole
+ * default set stops applying to that clinic). */
+export interface CancellationPolicyTier {
+  tier_id: string;
+  clinic_id?: string | null;
+  session_type: SessionType;
+  min_hours_before: number;
+  refund_percent: number;
+  created_by?: string | null;
+  updated_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CancellationPolicyTierCreatePayload {
+  clinic_id?: string | null;
+  session_type: SessionType;
+  min_hours_before: number;
+  refund_percent: number;
+}
+
+export interface CancellationPolicyTierUpdatePayload {
+  min_hours_before?: number;
+  refund_percent?: number;
+}
+
 export interface RegionalAdminAssignPayload {
   clinic_id: string;
   email: string;

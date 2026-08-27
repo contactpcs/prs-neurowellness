@@ -265,6 +265,20 @@ export function MockPaymentModal({ isOpen, onClose, appointmentId, onPaid }: Moc
                 </div>
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <span className="text-neutral-500">{priced.item_name}</span>
+                  <span className="text-neutral-800 font-medium">
+                    ₹{priced.base_fee_amount.toLocaleString("en-IN")}
+                  </span>
+                </div>
+                {priced.platform_fee_amount > 0 && (
+                  <div className="flex items-center justify-between px-4 py-2.5">
+                    <span className="text-neutral-500">Platform &amp; convenience fee ({priced.platform_fee_percent}%)</span>
+                    <span className="text-neutral-800 font-medium">
+                      ₹{priced.platform_fee_amount.toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between px-4 py-2.5 bg-neutral-50">
+                  <span className="text-neutral-600 font-medium">Total</span>
                   <span className="text-neutral-900 font-semibold">
                     ₹{priced.amount.toLocaleString("en-IN")}
                   </span>
@@ -309,8 +323,18 @@ export function MockPaymentModal({ isOpen, onClose, appointmentId, onPaid }: Moc
           {(stage === "ready" || stage === "processing") && priced && (
             <>
               <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-sm text-neutral-500">{priced.item_name}</span>
+                <div className="flex items-center justify-between text-xs text-neutral-500">
+                  <span>{priced.item_name}</span>
+                  <span>₹{priced.base_fee_amount.toLocaleString("en-IN")}</span>
+                </div>
+                {priced.platform_fee_amount > 0 && (
+                  <div className="mt-1 flex items-center justify-between text-xs text-neutral-500">
+                    <span>Platform &amp; convenience fee ({priced.platform_fee_percent}%)</span>
+                    <span>₹{priced.platform_fee_amount.toLocaleString("en-IN")}</span>
+                  </div>
+                )}
+                <div className="mt-2 pt-2 border-t border-neutral-200 flex items-baseline justify-between">
+                  <span className="text-sm text-neutral-500">Total</span>
                   <span className="text-2xl font-semibold text-neutral-900">
                     ₹{priced.amount.toLocaleString("en-IN")}
                   </span>

@@ -43,6 +43,16 @@ export const ENDPOINTS = {
     ITEM: (itemId: string) => `/billable-items/${itemId}`, // real — GET one, PATCH update. No DELETE — deactivate instead.
   },
 
+  // ─── Platform Fee & Cancellation Policy (super_admin) ───
+  PLATFORM_FEE_CONFIG: {
+    LIST: "/platform-fee-config",                                    // real — GET both session_type rows
+    ITEM: (sessionType: string) => `/platform-fee-config/${sessionType}`, // real — PATCH fee_percent
+  },
+  CANCELLATION_POLICY_TIERS: {
+    LIST: "/cancellation-policy-tiers",                          // real — GET (?session_type, ?clinic_id), POST create
+    ITEM: (tierId: string) => `/cancellation-policy-tiers/${tierId}`, // real — PATCH, DELETE
+  },
+
   // ─── Doctors ───
   DOCTORS: {
     DASHBOARD: "/doctors/dashboard", // NOT AVAILABLE — no aggregate endpoint, composed client-side
