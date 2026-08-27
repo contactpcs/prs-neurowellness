@@ -335,6 +335,12 @@ export interface Appointment {
   /** Ordinal within the protocol's course — set for device_session and
    *  protocol_followup rows (30). */
   session_number?: number | null;
+  /** Visit timeline — set as the appointment actually progresses through
+   *  checked_in -> in_progress -> completed, independent of the booked
+   *  appointment_date/start_time/end_time slot above. All null until reached. */
+  checked_in_at?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
 }
 
 // ─── Anamnesis ────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Receipt, Search } from "lucide-react";
 import { Card, CardContent, Button, Input, Modal } from "@/components/ui";
 import { paymentsService, type Payment } from "@/lib/api/services/payments.service";
+import { PaymentsHistorySection } from "@/components/payments/PaymentsHistorySection";
 
 const STATUS_STYLES: Record<Payment["status"], string> = {
   pending: "bg-amber-100 text-amber-700",
@@ -145,10 +146,12 @@ export default function ClinicAdminPaymentsPage() {
   const canRefund = payment && payment.status === "paid";
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Payments</h1>
-        <p className="text-sm text-neutral-500 mt-0.5">Look up a payment by ID to waive it — there's no browsable payment list yet, so you'll need the payment ID from wherever it was referenced (e.g. a session or order).</p>
+    <div className="space-y-8">
+      <PaymentsHistorySection />
+
+      <div className="pt-4 border-t border-neutral-200">
+        <h2 className="text-lg font-bold text-neutral-900">Look Up a Specific Payment</h2>
+        <p className="text-sm text-neutral-500 mt-0.5">Paste a payment ID to waive or refund it directly.</p>
       </div>
 
       <Card>

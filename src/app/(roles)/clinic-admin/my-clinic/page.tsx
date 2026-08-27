@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Building2, Edit2, RefreshCw } from "lucide-react";
+import { Building2, Edit2, RefreshCw, Power, PowerOff, Clock } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
 import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
 import { adminService } from "@/lib/api/services/admin.service";
-import type { AdminClinic, CreateClinicPayload } from "@/types/admin.types";
+import type { AdminClinic, ClinicWeeklyHours, ClinicWeeklyHoursItem, CreateClinicPayload } from "@/types/admin.types";
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 const STATUS_STYLES: Record<AdminClinic["status"], string> = {
   setup: "bg-amber-100 text-amber-700",
@@ -95,19 +97,135 @@ function EditClinicForm({ clinic, onSubmit, onClose }: {
   );
 }
 
+interface DayRow {
+  enabled: boolean;
+  start_time: string; // "HH:MM"
+  end_time: string;
+}
+
+function toRows(hours: ClinicWeeklyHours[]): DayRow[] {
+  const byDay = new Map(hours.map((h) => [h.day_of_week, h]));
+  return DAY_NAMES.map((_, dow) => {
+    const row = byDay.get(dow);
+    return row
+      ? { enabled: true, start_time: row.start_time.slice(0, 5), end_time: row.end_time.slice(0, 5) }
+      : { enabled: false, start_time: "09:00", end_time: "18:00" };
+  });
+}
+
+/** Weekly clinic operating hours — a day with `enabled: false` is simply
+ * omitted from the saved set, which scheduling/service.py treats as closed
+ * (once the clinic has ANY hours configured at all) rather than unset. */
+function WeeklyHoursEditor({ clinicId, initialHours }: { clinicId: string; initialHours: ClinicWeeklyHours[] }) {
+  const [rows, setRows] = useState<DayRow[]>(toRows(initialHours));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  function updateRow(dow: number, patch: Partial<DayRow>) {
+    setSaved(false);
+    setRows((prev) => prev.map((r, i) => (i === dow ? { ...r, ...patch } : r)));
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const items: ClinicWeeklyHoursItem[] = rows
+        .map((r, dow) => ({ ...r, dow }))
+        .filter((r) => r.enabled)
+        .map((r) => ({ day_of_week: r.dow, start_time: `${r.start_time}:00`, end_time: `${r.end_time}:00` }));
+      await adminService.replaceClinicHours(clinicId, items);
+      setSaved(true);
+    } catch (err: any) {
+      setError(err?.response?.data?.error?.message || err?.response?.data?.detail || "Failed to save hours");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const anyConfigured = rows.some((r) => r.enabled);
+
+  return (
+    <Card>
+      <CardContent className="p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-neutral-700 flex items-center gap-1.5">
+            <Clock className="h-4 w-4" /> Weekly Operating Hours
+          </h2>
+          <Button size="sm" disabled={saving} onClick={handleSave}>{saving ? "Saving…" : "Save Hours"}</Button>
+        </div>
+        {!anyConfigured && (
+          <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+            No hours configured yet — doctor schedules at this clinic aren&apos;t restricted to any hours until you save at least one day here.
+          </p>
+        )}
+        {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+        {saved && <p className="text-sm text-green-700 bg-green-50 rounded-lg px-3 py-2">Hours saved.</p>}
+        <div className="space-y-2">
+          {DAY_NAMES.map((name, dow) => {
+            const row = rows[dow];
+            return (
+              <div key={dow} className="flex items-center gap-3">
+                <label className="flex items-center gap-2 w-32 flex-shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={row.enabled}
+                    onChange={(e) => updateRow(dow, { enabled: e.target.checked })}
+                    className="rounded border-neutral-300"
+                  />
+                  <span className="text-sm text-neutral-700">{name}</span>
+                </label>
+                {row.enabled ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="time"
+                      value={row.start_time}
+                      onChange={(e) => updateRow(dow, { start_time: e.target.value })}
+                      className="px-2 py-1 text-sm border border-neutral-200 rounded-lg"
+                    />
+                    <span className="text-neutral-400 text-sm">to</span>
+                    <input
+                      type="time"
+                      value={row.end_time}
+                      onChange={(e) => updateRow(dow, { end_time: e.target.value })}
+                      className="px-2 py-1 text-sm border border-neutral-200 rounded-lg"
+                    />
+                  </div>
+                ) : (
+                  <span className="text-sm text-neutral-300">Closed</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ClinicAdminMyClinicPage() {
   const { user } = useAuth();
   const [clinic, setClinic] = useState<AdminClinic | null>(null);
+  const [hours, setHours] = useState<ClinicWeeklyHours[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showEdit, setShowEdit] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [confirmingToggle, setConfirmingToggle] = useState(false);
+  const [togglingStatus, setTogglingStatus] = useState(false);
 
   async function load() {
     if (!user?.clinic_id) return;
     setError(null);
     try {
-      setClinic(await adminService.getClinic(user.clinic_id));
+      const [clinicRes, hoursRes] = await Promise.all([
+        adminService.getClinic(user.clinic_id),
+        adminService.getClinicHours(user.clinic_id),
+      ]);
+      setClinic(clinicRes);
+      setHours(hoursRes);
     } catch (e: any) {
       setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Failed to load clinic");
     }
@@ -127,6 +245,20 @@ export default function ClinicAdminMyClinicPage() {
     return updated;
   }
 
+  async function handleToggleOperational() {
+    if (!user?.clinic_id || !clinic) return;
+    setTogglingStatus(true);
+    try {
+      const updated = await adminService.setClinicOperationalStatus(user.clinic_id, !clinic.is_operational);
+      setClinic(updated);
+      setConfirmingToggle(false);
+    } catch (e: any) {
+      setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Failed to update clinic status");
+    } finally {
+      setTogglingStatus(false);
+    }
+  }
+
   if (isLoading) return <MyClinicSkeleton />;
 
   return (
@@ -139,7 +271,16 @@ export default function ClinicAdminMyClinicPage() {
             <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
           </button>
           {clinic && (
-            <Button onClick={() => setShowEdit(true)}><Edit2 className="h-4 w-4 mr-1.5" />Edit Clinic</Button>
+            <>
+              <Button
+                variant={clinic.is_operational ? "outline" : "primary"}
+                onClick={() => setConfirmingToggle(true)}
+              >
+                {clinic.is_operational ? <PowerOff className="h-4 w-4 mr-1.5" /> : <Power className="h-4 w-4 mr-1.5" />}
+                {clinic.is_operational ? "Close Clinic" : "Reopen Clinic"}
+              </Button>
+              <Button onClick={() => setShowEdit(true)}><Edit2 className="h-4 w-4 mr-1.5" />Edit Clinic</Button>
+            </>
           )}
         </div>
       </div>
@@ -155,13 +296,36 @@ export default function ClinicAdminMyClinicPage() {
               </div>
               <div>
                 <p className="text-lg font-semibold text-neutral-900">{clinic.clinic_name}</p>
-                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_STYLES[clinic.status]}`}>{STATUS_LABELS[clinic.status]}</span>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_STYLES[clinic.status]}`}>{STATUS_LABELS[clinic.status]}</span>
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${clinic.is_operational ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
+                    {clinic.is_operational ? "Open" : "Closed"}
+                  </span>
+                </div>
               </div>
             </div>
-            <DetailFieldList data={clinic} exclude={["is_active"]} />
+            <DetailFieldList data={clinic} exclude={["is_active", "is_operational"]} />
           </CardContent>
         </Card>
       )}
+
+      {clinic && <WeeklyHoursEditor key={clinic.clinic_id} clinicId={clinic.clinic_id} initialHours={hours} />}
+
+      <Modal isOpen={confirmingToggle} onClose={() => setConfirmingToggle(false)} title={clinic?.is_operational ? "Close this clinic?" : "Reopen this clinic?"}>
+        <div className="space-y-4">
+          <p className="text-sm text-neutral-700">
+            {clinic?.is_operational
+              ? "While closed, doctors can't set new schedules and no new appointments — including device sessions — can be booked or claimed at this clinic. Existing bookings are unaffected."
+              : "Reopening lets doctors set schedules and patients book appointments here again."}
+          </p>
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setConfirmingToggle(false)} disabled={togglingStatus}>Cancel</Button>
+            <Button onClick={handleToggleOperational} disabled={togglingStatus}>
+              {togglingStatus ? "Saving…" : clinic?.is_operational ? "Close Clinic" : "Reopen Clinic"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal isOpen={showEdit} onClose={() => setShowEdit(false)} title="Edit Clinic">
         {clinic && <EditClinicForm clinic={clinic} onSubmit={handleUpdate} onClose={() => setShowEdit(false)} />}

@@ -54,6 +54,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { label: "All Patients",href: "/receptionist/patients",             icon: Users },
     { label: "Approvals",   href: "/receptionist/approvals",            icon: ClipboardCheck, badge: "receptionPatientApprovals" },
     { label: "Notifications", href: "/receptionist/notifications",      icon: Bell, badge: "receptionUnreadNotifications" },
+    { label: "Payments",    href: "/receptionist/payments",             icon: Receipt },
     { label: "Profile",     href: "/receptionist/profile",              icon: UserCircle },
   ],
   platform_admin: [
@@ -67,6 +68,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { label: "Clinic Requests", href: "/admin/clinic-requests", icon: ClipboardList, badge: "clinicRequests" },
     { label: "Billable Items",  href: "/admin/billable-items",  icon: DollarSign },
     { label: "Fees & Cancellation", href: "/admin/fee-config",  icon: Percent },
+    { label: "Payments",        href: "/admin/payments",        icon: Receipt },
     { label: "Settings",        href: "/admin/settings",        icon: Settings },
   ],
   regional_admin: [
@@ -77,6 +79,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { label: "Patients",        href: "/regional-admin/patients",        icon: Users },
     { label: "Appointments",    href: "/regional-admin/appointments",    icon: CalendarDays },
     { label: "Staff Approvals", href: "/regional-admin/staff-approvals", icon: ClipboardCheck, badge: "staffApprovals" },
+    { label: "Payments",        href: "/regional-admin/payments",        icon: Receipt },
   ],
   clinic_admin: [
     { label: "Dashboard",      href: "/clinic-admin/dashboard",      icon: LayoutDashboard },

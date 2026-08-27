@@ -48,6 +48,22 @@ function fmtDate(d: string): string {
   return new Date(d + "T00:00:00").toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+/** start_time/end_time are plain "HH:MM[:SS]" strings, no date component —
+ * diff them as minutes-since-midnight rather than parsing as a Date. */
+function fmtDurationMinutes(start?: string, end?: string): string | null {
+  if (!start || !end) return null;
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  const minutes = eh * 60 + em - (sh * 60 + sm);
+  if (!Number.isFinite(minutes) || minutes <= 0) return null;
+  return `${minutes} min`;
+}
+
+function fmtSessionType(appointmentType?: string): string {
+  if (!appointmentType) return "Session";
+  return appointmentType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 interface MockPaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -110,6 +126,22 @@ export function MockPaymentModal({ isOpen, onClose, appointmentId, onPaid }: Moc
     };
   }, []);
 
+  async function showFailure(paymentId: string) {
+    // payments itself carries no failure reason (that's payment_logs' job,
+    // see 66_payment_logs.sql) — pull the most recent log entry for it so
+    // the patient sees why, not just that it failed.
+    let reason = "Payment failed — please try again.";
+    try {
+      const logs = await paymentsService.getLogsForPayment(paymentId);
+      const latestFailure = logs.filter((l) => l.status === "failed" && l.failure_reason).pop();
+      if (latestFailure?.failure_reason) reason = latestFailure.failure_reason;
+    } catch {
+      // fall back to the generic message above
+    }
+    setError(reason);
+    setStage("error");
+  }
+
   function pollUntilPaid(paymentId: string) {
     setStage("confirming");
     const startedAt = Date.now();
@@ -119,6 +151,15 @@ export function MockPaymentModal({ isOpen, onClose, appointmentId, onPaid }: Moc
         if (payment.status === "paid") {
           if (pollHandle.current) clearInterval(pollHandle.current);
           setStage("success");
+          return;
+        }
+        // Backend already knows this failed (webhook already landed) even
+        // though Razorpay's client-side payment.failed event may never fire
+        // for an async/webhook-only failure — don't wait out the full
+        // timeout for something that's already resolved.
+        if (payment.status === "failed") {
+          if (pollHandle.current) clearInterval(pollHandle.current);
+          await showFailure(paymentId);
           return;
         }
       } catch {
@@ -168,29 +209,43 @@ export function MockPaymentModal({ isOpen, onClose, appointmentId, onPaid }: Moc
         currency: created.currency,
         name: "Anava Clinic",
         description: priced.item_name,
-        handler: (response: unknown) => {
-          const r = response as RazorpayCheckoutResponse;
-          paymentsService
-            .verifyPayment(created.payment_id, {
-              razorpay_order_id: r.razorpay_order_id,
-              razorpay_payment_id: r.razorpay_payment_id,
-              razorpay_signature: r.razorpay_signature,
-            })
-            .then((confirmed) => {
-              if (confirmed.status === "paid") setStage("success");
-              else pollUntilPaid(created.payment_id);
-            })
-            // Verify call itself failed (network blip, etc) — the webhook
-            // may still land independently, fall back to polling instead
-            // of surfacing a hard error for what could be a transient miss.
-            .catch(() => pollUntilPaid(created.payment_id));
+        // TEMPORARY TEST-ONLY: normally calls paymentsService.verifyPayment(...)
+        // here (client-side confirm, races the webhook — whichever lands
+        // first wins). Skipped on purpose right now so ONLY the Razorpay
+        // webhook can ever flip this payment to paid, with nothing else able
+        // to mask a real delivery failure. Restore the verifyPayment(...)
+        // call (see git history / MockPaymentModal before this comment) once
+        // webhook delivery is confirmed working end-to-end.
+        handler: () => {
+          pollUntilPaid(created.payment_id);
         },
-        modal: { ondismiss: () => setStage("ready") },
+        modal: {
+          // Razorpay's own payment.failed client event doesn't reliably
+          // fire for an async/webhook-only failure — closing the modal
+          // used to just reset to "ready" unconditionally, silently
+          // hiding a failure the backend already recorded. Check reality
+          // first: the webhook may have already landed while this was open.
+          ondismiss: async () => {
+            try {
+              const payment = await paymentsService.get(created.payment_id);
+              if (payment.status === "paid") {
+                setStage("success");
+                return;
+              }
+              if (payment.status === "failed") {
+                await showFailure(created.payment_id);
+                return;
+              }
+            } catch {
+              // fall through to "ready" below
+            }
+            setStage("ready");
+          },
+        },
         theme: { color: "#0f172a" },
       });
       checkout.on("payment.failed", () => {
-        setError("Payment failed — please try again");
-        setStage("error");
+        showFailure(created.payment_id);
       });
       checkout.open();
     } catch (e: any) {
@@ -264,6 +319,19 @@ export function MockPaymentModal({ isOpen, onClose, appointmentId, onPaid }: Moc
                   </span>
                 </div>
                 <div className="flex items-center justify-between px-4 py-2.5">
+                  <span className="text-neutral-500">Session Type</span>
+                  <span className="text-neutral-800 font-medium">
+                    {fmtSessionType(appt.appointment_type)}
+                    {fmtDurationMinutes(appt.start_time, appt.end_time) && ` · ${fmtDurationMinutes(appt.start_time, appt.end_time)}`}
+                  </span>
+                </div>
+                {appt.reason && (
+                  <div className="flex items-center justify-between px-4 py-2.5 gap-4">
+                    <span className="text-neutral-500 flex-shrink-0">Reason</span>
+                    <span className="text-neutral-800 font-medium text-right">{appt.reason}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between px-4 py-2.5">
                   <span className="text-neutral-500">{priced.item_name}</span>
                   <span className="text-neutral-800 font-medium">
                     ₹{priced.base_fee_amount.toLocaleString("en-IN")}
@@ -320,8 +388,12 @@ export function MockPaymentModal({ isOpen, onClose, appointmentId, onPaid }: Moc
             </div>
           )}
 
-          {(stage === "ready" || stage === "processing") && priced && (
+          {(stage === "ready" || stage === "processing") && priced && appt && (
             <>
+              <div className="mb-3 text-xs text-neutral-500 text-center">
+                {fmtSessionType(appt.appointment_type)}
+                {appt.doctor_name ? ` with ${appt.doctor_name}` : ""} · {fmtDate(appt.appointment_date)} · {fmt12(appt.start_time)}
+              </div>
               <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
                 <div className="flex items-center justify-between text-xs text-neutral-500">
                   <span>{priced.item_name}</span>
@@ -370,6 +442,28 @@ export function MockPaymentModal({ isOpen, onClose, appointmentId, onPaid }: Moc
               <CheckCircle2 className="h-10 w-10 text-success-500" />
               <div className="text-base font-semibold text-neutral-900">Payment Successful</div>
               <p className="text-sm text-neutral-500">Your appointment is confirmed.</p>
+
+              {order && (
+                <div className="w-full divide-y divide-neutral-100 border border-neutral-200 rounded-lg overflow-hidden text-sm text-left">
+                  <div className="flex items-center justify-between px-4 py-2.5">
+                    <span className="text-neutral-500">Amount Paid</span>
+                    <span className="text-neutral-900 font-semibold">
+                      {order.currency} {order.amount.toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-2.5">
+                    <span className="text-neutral-500">Reference ID</span>
+                    <span className="text-neutral-800 font-medium font-mono text-xs">{order.payment_id.slice(0, 8).toUpperCase()}</span>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-2.5">
+                    <span className="text-neutral-500">Date</span>
+                    <span className="text-neutral-800 font-medium">
+                      {new Date().toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" })}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <Button
                 variant="outline"
                 size="sm"

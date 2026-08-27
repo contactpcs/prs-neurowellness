@@ -8,6 +8,7 @@ import { receptionService } from "@/lib/api/services/reception.service";
 import { paymentsService, saveBlobAsFile } from "@/lib/api/services/payments.service";
 import { STATUS_LABEL, STATUS_TONE } from "@/lib/appointmentStatus";
 import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
+import { AppointmentDetailModal } from "@/components/appointments/AppointmentDetailModal";
 import type { Appointment, AppointmentStatus, DoctorListItem } from "@/types/domain.types";
 
 function StatusChip({ status }: { status: AppointmentStatus }) {
@@ -44,6 +45,7 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
   const [payingFor,    setPayingFor]    = useState<Appointment | null>(null);
   const [busy,         setBusy]         = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -192,7 +194,12 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
                 const hasPayment       = !["planned", "selected", "cancelled"].includes(a.status);
                 return (
                   <div key={a.appointment_id} className="grid gap-3 items-center px-5 py-3 border-b border-neutral-100 last:border-0" style={{ gridTemplateColumns: "1.3fr 1.2fr 1fr 0.9fr 1fr 170px" }}>
-                    <p className="text-sm font-medium text-neutral-900 truncate">{a.patient_name ?? "Patient"}</p>
+                    <button
+                      onClick={() => setSelectedAppointment(a)}
+                      className="text-sm font-medium text-neutral-900 truncate hover:text-primary-600 hover:underline transition-colors text-left"
+                    >
+                      {a.patient_name ?? "Patient"}
+                    </button>
                     <p className="text-xs text-neutral-700 truncate">{a.doctor_name ? `Dr. ${a.doctor_name}` : "—"}</p>
                     <div>
                       <p className="text-xs text-neutral-700">{fmtDate(a.appointment_date)}</p>
@@ -292,6 +299,12 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
           onPaid={() => { setPayingFor(null); load(); }}
         />
       )}
+
+      <AppointmentDetailModal
+        appointment={selectedAppointment}
+        isOpen={!!selectedAppointment}
+        onClose={() => setSelectedAppointment(null)}
+      />
     </div>
   );
 }

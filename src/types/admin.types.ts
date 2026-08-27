@@ -43,6 +43,10 @@ export interface AdminClinic {
   clinic_name: string;
   clinic_type: "anava_owned" | "partner" | "mobile";
   status: "setup" | "active" | "pending_closure" | "closed";
+  /** Day-to-day open/closed toggle, independent of `status` above (that's
+   * the onboarding lifecycle). FALSE blocks new doctor-schedule writes and
+   * new appointment creation/claim/reschedule at this clinic. */
+  is_operational: boolean;
   region_id: string;
   clinic_admin_id: string | null;
   is_main_branch: boolean;
@@ -57,6 +61,27 @@ export interface AdminClinic {
   staff_count?: number;
   patient_count?: number;
   created_at?: string;
+}
+
+// ─── Clinic weekly operating hours (Settings → My Clinic) ─────────────────
+// Mirrors backend/app/modules/admin/schemas.py ClinicWeeklyHours* exactly.
+
+export interface ClinicWeeklyHours {
+  hours_id: string;
+  clinic_id: string;
+  day_of_week: number; // 0 = Sunday .. 6 = Saturday (Python's date.weekday()-independent literal used by the backend CHECK)
+  start_time: string; // "HH:MM:SS"
+  end_time: string;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClinicWeeklyHoursItem {
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
 }
 
 // Clinic creation is a 2-step flow — clinic_admin_id is never part of

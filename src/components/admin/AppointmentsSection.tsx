@@ -6,6 +6,7 @@ import { Card, CardContent, Skeleton } from "@/components/ui";
 import { adminService } from "@/lib/api/services/admin.service";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { doctorsService } from "@/lib/api/services/doctors.service";
+import { AppointmentDetailModal } from "@/components/appointments/AppointmentDetailModal";
 import type { AdminStaffMember } from "@/types/admin.types";
 import type { Appointment } from "@/types/domain.types";
 
@@ -67,6 +68,7 @@ export function AppointmentsSection({ clinicId }: { clinicId: string }) {
   const [tab, setTab] = useState<"current" | "upcoming" | "past">("current");
   const [search, setSearch] = useState("");
   const [doctorFilter, setDoctorFilter] = useState("all");
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
 
   async function load() {
     setError(null);
@@ -193,7 +195,12 @@ export function AppointmentsSection({ clinicId }: { clinicId: string }) {
             {filtered.map((a) => (
               <div key={a.appointment_id} className="flex items-center justify-between px-6 py-4">
                 <div>
-                  <p className="text-sm font-medium text-neutral-900">{a.patient_name ?? "Unknown patient"}</p>
+                  <button
+                    onClick={() => setSelectedAppointment(a)}
+                    className="text-sm font-medium text-neutral-900 hover:text-primary-600 hover:underline transition-colors text-left"
+                  >
+                    {a.patient_name ?? "Unknown patient"}
+                  </button>
                   <p className="text-xs text-neutral-400 mt-0.5">{a.appointment_date} · {a.start_time && a.end_time ? `${timeLabel(a.start_time)}–${timeLabel(a.end_time)}` : "No time booked yet"} · Dr. {a.doctor_name ?? "Unknown"}</p>
                   <p className="text-xs text-neutral-400 capitalize">{a.appointment_type.replace(/_/g, " ")}</p>
                 </div>
@@ -252,6 +259,12 @@ export function AppointmentsSection({ clinicId }: { clinicId: string }) {
           </div>
         )}
       </div>
+
+      <AppointmentDetailModal
+        appointment={selectedAppointment}
+        isOpen={!!selectedAppointment}
+        onClose={() => setSelectedAppointment(null)}
+      />
     </div>
   );
 }

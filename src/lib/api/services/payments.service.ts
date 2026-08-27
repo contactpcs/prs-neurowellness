@@ -50,6 +50,93 @@ export interface PaymentHistory extends Payment {
   appointment_date: string | null;
 }
 
+/** /payments/history — one row per payment, pre-joined so the payments-
+ * history screens (super/regional/clinic admin + receptionist) need no
+ * per-row follow-up fetch to show who/what/where. */
+export interface PaymentHistoryDetail extends Payment {
+  patient_id: string | null;
+  patient_name: string | null;
+  effective_clinic_id: string | null;
+  clinic_name: string | null;
+  doctor_name: string | null;
+  purpose: string | null;
+  appointment_date: string | null;
+  appointment_start_time: string | null;
+  appointment_status: string | null;
+  appointment_completed_at: string | null;
+}
+
+export type RevenueGroupBy = "day" | "week" | "month" | "year";
+
+export interface RevenueSummaryPoint {
+  period: string;
+  total: number;
+  payment_count: number;
+}
+
+/** One row per (period, purpose) — appointment_type (initial/follow_up/
+ * protocol_followup/device_session) or a store order_type. */
+export interface RevenueByPurposePoint {
+  period: string;
+  purpose: string;
+  total: number;
+  payment_count: number;
+}
+
+export interface PatientRevenueTotal {
+  patient_id: string;
+  patient_name: string | null;
+  total_paid: number;
+  payment_count: number;
+}
+
+export interface PaymentHistoryParams {
+  status?: string;
+  search?: string;
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/** core.payment_logs — one row per payment *event* (order created, webhook
+ * received, client-verify attempt, staff status change), not per payment.
+ * This is where a failed payment's actual reason lives — core.payments
+ * itself only ever shows current state. */
+export interface PaymentLog {
+  log_id: string;
+  payment_id: string;
+  status: "pending" | "paid" | "failed" | "waived" | "refunded";
+  amount: number;
+  currency: string;
+  payment_method: string | null;
+  razorpay_order_id: string | null;
+  razorpay_payment_id: string | null;
+  failure_code: string | null;
+  failure_reason: string | null;
+  source: "order_created" | "razorpay_webhook" | "client_verify" | "staff_action";
+  gateway_event: string | null;
+  gateway_response: Record<string, unknown>;
+  changed_by: string | null;
+  changed_by_role: string | null;
+  created_at: string;
+}
+
+/** /payments/logs — cross-payment listing, pre-joined so a "show me failed
+ * payments" screen needs no per-row follow-up fetch. */
+export interface PaymentLogDetail extends PaymentLog {
+  patient_name: string | null;
+  clinic_name: string | null;
+}
+
+export interface PaymentLogsParams {
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export const paymentsService = {
   get: async (id: string): Promise<Payment> => {
     const { data } = await apiClient.get(`/payments/${id}`);
@@ -111,6 +198,39 @@ export const paymentsService = {
       status: "refunded", waived_reason: reason,
     });
     return data;
+  },
+
+  // ─── Payments history / revenue (super_admin, regional_admin, clinic_admin,
+  // receptionist) — scope is resolved server-side from the caller's role,
+  // there's no clinic_id param to widen it from here. ───
+  getHistory: async (params?: PaymentHistoryParams): Promise<PaymentHistoryDetail[]> => {
+    const { data } = await apiClient.get("/payments/history", { params });
+    return Array.isArray(data) ? data : [];
+  },
+
+  getRevenueSummary: async (params: { group_by: RevenueGroupBy; date_from?: string; date_to?: string }): Promise<RevenueSummaryPoint[]> => {
+    const { data } = await apiClient.get("/payments/revenue-summary", { params });
+    return Array.isArray(data) ? data : [];
+  },
+
+  getRevenueSummaryByPurpose: async (params: { group_by: RevenueGroupBy; date_from?: string; date_to?: string }): Promise<RevenueByPurposePoint[]> => {
+    const { data } = await apiClient.get("/payments/revenue-summary-by-purpose", { params });
+    return Array.isArray(data) ? data : [];
+  },
+
+  getPatientTotals: async (params?: { date_from?: string; date_to?: string; limit?: number }): Promise<PatientRevenueTotal[]> => {
+    const { data } = await apiClient.get("/payments/patient-totals", { params });
+    return Array.isArray(data) ? data : [];
+  },
+
+  getLogs: async (params?: PaymentLogsParams): Promise<PaymentLogDetail[]> => {
+    const { data } = await apiClient.get("/payments/logs", { params });
+    return Array.isArray(data) ? data : [];
+  },
+
+  getLogsForPayment: async (paymentId: string): Promise<PaymentLog[]> => {
+    const { data } = await apiClient.get(`/payments/${paymentId}/logs`);
+    return Array.isArray(data) ? data : [];
   },
 };
 

@@ -20,6 +20,8 @@ import type {
   CancellationPolicyTier,
   CancellationPolicyTierCreatePayload,
   CancellationPolicyTierUpdatePayload,
+  ClinicWeeklyHours,
+  ClinicWeeklyHoursItem,
   SessionType,
 } from "@/types/admin.types";
 
@@ -35,6 +37,7 @@ function mapClinic(c: Record<string, unknown>): AdminClinic {
     status: (c.status as AdminClinic["status"]) ?? "setup",
     region_id: String(c.region_id ?? ""),
     clinic_admin_id: (c.clinic_admin_id as string | null) ?? null,
+    is_operational: c.is_operational !== false,
     is_main_branch: Boolean(c.is_main_branch),
     address: (c.address as string) ?? undefined,
     city: (c.city as string) ?? undefined,
@@ -201,6 +204,25 @@ export const adminService = {
 
   async activateClinic(id: string): Promise<void> {
     await apiClient.patch(ENDPOINTS.ADMIN.ACTIVATE_CLINIC(id), { status: "active" });
+  },
+
+  // Day-to-day open/closed toggle — separate from the status lifecycle
+  // above. FALSE blocks new doctor-schedule writes and new appointment
+  // creation/claim/reschedule at this clinic (scheduling/service.py).
+  async setClinicOperationalStatus(id: string, isOperational: boolean): Promise<AdminClinic> {
+    const res = await apiClient.patch(ENDPOINTS.ADMIN.CLINIC(id), { is_operational: isOperational });
+    return mapClinic(res.data);
+  },
+
+  // ─── Clinic weekly operating hours ───
+  async getClinicHours(clinicId: string): Promise<ClinicWeeklyHours[]> {
+    const { data } = await apiClient.get(`/clinics/${clinicId}/hours`);
+    return Array.isArray(data) ? data : [];
+  },
+
+  async replaceClinicHours(clinicId: string, items: ClinicWeeklyHoursItem[]): Promise<ClinicWeeklyHours[]> {
+    const { data } = await apiClient.put(`/clinics/${clinicId}/hours`, { items });
+    return Array.isArray(data) ? data : [];
   },
 
   async deactivateClinic(id: string): Promise<void> {
