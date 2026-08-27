@@ -216,17 +216,31 @@ export const refreshUser = createAsyncThunk(
   }
 );
 
+// Re-validates against the server on every app load/reopen instead of
+// trusting the cached localStorage snapshot — that snapshot can predate a
+// receptionist's approval or a just-completed PRS assessment (both flip
+// server-side state without this tab knowing), and blindly trusting it sent
+// already-approved/already-PRS-complete users back through the registration
+// wizard on every reopen until they did a full re-login. login()/refreshUser()
+// already re-fetch fresh; restoreSession() now does too.
 export const restoreSession = createAsyncThunk(
   "auth/restoreSession",
   async (_, { rejectWithValue }) => {
+    const token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    if (!token) return rejectWithValue("No session to restore");
     try {
-      const userStr = localStorage.getItem(STORAGE_KEYS.USER);
-      const token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-      if (!userStr || !token) throw new Error("No session");
-      const parsed = JSON.parse(userStr);
-      return normalizeUser(parsed);
+      const me = await authService.me();
+      const normalizedUser = normalizeUser({ ...me, roles: [me.role] });
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(normalizedUser));
+      return normalizedUser;
     } catch {
-      return rejectWithValue("No session to restore");
+      // Token invalid/expired, or /auth/me genuinely failed — either way a
+      // stale local snapshot can't be trusted for gating. Clear it and force
+      // a real login rather than silently falling back to old cached state.
+      localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+      localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+      localStorage.removeItem(STORAGE_KEYS.USER);
+      return rejectWithValue("Session expired or invalid");
     }
   }
 );

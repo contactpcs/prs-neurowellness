@@ -53,6 +53,16 @@ export default function SelfRegistrationAssessmentPage() {
     // (gated on registration_status, not self_registered) — only
     // requirement is being a patient with a resolved patient_id.
     if (!user.roles.includes("patient") || !user.patient_id) { router.replace(ROUTES.LOGIN); return; }
+    // Already finished (a stale link, browser back, or a resume-route bounce
+    // landed here again) — PatientService.advance_registration_status only
+    // ever moves this forward, never back, so 'registration_complete' is
+    // authoritative. Redirecting instead of calling start() again stops it
+    // from silently spawning a brand-new in-progress PRS instance and
+    // re-serving the questionnaire for an assessment that's already done.
+    if (user.registration_status === "registration_complete") {
+      router.replace(user.is_active ? ROUTES.PATIENT_DASHBOARD : "/patient-registration/pending");
+      return;
+    }
 
     (async () => {
       try {
