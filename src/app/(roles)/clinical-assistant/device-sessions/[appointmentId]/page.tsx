@@ -5,14 +5,15 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { appointmentsService } from "@/lib/api/services";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
-import { useDeviceSession, useAuth } from "@/lib/hooks";
-import { useSidebar } from "@/contexts/SidebarContext";
+import { doctorsService } from "@/lib/api/services/doctors.service";
+import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
+import { useDeviceSession, usePatientScoresSummary } from "@/lib/hooks";
 import { Button, Card, CardHeader, CardContent, PageLoader, DetailFieldList, Input } from "@/components/ui";
 import { PlacementMap } from "@/app/(roles)/doctor/patients/[id]/treatment-protocol/wizard/PlacementMap";
 import { SignatureCapture } from "@/components/deviceSession/SignatureCapture";
-import type { Appointment } from "@/types/domain.types";
+import type { Appointment, PatientDetail } from "@/types/domain.types";
 import type { ProtocolDetail } from "@/types/treatmentProtocol.types";
-import type { ConsentBlock, DeviceSessionChecklistUpdate } from "@/types/deviceSession.types";
+import type { ConsentBlock, DeviceSessionChecklistUpdate, DeviceSessionDetail } from "@/types/deviceSession.types";
 
 /** Mirrors TreatmentProtocolPanel's convention: the wizard writes
  * "Reason: <label> — <note>" into the one free-text notes field the real
@@ -61,10 +62,12 @@ export default function DeviceSessionChecklistPage() {
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [protocol, setProtocol] = useState<ProtocolDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [patientDetail, setPatientDetail] = useState<PatientDetail | null>(null);
+  const [prevSession, setPrevSession] = useState<DeviceSessionDetail | null>(null);
+  const [prevAppointmentDate, setPrevAppointmentDate] = useState<string | null>(null);
   const { session, isLoading, saveChecklist, start } = useDeviceSession(appointmentId);
-  const { user } = useAuth();
-  const caName = user ? `${user.first_name} ${user.last_name}`.trim() : "Clinical Assistant";
-  const { isCollapsed } = useSidebar();
+  const patientId = appointment?.patient_public_id ?? appointment?.patient_id ?? null;
+  const { instances: scoreInstances } = usePatientScoresSummary(patientId ?? "");
 
   const [deviceBrand, setDeviceBrand] = useState("");
   const [deviceSerial, setDeviceSerial] = useState("");
@@ -97,6 +100,23 @@ export default function DeviceSessionChecklistPage() {
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load appointment"));
   }, [appointmentId]);
+
+  useEffect(() => {
+    if (!patientId) return;
+    doctorsService.getPatient(patientId).then(setPatientDetail).catch(() => setPatientDetail(null));
+  }, [patientId]);
+
+  // Previous session context — the device session immediately before this
+  // one on the same protocol course, if it ran and completed.
+  useEffect(() => {
+    if (!protocol || appointment?.session_number == null) { setPrevSession(null); setPrevAppointmentDate(null); return; }
+    const prev = protocol.sessions.find(
+      (s) => s.session_number === (appointment.session_number as number) - 1 && s.status === "completed",
+    );
+    if (!prev) { setPrevSession(null); setPrevAppointmentDate(null); return; }
+    setPrevAppointmentDate(prev.appointment_date);
+    deviceSessionService.get(prev.appointment_id).then(setPrevSession).catch(() => setPrevSession(null));
+  }, [protocol, appointment]);
 
   useEffect(() => {
     if (!session) return;
@@ -224,28 +244,78 @@ export default function DeviceSessionChecklistPage() {
   };
 
   return (
-    <div className="space-y-5 max-w-6xl pb-28">
-      <button
-        onClick={() => router.push("/clinical-assistant/appointments")}
-        className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 transition-colors"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back to queue
-      </button>
-
+    <div className="space-y-5 max-w-6xl pb-24">
+      <div className="flex items-center gap-3 flex-wrap">
+        <button
+          onClick={() => router.push("/clinical-assistant/appointments")}
+          className="flex items-center gap-1.5 text-sm text-primary-700 hover:text-primary-900 transition-colors flex-shrink-0"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back to Queue
+        </button>
+        <span className="text-neutral-300">|</span>
+        <h1 className="text-lg font-bold text-neutral-900">Device Session · {appointment.patient_name}</h1>
+        {appointment.session_number != null && (
+          <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-primary-50 text-primary-700">
+            Session {appointment.session_number} of {protocol?.session_count ?? "—"}
+          </span>
+        )}
+        <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${appointment.status === "paid" ? "bg-green-50 text-green-700" : "bg-neutral-100 text-neutral-600"}`}>
+          {appointment.status === "paid" ? "Paid" : appointment.status.replace(/_/g, " ")}
+        </span>
+      </div>
       <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-5">
         {/* Left — read-only protocol summary */}
         <div className="space-y-4">
           <Card>
-            <CardHeader><h3 className="text-sm font-semibold text-neutral-900">Patient</h3></CardHeader>
+            <CardHeader><h3 className="text-sm font-semibold text-neutral-900">Demographics &amp; Vitals</h3></CardHeader>
             <CardContent>
-              <DetailFieldList data={{ name: appointment.patient_name, date: appointment.appointment_date }} />
+              <DetailFieldList
+                data={{
+                  patient: patientDetail
+                    ? `${patientDetail.full_name}${patientDetail.age != null ? ` · ${patientDetail.age}${patientDetail.gender ? patientDetail.gender[0].toUpperCase() : ""}` : ""}${patientDetail.mrn ? ` · MRN ${patientDetail.mrn}` : ""}`
+                    : appointment.patient_name,
+                  bp_hr: "Not tracked",
+                  weight: "Not tracked",
+                  allergies: "Not tracked",
+                  flags: "Not tracked",
+                }}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><h3 className="text-sm font-semibold text-neutral-900">Previous Session Context</h3></CardHeader>
+            <CardContent>
+              {appointment.session_number != null && appointment.session_number <= 1 ? (
+                <p className="text-xs text-neutral-400">This is session 1 — no previous session to reference.</p>
+              ) : !prevSession ? (
+                <p className="text-xs text-neutral-400">No completed previous session on record.</p>
+              ) : (
+                <DetailFieldList
+                  data={{
+                    session: `Session ${(appointment.session_number as number) - 1} · ${fmtDate(prevAppointmentDate)}`,
+                    tolerance: prevSession.feedback
+                      ? `${prevSession.feedback.answers.comfort} · felt ${prevSession.feedback.answers.felt_after}`
+                      : prevSession.symptoms.length
+                        ? `${prevSession.symptoms.length} symptom${prevSession.symptoms.length === 1 ? "" : "s"} reported`
+                        : "No issues reported",
+                    ca_note: prevSession.notes[0]?.note_text ?? "—",
+                    prs_trend: (() => {
+                      const sorted = scoreInstances.slice().sort((a, b) => (a.completed_at ?? "").localeCompare(b.completed_at ?? ""));
+                      if (sorted.length < 2) return "Not enough scores yet";
+                      const first = sorted[0], last = sorted[sorted.length - 1];
+                      return `${last.disease_name ?? "Score"}: ${first.disease_score ?? "—"} → ${last.disease_score ?? "—"}`;
+                    })(),
+                  }}
+                />
+              )}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-neutral-900">Protocol set by doctor</h3>
+                <h3 className="text-sm font-semibold text-neutral-900">Protocol — set by {protocol?.doctor_name || "doctor"}</h3>
                 {protocol?.status && (
                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${
                     protocol.status === "active" ? "bg-green-50 text-green-700" : "bg-neutral-100 text-neutral-600"
