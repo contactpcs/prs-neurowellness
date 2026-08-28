@@ -37,6 +37,8 @@ const ACTIVITY_OPTIONS: { value: CognitiveActivity; label: string }[] = [
   { value: "drawing", label: "Drawing" },
 ];
 
+const RESCHEDULE_SLOTS = ["09:00", "09:45", "10:30", "11:15", "12:00", "14:30", "15:15"];
+
 type SectionKey = "device-fit" | "symptoms" | "notes" | "adverse-events" | "activities" | "scales" | "feedback" | "media" | "next-session";
 
 const SECTIONS: { key: SectionKey; label: string; icon: typeof Gauge }[] = [
@@ -54,7 +56,7 @@ const SECTIONS: { key: SectionKey; label: string; icon: typeof Gauge }[] = [
 export default function DeviceSessionLivePage() {
   const { appointmentId } = useParams<{ appointmentId: string }>();
   const router = useRouter();
-  const { session, isLoading, pause, resume, stop, complete, setDeviceFit, recordSymptom, recordAdverseEvent, addNote, recordActivity, setScaleDelivery, recordFeedback, confirmNextSession } =
+  const { session, isLoading, reload, pause, resume, stop, complete, setDeviceFit, recordSymptom, recordAdverseEvent, addNote, recordActivity, setScaleDelivery, recordFeedback, confirmNextSession } =
     useDeviceSession(appointmentId);
 
   const [appointment, setAppointment] = useState<Appointment | null>(null);
@@ -75,6 +77,10 @@ export default function DeviceSessionLivePage() {
   const [feedbackNextIntensity, setFeedbackNextIntensity] = useState<"decrease" | "keep_same" | "increase" | null>(null);
   const [feedbackQuote, setFeedbackQuote] = useState("");
   const [nextConfirmed, setNextConfirmed] = useState<boolean | null>(null);
+  const [reschedOpen, setReschedOpen] = useState(false);
+  const [reschedDate, setReschedDate] = useState("");
+  const [reschedSlot, setReschedSlot] = useState("");
+  const [reschedNote, setReschedNote] = useState("");
 
   useEffect(() => {
     if (!appointmentId) return;
@@ -139,8 +145,13 @@ export default function DeviceSessionLivePage() {
   const feedbackDone = !!session.feedback;
   const nextSessionDone = !!session.next_session_confirmation;
   const timerDone = remaining <= 0;
-  const canComplete = timerDone && deviceFitDone && scalesResolved && feedbackDone && nextSessionDone;
+  // The backend FSM only allows completed from in_progress (not from
+  // paused — see device_sessions/service.py _TRANSITIONS) — resume first
+  // or the complete call 400s.
+  const notPausedForComplete = session.session_status !== "paused";
+  const canComplete = notPausedForComplete && timerDone && deviceFitDone && scalesResolved && feedbackDone && nextSessionDone;
   const missingGates = [
+    !notPausedForComplete && "session is paused — resume before completing",
     !timerDone && "timer hasn't reached 0",
     !deviceFitDone && "device-fit checklist incomplete",
     !scalesResolved && "scales not yet resolved",
@@ -194,7 +205,8 @@ export default function DeviceSessionLivePage() {
               <div>
                 <p className="text-sm font-semibold text-neutral-900">{appointment.patient_name ?? "Patient"}</p>
                 <p className="text-xs text-neutral-400">
-                  Session {protocol?.session_count ? `of ${protocol.session_count}` : ""} · {protocol?.modality} · {protocol?.device_name}
+                  {appointment.session_number ? `Session ${appointment.session_number}` : "Session"}
+                  {protocol?.session_count ? ` of ${protocol.session_count}` : ""} · {protocol?.modality} · {protocol?.device_name}
                 </p>
               </div>
             </div>
@@ -211,7 +223,18 @@ export default function DeviceSessionLivePage() {
               </Button>
               <Button
                 size="sm"
-                onClick={async () => { await complete(); router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`); }}
+                onClick={async () => {
+                  if (!canComplete) return;
+                  try {
+                    await complete();
+                    router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`);
+                  } catch {
+                    // Backend FSM rejected the transition (e.g. session was
+                    // paused/stopped by a stale reload race) — reload picks
+                    // up the real status instead of leaving a dead click.
+                    await reload();
+                  }
+                }}
                 disabled={!canComplete}
                 title={missingGates.length ? `Still needed: ${missingGates.join(", ")}` : undefined}
               >
@@ -402,17 +425,85 @@ export default function DeviceSessionLivePage() {
 
             {activeSection === "next-session" && (
               <Card><CardContent className="space-y-3 pt-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-neutral-900">Next Session — Soft Confirmation</h3>
+                  <p className="text-xs text-neutral-400 mt-0.5">From the treatment protocol schedule. Confirm with the patient before they leave; changes go to the receptionist for final confirmation.</p>
+                </div>
                 {session.next_session_confirmation ? (
-                  <p className="text-sm text-success-600">Next session {session.next_session_confirmation.patient_confirmed ? "confirmed" : "flagged for change"}.</p>
+                  <p className="text-sm text-success-600">
+                    {session.next_session_confirmation.patient_confirmed
+                      ? "Next session confirmed by patient."
+                      : `Change proposed: ${session.next_session_confirmation.requested_date ?? ""} ${session.next_session_confirmation.requested_slot ?? ""} — sent to receptionist for confirmation.${session.next_session_confirmation.note ? ` Note: ${session.next_session_confirmation.note}` : ""}`}
+                  </p>
                 ) : (
                   <>
                     <p className="text-sm text-neutral-600">Ask the patient to confirm their next session slot.</p>
                     <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => setNextConfirmed(true)}>Patient confirmed</Button>
-                      <Button size="sm" variant="outline" onClick={() => setNextConfirmed(false)}>Needs change</Button>
+                      <Button
+                        size="sm"
+                        variant={nextConfirmed === true ? "primary" : "outline"}
+                        onClick={() => { setNextConfirmed(true); setReschedOpen(false); }}
+                      >
+                        Patient confirmed
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={nextConfirmed === false ? "primary" : "outline"}
+                        onClick={() => { setNextConfirmed(false); setReschedOpen(true); }}
+                      >
+                        Needs change
+                      </Button>
                     </div>
-                    {nextConfirmed !== null && (
-                      <Button size="sm" onClick={() => confirmNextSession({ patient_confirmed: nextConfirmed })}>Save</Button>
+
+                    {nextConfirmed === true && (
+                      <Button size="sm" onClick={() => confirmNextSession({ patient_confirmed: true })}>Save</Button>
+                    )}
+
+                    {reschedOpen && (
+                      <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3.5 space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <Input label="Proposed date" type="date" value={reschedDate} onChange={(e) => setReschedDate(e.target.value)} />
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-neutral-400 mb-1.5">Available slots (CA availability shown)</p>
+                            <div className="flex flex-wrap gap-2">
+                              {RESCHEDULE_SLOTS.map((slot) => (
+                                <button
+                                  key={slot}
+                                  onClick={() => setReschedSlot(slot)}
+                                  className={`px-3 py-1 rounded-full text-xs font-medium border tabular-nums transition-colors ${
+                                    reschedSlot === slot ? "bg-primary-100 border-primary-400 text-primary-800" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"
+                                  }`}
+                                >
+                                  {slot}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <Input
+                          placeholder="Note for receptionist — e.g. patient travelling Tue, prefers Wed morning"
+                          value={reschedNote}
+                          onChange={(e) => setReschedNote(e.target.value)}
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            disabled={!reschedDate}
+                            onClick={async () => {
+                              await confirmNextSession({
+                                patient_confirmed: false,
+                                requested_date: reschedDate,
+                                requested_slot: reschedSlot || undefined,
+                                note: reschedNote || undefined,
+                              });
+                              setReschedOpen(false);
+                            }}
+                          >
+                            Propose Change
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => { setReschedOpen(false); setNextConfirmed(null); }}>Cancel</Button>
+                        </div>
+                      </div>
                     )}
                   </>
                 )}

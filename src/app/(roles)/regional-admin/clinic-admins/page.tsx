@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ShieldCheck, RefreshCw, Mail, Phone, Building2, Power, PowerOff, X } from "lucide-react";
 import { useAdminAccounts } from "@/lib/hooks";
-import { Card, CardContent, Skeleton, Modal, DetailFieldList } from "@/components/ui";
+import { Card, CardContent, Skeleton, Modal, DetailFieldList, PageShell } from "@/components/ui";
 import type { AdminAccount } from "@/types/admin.types";
 
 function ClinicAdminsSkeleton() {
@@ -60,12 +60,10 @@ export default function RegionalAdminClinicAdminsPage() {
   if (isLoading) return <ClinicAdminsSkeleton />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Clinic Admins</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{admins.length} clinic admin{admins.length !== 1 ? "s" : ""} in your region</p>
-        </div>
+    <PageShell
+      title="Clinic Admins"
+      root="Regional Admin"
+      actions={
         <button
           onClick={handleRefresh}
           disabled={refreshing}
@@ -74,7 +72,9 @@ export default function RegionalAdminClinicAdminsPage() {
         >
           <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
         </button>
-      </div>
+      }
+    >
+      <p className="text-sm text-neutral-500 -mt-4">{admins.length} clinic admin{admins.length !== 1 ? "s" : ""} in your region</p>
 
       {(error || actionError) && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-center justify-between">
@@ -175,6 +175,6 @@ export default function RegionalAdminClinicAdminsPage() {
           </div>
         )}
       </Modal>
-    </div>
+    </PageShell>
   );
 }

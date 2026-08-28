@@ -2,10 +2,10 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Search, CheckCircle, XCircle, Loader2, ClipboardList } from "lucide-react";
+import { CheckCircle, XCircle, Loader2, ClipboardList } from "lucide-react";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { useAuth } from "@/lib/hooks";
-import { PageLoader } from "@/components/ui";
+import { PageLoader, PageShell } from "@/components/ui";
 import type { PatientListItem } from "@/types/domain.types";
 
 function fmtDate(iso?: string | null): string {
@@ -75,7 +75,7 @@ export default function ReceptionistApprovalsPage() {
   if (isLoading) return <PageLoader />;
 
   return (
-    <div className="flex flex-col gap-5">
+    <PageShell title="Approvals" root="Receptionist" search={search} onSearch={setSearch}>
       {/* Toast */}
       {toast && (
         <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-dropdown text-sm font-medium text-white ${toast.ok ? "bg-success-500" : "bg-danger-500"}`}>
@@ -84,27 +84,9 @@ export default function ReceptionistApprovalsPage() {
         </div>
       )}
 
-      {/* Breadcrumb + header */}
-      <div>
-        <nav className="flex items-center gap-1.5 mb-1.5 text-xs">
-          <span className="text-neutral-700 font-medium">Approvals</span>
-        </nav>
-        <h1 className="text-2xl font-bold text-neutral-900">Approvals</h1>
-        {user?.clinic_name && (
-          <p className="text-xs font-medium text-primary-600 mt-0.5">{user.clinic_name}</p>
-        )}
-      </div>
-
-      {/* Search */}
-      <div className="relative max-w-[340px]">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-400 pointer-events-none" />
-        <input
-          placeholder="Search name, contact…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full h-[38px] pl-8 pr-3 rounded-lg border border-neutral-300 bg-white text-sm outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
-        />
-      </div>
+      {user?.clinic_name && (
+        <p className="text-xs font-medium text-primary-600 -mt-3">{user.clinic_name}</p>
+      )}
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-neutral-200/80 shadow-card overflow-hidden">
@@ -206,6 +188,6 @@ export default function ReceptionistApprovalsPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Cpu, Clock, ChevronRight } from "lucide-react";
-import { Card } from "@/components/ui";
+import { Card, PageShell } from "@/components/ui";
 
 // Clinic-admin settings hub, laid out as a list of links so more sections
 // (billing, staff policy, ...) slot in the same way later without
@@ -24,12 +24,8 @@ const SETTINGS_SECTIONS = [
 
 export default function ClinicAdminSettingsPage() {
   return (
-    <div className="space-y-6 max-w-2xl">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Settings</h1>
-        <p className="text-sm text-neutral-500 mt-0.5">Clinic configuration</p>
-      </div>
-
+    <PageShell title="Settings" root="Clinic Admin">
+      <div className="max-w-2xl space-y-6">
       <Card>
         <div className="divide-y divide-neutral-100">
           {SETTINGS_SECTIONS.map(({ href, icon: Icon, label, description }) => (
@@ -52,6 +48,7 @@ export default function ClinicAdminSettingsPage() {
           ))}
         </div>
       </Card>
-    </div>
+      </div>
+    </PageShell>
   );
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ShoppingBag, Plus, RefreshCw } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
-import { Card, CardContent, Button, Skeleton, Modal, DetailFieldList } from "@/components/ui";
+import { Card, CardContent, Button, Skeleton, Modal, DetailFieldList, PageShell } from "@/components/ui";
 import { adminService } from "@/lib/api/services/admin.service";
 import { storeService, type Product, type StoreOrder, type CreateStoreOrderPayload } from "@/lib/api/services/store.service";
 import type { AdminPatient } from "@/types/admin.types";
@@ -157,20 +157,20 @@ export default function ClinicAdminStoreOrdersPage() {
   if (isLoading) return <OrdersSkeleton />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Store Orders</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{orders.length} order{orders.length !== 1 ? "s" : ""} for your clinic</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <PageShell
+      title="Store Orders"
+      root="Clinic Admin"
+      actions={
+        <>
           <button onClick={handleRefresh} disabled={refreshing} title="Refresh"
             className="p-2.5 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 rounded-lg border border-neutral-200 transition-colors disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
           </button>
           <Button onClick={() => setShowNew(true)}><Plus className="h-4 w-4 mr-1.5" />New Order</Button>
-        </div>
-      </div>
+        </>
+      }
+    >
+      <p className="text-sm text-neutral-500 -mt-3">{orders.length} order{orders.length !== 1 ? "s" : ""} for your clinic</p>
 
       {error && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>}
 
@@ -206,6 +206,6 @@ export default function ClinicAdminStoreOrdersPage() {
       <Modal isOpen={!!detailOrder} onClose={() => setDetailOrder(null)} title="Store Order Details" className="max-w-3xl">
         {detailOrder && <DetailFieldList data={detailOrder} />}
       </Modal>
-    </div>
+    </PageShell>
   );
 }

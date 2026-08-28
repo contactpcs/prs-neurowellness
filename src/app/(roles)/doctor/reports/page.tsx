@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Users, CalendarCheck, AlertTriangle, Activity } from "lucide-react";
-import { PageLoader } from "@/components/ui";
+import { PageLoader, PageShell } from "@/components/ui";
 import { doctorsService } from "@/lib/api/services/doctors.service";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import type { ProtocolRead } from "@/types/treatmentProtocol.types";
@@ -62,12 +62,8 @@ export default function DoctorReportsPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Reports</h1>
-        <p className="text-sm text-neutral-500 mt-0.5">Your practice at a glance — patients, sessions, and active protocols.</p>
-      </div>
-
+    <PageShell title="Reports" root="Doctor">
+      <div className="flex flex-col gap-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
         {kpis.map(({ label, value, Icon }) => (
           <div key={label} className="bg-white rounded-xl border border-neutral-200 shadow-sm p-4">
@@ -104,6 +100,7 @@ export default function DoctorReportsPage() {
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </PageShell>
   );
 }

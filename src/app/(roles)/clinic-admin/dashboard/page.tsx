@@ -7,7 +7,7 @@ import {
   CalendarDays, CheckCircle2, Stethoscope, Package, Receipt, ArrowRight,
 } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
-import { Card, CardContent, Skeleton } from "@/components/ui";
+import { Card, CardContent, Skeleton, PageShell } from "@/components/ui";
 import { adminService } from "@/lib/api/services/admin.service";
 import { staffRequestsService } from "@/lib/api/services/staffRequests.service";
 import { storeService, type Product, type StoreOrder } from "@/lib/api/services/store.service";
@@ -199,17 +199,17 @@ export default function ClinicAdminDashboardPage() {
   const latestOrders = [...orders].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")).slice(0, 5);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Welcome, {user?.first_name}</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{clinic?.clinic_name ?? "Your clinic"} at a glance</p>
-        </div>
+    <PageShell
+      title={`Welcome, ${user?.first_name ?? ""}`}
+      root="Clinic Admin"
+      actions={
         <button onClick={handleRefresh} disabled={refreshing} title="Refresh"
           className="p-2.5 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 rounded-lg border border-neutral-200 transition-colors disabled:opacity-50">
           <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
         </button>
-      </div>
+      }
+    >
+      <p className="text-sm text-neutral-500 -mt-3">{clinic?.clinic_name ?? "Your clinic"} at a glance</p>
 
       {error && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>}
 
@@ -453,6 +453,6 @@ export default function ClinicAdminDashboardPage() {
           )}
         </Card>
       </div>
-    </div>
+    </PageShell>
   );
 }

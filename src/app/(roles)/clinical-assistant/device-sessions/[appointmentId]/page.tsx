@@ -338,7 +338,9 @@ export default function DeviceSessionChecklistPage() {
                     duration_min: protocol.prescribed_duration_min,
                     ramp_seconds: protocol.ramp_seconds,
                     sessions_per_week: protocol.sessions_per_week,
-                    session: `Session of ${protocol.session_count}`,
+                    session: appointment.session_number
+                      ? `Session ${appointment.session_number} of ${protocol.session_count}`
+                      : `Session of ${protocol.session_count}`,
                     follow_up_every: protocol.follow_up_every_n ? `Every ${protocol.follow_up_every_n} sessions` : "None scheduled",
                     effective_from: fmtDate(protocol.activated_at || protocol.created_at),
                     reason_for_protocol: splitReason(protocol.notes).reason,
@@ -469,7 +471,11 @@ export default function DeviceSessionChecklistPage() {
                   />
                   I confirm all of the above
                 </label>
-                <SignatureCapture onCapture={handlePatientSignature} disabled={!allPatientConsentChecked} />
+                {session?.patient_consent ? (
+                  <p className="text-sm italic text-neutral-800 font-serif">{session.patient_consent.signature}</p>
+                ) : (
+                  <SignatureCapture signerName={appointment.patient_name ?? "Patient"} onCapture={handlePatientSignature} disabled={!allPatientConsentChecked} />
+                )}
                 {session?.patient_consent && <p className="text-xs text-success-600 flex items-center gap-1"><ShieldCheck className="h-3.5 w-3.5" /> Signed</p>}
               </div>
               <div className="space-y-2">
@@ -489,7 +495,11 @@ export default function DeviceSessionChecklistPage() {
                   />
                   I confirm all of the above
                 </label>
-                <SignatureCapture onCapture={handleCaSignature} disabled={!allCaDeclarationChecked} />
+                {session?.ca_declaration ? (
+                  <p className="text-sm italic text-neutral-800 font-serif">{session.ca_declaration.signature}</p>
+                ) : (
+                  <SignatureCapture signerName={caName} onCapture={handleCaSignature} disabled={!allCaDeclarationChecked} />
+                )}
                 {session?.ca_declaration && <p className="text-xs text-success-600 flex items-center gap-1"><ShieldCheck className="h-3.5 w-3.5" /> Signed</p>}
               </div>
             </CardContent>
@@ -498,7 +508,11 @@ export default function DeviceSessionChecklistPage() {
       </div>
 
       {/* Sticky start bar */}
-      <div className="fixed bottom-0 left-0 right-0 lg:left-[var(--sidebar-w,0px)] bg-white border-t border-neutral-200 px-6 py-4 flex items-center justify-between z-10">
+      <div
+        className={`fixed bottom-0 right-0 left-0 bg-white border-t border-neutral-200 px-6 py-4 flex items-center justify-between z-10 transition-[left] duration-150 ease-in-out ${
+          isCollapsed ? "md:left-16" : "md:left-64"
+        }`}
+      >
         <div>
           <p className="text-sm font-semibold text-neutral-900">{canStart ? "Ready to start" : "Not ready yet"}</p>
           {!canStart && <p className="text-xs text-neutral-400">Missing: {missing.join(", ")}</p>}

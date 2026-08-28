@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Pencil, Trash2, Percent } from "lucide-react";
-import { Card, CardContent, Button, Input, Select, Modal, Badge, Skeleton } from "@/components/ui";
+import { Card, CardContent, Button, Input, Select, Modal, Badge, Skeleton, PageShell } from "@/components/ui";
 import { adminService } from "@/lib/api/services/admin.service";
 import type {
   AdminClinic,
@@ -277,13 +277,11 @@ export default function AdminFeeConfigPage() {
   const sortedTiers = [...tiers].sort((a, b) => b.min_hours_before - a.min_hours_before);
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Fees &amp; Cancellation Policy</h1>
-        <p className="text-sm text-neutral-500 mt-0.5">
-          What patients pay on top of the base fee, and how much they get back when they cancel.
-        </p>
-      </div>
+    <PageShell title="Fees & Cancellation Policy" root="Admin">
+      <div className="space-y-6 max-w-4xl -mt-3">
+      <p className="text-sm text-neutral-500">
+        What patients pay on top of the base fee, and how much they get back when they cancel.
+      </p>
 
       {loadError && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{loadError}</div>}
 
@@ -424,6 +422,7 @@ export default function AdminFeeConfigPage() {
           />
         )}
       </Modal>
-    </div>
+      </div>
+    </PageShell>
   );
 }

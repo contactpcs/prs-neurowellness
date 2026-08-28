@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Building2, Plus, RefreshCw, X, MapPin, Phone, Mail, ClipboardList, UserPlus } from "lucide-react";
 import { useAuth, useClinicRequests } from "@/lib/hooks";
-import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
+import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList, PageShell } from "@/components/ui";
 import { adminService } from "@/lib/api/services/admin.service";
 import type { CreateClinicRequestPayload, ClinicRequest } from "@/lib/api/services/clinicRequests.service";
 import type { AdminClinic, ClinicAdminAssignPayload } from "@/types/admin.types";
@@ -253,20 +253,20 @@ export default function RegionalAdminClinicsPage() {
   if (isLoading) return <ClinicsSkeleton />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Clinics</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{clinics.length} clinic{clinics.length !== 1 ? "s" : ""} in your region</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <PageShell
+      title="Clinics"
+      root="Regional Admin"
+      actions={
+        <>
           <button onClick={handleRefresh} disabled={refreshing} title="Refresh"
             className="p-2.5 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 rounded-lg border border-neutral-200 transition-colors disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
           </button>
           <Button onClick={() => setShowRequest(true)}><Plus className="h-4 w-4 mr-1.5" />Request New Clinic</Button>
-        </div>
-      </div>
+        </>
+      }
+    >
+      <p className="text-sm text-neutral-500 -mt-4">{clinics.length} clinic{clinics.length !== 1 ? "s" : ""} in your region</p>
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-center justify-between">
@@ -332,6 +332,6 @@ export default function RegionalAdminClinicsPage() {
       <Modal isOpen={!!viewRequest} onClose={() => setViewRequest(null)} title="Clinic Request Details" className="max-w-3xl">
         {viewRequest && <DetailFieldList data={viewRequest} />}
       </Modal>
-    </div>
+    </PageShell>
   );
 }

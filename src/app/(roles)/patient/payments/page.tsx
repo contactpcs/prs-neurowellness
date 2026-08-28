@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Receipt as ReceiptIcon, Download } from "lucide-react";
-import { PageLoader, Card, CardContent, Button } from "@/components/ui";
+import { PageLoader, Card, CardContent, Button, PageShell } from "@/components/ui";
 import { paymentsService, saveBlobAsFile, type PaymentHistory } from "@/lib/api/services/payments.service";
 
 const STATUS_STYLES: Record<PaymentHistory["status"], string> = {
@@ -41,9 +41,8 @@ export default function PatientPaymentsPage() {
   if (isLoading) return <PageLoader />;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold text-neutral-900">Payments &amp; Bills</h1>
-
+    <div className="max-w-3xl mx-auto">
+    <PageShell title="Payments & Bills" root="Patient">
       {payments.length === 0 ? (
         <p className="text-neutral-500 text-center py-12">No payments yet.</p>
       ) : (
@@ -100,6 +99,7 @@ export default function PatientPaymentsPage() {
           })}
         </div>
       )}
+    </PageShell>
     </div>
   );
 }

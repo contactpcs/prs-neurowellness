@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { Search, Eye } from "lucide-react";
+import { Eye } from "lucide-react";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
+import { PageShell } from "@/components/ui";
 import { STATUS_LABEL, STATUS_TONE } from "@/lib/appointmentStatus";
 import type { Appointment, AppointmentStatus } from "@/types/domain.types";
 
@@ -118,36 +119,30 @@ export default function DoctorAppointmentsPage() {
   const locked = sel ? ["completed", "cancelled"].includes(sel.status) : false;
 
   return (
-    <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Appointments</h1>
-      </div>
-
-      {/* search + status filters */}
-      <div className="flex items-center gap-2.5 flex-wrap">
-        <div className="relative flex-[0_1_300px] min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400 pointer-events-none" />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search patient, appointment ID…"
-            className="w-full h-[38px] pl-8 pr-3 rounded-lg border border-neutral-300 bg-white text-sm outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
-          />
+    <PageShell
+      title="Appointments"
+      root="Doctor"
+      search={q}
+      onSearch={setQ}
+      filters={
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {STATUS_FILTERS.map((s) => (
+            <button
+              key={s}
+              onClick={() => setStatus(s)}
+              className={
+                status === s
+                  ? "h-8 px-3.5 rounded-full text-[11.5px] font-medium bg-brand-gradient text-white"
+                  : "h-8 px-3.5 rounded-full text-[11.5px] font-medium bg-neutral-100 text-neutral-600"
+              }
+            >
+              {filterLabel(s)}
+            </button>
+          ))}
         </div>
-        {STATUS_FILTERS.map((s) => (
-          <button
-            key={s}
-            onClick={() => setStatus(s)}
-            className={
-              status === s
-                ? "h-8 px-3.5 rounded-full text-[11.5px] font-medium bg-brand-gradient text-white"
-                : "h-8 px-3.5 rounded-full text-[11.5px] font-medium bg-neutral-100 text-neutral-600"
-            }
-          >
-            {filterLabel(s)}
-          </button>
-        ))}
-      </div>
+      }
+    >
+      <div className="flex flex-col gap-5">
 
       {/* selected appointment detail */}
       {sel && (
@@ -237,6 +232,7 @@ export default function DoctorAppointmentsPage() {
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </PageShell>
   );
 }

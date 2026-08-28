@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  UserCog, Plus, Search, Edit2, Power, PowerOff, Trash2,
+  UserCog, Plus, Edit2, Power, PowerOff, Trash2,
   X, Mail, Building2, RefreshCw, ShieldCheck, ClipboardCheck,
 } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
-import { Card, CardContent, Button, buttonVariants, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
+import { Card, CardContent, Button, buttonVariants, Input, Skeleton, Modal, DetailFieldList, PageShell } from "@/components/ui";
 import { adminService } from "@/lib/api/services/admin.service";
 import { consentService, type ConsentRecord } from "@/lib/api/services/consent.service";
 import { staffRequestsService, type StaffRequest } from "@/lib/api/services/staffRequests.service";
@@ -442,13 +442,25 @@ export default function RegionalAdminStaffPage() {
   if (isLoading) return <StaffSkeleton />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Staff</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{staff.length} staff member{staff.length !== 1 ? "s" : ""} across your region</p>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+    <PageShell
+      title="Staff"
+      root="Regional Admin"
+      search={search}
+      onSearch={setSearch}
+      filters={
+        <>
+          <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white">
+            <option value="all">All Roles</option>
+            {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+          <select value={clinicFilter} onChange={(e) => setClinicFilter(e.target.value)} className="px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white">
+            <option value="all">All Clinics</option>
+            {clinicOptions.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+        </>
+      }
+      actions={
+        <>
           <button onClick={handleRefresh} disabled={refreshing} title="Refresh"
             className="p-2.5 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 rounded-lg border border-neutral-200 transition-colors disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
@@ -457,8 +469,10 @@ export default function RegionalAdminStaffPage() {
             <ClipboardCheck className="h-4 w-4 mr-1.5" />Review Requests
           </Link>
           <Button onClick={() => setShowRegister(true)}><Plus className="h-4 w-4 mr-1.5" />Register Staff</Button>
-        </div>
-      </div>
+        </>
+      }
+    >
+      <p className="text-sm text-neutral-500 -mt-4">{staff.length} staff member{staff.length !== 1 ? "s" : ""} across your region</p>
 
       {(error || actionError) && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-center justify-between">
@@ -466,22 +480,6 @@ export default function RegionalAdminStaffPage() {
           <button onClick={() => setActionError(null)}><X className="h-4 w-4" /></button>
         </div>
       )}
-
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search staff…"
-            className="w-full pl-9 pr-4 py-2 text-sm border border-neutral-200 rounded-lg bg-white" />
-        </div>
-        <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white">
-          <option value="all">All Roles</option>
-          {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-        </select>
-        <select value={clinicFilter} onChange={(e) => setClinicFilter(e.target.value)} className="px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white">
-          <option value="all">All Clinics</option>
-          {clinicOptions.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </select>
-      </div>
 
       <Card>
         {filtered.length === 0 ? (
@@ -577,6 +575,6 @@ export default function RegionalAdminStaffPage() {
           <ConfirmDeleteModal member={deleteMember} onConfirm={() => handleDelete(deleteMember.id, deleteMember.role)} onClose={() => setDeleteMember(null)} />
         )}
       </Modal>
-    </div>
+    </PageShell>
   );
 }

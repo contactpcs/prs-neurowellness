@@ -4,12 +4,13 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Search, ChevronLeft, ChevronRight, CalendarDays, Phone, MessageSquare, Eye, Siren,
+  ChevronLeft, ChevronRight, CalendarDays, Phone, MessageSquare, Eye, Siren,
 } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
 import { BookingModal } from "@/components/appointments/BookingModal";
+import { PageShell } from "@/components/ui";
 import type { Appointment, AvailabilitySlot } from "@/types/domain.types";
 
 // ─── types ────────────────────────────────────────────────────────
@@ -354,31 +355,18 @@ export default function DoctorDashboard() {
   // ── render ────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-neutral-50">
-      {/* header */}
-      <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Welcome back, Dr. {doctorName}!</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">Here&apos;s what&apos;s happening in your practice today.</p>
+    <PageShell
+      title={`Welcome back, Dr. ${doctorName}!`}
+      root="Doctor"
+      search={searchQuery}
+      onSearch={setSearchQuery}
+      actions={
+        <div className="flex items-center gap-2 bg-white border border-neutral-200 rounded-lg px-3 py-2 text-sm text-neutral-700">
+          <CalendarDays className="w-4 h-4 flex-shrink-0 text-accent" />
+          <span>Today, {todayDisplay}</span>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Search patients, appointments..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-4 py-2 text-sm bg-white border border-neutral-200 rounded-lg text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:border-transparent w-full sm:w-64 transition-all"
-            />
-          </div>
-          <div className="flex items-center gap-2 bg-white border border-neutral-200 rounded-lg px-3 py-2 text-sm text-neutral-700">
-            <CalendarDays className="w-4 h-4 flex-shrink-0 text-accent" />
-            <span>Today, {todayDisplay}</span>
-          </div>
-        </div>
-      </div>
-
+      }
+    >
       {/* next appointments + quick actions */}
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-[1fr_300px] mb-5">
         <div className="bg-white rounded-2xl border border-neutral-200 shadow-card overflow-hidden">
@@ -694,6 +682,6 @@ export default function DoctorDashboard() {
           }}
         />
       )}
-    </div>
+    </PageShell>
   );
 }

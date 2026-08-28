@@ -20,7 +20,7 @@ import { Activity, Calendar, ChevronRight, Cpu, Loader2, Search, User } from "lu
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
 import { useAuth } from "@/lib/hooks";
-import { Input, Card, CardContent, PageLoader } from "@/components/ui";
+import { Input, Card, CardContent, PageLoader, PageShell } from "@/components/ui";
 
 interface SessionRow {
   appointment_id: string;
@@ -137,13 +137,10 @@ export default function ClinicalAssistantAppointmentsPage() {
   if (loading) return <PageLoader />;
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-neutral-900">Device Sessions</h1>
-        <p className="text-sm text-neutral-500 mt-1">
-          Neuromodulation sessions prescribed by a treatment protocol, for {user?.clinic_name ?? "your clinic"}.
-        </p>
-      </div>
+    <PageShell title="Device Sessions" root="Clinical Assistant">
+      <p className="text-sm text-neutral-500 -mt-2">
+        Neuromodulation sessions prescribed by a treatment protocol, for {user?.clinic_name ?? "your clinic"}.
+      </p>
 
       <div className="flex flex-wrap items-center gap-2">
         {(["today", "week", "all"] as RangeKey[]).map((r) => (
@@ -256,6 +253,6 @@ export default function ClinicalAssistantAppointmentsPage() {
           </div>
         </div>
       ))}
-    </div>
+    </PageShell>
   );
 }

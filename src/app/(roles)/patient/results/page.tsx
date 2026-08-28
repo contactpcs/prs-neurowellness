@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { CheckCircle, ChevronRight, Activity } from "lucide-react";
 import { useMyScores } from "@/lib/hooks";
-import { PageLoader, Card, CardContent } from "@/components/ui";
+import { PageLoader, Card, CardContent, PageShell } from "@/components/ui";
 
 function severityColor(level?: string) {
   switch (level?.toLowerCase()) {
@@ -22,9 +22,8 @@ export default function PatientResultsPage() {
   if (isLoading) return <PageLoader />;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold text-neutral-900">My Results</h1>
-
+    <div className="max-w-3xl mx-auto">
+    <PageShell title="My Results" root="Patient">
       {instances.length === 0 ? (
         <p className="text-neutral-500 text-center py-12">No completed assessments yet.</p>
       ) : (
@@ -107,6 +106,7 @@ export default function PatientResultsPage() {
           ))}
         </div>
       )}
+    </PageShell>
     </div>
   );
 }

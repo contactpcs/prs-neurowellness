@@ -2,8 +2,8 @@
 
 import { Fragment, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, ChevronDown, ChevronRight } from "lucide-react";
-import { Input, PatientListSkeleton } from "@/components/ui";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { PatientListSkeleton, PageShell } from "@/components/ui";
 import { useDoctorPatients, usePatientPermissions } from "@/lib/hooks";
 
 function calcAge(dob?: string): number | null {
@@ -113,24 +113,8 @@ export default function DoctorPatientsPage() {
   if (isLoading) return <PatientListSkeleton />;
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">My Patients</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">Search by name or MRN</p>
-        </div>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
-          <Input
-            placeholder="e.g., Alice or MRN..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 w-full sm:w-64"
-          />
-        </div>
-      </div>
-
+    <PageShell title="My Patients" root="Doctor" search={search} onSearch={setSearch}>
+      <div className="space-y-5">
       {/* Table */}
       <div className="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden overflow-x-auto">
         <table className="w-full text-base min-w-[600px]">
@@ -222,6 +206,7 @@ export default function DoctorPatientsPage() {
           </tbody>
         </table>
       </div>
-    </div>
+      </div>
+    </PageShell>
   );
 }

@@ -8,7 +8,7 @@ import {
   TrendingUp, Clock,
 } from "lucide-react";
 import { useAuth, useAdminDashboard, useNotifications } from "@/lib/hooks";
-import { Card, CardContent, Button, Skeleton } from "@/components/ui";
+import { Card, CardContent, Button, Skeleton, PageShell } from "@/components/ui";
 import type { ClinicBreakdown } from "@/types/admin.types";
 
 function DashboardSkeleton() {
@@ -102,18 +102,11 @@ export default function AdminDashboard() {
   const pendingApprovals = s?.pending_approvals ?? 0;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">
-            Welcome back, {user?.first_name}
-          </h1>
-          <p className="text-sm text-neutral-500 mt-0.5">
-            Platform overview — all clinics and operations at a glance.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <PageShell
+      title={`Welcome back, ${user?.first_name}`}
+      root="Admin"
+      actions={
+        <>
           <button
             onClick={() => fetch()}
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-600 hover:text-neutral-800 hover:bg-neutral-100 rounded-lg transition-colors"
@@ -124,8 +117,12 @@ export default function AdminDashboard() {
           <Link href="/admin/clinics">
             <Button><Plus className="h-4 w-4 mr-1.5" />New Clinic</Button>
           </Link>
-        </div>
-      </div>
+        </>
+      }
+    >
+      <p className="text-sm text-neutral-500 -mt-3">
+        Platform overview — all clinics and operations at a glance.
+      </p>
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
@@ -278,6 +275,6 @@ export default function AdminDashboard() {
           </Card>
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

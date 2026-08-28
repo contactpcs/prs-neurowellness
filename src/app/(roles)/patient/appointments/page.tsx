@@ -10,6 +10,7 @@ import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { BookAppointmentModal } from "@/components/appointments/BookAppointmentModal";
 import { PatientMonthCalendar } from "@/components/appointments/PatientMonthCalendar";
 import { STATUS_LABEL, ACTIVE_APPOINTMENT_STATUSES } from "@/lib/appointmentStatus";
+import { PageShell } from "@/components/ui";
 import type { Appointment, AppointmentType } from "@/types/domain.types";
 
 function todayStr(): string {
@@ -119,30 +120,23 @@ export default function PatientAppointmentsPage() {
     if (onThatDay.length === 1) router.push(`/patient/appointments/${onThatDay[0].appointment_id}`);
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">My Appointments</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">Book a slot, pay, and you're confirmed.</p>
-        </div>
-        {bookableType ? (
-          <button
-            onClick={() => setShowBook(true)}
-            className="flex items-center gap-2 bg-brand-gradient text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex-shrink-0"
-          >
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">{bookableType === "initial" ? "Book Initial Consultation" : "Book Follow-up"}</span>
-            <span className="sm:hidden">Book</span>
-          </button>
-        ) : (
-          <span className="text-xs text-neutral-400 flex-shrink-0 max-w-[220px] text-right">
-            You already have an initial consultation in progress.
-          </span>
-        )}
-      </div>
+  const headerActions = bookableType ? (
+    <button
+      onClick={() => setShowBook(true)}
+      className="flex items-center gap-2 bg-brand-gradient text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex-shrink-0"
+    >
+      <Plus className="h-4 w-4" />
+      <span className="hidden sm:inline">{bookableType === "initial" ? "Book Initial Consultation" : "Book Follow-up"}</span>
+      <span className="sm:hidden">Book</span>
+    </button>
+  ) : (
+    <span className="text-xs text-neutral-400 flex-shrink-0 max-w-[220px] text-right">
+      You already have an initial consultation in progress.
+    </span>
+  );
 
+  return (
+    <PageShell title="My Appointments" root="Patient" actions={headerActions}>
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <KpiCard
@@ -208,7 +202,7 @@ export default function PatientAppointmentsPage() {
           }}
         />
       )}
-    </div>
+    </PageShell>
   );
 }
 

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ShieldCheck, RefreshCw, X, Mail, Phone, MapPin, Building2, Edit2, Power, PowerOff } from "lucide-react";
-import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
+import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList, PageShell } from "@/components/ui";
 import type { AdminAccount } from "@/types/admin.types";
 
 export const TYPE_STYLES: Record<string, { bg: string; text: string; label: string }> = {
@@ -127,13 +127,11 @@ export function AdminAccountsSection({
   if (isLoading) return <AdminsSkeleton />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">{title}</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{subtitle}</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <PageShell
+      title={title}
+      root="Admin"
+      actions={
+        <>
           <button
             onClick={onRefresh}
             disabled={refreshing}
@@ -143,8 +141,10 @@ export function AdminAccountsSection({
             <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
           </button>
           {headerAction}
-        </div>
-      </div>
+        </>
+      }
+    >
+      <p className="text-sm text-neutral-500 -mt-3">{subtitle}</p>
 
       {(error || actionError) && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-center justify-between">
@@ -268,6 +268,6 @@ export function AdminAccountsSection({
           />
         )}
       </Modal>
-    </div>
+    </PageShell>
   );
 }

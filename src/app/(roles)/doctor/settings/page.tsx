@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Check, KeyRound, Shield, Monitor } from "lucide-react";
+import { PageShell } from "@/components/ui";
 
 const BRAND = "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)";
 const BRAND_PX = "#00A1E4";
@@ -25,11 +26,8 @@ export default function DoctorSettingsPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto flex flex-col gap-5">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Settings</h1>
-      </div>
-
+    <PageShell title="Settings" root="Doctor">
+      <div className="max-w-3xl mx-auto flex flex-col gap-5">
       {/* Notifications */}
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
         <div className="px-5 py-3.5 bg-neutral-50 border-b border-neutral-100">
@@ -126,6 +124,7 @@ export default function DoctorSettingsPage() {
           </span>
         )}
       </div>
-    </div>
+      </div>
+    </PageShell>
   );
 }

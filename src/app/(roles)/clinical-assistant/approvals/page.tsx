@@ -3,12 +3,12 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {
-  Search, CheckCircle, XCircle, Mail,
+  CheckCircle, XCircle, Mail,
   Phone, Calendar, Clock, ChevronRight, Loader2,
 } from "lucide-react";
 import { staffService } from "@/lib/api/services/staff.service";
 import { useAuth } from "@/lib/hooks";
-import { Input, Card, CardContent, PageLoader } from "@/components/ui";
+import { Card, CardContent, PageLoader, PageShell } from "@/components/ui";
 import type { PatientListItem } from "@/types/domain.types";
 
 export default function ClinicalAssistantApprovalsPage() {
@@ -71,7 +71,12 @@ export default function ClinicalAssistantApprovalsPage() {
   if (isLoading) return <PageLoader />;
 
   return (
-    <div className="space-y-6">
+    <PageShell
+      title="Self Registration Approvals"
+      root="Clinical Assistant"
+      search={search}
+      onSearch={setSearch}
+    >
       {/* Toast */}
       {toast && (
         <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
@@ -80,26 +85,14 @@ export default function ClinicalAssistantApprovalsPage() {
         </div>
       )}
 
-      {/* Header */}
+      {/* Header extras: clinic name + pending count, not purely decorative */}
       <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Self Registration Approvals</h1>
         {user?.clinic_name && (
-          <p className="text-xs font-medium text-blue-600 mt-0.5">{user.clinic_name}</p>
+          <p className="text-xs font-medium text-blue-600">{user.clinic_name}</p>
         )}
         <p className="text-sm text-neutral-500 mt-0.5">
           {patients.length} pending {patients.length === 1 ? "request" : "requests"} — review and approve or reject
         </p>
-      </div>
-
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
-        <Input
-          placeholder="Search by name or email…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
       </div>
 
       {/* Cards */}
@@ -229,6 +222,6 @@ export default function ClinicalAssistantApprovalsPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

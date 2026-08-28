@@ -7,7 +7,7 @@ import {
   CalendarPlus, LogIn,
 } from "lucide-react";
 import { useAuth, useReceptionDashboard, useReceptionPendingPatients, useReceptionPatients } from "@/lib/hooks";
-import { PageLoader, Card, CardContent } from "@/components/ui";
+import { PageLoader, Card, CardContent, PageShell } from "@/components/ui";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { DoctorWeekCalendar } from "@/components/appointments/DoctorWeekCalendar";
 import RegisterPatientModal from "../patients/RegisterPatientModal";
@@ -63,19 +63,10 @@ export default function ReceptionistDashboard() {
   ];
 
   return (
-    <div className="space-y-5">
-      {/* Breadcrumb + header */}
-      <div>
-        <nav className="flex items-center gap-1.5 mb-1.5 text-xs">
-          <span className="text-neutral-400">Receptionist</span>
-          <span className="text-neutral-300">/</span>
-          <span className="text-neutral-700 font-medium">Dashboard</span>
-        </nav>
-        <h1 className="text-2xl font-bold text-neutral-900">Welcome back, {user?.first_name}</h1>
-        {user?.clinic_name && (
-          <p className="text-xs font-medium text-primary-600 mt-0.5">{user.clinic_name}</p>
-        )}
-      </div>
+    <PageShell title={`Welcome back, ${user?.first_name}`} root="Receptionist" breadcrumb={["Dashboard"]}>
+      {user?.clinic_name && (
+        <p className="text-xs font-medium text-primary-600 -mt-3">{user.clinic_name}</p>
+      )}
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -232,7 +223,7 @@ export default function ReceptionistDashboard() {
       {showRegister && (
         <RegisterPatientModal onClose={() => setShowRegister(false)} onSuccess={() => setShowRegister(false)} />
       )}
-    </div>
+    </PageShell>
   );
 }
 
