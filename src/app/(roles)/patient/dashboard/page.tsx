@@ -16,7 +16,7 @@ import {
 } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
-import { PatientDashboardSkeleton } from "@/components/ui";
+import { PatientDashboardSkeleton, PageShell } from "@/components/ui";
 import { VerifyChannelBanner } from "@/components/auth/VerifyChannelBanner";
 import { computeProfileCompletion } from "@/lib/profileCompletion";
 import type {
@@ -115,43 +115,39 @@ function PatientDashboard() {
       Math.max(totalPlannedAppts + assessments.length * 2, 1)) * 100,
   );
 
+  const headerActions = (
+    <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="relative hidden sm:block">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Search appointments, reports..."
+          className="pl-8 pr-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs w-48 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+      <button className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-700">
+        <Calendar className="w-3.5 h-3.5 text-blue-500" />
+        {new Date().toLocaleDateString("en-US", {
+          month: "short", day: "numeric",
+        })}
+      </button>
+      <div className="relative">
+        <button className="p-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50">
+          <Bell className="w-4 h-4 text-gray-600" />
+        </button>
+        {doctorNotes.length > 0 && (
+          <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full text-white text-[10px] flex items-center justify-center">
+            {doctorNotes.length}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-neutral-900">
       <VerifyChannelBanner />
-      {/* Header */}
-      <div className="pb-3 flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h1 className="text-lg font-bold text-gray-900 truncate">Welcome back, {firstName}!</h1>
-          <p className="text-xs text-gray-500 mt-0.5 hidden sm:block">Here's your wellness summary for today.</p>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="relative hidden sm:block">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search appointments, reports..."
-              className="pl-8 pr-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs w-48 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <button className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-700">
-            <Calendar className="w-3.5 h-3.5 text-blue-500" />
-            {new Date().toLocaleDateString("en-US", {
-              month: "short", day: "numeric",
-            })}
-          </button>
-          <div className="relative">
-            <button className="p-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50">
-              <Bell className="w-4 h-4 text-gray-600" />
-            </button>
-            {doctorNotes.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full text-white text-[10px] flex items-center justify-center">
-                {doctorNotes.length}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-
+      <PageShell title={`Welcome back, ${firstName}!`} root="Patient" actions={headerActions}>
       <div className="pb-6 space-y-3">
         {/* Hero Banner */}
         {(nextAppt || pendingAssessments.length > 0) && (
@@ -513,6 +509,7 @@ function PatientDashboard() {
           onPaid={() => { setPayingId(null); reloadAppointments(); }}
         />
       )}
+      </PageShell>
     </div>
   );
 }

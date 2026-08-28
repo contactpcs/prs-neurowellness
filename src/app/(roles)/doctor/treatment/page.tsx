@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Syringe } from "lucide-react";
-import { PageLoader } from "@/components/ui";
+import { PageLoader, PageShell } from "@/components/ui";
 import { doctorsService } from "@/lib/api/services/doctors.service";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import type { PatientListItem } from "@/types/domain.types";
@@ -62,12 +62,8 @@ export default function DoctorTreatmentPage() {
   if (isLoading) return <PageLoader />;
 
   return (
-    <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Treatment Protocols</h1>
-        <p className="text-sm text-neutral-500 mt-0.5">Active protocol per patient — open a patient to modify or start one.</p>
-      </div>
-
+    <PageShell title="Treatment Protocols" root="Doctor">
+      <div className="flex flex-col gap-5">
       <div className="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
         {rows.length === 0 ? (
           <div className="px-6 py-14 text-center">
@@ -131,6 +127,7 @@ export default function DoctorTreatmentPage() {
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </PageShell>
   );
 }

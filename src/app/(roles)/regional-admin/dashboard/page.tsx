@@ -7,7 +7,7 @@ import {
   CalendarDays, CheckCircle2, Stethoscope, Package, Receipt, ShoppingBag, ArrowRight,
 } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
-import { Card, CardContent, Skeleton } from "@/components/ui";
+import { Card, CardContent, Skeleton, PageShell } from "@/components/ui";
 import { adminService } from "@/lib/api/services/admin.service";
 import { staffRequestsService } from "@/lib/api/services/staffRequests.service";
 import type { StaffRequest } from "@/lib/api/services/staffRequests.service";
@@ -204,15 +204,11 @@ export default function RegionalAdminDashboardPage() {
   const latestOrders = [...orders].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")).slice(0, 5);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Welcome, {user?.first_name}</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">
-            {selectedClinicId ? `Viewing ${clinicName(selectedClinicId)}` : "Your region at a glance"}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <PageShell
+      title={`Welcome, ${user?.first_name}`}
+      root="Regional Admin"
+      actions={
+        <>
           <select
             value={selectedClinicId ?? "all"}
             onChange={(e) => setSelectedClinicId(e.target.value === "all" ? null : e.target.value)}
@@ -225,8 +221,12 @@ export default function RegionalAdminDashboardPage() {
             className="p-2.5 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 rounded-lg border border-neutral-200 transition-colors disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
           </button>
-        </div>
-      </div>
+        </>
+      }
+    >
+      <p className="text-sm text-neutral-500 -mt-4">
+        {selectedClinicId ? `Viewing ${clinicName(selectedClinicId)}` : "Your region at a glance"}
+      </p>
 
       {error && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>}
 
@@ -466,6 +466,6 @@ export default function RegionalAdminDashboardPage() {
           )}
         </Card>
       </div>
-    </div>
+    </PageShell>
   );
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Check, X, ClipboardCheck } from "lucide-react";
 import { useStaffRequests } from "@/lib/hooks";
-import { Card, CardContent, Button, Skeleton, Modal, DetailFieldList } from "@/components/ui";
+import { Card, CardContent, Button, Skeleton, Modal, DetailFieldList, PageShell } from "@/components/ui";
 import type { StaffRequest } from "@/lib/api/services/staffRequests.service";
 
 const STATUS_STYLES: Record<StaffRequest["status"], string> = {
@@ -85,12 +85,10 @@ export default function RegionalAdminStaffApprovalsPage() {
   }, [fetch, statusFilter]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Staff Approvals</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{requests.length} request{requests.length !== 1 ? "s" : ""} in your region</p>
-        </div>
+    <PageShell
+      title="Staff Approvals"
+      root="Regional Admin"
+      actions={
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
@@ -102,7 +100,9 @@ export default function RegionalAdminStaffApprovalsPage() {
           <option value="rejected">Rejected</option>
           <option value="all">All</option>
         </select>
-      </div>
+      }
+    >
+      <p className="text-sm text-neutral-500 -mt-4">{requests.length} request{requests.length !== 1 ? "s" : ""} in your region</p>
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>
@@ -172,6 +172,6 @@ export default function RegionalAdminStaffApprovalsPage() {
       <Modal isOpen={!!detailRequest} onClose={() => setDetailRequest(null)} title="Staff Request Details" className="max-w-3xl">
         {detailRequest && <DetailFieldList data={detailRequest} />}
       </Modal>
-    </div>
+    </PageShell>
   );
 }

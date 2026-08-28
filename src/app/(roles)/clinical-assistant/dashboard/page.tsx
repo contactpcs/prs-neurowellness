@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Users, ClipboardCheck, Activity } from "lucide-react";
 import { staffService } from "@/lib/api/services/staff.service";
-import { PageLoader, Card, CardContent, Button } from "@/components/ui";
+import { PageLoader, Card, CardContent, Button, PageShell } from "@/components/ui";
 import type { StaffDashboard } from "@/types/domain.types";
 
 export default function CADashboard() {
@@ -25,16 +25,17 @@ export default function CADashboard() {
   const pendingCount = dashboard?.pending_count ?? sessions.filter(s => s.status === "assigned").length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">Dashboard</h1>
+    <PageShell
+      title="Dashboard"
+      root="Clinical Assistant"
+      actions={
         <Link href="/clinical-assistant/patients">
           <Button>
             <Users className="h-4 w-4" /> View All Patients
           </Button>
         </Link>
-      </div>
-
+      }
+    >
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
           { label: "Total Patients", value: patientCount, icon: Users, color: "text-primary-500" },
@@ -91,6 +92,6 @@ export default function CADashboard() {
           </div>
         </Card>
       </section>
-    </div>
+    </PageShell>
   );
 }

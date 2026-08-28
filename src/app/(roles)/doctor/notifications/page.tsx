@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Bell, Check, Loader2, CheckCheck } from "lucide-react";
-import { Card, PageLoader } from "@/components/ui";
+import { Card, PageLoader, PageShell } from "@/components/ui";
 import { useNotifications } from "@/lib/hooks";
 
 function timeAgo(dateStr: string) {
@@ -64,23 +64,22 @@ export default function DoctorNotificationsPage() {
   if (isLoading && notifications.length === 0) return <PageLoader />;
 
   return (
-    <div className="flex flex-col gap-5">
-      <div>
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-neutral-900">Notifications</h1>
-            <p className="text-sm text-neutral-500 mt-0.5">{unreadCount} unread across your patients and clinic.</p>
-          </div>
-          <button
-            onClick={handleMarkAllRead}
-            disabled={markingAll || unreadCount === 0}
-            className="h-[38px] px-3.5 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50 transition-colors flex items-center gap-1.5"
-          >
-            {markingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
-            Mark all as read
-          </button>
-        </div>
-      </div>
+    <PageShell
+      title="Notifications"
+      root="Doctor"
+      actions={
+        <button
+          onClick={handleMarkAllRead}
+          disabled={markingAll || unreadCount === 0}
+          className="h-[38px] px-3.5 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+        >
+          {markingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
+          Mark all as read
+        </button>
+      }
+    >
+      <div className="flex flex-col gap-5">
+      <p className="text-sm text-neutral-500 -mt-2">{unreadCount} unread across your patients and clinic.</p>
 
       <div className="flex items-center gap-2 flex-wrap">
         {(["All", "Unread", "Read"] as Filter[]).map((f) => (
@@ -140,6 +139,7 @@ export default function DoctorNotificationsPage() {
           </div>
         )}
       </Card>
-    </div>
+      </div>
+    </PageShell>
   );
 }

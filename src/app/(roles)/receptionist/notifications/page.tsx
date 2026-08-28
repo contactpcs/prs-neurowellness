@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Bell, Check, Loader2, CheckCheck } from "lucide-react";
 import { receptionService } from "@/lib/api/services/reception.service";
-import { Card, PageLoader } from "@/components/ui";
+import { Card, PageLoader, PageShell } from "@/components/ui";
 import type { Notification } from "@/types/domain.types";
 
 function timeAgo(dateStr: string) {
@@ -76,29 +76,22 @@ export default function ReceptionistNotificationsPage() {
 
   if (isLoading) return <PageLoader />;
 
-  return (
-    <div className="flex flex-col gap-5">
-      {/* Breadcrumb + header */}
-      <div>
-        <nav className="flex items-center gap-1.5 mb-1.5 text-xs">
-          <span className="text-neutral-700 font-medium">Notifications</span>
-        </nav>
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <h1 className="text-2xl font-bold text-neutral-900">Notifications</h1>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-neutral-500">{unread} unread of {notifications.length}</span>
-            <button
-              onClick={handleMarkAllRead}
-              disabled={markingAll || unread === 0}
-              className="h-[38px] px-3.5 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50 transition-colors flex items-center gap-1.5"
-            >
-              {markingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
-              Mark all as read
-            </button>
-          </div>
-        </div>
-      </div>
+  const actions = (
+    <>
+      <span className="text-xs text-neutral-500 self-center">{unread} unread of {notifications.length}</span>
+      <button
+        onClick={handleMarkAllRead}
+        disabled={markingAll || unread === 0}
+        className="h-[38px] px-3.5 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+      >
+        {markingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
+        Mark all as read
+      </button>
+    </>
+  );
 
+  return (
+    <PageShell title="Notifications" root="Receptionist" actions={actions}>
       <Card>
         {notifications.length === 0 ? (
           <div className="px-6 py-14 text-center">
@@ -140,6 +133,6 @@ export default function ReceptionistNotificationsPage() {
           </div>
         )}
       </Card>
-    </div>
+    </PageShell>
   );
 }

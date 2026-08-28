@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Pencil, Power, PowerOff, DollarSign } from "lucide-react";
-import { Card, CardContent, Button, Input, Select, Modal, Badge, Skeleton } from "@/components/ui";
+import { Card, CardContent, Button, Input, Select, Modal, Badge, Skeleton, PageShell } from "@/components/ui";
 import { adminService } from "@/lib/api/services/admin.service";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import type { AdminClinic, BillableItem, BillableItemCategory, BillableItemCreatePayload, BillableItemUpdatePayload } from "@/types/admin.types";
@@ -441,19 +441,20 @@ export default function AdminBillableItemsPage() {
   if (isLoading) return <ItemsSkeleton />;
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Billable Items</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">
-            Pricing catalog for appointments and device sessions — what patients get charged.
-          </p>
-        </div>
+    <PageShell
+      title="Billable Items"
+      root="Admin"
+      actions={
         <Button onClick={() => setShowCreate(true)}>
           <Plus className="h-4 w-4 mr-1.5" />
           New Item
         </Button>
-      </div>
+      }
+    >
+      <div className="space-y-6 max-w-4xl -mt-3">
+      <p className="text-sm text-neutral-500">
+        Pricing catalog for appointments and device sessions — what patients get charged.
+      </p>
 
       {loadError && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{loadError}</div>}
 
@@ -588,6 +589,7 @@ export default function AdminBillableItemsPage() {
           />
         )}
       </Modal>
-    </div>
+      </div>
+    </PageShell>
   );
 }

@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Search, UserPlus, Users } from "lucide-react";
+import { UserPlus, Users } from "lucide-react";
 import { useReceptionPatients } from "@/lib/hooks";
-import { Input, Card, PageLoader, Button } from "@/components/ui";
+import { Card, PageLoader, Button, PageShell } from "@/components/ui";
 import type { PatientListItem } from "@/types/domain.types";
 import RegisterPatientModal from "./RegisterPatientModal";
 
@@ -43,55 +43,39 @@ export default function ReceptionistPatientsPage() {
 
   if (isLoading) return <PageLoader />;
 
-  return (
-    <div className="space-y-5">
-      {/* Breadcrumb + header */}
-      <div>
-        <nav className="flex items-center gap-1.5 mb-1.5 text-xs">
-          <span className="text-neutral-700 font-medium">All Patients</span>
-        </nav>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-neutral-900">All Patients</h1>
-            <p className="text-sm text-neutral-500 mt-0.5">{patients.length} registered patients</p>
-          </div>
-          <Button onClick={() => setShowModal(true)} className="flex-shrink-0">
-            <UserPlus className="h-4 w-4 mr-1.5" /><span className="hidden sm:inline">Register Patient</span><span className="sm:hidden">Register</span>
-          </Button>
-        </div>
-      </div>
+  const actions = (
+    <Button onClick={() => setShowModal(true)} className="flex-shrink-0">
+      <UserPlus className="h-4 w-4 mr-1.5" /><span className="hidden sm:inline">Register Patient</span><span className="sm:hidden">Register</span>
+    </Button>
+  );
 
-      {/* Search + filters */}
-      <div className="flex items-center gap-2.5 flex-wrap">
-        <div className="relative flex-[0_1_300px] min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
-          <Input
-            placeholder="Search by name, phone or doctor…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <select
-          value={gender}
-          onChange={(e) => setGender(e.target.value)}
-          className="h-[38px] px-3 rounded-lg border border-neutral-300 bg-white text-sm text-neutral-700"
-        >
-          <option value="">All Genders</option>
-          <option value="male">Male</option>
-          <option value="female">Female</option>
-        </select>
-        <select
-          value={doctor}
-          onChange={(e) => setDoctor(e.target.value)}
-          className="h-[38px] px-3 rounded-lg border border-neutral-300 bg-white text-sm text-neutral-700"
-        >
-          <option value="">All Doctors</option>
-          {doctorOptions.map((d) => (
-            <option key={d} value={d}>{d.startsWith("Dr.") ? d : `Dr. ${d}`}</option>
-          ))}
-        </select>
-      </div>
+  const filters = (
+    <>
+      <select
+        value={gender}
+        onChange={(e) => setGender(e.target.value)}
+        className="h-[38px] px-3 rounded-lg border border-neutral-300 bg-white text-sm text-neutral-700"
+      >
+        <option value="">All Genders</option>
+        <option value="male">Male</option>
+        <option value="female">Female</option>
+      </select>
+      <select
+        value={doctor}
+        onChange={(e) => setDoctor(e.target.value)}
+        className="h-[38px] px-3 rounded-lg border border-neutral-300 bg-white text-sm text-neutral-700"
+      >
+        <option value="">All Doctors</option>
+        {doctorOptions.map((d) => (
+          <option key={d} value={d}>{d.startsWith("Dr.") ? d : `Dr. ${d}`}</option>
+        ))}
+      </select>
+    </>
+  );
+
+  return (
+    <PageShell title="All Patients" root="Receptionist" actions={actions} search={search} onSearch={setSearch} filters={filters}>
+      <p className="text-sm text-neutral-500 -mt-3">{patients.length} registered patients</p>
 
       {/* Patient list */}
       <Card className="overflow-x-auto">
@@ -212,6 +196,6 @@ export default function ReceptionistPatientsPage() {
       {showModal && (
         <RegisterPatientModal onClose={() => setShowModal(false)} onSuccess={handleRegistered} />
       )}
-    </div>
+    </PageShell>
   );
 }

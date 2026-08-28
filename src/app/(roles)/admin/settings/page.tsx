@@ -5,7 +5,7 @@ import {
   User, Building2, Database, Key,
 } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
-import { Card, CardContent, CardHeader } from "@/components/ui";
+import { Card, CardContent, CardHeader, PageShell } from "@/components/ui";
 
 interface SettingRow {
   label: string;
@@ -63,12 +63,9 @@ export default function AdminSettingsPage() {
   const role = user?.roles?.[0] ?? "";
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Settings</h1>
-        <p className="text-sm text-neutral-500 mt-0.5">Platform configuration and preferences</p>
-      </div>
+    <PageShell title="Settings" root="Admin">
+      <div className="space-y-6 max-w-2xl -mt-3">
+      <p className="text-sm text-neutral-500">Platform configuration and preferences</p>
 
       {/* Account */}
       <SettingSection
@@ -196,6 +193,7 @@ export default function AdminSettingsPage() {
       <p className="text-xs text-neutral-400 text-center">
         Anava PRS · Admin Panel · v1.0.0
       </p>
-    </div>
+      </div>
+    </PageShell>
   );
 }

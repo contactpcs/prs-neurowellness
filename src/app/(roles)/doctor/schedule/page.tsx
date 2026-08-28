@@ -9,6 +9,7 @@ import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
 import { extractErrorMessage } from "@/lib/api/errors";
 import { BookingModal } from "@/components/appointments/BookingModal";
+import { PageShell } from "@/components/ui";
 import type {
   WeeklyScheduleRow, ScheduleOverride, AvailabilitySlot,
 } from "@/types/domain.types";
@@ -157,15 +158,10 @@ export default function DoctorSchedulePage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-neutral-50">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">My Schedule</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">
-            Manage availability and book appointments
-          </p>
-        </div>
+    <PageShell
+      title="My Schedule"
+      root="Doctor"
+      actions={
         <button
           onClick={() => setShowEditSched(true)}
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white hover:opacity-90 transition-opacity"
@@ -174,8 +170,8 @@ export default function DoctorSchedulePage() {
           <Settings className="w-4 h-4" />
           Set Weekly Schedule
         </button>
-      </div>
-
+      }
+    >
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-[1fr_288px]">
         {/* ── Slot calendar ── */}
         <div className="bg-white rounded-2xl border border-neutral-200 shadow-card overflow-hidden">
@@ -417,7 +413,7 @@ export default function DoctorSchedulePage() {
           onSuccess={() => { setShowAddOverride(false); fetchSchedule(); fetchSlots(weekMonday); }}
         />
       )}
-    </div>
+    </PageShell>
   );
 }
 

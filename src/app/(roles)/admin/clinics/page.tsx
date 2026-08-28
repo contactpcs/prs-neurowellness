@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Building2, Plus, Search, Edit2, PowerOff, Power, X,
+  Building2, Plus, Edit2, PowerOff, Power, X,
   MapPin, Phone, Mail, Users, Trash2, UserPlus, RefreshCw, Star,
 } from "lucide-react";
 import { useAdminClinics } from "@/lib/hooks";
-import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
+import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList, PageShell } from "@/components/ui";
 import { adminService } from "@/lib/api/services/admin.service";
 import type { AdminClinic, AdminRegion, CreateClinicPayload } from "@/types/admin.types";
 
@@ -487,14 +487,13 @@ export default function AdminClinicsPage() {
   if (isLoading) return <ClinicsSkeleton />;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Clinics</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{clinics.length} clinic{clinics.length !== 1 ? "s" : ""} registered</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <PageShell
+      title="Clinics"
+      root="Admin"
+      search={search}
+      onSearch={setSearch}
+      actions={
+        <>
           <button
             onClick={handleRefresh}
             disabled={refreshing}
@@ -506,32 +505,9 @@ export default function AdminClinicsPage() {
           <Button onClick={() => setShowCreate(true)}>
             <Plus className="h-4 w-4 mr-1.5" />New Clinic
           </Button>
-        </div>
-      </div>
-
-      {(error || actionError) && (
-        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-center justify-between">
-          <span>{error || actionError}</span>
-          <button onClick={() => setActionError(null)}><X className="h-4 w-4" /></button>
-        </div>
-      )}
-
-      {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search clinics…"
-            className="w-full pl-9 pr-4 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
-          />
-          {search && (
-            <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2">
-              <X className="h-3.5 w-3.5 text-neutral-400" />
-            </button>
-          )}
-        </div>
+        </>
+      }
+      filters={
         <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1">
           {(["all", "active", "inactive"] as const).map((f) => (
             <button
@@ -545,7 +521,16 @@ export default function AdminClinicsPage() {
             </button>
           ))}
         </div>
-      </div>
+      }
+    >
+      <p className="text-sm text-neutral-500 -mt-3">{clinics.length} clinic{clinics.length !== 1 ? "s" : ""} registered</p>
+
+      {(error || actionError) && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-center justify-between">
+          <span>{error || actionError}</span>
+          <button onClick={() => setActionError(null)}><X className="h-4 w-4" /></button>
+        </div>
+      )}
 
       {/* Grid */}
       {filtered.length === 0 ? (
@@ -600,6 +585,6 @@ export default function AdminClinicsPage() {
       <Modal isOpen={!!viewClinic} onClose={() => setViewClinic(null)} title="Clinic Details" className="max-w-3xl">
         {viewClinic && <ClinicDetailModal clinic={viewClinic} regionName={regionNameById.get(viewClinic.region_id)} />}
       </Modal>
-    </div>
+    </PageShell>
   );
 }

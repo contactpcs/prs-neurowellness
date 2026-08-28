@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Activity } from "lucide-react";
-import { PageLoader } from "@/components/ui";
+import { PageLoader, PageShell } from "@/components/ui";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { deviceSessionLabel, deviceSessionTone, isSessionFinished } from "@/lib/utils/deviceSessionStatus";
 import type { ProtocolRead, ProtocolSessionRead } from "@/types/treatmentProtocol.types";
@@ -55,12 +55,8 @@ export default function DoctorSessionsPage() {
   if (isLoading) return <PageLoader />;
 
   return (
-    <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Sessions</h1>
-        <p className="text-sm text-neutral-500 mt-0.5">Device sessions generated from each patient&apos;s active treatment protocol.</p>
-      </div>
-
+    <PageShell title="Sessions" root="Doctor">
+      <div className="flex flex-col gap-5">
       <div className="flex items-center gap-2 flex-wrap">
         {FILTERS.map((f) => (
           <button
@@ -131,6 +127,7 @@ export default function DoctorSessionsPage() {
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </PageShell>
   );
 }

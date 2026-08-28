@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { MapPin, Plus, Trash2, X, RefreshCw, Building2, PowerOff, Power, Edit2 } from "lucide-react";
 import { useAdminRegions } from "@/lib/hooks";
-import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
+import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList, PageShell } from "@/components/ui";
 import type { AdminRegion } from "@/types/admin.types";
 
 function RegionsSkeleton() {
@@ -221,13 +221,11 @@ export default function AdminRegionsPage() {
   if (isLoading) return <RegionsSkeleton />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Regions</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{regions.length} region{regions.length !== 1 ? "s" : ""}</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <PageShell
+      title="Regions"
+      root="Admin"
+      actions={
+        <>
           <button
             onClick={handleRefresh}
             disabled={refreshing}
@@ -239,8 +237,10 @@ export default function AdminRegionsPage() {
           <Button onClick={() => setShowCreate(true)}>
             <Plus className="h-4 w-4 mr-1.5" />New Region
           </Button>
-        </div>
-      </div>
+        </>
+      }
+    >
+      <p className="text-sm text-neutral-500 -mt-3">{regions.length} region{regions.length !== 1 ? "s" : ""}</p>
 
       {(error || actionError) && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-center justify-between">
@@ -293,6 +293,6 @@ export default function AdminRegionsPage() {
           />
         )}
       </Modal>
-    </div>
+    </PageShell>
   );
 }

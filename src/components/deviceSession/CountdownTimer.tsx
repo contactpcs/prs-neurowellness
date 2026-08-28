@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import type { SessionStatus } from "@/types/deviceSession.types";
 
 function fmt(totalSeconds: number): string {
@@ -9,13 +8,14 @@ function fmt(totalSeconds: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-/** Big countdown header for the live session. Ticks locally every second
- * between reloads — remainingSeconds is recomputed from server anchors
- * (started_at/paused_at) each time the hook reloads, this just interpolates
- * between those reloads so the display doesn't visibly stall. Freezes
- * automatically while paused (sessionStatus governs the interval, not a
- * separate prop) since a paused session's server-computed remaining time
- * doesn't change until resumed. */
+/** Big countdown header for the live session. Purely presentational —
+ * remainingSeconds already ticks every second because the parent
+ * (live/page.tsx) recomputes it from server anchors (started_at/paused_at)
+ * on its own 1s interval. This component must NOT keep a second local tick
+ * and subtract it again: that double-counts elapsed time and races the
+ * display to 00:00 roughly twice as fast as the real remaining time (the
+ * bug this comment replaces — canComplete's gate used the parent's correct
+ * `remaining` and correctly stayed blocked while this showed 00:00/Complete). */
 export function CountdownTimer({
   remainingSeconds,
   totalSeconds,
@@ -25,15 +25,7 @@ export function CountdownTimer({
   totalSeconds: number;
   sessionStatus: SessionStatus;
 }) {
-  const [tick, setTick] = useState(0);
-
-  useEffect(() => {
-    if (sessionStatus !== "in_progress") return;
-    const id = setInterval(() => setTick((t) => t + 1), 1000);
-    return () => clearInterval(id);
-  }, [sessionStatus]);
-
-  const displaySeconds = sessionStatus === "in_progress" ? Math.max(0, remainingSeconds - tick) : remainingSeconds;
+  const displaySeconds = remainingSeconds;
   const progressPct = totalSeconds > 0 ? Math.min(100, Math.max(0, ((totalSeconds - displaySeconds) / totalSeconds) * 100)) : 0;
 
   const isPaused = sessionStatus === "paused";

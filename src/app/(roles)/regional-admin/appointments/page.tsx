@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Building2, CalendarDays } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
-import { Card, CardContent, Skeleton } from "@/components/ui";
+import { Card, CardContent, Skeleton, PageShell } from "@/components/ui";
 import { adminService } from "@/lib/api/services/admin.service";
 import type { AdminClinic } from "@/types/admin.types";
 import { AppointmentsSection } from "@/components/admin/AppointmentsSection";
@@ -35,11 +35,8 @@ export default function RegionalAdminAppointmentsPage() {
 
   if (!selectedClinicId) {
     return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Appointments</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">Select a clinic to view its appointments and doctors' schedules.</p>
-        </div>
+      <PageShell title="Appointments" root="Regional Admin">
+        <p className="text-sm text-neutral-500 -mt-4">Select a clinic to view its appointments and doctors' schedules.</p>
 
         {error && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>}
 
@@ -62,7 +59,7 @@ export default function RegionalAdminAppointmentsPage() {
             ))}
           </div>
         )}
-      </div>
+      </PageShell>
     );
   }
 

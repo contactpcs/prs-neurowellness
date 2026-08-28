@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Search } from "lucide-react";
-import { Input, Card, PageLoader } from "@/components/ui";
+import { Card, PageLoader, PageShell } from "@/components/ui";
 import { staffService } from "@/lib/api/services/staff.service";
 import type { PatientListItem } from "@/types/domain.types";
 
@@ -25,21 +24,12 @@ export default function CAPatientsPage() {
   if (isLoading) return <PageLoader />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">Patients</h1>
-      </div>
-
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
-        <Input
-          placeholder="Search patients..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
-      </div>
-
+    <PageShell
+      title="Patients"
+      root="Clinical Assistant"
+      search={search}
+      onSearch={setSearch}
+    >
       <Card>
         <div className="divide-y divide-neutral-100">
           {filtered.map((p) => (
@@ -68,6 +58,6 @@ export default function CAPatientsPage() {
           )}
         </div>
       </Card>
-    </div>
+    </PageShell>
   );
 }

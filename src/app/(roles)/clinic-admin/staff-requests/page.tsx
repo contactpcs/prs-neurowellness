@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Plus, ClipboardList } from "lucide-react";
 import { useAuth, useStaffRequests } from "@/lib/hooks";
-import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
+import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList, PageShell } from "@/components/ui";
 import type { CreateStaffRequestPayload, StaffRequest } from "@/lib/api/services/staffRequests.service";
 
 const STATUS_STYLES: Record<StaffRequest["status"], string> = {
@@ -164,16 +164,16 @@ export default function ClinicAdminStaffRequestsPage() {
   }, [fetch, user?.clinic_id]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Staff Requests</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{requests.length} request{requests.length !== 1 ? "s" : ""} for your clinic</p>
-        </div>
+    <PageShell
+      title="Staff Requests"
+      root="Clinic Admin"
+      actions={
         <Button onClick={() => setShowCreate(true)}>
           <Plus className="h-4 w-4 mr-1.5" />New Request
         </Button>
-      </div>
+      }
+    >
+      <p className="text-sm text-neutral-500 -mt-3">{requests.length} request{requests.length !== 1 ? "s" : ""} for your clinic</p>
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>
@@ -220,6 +220,6 @@ export default function ClinicAdminStaffRequestsPage() {
       <Modal isOpen={!!detailRequest} onClose={() => setDetailRequest(null)} title="Staff Request Details" className="max-w-3xl">
         {detailRequest && <DetailFieldList data={detailRequest} />}
       </Modal>
-    </div>
+    </PageShell>
   );
 }

@@ -8,3 +8,4 @@ export { Select } from "./Select";
 export { Loader, PageLoader } from "./Loader";
 export { Skeleton, PatientListSkeleton, PatientDetailSkeleton, AssessmentSkeleton, PatientDashboardSkeleton } from "./Skeleton";
 export { DetailFieldList } from "./DetailFieldList";
+export { PageShell } from "./PageShell";

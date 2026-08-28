@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Building2, Edit2, RefreshCw, Power, PowerOff, Clock } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
-import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
+import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList, PageShell } from "@/components/ui";
 import { adminService } from "@/lib/api/services/admin.service";
 import type { AdminClinic, ClinicWeeklyHours, ClinicWeeklyHoursItem, CreateClinicPayload } from "@/types/admin.types";
 
@@ -262,10 +262,11 @@ export default function ClinicAdminMyClinicPage() {
   if (isLoading) return <MyClinicSkeleton />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-bold text-neutral-900">My Clinic</h1>
-        <div className="flex items-center gap-2">
+    <PageShell
+      title="My Clinic"
+      root="Clinic Admin"
+      actions={
+        <>
           <button onClick={handleRefresh} disabled={refreshing} title="Refresh"
             className="p-2.5 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 rounded-lg border border-neutral-200 transition-colors disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
@@ -282,9 +283,9 @@ export default function ClinicAdminMyClinicPage() {
               <Button onClick={() => setShowEdit(true)}><Edit2 className="h-4 w-4 mr-1.5" />Edit Clinic</Button>
             </>
           )}
-        </div>
-      </div>
-
+        </>
+      }
+    >
       {error && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>}
 
       {clinic && (
@@ -330,6 +331,6 @@ export default function ClinicAdminMyClinicPage() {
       <Modal isOpen={showEdit} onClose={() => setShowEdit(false)} title="Edit Clinic">
         {clinic && <EditClinicForm clinic={clinic} onSubmit={handleUpdate} onClose={() => setShowEdit(false)} />}
       </Modal>
-    </div>
+    </PageShell>
   );
 }

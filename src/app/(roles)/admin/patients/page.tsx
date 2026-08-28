@@ -2,11 +2,11 @@
 
 import { Fragment, useEffect, useState } from "react";
 import {
-  Users, Search, X, Check, XCircle, Trash2, Edit2,
+  Users, X, Check, XCircle, Trash2, Edit2,
   Clock, Building2, Calendar, Plus, RefreshCw, FileText, ShieldCheck, Power, PowerOff,
 } from "lucide-react";
 import { useAdminPatients, useAdminClinics } from "@/lib/hooks";
-import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
+import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList, PageShell } from "@/components/ui";
 import { consentService, type ConsentRecord } from "@/lib/api/services/consent.service";
 import { filesService, type PatientFile } from "@/lib/api/services/files.service";
 import { adminService } from "@/lib/api/services/admin.service";
@@ -520,14 +520,13 @@ export default function AdminPatientsPage() {
   if (isLoading) return <PatientsSkeleton />;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Patients</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{patients.length} total patients</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <PageShell
+      title="Patients"
+      root="Admin"
+      search={search}
+      onSearch={setSearch}
+      actions={
+        <>
           <button
             onClick={handleRefresh}
             disabled={refreshing}
@@ -539,8 +538,20 @@ export default function AdminPatientsPage() {
           <Button onClick={() => setShowRegister(true)}>
             <Plus className="h-4 w-4 mr-1.5" />Register Patient
           </Button>
-        </div>
-      </div>
+        </>
+      }
+      filters={
+        <select
+          value={clinicFilter}
+          onChange={(e) => setClinicFilter(e.target.value)}
+          className="px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+        >
+          <option value="all">All Clinics</option>
+          {clinicOptions.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+      }
+    >
+      <p className="text-sm text-neutral-500 -mt-3">{patients.length} total patients</p>
 
       {(error || actionError) && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-center justify-between">
@@ -572,32 +583,6 @@ export default function AdminPatientsPage() {
             </span>
           </button>
         ))}
-      </div>
-
-      {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, email, MRN…"
-            className="w-full pl-9 pr-4 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
-          />
-          {search && (
-            <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2">
-              <X className="h-3.5 w-3.5 text-neutral-400" />
-            </button>
-          )}
-        </div>
-        <select
-          value={clinicFilter}
-          onChange={(e) => setClinicFilter(e.target.value)}
-          className="px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-        >
-          <option value="all">All Clinics</option>
-          {clinicOptions.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </select>
       </div>
 
       {/* Patient Table */}
@@ -778,6 +763,6 @@ export default function AdminPatientsPage() {
           />
         )}
       </Modal>
-    </div>
+    </PageShell>
   );
 }

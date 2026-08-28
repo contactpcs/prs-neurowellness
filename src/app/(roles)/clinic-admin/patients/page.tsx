@@ -2,11 +2,11 @@
 
 import { Fragment, useEffect, useState } from "react";
 import {
-  Users, Search, X, Check, Trash2, Edit2,
+  Users, X, Check, Trash2, Edit2,
   Calendar, Plus, RefreshCw, FileText, ShieldCheck, Power, PowerOff,
 } from "lucide-react";
 import { useAuth, useAdminPatients } from "@/lib/hooks";
-import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
+import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList, PageShell } from "@/components/ui";
 import { consentService, type ConsentRecord } from "@/lib/api/services/consent.service";
 import { filesService, type PatientFile } from "@/lib/api/services/files.service";
 import { adminService } from "@/lib/api/services/admin.service";
@@ -372,20 +372,22 @@ export default function ClinicAdminPatientsPage() {
   if (isLoading) return <PatientsSkeleton />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Patients</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{patients.length} patient{patients.length !== 1 ? "s" : ""} at your clinic</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <PageShell
+      title="Patients"
+      root="Clinic Admin"
+      search={search}
+      onSearch={setSearch}
+      actions={
+        <>
           <button onClick={handleRefresh} disabled={refreshing} title="Refresh"
             className="p-2.5 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 rounded-lg border border-neutral-200 transition-colors disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
           </button>
           <Button onClick={() => setShowRegister(true)}><Plus className="h-4 w-4 mr-1.5" />Register Patient</Button>
-        </div>
-      </div>
+        </>
+      }
+    >
+      <p className="text-sm text-neutral-500 -mt-3">{patients.length} patient{patients.length !== 1 ? "s" : ""} at your clinic</p>
 
       {(error || actionError) && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-center justify-between">
@@ -393,12 +395,6 @@ export default function ClinicAdminPatientsPage() {
           <button onClick={() => setActionError(null)}><X className="h-4 w-4" /></button>
         </div>
       )}
-
-      <div className="relative max-w-xs">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name, email, MRN…"
-          className="w-full pl-9 pr-4 py-2 text-sm border border-neutral-200 rounded-lg bg-white" />
-      </div>
 
       <Card>
         {filtered.length === 0 ? (
@@ -489,6 +485,6 @@ export default function ClinicAdminPatientsPage() {
       <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Patient">
         {deleteTarget && <ConfirmDelete patient={deleteTarget} onConfirm={() => deletePatient(deleteTarget.id)} onClose={() => setDeleteTarget(null)} />}
       </Modal>
-    </div>
+    </PageShell>
   );
 }

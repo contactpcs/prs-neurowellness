@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { User, Mail, Phone, MapPin, Building2, ShieldCheck, Calendar, Loader2 } from "lucide-react";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { useAuth } from "@/lib/hooks";
-import { Card, CardHeader, CardContent, PageLoader, Input } from "@/components/ui";
+import { Card, CardHeader, CardContent, PageLoader, Input, PageShell } from "@/components/ui";
 
 function InfoRow({
   icon: Icon,
@@ -95,45 +95,34 @@ export default function ReceptionistProfilePage() {
     }
   };
 
-  return (
-    <div className="flex flex-col gap-5">
-      {/* Breadcrumb + header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <nav className="flex items-center gap-1.5 mb-1.5 text-xs">
-            <span className="text-neutral-700 font-medium">Profile</span>
-          </nav>
-          <h1 className="text-2xl font-bold text-neutral-900">Profile</h1>
-        </div>
-        <div className="flex gap-2">
-          {editing ? (
-            <>
-              <button
-                onClick={() => setEditing(false)}
-                className="h-[38px] px-3.5 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-sm font-medium hover:bg-neutral-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveChanges}
-                disabled={saving}
-                className="h-[38px] px-4 rounded-lg bg-brand-gradient text-white text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity flex items-center gap-1.5"
-              >
-                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                Save Changes
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={startEditing}
-              className="h-[38px] px-4 rounded-lg bg-brand-gradient text-white text-sm font-medium hover:opacity-90 transition-opacity"
-            >
-              Edit Profile
-            </button>
-          )}
-        </div>
-      </div>
+  const actions = editing ? (
+    <>
+      <button
+        onClick={() => setEditing(false)}
+        className="h-[38px] px-3.5 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-sm font-medium hover:bg-neutral-50 transition-colors"
+      >
+        Cancel
+      </button>
+      <button
+        onClick={saveChanges}
+        disabled={saving}
+        className="h-[38px] px-4 rounded-lg bg-brand-gradient text-white text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity flex items-center gap-1.5"
+      >
+        {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        Save Changes
+      </button>
+    </>
+  ) : (
+    <button
+      onClick={startEditing}
+      className="h-[38px] px-4 rounded-lg bg-brand-gradient text-white text-sm font-medium hover:opacity-90 transition-opacity"
+    >
+      Edit Profile
+    </button>
+  );
 
+  return (
+    <PageShell title="Profile" root="Receptionist" actions={actions}>
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-dropdown text-sm font-medium text-white bg-neutral-800">
           {toast}
@@ -224,6 +213,6 @@ export default function ReceptionistProfilePage() {
           </div>
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

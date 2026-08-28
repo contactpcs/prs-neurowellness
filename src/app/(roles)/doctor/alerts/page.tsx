@@ -5,7 +5,7 @@ import { AlertTriangle, Check, Shield } from "lucide-react";
 import { prsService } from "@/lib/api/services";
 import { useAuth } from "@/lib/hooks";
 import { useMyAlerts } from "@/lib/hooks";
-import { PageLoader, Button, Card, CardContent, Modal } from "@/components/ui";
+import { PageLoader, Button, Card, CardContent, Modal, PageShell } from "@/components/ui";
 import { SeverityBadge } from "@/components/assessment";
 import { formatDateTime } from "@/lib/utils/format";
 import type { RiskAlert } from "@/types/prs.types";
@@ -34,9 +34,8 @@ export default function AlertsPage() {
   const resolved = alerts.filter(a => a.status === "resolved");
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-neutral-900">Risk Alerts</h1>
-
+    <PageShell title="Risk Alerts" root="Doctor">
+      <div className="space-y-6">
       {active.length > 0 && (
         <section>
           <h2 className="text-sm font-semibold text-danger-500 uppercase tracking-wide mb-3">Active ({active.length})</h2>
@@ -115,6 +114,7 @@ export default function AlertsPage() {
         <textarea value={resolveNotes} onChange={(e) => setResolveNotes(e.target.value)} rows={3} placeholder="Enter resolution notes..." className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm mb-4 focus:ring-2 focus:ring-primary-500 outline-none" />
         <Button onClick={handleResolve} disabled={!resolveNotes} className="w-full">Resolve</Button>
       </Modal>
-    </div>
+      </div>
+    </PageShell>
   );
 }

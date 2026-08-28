@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ClipboardList, Check, X, RefreshCw } from "lucide-react";
 import { useClinicRequests, useAdminRegions, useAdminClinics } from "@/lib/hooks";
-import { Card, CardContent, Button, Skeleton, Modal, DetailFieldList } from "@/components/ui";
+import { Card, CardContent, Button, Skeleton, Modal, DetailFieldList, PageShell } from "@/components/ui";
 import type { ClinicRequest } from "@/lib/api/services/clinicRequests.service";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -118,13 +118,11 @@ export default function AdminClinicRequestsPage() {
   if (isLoading) return <ClinicRequestsSkeleton />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Clinic Requests</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{requests.length} request{requests.length !== 1 ? "s" : ""}</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <PageShell
+      title="Clinic Requests"
+      root="Admin"
+      actions={
+        <>
           <button onClick={handleRefresh} disabled={refreshing} title="Refresh"
             className="p-2.5 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 rounded-lg border border-neutral-200 transition-colors disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
@@ -136,8 +134,10 @@ export default function AdminClinicRequestsPage() {
             <option value="withdrawn">Withdrawn</option>
             <option value="all">All</option>
           </select>
-        </div>
-      </div>
+        </>
+      }
+    >
+      <p className="text-sm text-neutral-500 -mt-3">{requests.length} request{requests.length !== 1 ? "s" : ""}</p>
 
       {error && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>}
 
@@ -197,6 +197,6 @@ export default function AdminClinicRequestsPage() {
       <Modal isOpen={!!detailRequest} onClose={() => setDetailRequest(null)} title="Clinic Request Details" className="max-w-3xl">
         {detailRequest && <DetailFieldList data={detailRequest} />}
       </Modal>
-    </div>
+    </PageShell>
   );
 }
