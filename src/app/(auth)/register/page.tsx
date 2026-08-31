@@ -12,6 +12,7 @@ import { useAuth, useClinics } from "@/lib/hooks";
 import { register as registerThunk } from "@/store/slices/authSlice";
 import { authService } from "@/lib/api/services/auth.service";
 import { COUNTRY_OPTIONS } from "@/lib/countries";
+import { ROUTES } from "@/lib/constants";
 
 // ─── Shared field helpers (used by both the local-dev form and the OTP wizard) ─
 
@@ -116,7 +117,7 @@ function LocalRegisterForm() {
     clearError();
     const result = await register(data);
     if (registerThunk.fulfilled.match(result)) {
-      router.push("/patient-registration/disease-selection");
+      router.push(ROUTES.CONSENT);
     }
   };
 
@@ -371,7 +372,7 @@ function OtpSignupWizard() {
         password, confirm_password: confirmPassword,
       });
       if ((result as any)?.meta?.requestStatus === "fulfilled") {
-        router.push("/patient-registration/disease-selection");
+        router.push(ROUTES.CONSENT);
       } else {
         setError(((result as any)?.payload as string) || "Could not create your account");
       }

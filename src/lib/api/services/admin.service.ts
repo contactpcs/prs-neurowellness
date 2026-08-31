@@ -455,30 +455,21 @@ export const adminService = {
   },
 
   /** Raw, unmapped record straight from GET /patients/{id} — used by the
-   * "show everything in the DB" detail modal. Also pulls disease selection,
-   * anamnesis responses, and general-registration PRS results so the modal
-   * can show the patient's full onboarding record in one place. */
+   * "show everything in the DB" detail modal. Also pulls anamnesis
+   * responses and general-registration PRS results so the modal can show
+   * the patient's full onboarding record in one place. Disease selection
+   * was removed from registration (70_remove_disease_selection.sql, 27 Aug
+   * 2026) — no longer fetched here. */
   async getPatientDetail(id: string): Promise<Record<string, unknown>> {
-    const [{ data }, clinicsRes, diseasesRes, diseaseSelectionRes, anamnesisCatalogRes] = await Promise.all([
+    const [{ data }, clinicsRes, anamnesisCatalogRes] = await Promise.all([
       apiClient.get(`/patients/${id}`),
       apiClient.get(ENDPOINTS.ADMIN.CLINICS).catch(() => ({ data: [] as unknown[] })),
-      apiClient.get(ENDPOINTS.PRS.CONDITIONS).catch(() => ({ data: [] as unknown[] })),
-      apiClient.get(ENDPOINTS.PATIENTS.DISEASE_SELECTION(id)).catch(() => ({ data: [] as unknown[] })),
       apiClient.get(ENDPOINTS.ANAMNESIS.QUESTIONS).catch(() => ({ data: [] as unknown[] })),
     ]);
     const clinicNameById = new Map<string, string>();
     if (Array.isArray(clinicsRes.data)) {
       for (const c of clinicsRes.data as Record<string, unknown>[]) clinicNameById.set(String(c.clinic_id), String(c.clinic_name ?? ""));
     }
-    const diseaseNameById = new Map<string, string>();
-    if (Array.isArray(diseasesRes.data)) {
-      for (const d of diseasesRes.data as Record<string, unknown>[]) diseaseNameById.set(String(d.disease_id), String(d.disease_name ?? ""));
-    }
-    const diseaseSelections = (Array.isArray(diseaseSelectionRes.data) ? diseaseSelectionRes.data : []) as Record<string, unknown>[];
-    const diseases = diseaseSelections.map((sel) => ({
-      ...sel,
-      disease_name: sel.disease_id ? diseaseNameById.get(String(sel.disease_id)) ?? null : null,
-    }));
 
     let anamnesis: Record<string, unknown> | null = null;
     let anamnesisResponses: Record<string, unknown>[] = [];
@@ -512,7 +503,6 @@ export const adminService = {
     return {
       ...data,
       clinic_name: data.primary_clinic_id ? clinicNameById.get(String(data.primary_clinic_id)) ?? null : null,
-      diseases,
       anamnesis,
       anamnesis_responses: anamnesisResponses,
       anamnesis_catalog: Array.isArray(anamnesisCatalogRes.data) ? anamnesisCatalogRes.data : [],

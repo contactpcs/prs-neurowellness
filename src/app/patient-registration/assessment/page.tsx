@@ -8,8 +8,6 @@ import { useAppDispatch } from "@/store/hooks";
 import { refreshUser } from "@/store/slices/authSlice";
 import { Button } from "@/components/ui";
 import { ROUTES } from "@/lib/constants";
-import { patientsService } from "@/lib/api/services/patients.service";
-import { prsService } from "@/lib/api/services/prs.service";
 import { prsAssessmentService } from "@/lib/api/services/prsAssessment.service";
 
 interface Question {
@@ -66,33 +64,31 @@ export default function SelfRegistrationAssessmentPage() {
 
     (async () => {
       try {
-        // localStorage is only set during the live disease-selection step and
-        // cleared right after this step finishes — a re-login (or a cleared/
-        // fresh browser) loses it even for a patient who already picked a
-        // disease. Fall back to the disease-selection record itself instead
-        // of erroring out.
-        let diseaseId = localStorage.getItem("pcs_registration_disease_id");
-        if (!diseaseId) {
-          const selection = await patientsService.getPrimaryDiseaseSelection(user.patient_id!);
-          diseaseId = selection?.disease_id ?? null;
-        }
-        if (!diseaseId) {
-          setError("We lost track of your selected condition — please contact your clinic to continue.");
-          setLoading(false);
+        // start() composes and returns the full scales -> questions -> options
+        // tree in one round trip (registration's PRS step is hardcoded to
+        // EQ-5D-5L regardless of condition — no disease_id needed here at
+        // all, see prsAssessmentService.startGeneralRegistrationAssessment).
+        const { instance_id, scales: startedScales } = await prsAssessmentService.startGeneralRegistrationAssessment(user.patient_id!);
+        if (startedScales.length === 0) {
+          setError("No assessment scales are set up yet — please contact your clinic.");
           return;
         }
-
-        const assignments = await patientsService.getScaleAssignments(user.patient_id!, "general_registration");
-        if (assignments.length === 0) {
-          setError("No assessment scales are set up for your condition yet — please contact your clinic.");
-          return;
-        }
-        const { instance_id } = await prsAssessmentService.startGeneralRegistrationAssessment(user.patient_id!, diseaseId);
         setInstanceId(instance_id);
-        const loaded = await Promise.all(
-          assignments.map(async (a) => ({ scale_id: a.scale_id, questions: await prsService.getScaleQuestions(a.scale_id) })),
+        setScales(
+          startedScales
+            .filter((s) => s.questions.length > 0)
+            .map((s) => ({
+              scale_id: s.scale_id,
+              questions: s.questions.map((q) => ({
+                question_id: q.question_id,
+                question_text: q.question_text,
+                answer_type: q.answer_type,
+                min_value: q.min_value ?? null,
+                max_value: q.max_value ?? null,
+                is_required: q.is_required ?? true,
+              })),
+            })),
         );
-        setScales(loaded.filter((s) => s.questions.length > 0));
       } catch (err: any) {
         setError(err?.response?.data?.error?.message || err?.response?.data?.detail || "Could not load your assessment.");
       } finally {
@@ -116,7 +112,6 @@ export default function SelfRegistrationAssessmentPage() {
       }
       await prsAssessmentService.submitAssessment(instanceId, currentScale.scale_id, scaleResponses);
       if (isLastScale) {
-        localStorage.removeItem("pcs_registration_disease_id");
         // Staff-registered patients (approval_status='not_required') get
         // activated the instant registration_status reaches
         // registration_complete (patients/service.py::_complete_registration)

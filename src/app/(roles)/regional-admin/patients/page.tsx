@@ -15,7 +15,6 @@ import type { AdminClinic, AdminPatient } from "@/types/admin.types";
 
 const REGISTRATION_STEPS: { key: string; label: string }[] = [
   { key: "demographics_complete", label: "Demographics" },
-  { key: "disease_selected", label: "Disease Selection" },
   { key: "consent_signed", label: "Consent Signed" },
   { key: "anamnesis_complete", label: "Anamnesis" },
   { key: "general_prs_complete", label: "General PRS" },

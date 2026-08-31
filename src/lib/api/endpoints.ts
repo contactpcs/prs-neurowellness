@@ -71,7 +71,6 @@ export const ENDPOINTS = {
     MY_DOCTOR: "/patients/my-doctor",           // NOT AVAILABLE
     MY_ASSESSMENTS: "/patients/my-assessments", // NOT AVAILABLE — scale-assignments carry no disease grouping data
     MY_SCORES: "/patients/my-scores",           // NOT AVAILABLE — no list-instances-by-patient endpoint
-    DISEASE_SELECTION: (patientId: string) => `/patients/${patientId}/disease-selection`, // real — POST
     DECIDE_APPROVAL: (patientId: string) => `/patients/${patientId}/approval`, // real — PATCH {decision, rejection_reason}
     ALLOCATE_DOCTOR: (patientId: string) => `/patients/${patientId}/allocate-doctor`, // real — PATCH {doctor_id}
   },

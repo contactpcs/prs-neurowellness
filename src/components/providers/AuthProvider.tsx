@@ -59,7 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // an inactive staff/receptionist-registered-patient account that
   // refreshes or deep-links elsewhere gets sent back here. Self-registered
   // patients are exempt (isPublicPath covers /patient-registration/*) —
-  // their own wizard deliberately visits disease-selection BEFORE consent,
+  // their own wizard visits /patient-registration/* pages before consent,
   // and this gate would otherwise hijack that ordering the instant
   // is_active is false. A staff account with consent_signed=true that's
   // still is_active=false was deliberately deactivated by an admin (not
