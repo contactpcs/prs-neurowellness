@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
 import type {
   DeviceSessionDetail, DeviceSessionChecklistUpdate, Symptom, Severity, AdverseEventType,
@@ -19,11 +19,34 @@ export function useDeviceSession(appointmentId: string | undefined) {
   const [session, setSession] = useState<DeviceSessionDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Serializes checklist writes on this session — the pre-session page fires
+  // saveChecklist from several independent buttons (patient signature, CA
+  // signature, Start Session), and clicking two close together used to race
+  // the backend's lazy header-create: both calls see no header row yet, both
+  // try to create it, the loser 409s (uq_ds_appointment). Chaining every
+  // call onto the tail of the previous one closes that window without
+  // touching the backend's per-request transaction.
+  const checklistQueue = useRef<Promise<unknown>>(Promise.resolve());
 
   const reload = useCallback(async () => {
     if (!appointmentId) return;
     try {
       const data = await deviceSessionService.get(appointmentId);
+      // get()'s own scales field is a plain read (repo.list_for_session) —
+      // it never seeds device_session_scales from the protocol's scale
+      // list. Only GET /device-sessions/{id}/scales (listScales) does that
+      // seeding, and nothing was calling it, so every session showed "No
+      // scales due this session" even when the protocol had scales
+      // assigned. Call it here and merge in, so the Scales & Assessments
+      // tab is populated as soon as the session loads instead of needing a
+      // separate trigger nothing in the UI provides.
+      try {
+        data.scales = await deviceSessionService.listScales(appointmentId);
+      } catch {
+        // Session not started yet (_header_or_404 404s pre-checklist) or a
+        // transient failure — keep get()'s scales as a fallback rather than
+        // failing the whole reload over this one field.
+      }
       setSession(data);
       setError(null);
     } catch (err) {
@@ -63,7 +86,23 @@ export function useDeviceSession(appointmentId: string | undefined) {
 
     async saveChecklist(body: DeviceSessionChecklistUpdate) {
       if (!appointmentId) return;
-      await deviceSessionService.saveChecklist(appointmentId, body);
+      // Chain onto the previous call rather than firing immediately — this
+      // is what actually prevents the two-buttons-at-once race, not just a
+      // best-effort catch after the fact.
+      const run = checklistQueue.current.then(async () => {
+        try {
+          await deviceSessionService.saveChecklist(appointmentId, body);
+        } catch (err: unknown) {
+          const status = (err as { response?: { status?: number } })?.response?.status;
+          if (status !== 409) throw err;
+          // Lost the lazy-create race — the header exists now (another
+          // queued call created it), so retry as a plain update instead of
+          // surfacing a crash for a save that's actually fine.
+          await deviceSessionService.saveChecklist(appointmentId, body);
+        }
+      });
+      checklistQueue.current = run.catch(() => {}); // keep the queue alive even if this call ultimately failed
+      await run;
       await reload();
     },
 

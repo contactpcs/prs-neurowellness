@@ -147,6 +147,29 @@ export const prsAssessmentService = {
     };
   },
 
+  /** Treatment protocols prescribe scales via the PRS catalogue (51 —
+   * reference.prs_scales/prs_disease_scale_map) but device_session_scales
+   * only carries scale_code, not the disease_id (or PRS scale_id)
+   * startAssessment()/grantPermission() need — treatment_protocols has no
+   * endpoint exposing that mapping, and a scale can legitimately belong to
+   * more than one disease (e.g. GAD-7 under Depression/Anxiety). Any disease
+   * that maps the scale renders the same questionnaire, so a reverse scan
+   * over the same /prs-catalog/diseases list getConditionDetails already
+   * uses is sufficient — first match wins. */
+  async resolveDiseaseAndScaleId(scaleCode: string): Promise<{ diseaseId: string; scaleId: string } | null> {
+    const { data } = await apiClient.get(ENDPOINTS.PRS.CONDITIONS);
+    const list = unwrap<Record<string, unknown>[]>(data);
+    if (!Array.isArray(list)) return null;
+    for (const disease of list) {
+      const scales = Array.isArray(disease.scales) ? (disease.scales as PrsConditionScale[]) : [];
+      const match = scales.find((s) => s.scale_code === scaleCode);
+      if (match) {
+        return { diseaseId: String(disease.disease_id), scaleId: match.scale_id };
+      }
+    }
+    return null;
+  },
+
   /** Real endpoint (POST /prs-assessment-instances) needs assessment_stage,
    * which the old payload never carried — defaulted to "main_clinical".
    * Returns AssessmentStartRead: resumes an in-progress instance

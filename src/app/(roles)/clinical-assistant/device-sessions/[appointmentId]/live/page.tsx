@@ -9,6 +9,8 @@ import {
 import { useDeviceSession } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
+import { prsAssessmentService } from "@/lib/api/services/prsAssessment.service";
+import { permissionsService } from "@/lib/api/services/permissions.service";
 import { Button, Card, CardContent, Input, PageLoader } from "@/components/ui";
 import { CountdownTimer } from "@/components/deviceSession/CountdownTimer";
 import { SymptomChipSelector } from "@/components/deviceSession/SymptomChipSelector";
@@ -75,6 +77,8 @@ export default function DeviceSessionLivePage() {
   const [feedbackNextIntensity, setFeedbackNextIntensity] = useState<"decrease" | "keep_same" | "increase" | null>(null);
   const [feedbackQuote, setFeedbackQuote] = useState("");
   const [nextConfirmed, setNextConfirmed] = useState<boolean | null>(null);
+  const [sendingScaleId, setSendingScaleId] = useState<string | null>(null);
+  const [scaleSendError, setScaleSendError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!appointmentId) return;
@@ -151,6 +155,55 @@ export default function DeviceSessionLivePage() {
   const handleSaveFeedback = async () => {
     if (!feedbackComfort || !feedbackFeltAfter || !feedbackNextIntensity) return;
     await recordFeedback({ comfort: feedbackComfort, felt_after: feedbackFeltAfter, next_intensity: feedbackNextIntensity }, feedbackQuote || undefined);
+  };
+
+  // "Send to patient app" previously only flipped device_session_scales.
+  // delivery_mode — no PRS assessment instance was ever created, so nothing
+  // ever showed up for the patient to fill in. Two things were actually
+  // missing:
+  //  1. startAssessment() only loads scales already in patient_scale_
+  //     assignments (prs.service.py start()'s _compose_scales) — it does
+  //     NOT create the assignment itself. Without one, the created instance
+  //     would carry zero questions.
+  //  2. The patient's own "My Assessments" list (getMyAssessments) reads
+  //     patient_scale_assignments, not prs_assessment_instances — so even a
+  //     populated instance wouldn't be *listed* there without this row.
+  // grantPermission (already used by the doctor's manual-assign flow) is
+  // what creates that row; startAssessment then finds it and renders.
+  const handleSendToPatient = async (protocolScaleId: string, scaleCode?: string) => {
+    if (!scaleCode) { setScaleSendError("Missing scale code for this row"); return; }
+    setSendingScaleId(protocolScaleId);
+    setScaleSendError(null);
+    try {
+      const resolved = await prsAssessmentService.resolveDiseaseAndScaleId(scaleCode);
+      if (!resolved) throw new Error(`No PRS disease maps to ${scaleCode}`);
+      const { diseaseId, scaleId } = resolved;
+      const patientId = appointment.patient_public_id ?? appointment.patient_id;
+      if (!patientId) throw new Error("No patient id on this appointment");
+      // patient_scale_assignments has no uniqueness constraint — granting
+      // again for a scale that's already assigned creates a second row,
+      // which _compose_scales used to render as a duplicate question block
+      // (fixed server-side too, but no reason to keep adding rows here).
+      const { permissions: existing } = await permissionsService.getPatientPermissions(patientId);
+      const alreadyAssigned = existing.some(
+        (p) => p.disease_id === diseaseId && p.scale_ids.includes(scaleId),
+      );
+      if (!alreadyAssigned) {
+        await permissionsService.grantPermission({ patient_id: patientId, disease_id: diseaseId, scale_ids: [scaleId] });
+      }
+      await prsAssessmentService.startAssessment({
+        disease_id: diseaseId,
+        taken_by: "patient",
+        patient_id: patientId,
+        appointment_id: appointmentId,
+      });
+      await setScaleDelivery(protocolScaleId, "patient_app" as ScaleDeliveryMode);
+    } catch (e: unknown) {
+      const msg = (e as { message?: string })?.message ?? "Failed to send to patient app";
+      setScaleSendError(String(msg));
+    } finally {
+      setSendingScaleId(null);
+    }
   };
 
   const nonMildAe = session.adverse_events.some((ae) => ae.severity !== "mild");
@@ -337,23 +390,51 @@ export default function DeviceSessionLivePage() {
 
             {activeSection === "scales" && (
               <div className="space-y-3">
+                {scaleSendError && <p className="text-xs text-danger-600">{scaleSendError}</p>}
                 {session.scales.length === 0 && <p className="text-sm text-neutral-400">No scales due this session.</p>}
-                {session.scales.map((sc) => (
-                  <Card key={sc.session_scale_id}><CardContent className="flex items-center justify-between pt-4">
-                    <div>
-                      <p className="text-sm font-medium">{sc.scale_name ?? sc.scale_code ?? sc.protocol_scale_id}</p>
-                      <p className="text-xs text-neutral-400 capitalize">{sc.status.replace(/_/g, " ")}</p>
-                    </div>
-                    {sc.status === "pending" ? (
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={() => setScaleDelivery(sc.protocol_scale_id, "ca_administered" as ScaleDeliveryMode)}>Administer here</Button>
-                        <Button size="sm" variant="outline" onClick={() => setScaleDelivery(sc.protocol_scale_id, "patient_app" as ScaleDeliveryMode)}>Send to patient app</Button>
+                {session.scales.map((sc) => {
+                  // "completed" (status advances here once record_device_session_prs
+                  // links a finished instance back) is the only truly-done state.
+                  // "Sent to patient" is still awaiting the patient's own submission
+                  // in their app — not the same thing, so it gets its own label.
+                  const linked = sc.status === "completed" && !!sc.prs_instance_id;
+                  const awaitingPatient = sc.delivery_mode === "patient_app" && !linked;
+                  return (
+                    <Card key={sc.session_scale_id}><CardContent className="flex items-center justify-between pt-4">
+                      <div>
+                        <p className="text-sm font-medium">{sc.scale_name ?? sc.scale_code ?? sc.protocol_scale_id}</p>
+                        <p className="text-xs text-neutral-400 capitalize">{sc.status.replace(/_/g, " ")}</p>
                       </div>
-                    ) : (
-                      <span className="text-xs text-success-600">{sc.delivery_mode === "ca_administered" ? "Administered by CA" : "Sent to patient"}</span>
-                    )}
-                  </CardContent></Card>
-                ))}
+                      {linked ? (
+                        <span className="text-xs text-success-600">
+                          {sc.delivery_mode === "ca_administered" ? "Administered by CA — recorded" : "Completed by patient"}
+                        </span>
+                      ) : awaitingPatient ? (
+                        <span className="text-xs text-amber-600">Sent to patient app — awaiting submission</span>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => router.push(
+                              `/clinical-assistant/device-sessions/${appointmentId}/scales/${sc.protocol_scale_id}?scale_code=${encodeURIComponent(sc.scale_code ?? "")}`
+                            )}
+                          >
+                            Administer here
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            isLoading={sendingScaleId === sc.protocol_scale_id}
+                            onClick={() => handleSendToPatient(sc.protocol_scale_id, sc.scale_code)}
+                          >
+                            Send to patient app
+                          </Button>
+                        </div>
+                      )}
+                    </CardContent></Card>
+                  );
+                })}
               </div>
             )}
 

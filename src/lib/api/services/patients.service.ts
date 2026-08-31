@@ -98,6 +98,17 @@ export const patientsService = {
     const instances: InstanceRow[] = Array.isArray(instancesRes.data) ? instancesRes.data : [];
 
     const diseaseById = new Map(diseases.map((d) => [String(d.disease_id), d]));
+    // A disease can have several prs_assessment_instances over time (every
+    // "Send to patient app" for a scale under that disease resumes-or-
+    // creates one via start()'s find_in_progress). Grouping used to mark
+    // the WHOLE disease "completed" the instant ANY instance for it
+    // finished — so a still-pending instance from a later assignment
+    // (e.g. a device-session CA sending a new scale) got silently hidden
+    // behind an old completed one. A disease only counts as fully done
+    // once nothing for it is still in_progress.
+    const inProgressDiseases = new Set(
+      instances.filter((i) => i.status === "in_progress").map((i) => String(i.disease_id)),
+    );
     const completedDiseases = new Set(
       instances.filter((i) => i.status === "completed").map((i) => String(i.disease_id)),
     );
@@ -116,19 +127,35 @@ export const patientsService = {
         const scaleNameById = new Map(
           (disease?.scales ?? []).map((s) => [s.scale_id, s.scale_name ?? s.short_name]),
         );
+        const status: AssessmentPermission["status"] = inProgressDiseases.has(diseaseId)
+          ? "granted"
+          : completedDiseases.has(diseaseId)
+            ? "completed"
+            : "granted";
         return {
           permission_id: String(rows[0]?.psa_id ?? diseaseId),
           patient_id: patientId,
           disease_id: diseaseId,
           disease_name: disease?.disease_name ?? diseaseId,
           granted_at: String(rows[0]?.created_at ?? ""),
-          status: completedDiseases.has(diseaseId) ? "completed" : "granted",
-          scales: rows
-            .filter((r) => r.scale_id)
-            .map((r) => ({
-              scale_id: String(r.scale_id),
-              scale_name: scaleNameById.get(String(r.scale_id)) ?? String(r.scale_id),
-            })),
+          status,
+          // patient_scale_assignments has no uniqueness constraint on
+          // (patient, scale) — re-sending the same scale (e.g. a CA
+          // clicking "Send to patient app" more than once, or two separate
+          // assignment paths targeting the same scale) creates another
+          // row rather than upserting one, which used to surface as
+          // duplicate-key React warnings and doubled rows in this list.
+          // One row per distinct scale_id is what the UI actually needs.
+          scales: Array.from(
+            new Map(
+              rows
+                .filter((r) => r.scale_id)
+                .map((r) => [String(r.scale_id), {
+                  scale_id: String(r.scale_id),
+                  scale_name: scaleNameById.get(String(r.scale_id)) ?? String(r.scale_id),
+                }]),
+            ).values(),
+          ),
         };
       },
     );
