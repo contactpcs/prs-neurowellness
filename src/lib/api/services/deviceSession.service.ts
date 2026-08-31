@@ -118,6 +118,18 @@ export const deviceSessionService = {
     return data;
   },
 
+  /** Flips this one due-scale row to "completed" right when its PRS answers
+   * are submitted — independent of the once-per-session PRS link
+   * (recordDeviceSessionPrs), which only fires once every scale due the
+   * visit is done. Without this a scale answered first in a multi-scale
+   * session sat at "pending" until the last one was also submitted. */
+  async completeScale(appointmentId: string, protocolScaleId: string, prsInstanceId: string): Promise<DeviceSessionScale> {
+    const { data } = await apiClient.post(ENDPOINTS.DEVICE_SESSIONS.SCALE_COMPLETE(appointmentId, protocolScaleId), {
+      prs_instance_id: prsInstanceId,
+    });
+    return data;
+  },
+
   async recordFeedback(
     appointmentId: string,
     answers: SessionFeedback["answers"],

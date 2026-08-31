@@ -171,16 +171,37 @@ export default function PatientSessionAssessmentPage() {
       }
       await prsAssessmentService.submitAssessment(scale.instance_id, scale.scale_id, byQuestionId);
 
-      // Link the finished instance onto device_session_scales so the session
-      // (and the CA / doctor views) show this assessment as completed by the
-      // patient. Same call the CA-administered route makes; we just don't
-      // touch delivery_mode.
+      // Flip THIS scale's own due-scale row immediately — real answers are
+      // scored the moment they're submitted, the session view shouldn't
+      // wait for every other scale due this visit before showing that.
+      await deviceSessionService.completeScale(appointmentId, protocolScaleId, scale.instance_id).catch(() => {});
+
+      // device_session_prs_responses is UNIQUE on appointment_id — one link
+      // row per session, ever. _complete_due_scales (backend) sweeps EVERY
+      // scale_result currently scored on this instance and marks all of
+      // them "completed" on device_session_scales in that single call. If
+      // we called this after every scale, the FIRST scale submitted would
+      // claim the once-per-session slot and, because disease-level
+      // instances share scale_results across sibling scales, could sweep
+      // up scales the patient hasn't actually answered yet — that's what
+      // made DASS-21 show "Completed" after only EQ-5D-5L was submitted.
+      // Only call it once every patient_app scale due this session is
+      // actually done, so the sweep is correct when it fires.
       if (protocolId && sessionNumber != null) {
-        await treatmentProtocolService.recordDeviceSessionPrs(protocolId, {
-          appointment_id: appointmentId,
-          instance_id: scale.instance_id,
-          session_number: sessionNumber,
-        });
+        const rows = await deviceSessionService.listScales(appointmentId);
+        const stillPending = rows.some(
+          (r) =>
+            r.delivery_mode === "patient_app" &&
+            r.status !== "completed" &&
+            r.protocol_scale_id !== protocolScaleId,
+        );
+        if (!stillPending) {
+          await treatmentProtocolService.recordDeviceSessionPrs(protocolId, {
+            appointment_id: appointmentId,
+            instance_id: scale.instance_id,
+            session_number: sessionNumber,
+          });
+        }
       }
 
       router.push(backHref);

@@ -295,11 +295,14 @@ export default function PatientAssessmentPage() {
       );
       const newCompleted = new Set(completedScaleIds).add(currentScale.scale_id);
       setCompletedScaleIds(newCompleted);
-      if (isLastScale) {
-        const skipped = scales.filter((s) => !newCompleted.has(s.scale_id));
-        await Promise.all(
-          skipped.map((s) => prsAssessmentService.submitAssessment(s.instance_id, s.scale_id, {})),
-        );
+      // Only navigate to the finish flow once every scale in this instance
+      // has actually been submitted — submitting just the LAST scale in
+      // array order must not force-submit earlier scales the patient never
+      // answered. Genuinely skipped scales are already blank-submitted by
+      // handleSkipSection at the moment they're skipped, so newCompleted
+      // already reflects them by the time this runs.
+      const allDone = scales.every((s) => newCompleted.has(s.scale_id));
+      if (allDone) {
         dispatch(invalidateMyAssessments());
         dispatch(invalidateMyScores());
         dispatch(invalidateDashboard());
@@ -311,7 +314,11 @@ export default function PatientAssessmentPage() {
         router.push("/patient/dashboard?section=prs");
         router.refresh();
       } else {
-        setCurrentScaleIndex((i) => i + 1);
+        // Not necessarily the next index — if this WAS the last scale in
+        // array order but earlier ones are still pending, wrap back to the
+        // first incomplete one instead of walking off the end of scales[].
+        const nextIdx = scales.findIndex((s) => !newCompleted.has(s.scale_id));
+        setCurrentScaleIndex(nextIdx >= 0 ? nextIdx : currentScaleIndex);
         setCurrentQuestionIndex(0);
       }
     } catch (e: unknown) {

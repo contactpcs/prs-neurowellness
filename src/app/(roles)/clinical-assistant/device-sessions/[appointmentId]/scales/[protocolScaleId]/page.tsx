@@ -155,20 +155,42 @@ export default function CaAdministerScalePage() {
       }
       await prsAssessmentService.submitAssessment(scale.instance_id, scale.scale_id, byQuestionId);
 
+      await deviceSessionService.setScaleDelivery(appointmentId, protocolScaleId, "ca_administered");
+
+      // Flip THIS scale's own due-scale row immediately — same reasoning as
+      // the patient-facing route: real answers are scored the moment
+      // they're submitted, no reason to wait for every scale due this
+      // visit before the session view shows it.
+      await deviceSessionService.completeScale(appointmentId, protocolScaleId, scale.instance_id).catch(() => {});
+
       // The missing link: previously nothing ever called this, so a
       // CA-administered scale's answers were saved to the real PRS tables
       // but device_session_scales.status/prs_instance_id never advanced
       // past "pending" and the result never surfaced anywhere the patient
       // or doctor could see it as belonging to this session.
+      //
+      // device_session_prs_responses is UNIQUE on appointment_id (one link
+      // per session, ever), and the backend sweep (_complete_due_scales)
+      // marks EVERY scale currently scored on this instance as complete in
+      // one shot — not just this one. Calling it after every scale would
+      // let the first submit claim the once-per-session slot and, since
+      // sibling scales on a disease-level instance share scale_results,
+      // wrongly mark scales the patient/CA hasn't actually done yet. Only
+      // call it once nothing due this session is still pending.
       const appt = await appointmentsService.getById(appointmentId);
       if (appt.protocol_id && appt.session_number != null) {
-        await treatmentProtocolService.recordDeviceSessionPrs(appt.protocol_id, {
-          appointment_id: appointmentId,
-          instance_id: scale.instance_id,
-          session_number: appt.session_number,
-        });
+        const rows = await deviceSessionService.listScales(appointmentId);
+        const stillPending = rows.some(
+          (r) => r.status !== "completed" && r.protocol_scale_id !== protocolScaleId,
+        );
+        if (!stillPending) {
+          await treatmentProtocolService.recordDeviceSessionPrs(appt.protocol_id, {
+            appointment_id: appointmentId,
+            instance_id: scale.instance_id,
+            session_number: appt.session_number,
+          });
+        }
       }
-      await deviceSessionService.setScaleDelivery(appointmentId, protocolScaleId, "ca_administered");
 
       router.push(`/clinical-assistant/device-sessions/${appointmentId}/live`);
     } catch (e: unknown) {

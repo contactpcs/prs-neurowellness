@@ -345,6 +345,7 @@ export const ENDPOINTS = {
     ACTIVITIES: (appointmentId: string) => `/device-sessions/${appointmentId}/activities`,
     SCALES: (appointmentId: string) => `/device-sessions/${appointmentId}/scales`,
     SCALE: (appointmentId: string, protocolScaleId: string) => `/device-sessions/${appointmentId}/scales/${protocolScaleId}`,
+    SCALE_COMPLETE: (appointmentId: string, protocolScaleId: string) => `/device-sessions/${appointmentId}/scales/${protocolScaleId}/complete`,
     FEEDBACK: (appointmentId: string) => `/device-sessions/${appointmentId}/feedback`,
     MEDIA_CONSENT: (appointmentId: string) => `/device-sessions/${appointmentId}/media/consent`,
     MEDIA: (appointmentId: string) => `/device-sessions/${appointmentId}/media`,

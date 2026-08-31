@@ -139,15 +139,17 @@ export default function DeviceSessionLivePage() {
   })();
 
   const deviceFitDone = DEVICE_FIT_ITEMS.every((i) => deviceFitChecklist[i.code]);
-  const scalesResolved = session.scales.every((s) => s.status !== "pending");
   const feedbackDone = !!session.feedback;
   const nextSessionDone = !!session.next_session_confirmation;
   const timerDone = remaining <= 0;
-  const canComplete = timerDone && deviceFitDone && scalesResolved && feedbackDone && nextSessionDone;
+  // PRS assessments are standalone — whether a scale was sent to the
+  // patient's app or answered by the CA is independent of the device
+  // session's own lifecycle, so it must not block "Mark Session as
+  // Completed" the way deviceFitDone/feedbackDone/nextSessionDone do.
+  const canComplete = timerDone && deviceFitDone && feedbackDone && nextSessionDone;
   const missingGates = [
     !timerDone && "timer hasn't reached 0",
     !deviceFitDone && "device-fit checklist incomplete",
-    !scalesResolved && "scales not yet resolved",
     !feedbackDone && "patient feedback not recorded",
     !nextSessionDone && "next session not confirmed",
   ].filter(Boolean) as string[];
