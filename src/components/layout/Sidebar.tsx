@@ -25,6 +25,8 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
   patient: [
     { label: "Dashboard",    href: "/patient/dashboard",    icon: LayoutDashboard },
     { label: "Appointments", href: "/patient/appointments", icon: CalendarDays },
+    { label: "Device Sessions", href: "/patient/device-sessions", icon: Activity },
+    { label: "Notifications", href: "/patient/notifications", icon: Bell, badge: "patientUnreadNotifications" },
     { label: "Payments & Bills", href: "/patient/payments", icon: Receipt },
     { label: "My Results",   href: "/patient/results",      icon: ClipboardList },
     { label: "Profile",      href: "/patient/profile",      icon: UserCircle },

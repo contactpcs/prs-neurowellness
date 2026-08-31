@@ -22,7 +22,7 @@ import { notificationsService } from "@/lib/api/services/notifications.service";
 export type BadgeKey =
   | "patientApprovals" | "receptionPatientApprovals" | "staffRequests"
   | "staffApprovals" | "clinicRequests" | "doctorPendingAppointments" | "receptionUnreadNotifications"
-  | "doctorUnreadNotifications";
+  | "doctorUnreadNotifications" | "patientUnreadNotifications";
 
 const FETCHERS: Record<BadgeKey, () => Promise<number>> = {
   patientApprovals: async () => (await staffService.getPendingPatients()).total,
@@ -33,6 +33,7 @@ const FETCHERS: Record<BadgeKey, () => Promise<number>> = {
   doctorPendingAppointments: async () => (await appointmentsService.list({ status: "selected" })).total,
   receptionUnreadNotifications: async () => receptionService.getUnreadCount(),
   doctorUnreadNotifications: async () => (await notificationsService.getNotifications({ limit: 1 })).unread_count,
+  patientUnreadNotifications: async () => (await notificationsService.getNotifications({ limit: 1 })).unread_count,
 };
 
 export function useSidebarBadges(keys: BadgeKey[]): Record<string, number> {
