@@ -35,7 +35,18 @@ export function clearSessionAndSignalLogout() {
 }
 
 apiClient.interceptors.request.use((config) => {
-  if (typeof window !== "undefined") {
+  // A caller that already set its own Authorization header (auth.service.ts's
+  // post-login GET /auth/me, using the token it just received, before that
+  // token has been written to localStorage yet) means exactly that — don't
+  // clobber it with whatever's sitting in localStorage. Found live: a stale,
+  // unexpired token from a PREVIOUS session (browser/tab closed without
+  // logout()) was silently overwriting the fresh receptionist token on this
+  // exact call, so /auth/me resolved as the old (patient) identity for one
+  // request — the receptionist got bounced into the patient-registration
+  // wizard on their first login attempt, then landed correctly on retry
+  // (by which point the fresh token had already been written to localStorage
+  // as a side effect of the first, wrongly-routed attempt).
+  if (typeof window !== "undefined" && !config.headers.Authorization) {
     const token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
     if (token) {
       if (isTokenExpired(token)) {
