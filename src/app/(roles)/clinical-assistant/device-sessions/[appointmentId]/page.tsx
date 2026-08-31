@@ -7,7 +7,8 @@ import { appointmentsService } from "@/lib/api/services";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { doctorsService } from "@/lib/api/services/doctors.service";
 import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
-import { useDeviceSession, usePatientScoresSummary } from "@/lib/hooks";
+import { useDeviceSession, usePatientScoresSummary, useAuth } from "@/lib/hooks";
+import { useSidebar } from "@/contexts/SidebarContext";
 import { Button, Card, CardHeader, CardContent, PageLoader, DetailFieldList, Input } from "@/components/ui";
 import { PlacementMap } from "@/app/(roles)/doctor/patients/[id]/treatment-protocol/wizard/PlacementMap";
 import { SignatureCapture } from "@/components/deviceSession/SignatureCapture";
@@ -68,6 +69,9 @@ export default function DeviceSessionChecklistPage() {
   const { session, isLoading, saveChecklist, start } = useDeviceSession(appointmentId);
   const patientId = appointment?.patient_public_id ?? appointment?.patient_id ?? null;
   const { instances: scoreInstances } = usePatientScoresSummary(patientId ?? "");
+  const { user } = useAuth();
+  const caName = user ? `${user.first_name} ${user.last_name}`.trim() : "Clinical Assistant";
+  const { isCollapsed } = useSidebar();
 
   const [deviceBrand, setDeviceBrand] = useState("");
   const [deviceSerial, setDeviceSerial] = useState("");
