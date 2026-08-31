@@ -108,14 +108,74 @@ export async function fetchInstanceScoreDetail(instanceId: string): Promise<Inst
   };
 }
 
+/** Composed: resolve own patient_id via /patients (RLS-scoped, same call
+ * patientsService.getMyAssessments() uses), list every prs-instance for
+ * that patient, then hydrate scale_summaries for the completed ones via
+ * fetchInstanceScoreDetail (same /results call the instance-detail page
+ * uses). AssessmentInstanceRead.final_result is just a pointer string
+ * ("{instance_id}/{disease_id}"), not the scored breakdown — this was
+ * previously a hardcoded stub returning empty, which made the dashboard's
+ * "PRS Assessment" progress card read every scale as still-pending: it
+ * matches instances by disease_id and reads completedScaleIds off
+ * scale_summaries, so an empty instances list meant "0 of N completed"
+ * forever regardless of what the patient actually finished. */
+async function composeMyScoresSummary(): Promise<{ instances: AssessmentInstance[]; total: number; diseases: number }> {
+  const patientsRes = await apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD);
+  const own = Array.isArray(patientsRes.data) ? patientsRes.data[0] : undefined;
+  if (!own?.patient_id) return { instances: [], total: 0, diseases: 0 };
+  const patientId = String(own.patient_id);
+
+  const instancesRes = await apiClient.get(ENDPOINTS.PRS.PATIENT_INSTANCES(patientId), {
+    params: { assessment_stage: "main_clinical" },
+  });
+  type InstanceRow = { instance_id?: string; disease_id?: string; status?: string; completed_at?: string };
+  const rows: InstanceRow[] = Array.isArray(instancesRes.data) ? instancesRes.data : [];
+
+  const instances: AssessmentInstance[] = await Promise.all(
+    rows.map(async (r): Promise<AssessmentInstance> => {
+      const instanceId = String(r.instance_id ?? "");
+      // in_progress instances have no final_result yet — /results 404s or
+      // returns nothing scoreable for them, so only fetch it for completed
+      // ones. Their scale_summaries end up empty, which is correct: an
+      // in_progress instance genuinely has no completed scales to show.
+      if (r.status !== "completed" || !instanceId) {
+        return {
+          instance_id: instanceId,
+          disease_id: String(r.disease_id ?? ""),
+          completed_at: r.completed_at,
+        };
+      }
+      try {
+        const detail = await fetchInstanceScoreDetail(instanceId);
+        return {
+          instance_id: instanceId,
+          disease_id: detail.instance.disease_id ?? String(r.disease_id ?? ""),
+          disease_name: detail.instance.disease_name,
+          disease_score: detail.disease_result?.disease_score,
+          severity_level: detail.disease_result?.severity_level,
+          severity_label: detail.disease_result?.severity_label,
+          percentage: detail.disease_result?.percentage,
+          completed_at: r.completed_at,
+          scale_summaries: detail.scale_results,
+        };
+      } catch {
+        return { instance_id: instanceId, disease_id: String(r.disease_id ?? ""), completed_at: r.completed_at };
+      }
+    }),
+  );
+
+  const diseases = new Set(instances.map((i) => i.disease_id)).size;
+  return { instances, total: instances.length, diseases };
+}
+
 export const scoresService = {
-  // NOT AVAILABLE — no list-instances-by-patient endpoint exists to build these from.
   async getMyScores(_params?: { skip?: number; limit?: number }): Promise<{ instances: AssessmentInstance[]; total: number }> {
-    return { instances: [], total: 0 };
+    const { instances, total } = await composeMyScoresSummary();
+    return { instances, total };
   },
 
   async getMyScoresSummary(): Promise<{ instances: AssessmentInstance[]; total: number; diseases: number }> {
-    return { instances: [], total: 0, diseases: 0 };
+    return composeMyScoresSummary();
   },
 
   async getInstanceScore(instanceId: string): Promise<InstanceScoreDetail> {

@@ -91,26 +91,38 @@ export const patientsService = {
       disease_name?: string;
       scales?: { scale_id: string; scale_name?: string; short_name?: string }[];
     };
-    type InstanceRow = { disease_id?: string; status?: string };
+    type InstanceRow = { disease_id?: string; status?: string; started_at?: string };
 
     const assignments: AssignmentRow[] = Array.isArray(assignRes.data) ? assignRes.data : [];
     const diseases: DiseaseRow[] = Array.isArray(diseasesRes.data) ? diseasesRes.data : [];
     const instances: InstanceRow[] = Array.isArray(instancesRes.data) ? instancesRes.data : [];
 
     const diseaseById = new Map(diseases.map((d) => [String(d.disease_id), d]));
-    // A disease can have several prs_assessment_instances over time (every
-    // "Send to patient app" for a scale under that disease resumes-or-
-    // creates one via start()'s find_in_progress). Grouping used to mark
-    // the WHOLE disease "completed" the instant ANY instance for it
-    // finished — so a still-pending instance from a later assignment
-    // (e.g. a device-session CA sending a new scale) got silently hidden
-    // behind an old completed one. A disease only counts as fully done
-    // once nothing for it is still in_progress.
+    // A disease can have several prs_assessment_instances over time — every
+    // "Send to patient app" is supposed to resume-or-create exactly one via
+    // start()'s find_in_progress (most-recent-first), but a since-fixed bug
+    // let it create fresh duplicates instead, so some patients have stale
+    // ABANDONED in_progress instances from before that fix that nothing will
+    // ever resume or complete again. Treating "any in_progress instance
+    // blocks completion" (this used to) means those orphans permanently
+    // stick a disease at "pending" even after the patient finishes the
+    // instance that's actually current. Only the MOST RECENT instance per
+    // disease (by started_at, matching find_in_progress's own ordering) is
+    // authoritative — older ones are history, not blockers.
+    const latestByDisease = new Map<string, InstanceRow>();
+    for (const i of instances) {
+      if (!i.disease_id) continue;
+      const key = String(i.disease_id);
+      const current = latestByDisease.get(key);
+      if (!current || (i.started_at ?? "") > (current.started_at ?? "")) {
+        latestByDisease.set(key, i);
+      }
+    }
     const inProgressDiseases = new Set(
-      instances.filter((i) => i.status === "in_progress").map((i) => String(i.disease_id)),
+      Array.from(latestByDisease.values()).filter((i) => i.status === "in_progress").map((i) => String(i.disease_id)),
     );
     const completedDiseases = new Set(
-      instances.filter((i) => i.status === "completed").map((i) => String(i.disease_id)),
+      Array.from(latestByDisease.values()).filter((i) => i.status === "completed").map((i) => String(i.disease_id)),
     );
 
     const byDisease = new Map<string, AssignmentRow[]>();
