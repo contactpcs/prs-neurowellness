@@ -65,8 +65,8 @@ export interface User {
   consent_type_required?: string | null;
 
   // Self-registration wizard (backend-v2) — patients.patient_id (public ID,
-  // NOT this profile's own id) that anamnesis/PRS/disease-selection
-  // endpoints key off. Returned on every /auth/me call (not just right
+  // NOT this profile's own id) that anamnesis/PRS endpoints key off.
+  // Returned on every /auth/me call (not just right
   // after registering) so a patient who logs back in mid-wizard can be
   // routed to whichever step they left off at.
   self_registered?: boolean;

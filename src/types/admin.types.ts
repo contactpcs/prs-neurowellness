@@ -320,8 +320,8 @@ export interface AdminPatient {
   clinic_name?: string;
   approval_status: "pending" | "approved" | "rejected";
   // Real backend registration progression (patients.registration_status):
-  // demographics_complete -> disease_selected -> consent_signed ->
-  // anamnesis_complete -> general_prs_complete -> registration_complete.
+  // demographics_complete -> consent_signed -> anamnesis_complete ->
+  // general_prs_complete -> registration_complete.
   registration_status?: string;
   mrn?: string;
   registered_at?: string;

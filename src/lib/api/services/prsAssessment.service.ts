@@ -201,14 +201,23 @@ export const prsAssessmentService = {
   /** Real: POST /prs-assessment-instances with assessment_stage=general_registration
    * — used by the self-registration wizard's PRS step, separate from
    * startAssessment() above (which hardcodes main_clinical for the doctor
-   * flow, not touched here). */
-  async startGeneralRegistrationAssessment(patientId: string, diseaseId: string): Promise<{ instance_id: string }> {
+   * flow, not touched here). No disease_id — registration's PRS step is
+   * hardcoded to EQ-5D-5L regardless of condition (disease selection
+   * removed from registration, 70_remove_disease_selection.sql, 27 Aug
+   * 2026) — and returns the full scales→questions→options tree, same as
+   * startAssessment(), so the caller doesn't need a second round trip
+   * through scale-assignments/scale-questions to render anything. */
+  async startGeneralRegistrationAssessment(patientId: string): Promise<PrsAssessmentStartResult> {
     const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_START, {
       patient_id: patientId,
-      disease_id: diseaseId,
       assessment_stage: "general_registration",
     });
-    return { instance_id: data.instance_id };
+    const result = unwrap<PrsAssessmentStartResult>(data);
+    return {
+      instance_id: result.instance_id,
+      is_resumed: result.is_resumed ?? false,
+      scales: Array.isArray(result.scales) ? result.scales : [],
+    };
   },
 
   // NOT AVAILABLE — no per-question options endpoint.

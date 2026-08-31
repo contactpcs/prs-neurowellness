@@ -56,9 +56,9 @@ function formatDateTime(iso: string) {
 function buildSections(
   anamnesisStatus: "in_progress" | "completed" | null,
   hasDoctorNote: boolean,
-  // Registration Record is the self-registration disease selection +
-  // anamnesis + general PRS — it only ever existed once, at intake, so it
-  // has no meaning under a Follow-up / Protocol Follow-up session context.
+  // Registration Record is the self-registration anamnesis + general PRS —
+  // it only ever existed once, at intake, so it has no meaning under a
+  // Follow-up / Protocol Follow-up session context.
   isFollowUpContext: boolean,
   treatmentPlanLocked: boolean,
 ) {
@@ -177,8 +177,8 @@ export default function DoctorPatientDetailPage() {
   const [registrationRecord, setRegistrationRecord] = useState<Record<string, unknown> | null>(null);
   const [registrationRecordError, setRegistrationRecordError] = useState<string | null>(null);
 
-  // Registration Record = disease selection + anamnesis + general PRS taken
-  // during self-registration (assessment_stage='general_registration',
+  // Registration Record = anamnesis + general PRS taken during self-
+  // registration (assessment_stage='general_registration',
   // tagged separately from the "Anamnesis"/"PRS" tabs above, which are for
   // ongoing treatment-session assessments and untouched by this).
   useEffect(() => {
@@ -478,7 +478,7 @@ export default function DoctorPatientDetailPage() {
                   <div>
                     <h2 className="text-2xl font-bold text-neutral-900 mb-1">Registration Record</h2>
                     <p className="text-neutral-600 text-sm">
-                      Disease selection, anamnesis, and general PRS collected during this patient's registration —
+                      Anamnesis and general PRS collected during this patient's registration —
                       reference data only, separate from ongoing treatment-session Anamnesis/PRS.
                     </p>
                   </div>

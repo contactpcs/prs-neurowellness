@@ -25,17 +25,16 @@ function dashboardRouteForRoles(roles: string[]): string {
 }
 
 // EVERY patient — self- or staff-registered — stays inactive through the
-// same 6-step registration-test wizard (disease selection, consent,
-// anamnesis, general PRS) before getting portal access; only who signs
-// consent and whether a receptionist approval gate applies afterward
-// differ. Logging back in mid-way must resume wherever they left off, not
-// always bounce to /consent (which has nothing pending to show once
-// they're past that step, and which comes AFTER disease-selection in this
-// wizard's order — see patient-registration/* pages).
+// same registration-test wizard (consent, anamnesis, general PRS) before
+// getting portal access; only who signs consent and whether a receptionist
+// approval gate applies afterward differ. Logging back in mid-way must
+// resume wherever they left off, not always bounce to /consent (which has
+// nothing pending to show once they're past that step). Disease selection
+// was removed from this wizard (70_remove_disease_selection.sql, 27 Aug
+// 2026) — demographics now goes straight to consent.
 function resumeRouteForPatient(registrationStatus: string | undefined): string {
   switch (registrationStatus) {
-    case "demographics_complete": return "/patient-registration/disease-selection";
-    case "disease_selected": return ROUTES.CONSENT;
+    case "demographics_complete": return ROUTES.CONSENT;
     case "consent_signed": return "/patient-registration/anamnesis";
     case "anamnesis_complete": return "/patient-registration/assessment";
     default: return "/patient-registration/pending"; // general_prs_complete / registration_complete, awaiting approval
