@@ -1,4 +1,4 @@
-export type UserRole = "patient" | "doctor" | "clinical_assistant" | "receptionist" | "platform_admin" | "clinical_admin";
+export type UserRole = "patient" | "doctor" | "clinical_assistant" | "receptionist" | "super_admin" | "regional_admin" | "clinic_admin" | "platform_admin" | "clinical_admin";
 
 export interface User {
   id: string;
@@ -10,6 +10,7 @@ export interface User {
   clinic_id?: string;
   clinic_name?: string;
   clinic_city?: string;
+  region_id?: string; // regional_admin's own region — scopes their portal UI client-side
   
   // Contact & Location
   phone?: string;
@@ -55,10 +56,36 @@ export interface User {
   mrn?: string;
   approval_status?: string;
   registered_at?: string;
+
+  // Consent gate (backend-v2) — is_active=false until the onboarding
+  // consent is signed; consent_type_required tells the frontend which
+  // template to fetch/sign ("staff_onboarding" | "patient_onboarding").
+  is_active?: boolean;
+  consent_signed?: boolean;
+  consent_type_required?: string | null;
+
+  // Self-registration wizard (backend-v2) — patients.patient_id (public ID,
+  // NOT this profile's own id) that anamnesis/PRS endpoints key off.
+  // Returned on every /auth/me call (not just right
+  // after registering) so a patient who logs back in mid-wizard can be
+  // routed to whichever step they left off at.
+  self_registered?: boolean;
+  patient_id?: string;
+  registration_status?: string;
+
+  // doctors.doctor_id (public ID, NOT this profile's own id) — role=='doctor'
+  // only. /doctors/{doctor_id}/... path params expect this, not profiles.id.
+  doctor_id?: string;
+  // Cognito-mode patient signup only — always true otherwise (local dev,
+  // staff, patients pre-dating this feature). Drives a "verify your other
+  // channel" prompt when a patient's only confirmed one of email/phone.
+  email_verified?: boolean;
+  phone_verified?: boolean;
 }
 
 export interface LoginCredentials {
-  email: string;
+  // Email or E.164 mobile number (patients may have signed up with either).
+  username: string;
   password: string;
 }
 
@@ -83,9 +110,11 @@ export interface RegisterData {
   clinic_id: string;
   date_of_birth: string;
   gender: string;
+  address?: string;
   city: string;
   state: string;
   country?: string;
+  pincode?: string;
   consent_responses?: ConsentResponseItem[];
 }
 

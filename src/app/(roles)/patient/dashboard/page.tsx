@@ -1,12 +1,11 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  ClipboardList,
-  ChevronRight, AlertTriangle,
-  Search, Bell, User, BookOpen, Brain, CheckSquare, FileText, Lock, Hand, Phone, Check, PlayCircle,
+  Bell, Search, Calendar, CheckCircle, Clock, ChevronRight,
+  User, MessageSquare, PlayCircle, ClipboardList, TrendingUp,
+  FileText, Zap, Check, Circle,
 } from "lucide-react";
 import {
   usePatientDashboard,
@@ -15,26 +14,43 @@ import {
   useMyScoresSummary,
   useMyDoctorNotes,
 } from "@/lib/hooks";
-import type { DoctorNote } from "@/lib/api/services/doctorNotes.service";
+import { appointmentsService } from "@/lib/api/services/appointments.service";
+import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
 import { PatientDashboardSkeleton } from "@/components/ui";
-import { AnamnesisForm } from "@/components/assessment/AnamnesisForm";
+import { VerifyChannelBanner } from "@/components/auth/VerifyChannelBanner";
+import { computeProfileCompletion } from "@/lib/profileCompletion";
 import type {
   AssessmentPermission,
-  AnamnesisRecord,
   AssessmentInstance,
+  Appointment,
 } from "@/types/domain.types";
 
-type SectionId = "anamnesis" | "brain-mapping" | "prs" | "notes" | "treatment-plan" | "final-report";
-
-const VALID_SECTIONS: SectionId[] = ["anamnesis", "brain-mapping", "prs", "notes", "treatment-plan", "final-report"];
-
-function isSectionId(v: string | null): v is SectionId {
-  return v !== null && (VALID_SECTIONS as string[]).includes(v);
+function formatShortDate(iso?: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function formatDate(iso?: string | null): string {
+function getDayOfMonth(iso?: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  return new Date(iso).getDate().toString();
+}
+
+function getMonthAbbr(iso?: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString("en-US", { month: "short" }).toUpperCase();
+}
+
+function daysUntil(iso?: string | null): number | null {
+  if (!iso) return null;
+  const diff = new Date(iso).getTime() - Date.now();
+  return Math.ceil(diff / (1000 * 60 * 60 * 24));
+}
+
+function formatTime(time?: string | null): string {
+  if (!time) return "";
+  const [h, m] = time.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
 export default function PatientDashboardPage() {
@@ -48,561 +64,717 @@ export default function PatientDashboardPage() {
 function PatientDashboard() {
   const { dashboard, isLoading: dashLoading } = usePatientDashboard();
   const { assessments, isLoading: assessLoading } = useMyAssessments();
-  const { record: anamnesisRecord, isLoading: anamnesisLoading } = useMyAnamnesis();
-  const { summary, isLoading: scoresLoading } = useMyScoresSummary();
-  const { notes: doctorNotes, isLoading: notesLoading } = useMyDoctorNotes();
+  const { record: anamnesisRecord } = useMyAnamnesis("registration");
+  const { summary } = useMyScoresSummary();
+  const { notes: doctorNotes } = useMyDoctorNotes();
 
-  const isLoading = dashLoading || assessLoading;
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [payingId, setPayingId] = useState<string | null>(null);
 
+  const reloadAppointments = () => appointmentsService.getUpcoming().then(setAppointments).catch(() => {});
+
+  useEffect(() => { reloadAppointments(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Live update — a request approval pushes here via SSE.
+  useEffect(() => {
+    window.addEventListener("sse:appointment", reloadAppointments);
+    return () => window.removeEventListener("sse:appointment", reloadAppointments);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (dashLoading || assessLoading) return <PatientDashboardSkeleton />;
+
+  const profile = dashboard?.profile;
+  const doctor = dashboard?.assigned_doctor;
+  const fullName = profile?.full_name ?? "";
+  const firstName = fullName ? fullName.split(" ")[0] : "User";
+
+  const pendingAssessments   = assessments.filter((a) => a.status === "granted");
+  const completedAssessments = assessments.filter((a) => a.status === "completed");
+  const hasAnyAssessments    = assessments.length > 0;
   const scoreInstances = summary?.instances ?? [];
-  const totalAssessments = summary?.total ?? 0;
 
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const upcomingAppts = appointments
+    .filter((a) => ["selected", "paid", "checked_in", "in_progress"].includes(a.status))
+    .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
 
-  const [selectedAssessment, setSelectedAssessment] = useState<AssessmentPermission | null>(null);
+  const nextAppt = upcomingAppts[0];
+  const daysToNext = nextAppt ? daysUntil(nextAppt.start_at) : null;
+  const hasUnpaidAppt = appointments.some((a) => a.status === "selected");
 
-  const sectionParam = searchParams.get("section");
-  const selectedSection: SectionId | null = isSectionId(sectionParam) ? sectionParam : null;
+  const completedAppts = appointments.filter((a) => a.status === "completed").length;
+  const totalPlannedAppts = appointments.length;
 
-  const setSelectedSection = useCallback(
-    (s: SectionId | null) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (s) params.set("section", s);
-      else params.delete("section");
-      const qs = params.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-    },
-    [pathname, router, searchParams],
+  const { percent: profilePct, items: profileItems } = computeProfileCompletion(profile);
+  const remainingFields = profileItems.filter((i) => !i.done).length;
+
+  const prsProgress =
+    scoreInstances.length > 0 ? Math.round(scoreInstances[0].percentage ?? 0) : 0;
+
+  const treatmentPct = Math.round(
+    ((completedAppts + completedAssessments.length * 2) /
+      Math.max(totalPlannedAppts + assessments.length * 2, 1)) * 100,
   );
 
-  useEffect(() => {
-    if (!selectedAssessment && assessments.length > 0) {
-      const firstCompleted = assessments.find((a) => a.status === "completed");
-      if (firstCompleted) setSelectedAssessment(firstCompleted);
-    }
-  }, [assessments, selectedAssessment]);
-
-  if (isLoading) return <PatientDashboardSkeleton />;
-
-  const completed    = assessments.filter((a) => a.status === "completed");
-  const doctor       = dashboard?.assigned_doctor;
-  const fullName     = dashboard?.profile?.full_name ?? "";
-  const firstName    = fullName ? fullName.split(" ")[0] : "User";
-
-  const anamnesisStatus: "done" | "pending" | "locked" =
-    anamnesisRecord?.status === "completed" ? "done" : anamnesisRecord ? "pending" : "pending";
-  const pendingAssessments = assessments.filter((a) => a.status === "granted");
-  const prsStatus: "done" | "pending" | "locked" =
-    pendingAssessments.length > 0
-      ? "pending"
-      : scoreInstances.length > 0
-        ? "done"
-        : "pending";
-  const notesStatus: "done" | "pending" | "locked" =
-    doctorNotes.length > 0 ? "done" : "pending";
-
   return (
-    <div className="w-full bg-gray-50 min-h-screen p-8 animate-fade-in">
-      {/* Top Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Hello {firstName} 👋</h1>
-          <p className="text-gray-600 text-sm mt-1">Here's everything you need for your doctor's visit</p>
+    <div className="min-h-screen bg-gray-50 dark:bg-neutral-900">
+      <VerifyChannelBanner />
+      {/* Header */}
+      <div className="pb-3 flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="text-lg font-bold text-gray-900 truncate">Welcome back, {firstName}!</h1>
+          <p className="text-xs text-gray-500 mt-0.5 hidden sm:block">Here's your wellness summary for today.</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="relative hidden sm:block">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
             <input
               type="text"
-              placeholder="Search patients, schedule, courses, equipments, etc"
-              className="pl-10 pr-4 py-2 bg-white rounded-full border border-gray-200 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-96"
+              placeholder="Search appointments, reports..."
+              className="pl-8 pr-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs w-48 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <button className="p-2 hover:bg-gray-100 rounded-full">
-            <AlertTriangle className="h-5 w-5 text-gray-600" />
+          <button className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-700">
+            <Calendar className="w-3.5 h-3.5 text-blue-500" />
+            {new Date().toLocaleDateString("en-US", {
+              month: "short", day: "numeric",
+            })}
           </button>
           <div className="relative">
-            <button className="p-2 hover:bg-gray-100 rounded-full">
-              <Bell className="h-5 w-5 text-gray-600" />
+            <button className="p-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50">
+              <Bell className="w-4 h-4 text-gray-600" />
             </button>
-            <span className="absolute top-1 right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">3</span>
+            {doctorNotes.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full text-white text-[10px] flex items-center justify-center">
+                {doctorNotes.length}
+              </span>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Next Activity & Doctor Cards */}
-      <div className="flex gap-5 mb-8">
-        <div className="flex-1 bg-white rounded-lg p-5 shadow-sm flex items-center gap-4">
-          <div className="bg-blue-50 rounded-lg p-4 flex-shrink-0">
-            <BookOpen className="h-8 w-8 text-blue-500" />
-          </div>
-          <div className="flex-1">
-            <p className="text-xs text-gray-500 font-medium">Next Activity</p>
-            <p className="text-xl font-semibold text-gray-900">
-              {pendingAssessments.length > 0
-                ? `${pendingAssessments[0].disease_name} Assessment`
-                : "No pending activity"}
-            </p>
-            {pendingAssessments.length > 1 && (
-              <p className="text-xs text-gray-500 mt-0.5">
-                +{pendingAssessments.length - 1} more pending
-              </p>
-            )}
-          </div>
-          {pendingAssessments.length > 0 ? (
-            <Link
-              href={`/patient/assessment/${pendingAssessments[0].permission_id}`}
-              className="inline-flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-5 py-2 rounded-full text-sm font-medium flex-shrink-0"
-            >
-              <PlayCircle className="w-4 h-4" /> Start
-            </Link>
-          ) : (
-            <button className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2 rounded-full text-sm font-medium flex-shrink-0">
-              Book Appointment
-            </button>
-          )}
-        </div>
-
-        {doctor && (
-          <div className="flex-1 bg-white rounded-lg p-5 shadow-sm flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-orange-500 flex-shrink-0 border-2 border-orange-500">
-              <User className="w-full h-full p-3 text-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-baseline gap-3">
-                <p className="text-xl font-semibold text-gray-900">{doctor.full_name}</p>
-                {doctor.specialization && (
-                  <p className="text-sm text-gray-600">{doctor.specialization}</p>
+      <div className="pb-6 space-y-3">
+        {/* Hero Banner */}
+        {(nextAppt || pendingAssessments.length > 0) && (
+          <div
+            className="rounded-xl overflow-hidden"
+            style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
+          >
+            <div className="px-4 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
+                  {firstName.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="text-white">
+                  {nextAppt ? (
+                    <>
+                      <h2 className="text-base font-bold leading-tight">
+                        Your next session is in {daysToNext} day{daysToNext !== 1 ? "s" : ""}
+                      </h2>
+                      <p className="text-blue-100 mt-0.5 text-xs">
+                        {nextAppt.appointment_type?.replace(/_/g, " ")} · Anava Clinic
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <h2 className="text-base font-bold leading-tight">
+                        {pendingAssessments[0]?.disease_name} Assessment assigned
+                      </h2>
+                      <p className="text-blue-100 mt-0.5 text-xs">
+                        Complete your pending assessment to track progress
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {nextAppt && (
+                  <div className="bg-white/20 rounded-lg px-3 py-2 text-center text-white">
+                    <p className="text-[10px] font-medium text-blue-100 uppercase tracking-wide mb-0.5">
+                      Next
+                    </p>
+                    <p className="text-base font-bold leading-tight">
+                      {new Date(nextAppt.start_at).toLocaleDateString("en-US", {
+                        month: "short", day: "numeric",
+                      })}
+                    </p>
+                    <p className="text-[10px] text-blue-100 mt-0.5">
+                      {formatTime(nextAppt.start_time)}
+                    </p>
+                  </div>
+                )}
+                {nextAppt?.status === "selected" && (
+                  <button
+                    onClick={() => setPayingId(nextAppt.appointment_id)}
+                    className="bg-white text-[#09172E] rounded-lg px-3.5 py-2 text-xs font-semibold hover:bg-blue-50 transition-colors"
+                  >
+                    Pay Now
+                  </button>
+                )}
+                {doctor && (
+                  <div className="bg-white/10 rounded-lg px-3 py-2 hidden sm:flex items-center gap-2 text-white">
+                    <div className="w-7 h-7 rounded-full bg-white/80 flex items-center justify-center flex-shrink-0">
+                      <User className="w-3.5 h-3.5 text-blue-500" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-blue-100">Your Doctor</p>
+                      <p className="font-semibold text-xs">{doctor.full_name}</p>
+                    </div>
+                  </div>
                 )}
               </div>
-              {doctor.phone && (
-                <div className="flex items-center gap-1 mt-2 text-gray-900">
-                  <Phone className="h-5 w-5" />
-                  <p className="text-sm">{doctor.phone}</p>
-                </div>
-              )}
             </div>
-            <button className="bg-white border border-gray-400 hover:bg-gray-50 text-gray-900 px-5 py-2 rounded-full text-sm font-medium flex-shrink-0">
-              Make Payment
-            </button>
           </div>
         )}
-      </div>
 
-      {/* Activity Tabs */}
-      <div className="flex gap-3 mb-8">
-        <button className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium">Today's Activity</button>
-        <button className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">
-          Clinical Assessment 1 <span className="ml-2 inline-flex items-center justify-center w-5 h-5 bg-green-500 text-white text-xs rounded-full">✓</span>
-        </button>
-        <button className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium">Follow Up Assessment 1</button>
-      </div>
-
-      {/* Main Content Area */}
-      <div className="flex gap-6">
-        {/* Left Sidebar */}
-        <div className="w-80 space-y-4">
-          {/* Basic Section */}
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-            <div className="border-b border-gray-200 px-4 py-4 flex items-center justify-between">
-              <h3 className="font-medium text-gray-900">Basic</h3>
-              <ChevronRight className="h-5 w-5 text-gray-400 transform -rotate-90" />
-            </div>
-
-            <AssessmentItem
-              icon={User}
-              label="Anamnesis"
-              status={anamnesisStatus}
-              isActive={selectedSection === "anamnesis"}
-              onSelect={() => setSelectedSection("anamnesis")}
-            />
-            <AssessmentItem
-              icon={Brain}
-              label="Brain Mapping"
-              status="pending"
-              isActive={selectedSection === "brain-mapping"}
-              onSelect={() => setSelectedSection("brain-mapping")}
-            />
-            <AssessmentItem
-              icon={CheckSquare}
-              label="PRS"
-              status={prsStatus}
-              isActive={selectedSection === "prs"}
-              onSelect={() => setSelectedSection("prs")}
-            />
-            <AssessmentItem
-              icon={FileText}
-              label="Doctor's Notes"
-              status={notesStatus}
-              isActive={selectedSection === "notes"}
-              onSelect={() => setSelectedSection("notes")}
-            />
-            <AssessmentItem icon={ClipboardList} label="Treatment Plan" status="locked" />
-            <AssessmentItem icon={Hand} label="Final Report" status="locked" />
-          </div>
-
-          {/* Treatment Sessions */}
-          <div className="bg-white rounded-lg shadow-sm p-4 border-b border-gray-200">
-            <h3 className="font-medium text-gray-900 flex items-center gap-2">
-              Treatment Sessions
-              <Lock className="h-5 w-5 text-gray-400" />
-            </h3>
-          </div>
+        {/* Stats Row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <StatCard
+            icon={<CheckCircle className="w-4 h-4 text-blue-500" />}
+            label="Sessions completed"
+            value={completedAppts.toString()}
+            sub={totalPlannedAppts > 0 ? `of ${totalPlannedAppts} planned` : "No sessions yet"}
+          />
+          <StatCard
+            icon={<TrendingUp className="w-4 h-4 text-orange-500" />}
+            label="Treatment progress"
+            value={`${treatmentPct}%`}
+            sub="On track"
+            highlight
+          />
+          <StatCard
+            icon={<ClipboardList className="w-4 h-4 text-orange-500" />}
+            label="PRS assessment"
+            value={
+              scoreInstances.length > 0 ? `${prsProgress}%`
+                : pendingAssessments.length > 0 ? "Pending" : "—"
+            }
+            sub={
+              pendingAssessments.length > 0 ? "Due soon"
+                : scoreInstances[0]?.completed_at
+                  ? `Last: ${formatShortDate(scoreInstances[0].completed_at)}`
+                  : "No data"
+            }
+          />
+          <StatCard
+            icon={<FileText className="w-4 h-4 text-green-500" />}
+            label="New reports"
+            value={scoreInstances.length.toString()}
+            sub={scoreInstances.length > 0 ? "Ready to view" : "No new reports"}
+          />
         </div>
 
-        {/* Right Content */}
-        <div className="flex-1 bg-white rounded-lg shadow-sm p-8 min-h-[24rem]">
-          {selectedSection === "anamnesis" ? (
-            <PatientAnamnesisView record={anamnesisLoading ? undefined : anamnesisRecord} />
-          ) : selectedSection === "brain-mapping" ? (
-            <PlaceholderView
-              icon="🧠"
-              title="Brain Mapping"
-              description="Your brain mapping results will appear here once available."
-            />
-          ) : selectedSection === "prs" ? (
-            <PatientPrsView
-              instances={scoreInstances}
-              total={totalAssessments}
-              pending={assessments.filter((a) => a.status === "granted")}
-            />
-          ) : selectedSection === "notes" ? (
-            <PatientDoctorNotesView notes={doctorNotes} />
-          ) : selectedAssessment ? (
-            <>
-              <div className="flex items-center justify-between mb-8">
-                <div>
-                  <h2 className="text-2xl font-semibold text-gray-900">{selectedAssessment.disease_name}</h2>
-                  <div className="flex items-center gap-2 mt-2">
-                    <CheckSquare className="h-5 w-5 text-green-500" />
-                    <p className="text-gray-600 text-sm">completed on 24 Jan, 2026</p>
-                  </div>
-                </div>
-                <button className="border border-gray-400 text-gray-900 px-5 py-2 rounded-full text-sm font-medium hover:bg-gray-50">
-                  View Detailed Report
-                </button>
-              </div>
-
-              {/* Score Cards */}
-              <div className="grid grid-cols-4 gap-6 mb-8">
-                <ScoreCard label="FNON Score" value="32" />
-                <ScoreCard label="Improvement" value="+20%" />
-                <ScoreCard label="Duration" value="45 mins" />
-                <ScoreCard label="Completed by" value="Dr. James" />
-              </div>
-
-              {/* Activities Performed */}
-              <div>
-                <h3 className="font-medium text-gray-900 mb-4">Activities Performed</h3>
-                <div className="flex flex-wrap gap-3">
-                  {["Crossword", "Toe Touch", "Walking", "Sudoku", "Balance Test"].map((activity) => (
-                    <span key={activity} className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-md text-sm">
-                      {activity}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </>
-          ) : (
-            <PlaceholderView
-              icon="📋"
-              title="No section selected"
-              description="Select a section from the sidebar to view its details."
-            />
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-interface AssessmentItemProps {
-  icon: any;
-  label: string;
-  status: "done" | "pending" | "locked";
-  isActive?: boolean;
-  onSelect?: () => void;
-}
-
-function AssessmentItem({ icon: Icon, label, status, isActive, onSelect }: AssessmentItemProps) {
-  const bgClass = isActive ? "bg-blue-50 border-l-4 border-blue-500" : "";
-  const textClass = isActive ? "text-blue-600" : status === "locked" ? "text-gray-400" : "text-gray-900";
-
-  return (
-    <button
-      onClick={onSelect}
-      className={`w-full px-4 py-4 flex items-center justify-between border-b border-gray-100 hover:bg-gray-50 transition-colors ${bgClass}`}
-    >
-      <div className="flex items-center gap-3">
-        <Icon className={`h-5 w-5 ${textClass}`} />
-        <span className={`text-sm font-medium ${textClass}`}>{label}</span>
-      </div>
-      {status === "done" && <span className="bg-green-500 text-white px-2 py-1 rounded text-xs font-medium">Done</span>}
-      {status === "pending" && <span className="bg-blue-600 text-white px-2 py-1 rounded text-xs font-medium">Pending</span>}
-      {status === "locked" && <Lock className="h-5 w-5 text-gray-300" />}
-    </button>
-  );
-}
-
-interface ScoreCardProps {
-  label: string;
-  value: string;
-}
-
-function ScoreCard({ label, value }: ScoreCardProps) {
-  return (
-    <div className="bg-blue-50 rounded-lg p-4">
-      <p className="text-gray-600 text-sm">{label}</p>
-      <p className="text-2xl font-semibold text-gray-900 mt-1">{value}</p>
-    </div>
-  );
-}
-
-function PlaceholderView({ icon, title, description }: { icon: string; title: string; description: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mb-4">
-        <span className="text-2xl">{icon}</span>
-      </div>
-      <h2 className="text-xl font-bold text-neutral-700 mb-2">{title}</h2>
-      <p className="text-sm text-neutral-500 max-w-md">{description}</p>
-    </div>
-  );
-}
-
-function PatientAnamnesisView({ record }: { record: AnamnesisRecord | null | undefined }) {
-  if (record === undefined) {
-    return <PlaceholderView icon="⏳" title="Loading anamnesis..." description="" />;
-  }
-
-  if (!record) {
-    return (
-      <PlaceholderView
-        icon="📝"
-        title="No anamnesis on file"
-        description="Once you complete your medical history intake, it will appear here."
-      />
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Anamnesis</h2>
-          <p className="text-sm text-gray-600 mt-1">
-            {record.status === "completed"
-              ? `Submitted on ${formatDate(record.completed_at)} — view only.`
-              : "Your anamnesis is in progress."}
-          </p>
-        </div>
-        <span className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-lg">
-          <Lock className="w-3 h-3" /> View only
-        </span>
-      </div>
-      <AnamnesisForm
-        patientId={record.patient_id}
-        mode="patient"
-        initialRecord={record}
-      />
-    </div>
-  );
-}
-
-function PatientPrsView({
-  instances,
-  total,
-  pending,
-}: {
-  instances: AssessmentInstance[];
-  total: number;
-  pending: AssessmentPermission[];
-}) {
-  if (instances.length === 0 && pending.length === 0) {
-    return (
-      <PlaceholderView
-        icon="📊"
-        title="No PRS assessments yet"
-        description="Once your doctor assigns an assessment or you complete one, it will appear here."
-      />
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold text-gray-900">PRS Assessments</h2>
-          <p className="text-sm text-gray-600 mt-1">
-            {pending.length > 0
-              ? `You have ${pending.length} pending assessment${pending.length === 1 ? "" : "s"} to complete.`
-              : "Your most recent assessment results across diseases."}
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-4">
-        <ScoreCard label="Pending" value={String(pending.length)} />
-        <ScoreCard label="Completed" value={String(instances.length)} />
-        <ScoreCard
-          label="Last Completed"
-          value={formatDate(instances[0]?.completed_at)}
-        />
-      </div>
-
-      {pending.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="font-semibold text-gray-900">Pending</h3>
-          {pending.map((p) => (
-            <div
-              key={p.permission_id}
-              className="border border-blue-200 bg-blue-50/40 rounded-lg p-4 flex items-start justify-between gap-4"
-            >
-              <div>
-                <h4 className="font-semibold text-gray-900">{p.disease_name}</h4>
-                <p className="text-sm text-gray-600 mt-1">Assigned on {formatDate(p.granted_at)}</p>
-                {p.scales && p.scales.length > 0 && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    {p.scales.length} scale{p.scales.length === 1 ? "" : "s"} included
-                  </p>
-                )}
-              </div>
-              <Link
-                href={`/patient/assessment/${p.permission_id}`}
-                className="inline-flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-full text-sm font-medium flex-shrink-0"
-              >
-                <PlayCircle className="w-4 h-4" /> Start
-              </Link>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {instances.length > 0 && (
-        <h3 className="font-semibold text-gray-900">Completed</h3>
-      )}
-      <div className="space-y-4">
-        {instances.map((inst) => (
-          <div key={inst.instance_id} className="border border-gray-200 rounded-lg p-4 space-y-3">
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="font-semibold text-gray-900">{inst.disease_name ?? inst.disease_id}</h3>
-                <p className="text-sm text-gray-600 mt-1">
-                  Completed on {formatDate(inst.completed_at)}
-                </p>
-              </div>
-              <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-lg">
-                <Check className="w-3 h-3" /> Completed
+        {/* Action Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Profile completion */}
+          <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex flex-col">
+            <div className="flex items-center justify-between mb-2">
+              <User className="w-4 h-4 text-blue-500" />
+              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                profilePct >= 100 ? "text-green-700 bg-green-50" : "text-orange-600 bg-orange-50"
+              }`}>
+                {profilePct >= 100 ? "Complete" : "Incomplete"}
               </span>
             </div>
+            <h3 className="text-sm font-semibold text-gray-900">Complete your profile</h3>
+            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+              {profilePct >= 100
+                ? "Your profile is complete."
+                : "Add insurance details and an emergency contact to unlock full clinic access and smooth check-ins."}
+            </p>
+            {profilePct < 100 && (
+              <>
+                <div className="mt-3">
+                  <div className="flex justify-between text-[10px] text-gray-500 mb-1">
+                    <span>{profilePct}% complete</span>
+                    <span>{remainingFields} fields remaining</span>
+                  </div>
+                  <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-orange-500 rounded-full" style={{ width: `${profilePct}%` }} />
+                  </div>
+                </div>
+                <Link href="/patient/profile" className="mt-auto pt-2.5 flex items-center gap-0.5 text-xs font-medium text-gray-900 hover:text-blue-600">
+                  Complete now <ChevronRight className="w-3.5 h-3.5" />
+                </Link>
+              </>
+            )}
+          </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              {inst.disease_score != null && (
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs text-gray-500 mb-0.5">Overall Score</p>
-                  <p className="text-xl font-bold text-gray-900">
-                    {inst.disease_score.toFixed(0)}
-                    <span className="text-sm font-normal text-gray-400"> /100</span>
-                  </p>
-                </div>
-              )}
-              {inst.severity_label && (
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs text-gray-500 mb-0.5">Severity</p>
-                  <p className={`text-sm font-semibold ${
-                    inst.severity_level === "severe" ? "text-red-700" :
-                    inst.severity_level === "moderate" ? "text-orange-700" :
-                    inst.severity_level === "mild" ? "text-yellow-700" :
-                    "text-green-700"
-                  }`}>{inst.severity_label}</p>
-                </div>
-              )}
-              {inst.percentage != null && (
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs text-gray-500 mb-0.5">Percentage</p>
-                  <p className="text-xl font-bold text-gray-900">{inst.percentage.toFixed(0)}%</p>
-                </div>
-              )}
+          {/* Consent / pending assessment */}
+          <div className={`bg-white rounded-xl p-4 border shadow-sm flex flex-col ${
+            pendingAssessments.length > 0 ? "border-blue-200" : "border-gray-100"
+          }`}>
+            <div className="flex items-center justify-between mb-2">
+              <FileText className="w-4 h-4 text-blue-500" />
+              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                pendingAssessments.length > 0
+                  ? "text-red-600 bg-red-50"
+                  : hasAnyAssessments
+                    ? "text-green-700 bg-green-50"
+                    : "text-neutral-500 bg-neutral-100"
+              }`}>
+                {pendingAssessments.length > 0
+                  ? "Action needed"
+                  : hasAnyAssessments
+                    ? "Up to date"
+                    : "Not assigned"}
+              </span>
             </div>
+            <h3 className="text-sm font-semibold text-gray-900">Sign medical consent form</h3>
+            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+              {pendingAssessments.length > 0
+                ? "Required before your next assessment session. Review the treatment consent document and sign digitally."
+                : hasAnyAssessments
+                  ? "All consent forms are up to date."
+                  : "No assessments assigned yet. Your doctor will assign one when ready."}
+            </p>
+            {pendingAssessments.length > 0 && nextAppt && (
+              <div className="mt-2 flex items-center gap-1.5 text-[10px] text-orange-600 bg-orange-50 rounded-lg px-2.5 py-1.5">
+                <Clock className="w-3 h-3 flex-shrink-0" />
+                <span>Due before {formatShortDate(nextAppt.start_at)} — your session cannot proceed without this.</span>
+              </div>
+            )}
+            {pendingAssessments.length > 0 && (
+              <Link
+                href={`/patient/consent/${pendingAssessments[0].permission_id}`}
+                className="mt-auto w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium"
+                style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
+              >
+                Review &amp; sign <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            )}
+          </div>
 
-            {inst.scale_summaries && inst.scale_summaries.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Scale Results</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {inst.scale_summaries.map((s, i) => (
-                    <div key={s.scale_id ?? i} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
-                      <span className="text-sm text-gray-700">{s.scale_name ?? s.scale_code}</span>
-                      <div className="flex items-center gap-2">
-                        {s.calculated_value != null && (
-                          <span className="text-sm font-semibold text-gray-900">
-                            {s.calculated_value}
-                            {s.max_possible != null && <span className="text-xs font-normal text-gray-400">/{s.max_possible}</span>}
-                          </span>
-                        )}
-                        {s.severity_label && (
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            s.severity_level === "severe" ? "bg-red-50 text-red-700" :
-                            s.severity_level === "moderate" ? "bg-orange-50 text-orange-700" :
-                            s.severity_level === "mild" ? "bg-yellow-50 text-yellow-700" :
-                            "bg-green-50 text-green-700"
-                          }`}>{s.severity_label}</span>
-                        )}
-                      </div>
+          {/* Book appointment */}
+          <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex flex-col">
+            <div className="flex items-center justify-between mb-2">
+              <Calendar className="w-4 h-4 text-orange-500" />
+              <span className="text-[10px] font-medium text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-full">
+                Quick action
+              </span>
+            </div>
+            <h3 className="text-sm font-semibold text-gray-900">Request an appointment</h3>
+            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+              Book your next session or consultation{doctor ? ` with Dr. ${doctor.last_name}` : ""} using our AI-powered smart scheduler.
+            </p>
+            <div className="mt-2 flex items-center gap-1 text-[10px] text-gray-500">
+              <Zap className="w-3 h-3 text-orange-400" />
+              NW Assistant can find the best available slot for you.
+            </div>
+            <Link href="/patient/appointments" className="mt-auto w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium hover:opacity-90 transition-opacity" style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}>
+              <Zap className="w-3.5 h-3.5" /> Book appointment
+            </Link>
+          </div>
+        </div>
+
+        {/* Middle row: Appointments + Clinician */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Upcoming appointments */}
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900">Upcoming appointments</h3>
+              <button className="text-xs text-blue-600 flex items-center gap-0.5 hover:underline">
+                View all <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            {upcomingAppts.length === 0 ? (
+              <div className="px-4 py-6 text-center text-gray-400">
+                <Calendar className="w-8 h-8 mx-auto mb-1.5 opacity-40" />
+                <p className="text-xs">No upcoming appointments</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {upcomingAppts.slice(0, 4).map((appt) => (
+                  <div key={appt.appointment_id} className="px-4 py-2.5 flex items-center gap-3">
+                    <div className="text-center w-8 flex-shrink-0">
+                      <p className="text-sm font-bold text-gray-900 leading-none">
+                        {getDayOfMonth(appt.start_at)}
+                      </p>
+                      <p className="text-[10px] font-medium text-gray-400">
+                        {getMonthAbbr(appt.start_at)}
+                      </p>
                     </div>
-                  ))}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-gray-900 truncate">
+                        {appt.reason ?? appt.appointment_type?.replace(/_/g, " ")}
+                      </p>
+                      <p className="text-[10px] text-gray-500 mt-0.5">
+                        {formatTime(appt.start_time)}
+                        {appt.doctor_name ? ` · Dr. ${appt.doctor_name.split(" ").pop()}` : ""}
+                        {" · In-person"}
+                      </p>
+                    </div>
+                    <AppointmentStatusBadge status={appt.status} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Assigned clinician */}
+          {doctor ? (
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100">
+                <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide flex items-center gap-1">
+                  <User className="w-3 h-3" /> Your assigned Doctor
+                </p>
+              </div>
+              <div className="px-4 py-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <User className="w-5 h-5 text-blue-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">{doctor.full_name}</p>
+                    <p className="text-xs text-gray-500">{doctor.specialization ?? "Neurologist"}</p>
+                    {doctor.phone && <p className="text-[10px] text-gray-400">{doctor.phone}</p>}
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-1 mt-3 text-center">
+                  <div>
+                    <p className="text-base font-bold text-gray-900">{completedAppts}</p>
+                    <p className="text-[10px] text-gray-500">Sessions done</p>
+                  </div>
+                  <div>
+                    <p className="text-base font-bold text-gray-900">{totalPlannedAppts}</p>
+                    <p className="text-[10px] text-gray-500">Total planned</p>
+                  </div>
+                  <div>
+                    <p className="text-base font-bold text-gray-900">{daysToNext ?? "—"}</p>
+                    <p className="text-[10px] text-gray-500">Days to next</p>
+                  </div>
+                </div>
+                <button className="mt-3 w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium" style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}>
+                  <MessageSquare className="w-3.5 h-3.5" /> Message Dr. {doctor.last_name}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm flex items-center justify-center p-6 text-center text-gray-400">
+              <div>
+                <User className="w-8 h-8 mx-auto mb-1.5 opacity-40" />
+                <p className="text-xs">No clinician assigned yet</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Bottom row: PRS Assessment + Treatment Progress */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <PrsAssessmentCard
+            pending={pendingAssessments}
+            instances={scoreInstances}
+            doctor={doctor}
+          />
+
+          {/* Treatment Progress */}
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900">Treatment progress</h3>
+              <button className="text-xs text-blue-600 hover:underline">Details →</button>
+            </div>
+            <div className="px-4 py-3 space-y-3">
+              <ProgressBar
+                label="tDCS sessions"
+                value={completedAppts}
+                max={Math.max(totalPlannedAppts, 10)}
+                showCount
+                maxDisplay={Math.max(totalPlannedAppts, 10)}
+              />
+              <ProgressBar
+                label="EEG brain mapping"
+                value={completedAssessments.filter((a) => a.disease_name?.toLowerCase().includes("eeg")).length}
+                max={2}
+                showCount
+                maxDisplay={2}
+              />
+              <ProgressBar label="PRS assessment" value={prsProgress} max={100} unit="%" />
+              <ProgressBar label="Profile setup" value={profilePct} max={100} unit="%" />
+            </div>
+            {completedAppts > 0 && !hasUnpaidAppt && (
+              <div className="mx-4 mb-3 bg-green-50 border border-green-100 rounded-lg px-3 py-2 flex items-center gap-2">
+                <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                  <Check className="w-3 h-3 text-white" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-900">Next session payment cleared</p>
+                  <p className="text-[10px] text-gray-500">No outstanding balance.</p>
                 </div>
               </div>
             )}
           </div>
-        ))}
+        </div>
+      </div>
+
+      {payingId && (
+        <MockPaymentModal
+          isOpen
+          appointmentId={payingId}
+          onClose={() => setPayingId(null)}
+          onPaid={() => { setPayingId(null); reloadAppointments(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Sub-components ───────────────────────────────────────────────
+
+function StatCard({ icon, label, value, sub, highlight }: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  sub?: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div className={`bg-white rounded-xl p-4 border shadow-sm ${
+      highlight ? "border-gray-200" : "border-gray-100"
+    }`}>
+      <div className="flex items-center gap-1.5 mb-1.5">
+        {icon}
+        <p className="text-sm text-gray-500">{label}</p>
+      </div>
+      <p className="text-xl font-[750] text-gray-700">{value}</p>
+      {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+function AppointmentStatusBadge({ status }: { status: string }) {
+  const base = "text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap";
+  if (status === "paid") return <span className={`${base} text-green-700 bg-green-50`}>Paid</span>;
+  if (status === "selected") return <span className={`${base} text-yellow-700 bg-yellow-50`}>Awaiting Payment</span>;
+  if (status === "checked_in" || status === "in_progress") return <span className={`${base} text-blue-700 bg-blue-50`}>Checked In</span>;
+  if (status === "completed") return <span className={`${base} text-gray-600 bg-gray-100`}>Completed</span>;
+  if (status === "cancelled") return <span className={`${base} text-red-600 bg-red-50`}>Cancelled</span>;
+  return <span className={`${base} text-gray-500 bg-gray-50`}>{status}</span>;
+}
+
+function ProgressBar({ label, value, max, showCount, maxDisplay, unit }: {
+  label: string;
+  value: number;
+  max: number;
+  showCount?: boolean;
+  maxDisplay?: number;
+  unit?: string;
+}) {
+  const pct = max > 0 ? Math.min(Math.round((value / max) * 100), 100) : 0;
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs text-gray-700">{label}</span>
+        <span className="text-xs font-medium text-gray-900">
+          {showCount ? `${value} / ${maxDisplay ?? max}` : `${value}${unit ?? ""}`}
+        </span>
+      </div>
+      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+        <div className="h-full bg-orange-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
 }
 
-function PatientDoctorNotesView({ notes }: { notes: DoctorNote[] }) {
-  return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Doctor's Notes</h2>
-          <p className="text-sm text-gray-600 mt-1">
-            Notes recorded by your doctor about your care.
-          </p>
+// ─── PRS Assessment Card ──────────────────────────────────────────
+
+function PrsAssessmentCard({ pending, instances, doctor }: {
+  pending: AssessmentPermission[];
+  instances: AssessmentInstance[];
+  doctor?: { last_name: string; full_name: string } | null;
+}) {
+  const activePerm = pending[0] ?? null;
+
+  if (!activePerm && instances.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 flex flex-col items-center justify-center text-center text-gray-400">
+        <ClipboardList className="w-8 h-8 mb-1.5 opacity-40" />
+        <p className="text-xs font-medium text-gray-500">No PRS assessments assigned</p>
+        <p className="text-[10px] mt-0.5">Your doctor will assign assessments here.</p>
+      </div>
+    );
+  }
+
+  // No pending, show last completed
+  if (!activePerm) {
+    const last = instances[0];
+    return (
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-900">PRS Assessment</h3>
+          <Link href="/patient/results" className="text-xs text-blue-600 flex items-center gap-0.5 hover:underline">
+            View details <ChevronRight className="w-3.5 h-3.5" />
+          </Link>
         </div>
-        <span className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-lg">
-          <Lock className="w-3 h-3" /> View only
+        <div className="px-4 py-3 space-y-2.5">
+          <div className="flex items-start justify-between">
+            <div className="flex items-start gap-2.5">
+              <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                <ClipboardList className="w-4 h-4 text-blue-600" />
+              </div>
+              <div>
+                <h4 className="text-xs font-semibold text-gray-900">{last.disease_name ?? last.disease_id}</h4>
+                <p className="text-[10px] text-gray-500 mt-0.5">Neurological assessment</p>
+              </div>
+            </div>
+            <span className="text-[10px] font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full">Completed</span>
+          </div>
+          {last.percentage != null && (
+            <div>
+              <div className="flex justify-between text-[10px] mb-1">
+                <span className="text-gray-500">Overall progress</span>
+                <span className="font-semibold text-gray-900">{Math.round(last.percentage)}% complete</span>
+              </div>
+              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.round(last.percentage)}%` }} />
+              </div>
+            </div>
+          )}
+          {last.scale_summaries && last.scale_summaries.length > 0 && (
+            <div className="space-y-1 pt-0.5">
+              {last.scale_summaries.map((s, i) => (
+                <SectionRow
+                  key={s.scale_id ?? i}
+                  index={i + 1}
+                  label={s.scale_name ?? s.scale_code ?? `Scale ${i + 1}`}
+                  status="done"
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const scales = activePerm.scales ?? [];
+  const matchedInstance = instances.find((i) => i.disease_id === activePerm.disease_id);
+  const completedScaleIds = new Set(matchedInstance?.scale_summaries?.map((s) => s.scale_id) ?? []);
+
+  let firstCurrentSet = false;
+  const sectionStatuses = scales.map((scale) => {
+    const isDone = completedScaleIds.has(scale.scale_id);
+    let status: "done" | "current" | "pending" = isDone ? "done" : "pending";
+    if (!isDone && !firstCurrentSet) { status = "current"; firstCurrentSet = true; }
+    return { ...scale, status };
+  });
+
+  const totalScales = scales.length;
+  const completedScales = sectionStatuses.filter((s) => s.status === "done").length;
+  const progressPct = totalScales > 0 ? Math.round((completedScales / totalScales) * 100) : 0;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-900">PRS Assessment</h3>
+        <Link href="/patient/results" className="text-xs text-blue-600 flex items-center gap-0.5 hover:underline">
+          View details <ChevronRight className="w-3.5 h-3.5" />
+        </Link>
+      </div>
+      <div className="px-4 py-3 space-y-3">
+        {/* Assessment header */}
+        <div className="flex items-start justify-between">
+          <div className="flex items-start gap-2.5">
+            <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+              <ClipboardList className="w-4 h-4 text-blue-600" />
+            </div>
+            <div>
+              <h4 className="text-xs font-semibold text-gray-900">{activePerm.disease_name}</h4>
+              <p className="text-[10px] text-gray-500 mt-0.5">Neurological assessment</p>
+            </div>
+          </div>
+          <span className="text-[10px] font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">In progress</span>
+        </div>
+
+        {/* Meta info */}
+        <div className="flex flex-wrap items-center gap-2.5 text-[10px] text-gray-500">
+          {totalScales > 0 && (
+            <span className="flex items-center gap-1">
+              <Clock className="w-3 h-3" /> ~{(totalScales - completedScales) * 5} min left
+            </span>
+          )}
+          <span className="flex items-center gap-1">
+            <Calendar className="w-3 h-3" /> Assigned {formatShortDate(activePerm.granted_at)}
+          </span>
+          {doctor && (
+            <span className="flex items-center gap-1">
+              <User className="w-3 h-3" /> Dr. {doctor.last_name}
+            </span>
+          )}
+        </div>
+
+        {/* Progress bar */}
+        {totalScales > 0 && (
+          <div>
+            <div className="flex justify-between text-[10px] mb-1">
+              <span className="text-gray-500">Overall progress</span>
+              <span className="font-semibold text-gray-900">{progressPct}% complete</span>
+            </div>
+            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-500 rounded-full" style={{ width: `${progressPct}%` }} />
+            </div>
+            <p className="text-[10px] text-gray-400 mt-1">
+              {completedScales} of {totalScales} section{totalScales !== 1 ? "s" : ""} completed · {totalScales - completedScales} remaining
+            </p>
+          </div>
+        )}
+
+        {/* Section list */}
+        {sectionStatuses.length > 0 && (
+          <div className="space-y-0.5">
+            {sectionStatuses.map((section, i) => (
+              <SectionRow key={section.scale_id} index={i + 1} label={section.scale_name} status={section.status} />
+            ))}
+          </div>
+        )}
+
+        {sectionStatuses.length === 0 && (
+          <p className="text-xs text-gray-500">This assessment will begin once you start the session.</p>
+        )}
+
+        {/* CTA */}
+        <Link
+          href={`/patient/assessment/${activePerm.permission_id}`}
+          className="flex items-center justify-center gap-1.5 w-full text-white py-2 rounded-lg text-xs font-medium"
+          style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
+        >
+          <PlayCircle className="w-3.5 h-3.5" />
+          {completedScales > 0 ? "Continue assessment" : "Start assessment"}
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function SectionRow({ index, label, status }: {
+  index: number;
+  label: string;
+  status: "done" | "current" | "pending";
+}) {
+  return (
+    <div className="flex items-center justify-between py-1">
+      <div className="flex items-center gap-2">
+        {status === "done" ? (
+          <CheckCircle className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+        ) : status === "current" ? (
+          <Circle className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 fill-blue-100" />
+        ) : (
+          <Circle className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
+        )}
+        <span className={`text-xs ${
+          status === "done" ? "line-through text-gray-400"
+            : status === "current" ? "font-medium text-gray-900"
+            : "text-gray-400"
+        }`}>
+          Section {index} — {label}
         </span>
       </div>
-
-      {notes.length === 0 ? (
-        <div className="border border-dashed border-gray-200 rounded-lg p-8 text-center">
-          <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-700 font-medium mb-1">No notes yet</p>
-          <p className="text-sm text-gray-500 max-w-md mx-auto">
-            Your doctor hasn't added any notes about your care yet.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {notes.map((note, idx) => (
-            <div
-              key={note.id ?? `${note.doctor_id}-${idx}`}
-              className="border border-gray-200 rounded-lg p-5 bg-white"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                  Last updated {formatDate(note.updated_at ?? note.created_at)}
-                </p>
-              </div>
-              <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
-                {note.note_text}
-              </p>
-            </div>
-          ))}
-        </div>
+      {status === "done" && (
+        <span className="text-[10px] font-medium text-green-700 bg-green-50 px-1.5 py-0.5 rounded-full">Done</span>
+      )}
+      {status === "current" && (
+        <span className="text-[10px] font-medium text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full">Current</span>
+      )}
+      {status === "pending" && (
+        <span className="text-[10px] font-medium text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded-full">Pending</span>
       )}
     </div>
   );

@@ -15,6 +15,11 @@ export default function PatientAnamnesisPage() {
   const router = useRouter();
 
   if (!user) return null;
+  // AnamnesisForm's patientId prop must be patients.patient_id (the public
+  // ID the backend's anamnesis endpoints key off), not user.id (profiles.id)
+  // — passing the profile id here made every auto-start 404 ("Patient not
+  // found") for any real patient.
+  if (!user.patient_id) return <PageLoader />;
 
   return (
     <div className="max-w-3xl mx-auto py-4 space-y-2">
@@ -25,8 +30,9 @@ export default function PatientAnamnesisPage() {
         </p>
       </div>
       <AnamnesisForm
-        patientId={user.id}
+        patientId={user.patient_id}
         mode="patient"
+        assessmentStage="main"
         onSubmitted={() => router.push("/patient/dashboard")}
       />
     </div>

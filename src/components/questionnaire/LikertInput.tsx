@@ -11,19 +11,20 @@ interface LikertInputProps {
 }
 
 const GRID_COLS: Record<number, string> = {
-  2: "grid-cols-2",
-  3: "grid-cols-3",
-  4: "grid-cols-4",
-  5: "grid-cols-5",
+  2: "sm:grid-cols-2",
+  3: "sm:grid-cols-3",
+  4: "sm:grid-cols-4",
+  5: "sm:grid-cols-5",
 };
 
 export function LikertInput({ options, value, onChange, readOnly }: LikertInputProps) {
   const useHorizontal = options.length >= 2 && options.length <= 5;
 
   if (useHorizontal) {
-    const gridClass = GRID_COLS[options.length] ?? "grid-cols-5";
+    const gridClass = GRID_COLS[options.length] ?? "sm:grid-cols-5";
     return (
-      <div className={cn("grid gap-2", gridClass)}>
+      // Mobile: 1 col (full-width rows). sm+: horizontal grid.
+      <div className={cn("grid grid-cols-1 gap-2", gridClass)}>
         {options.map((opt, i) => {
           const isSelected = value === opt.value;
           return (
@@ -32,7 +33,9 @@ export function LikertInput({ options, value, onChange, readOnly }: LikertInputP
               onClick={() => !readOnly && onChange(opt.value)}
               disabled={readOnly}
               className={cn(
-                "flex flex-col items-center justify-between p-3 rounded-lg border-2 text-center transition-all min-h-[72px] gap-1.5",
+                // Mobile: horizontal row layout. sm+: vertical card layout.
+                "flex sm:flex-col items-center sm:justify-between gap-3 sm:gap-1.5",
+                "p-3 rounded-lg border-2 text-left sm:text-center transition-all sm:min-h-[72px]",
                 isSelected
                   ? "border-orange-500 bg-orange-50"
                   : "border-neutral-200 bg-white hover:border-orange-300 hover:bg-orange-50/40",
@@ -41,7 +44,15 @@ export function LikertInput({ options, value, onChange, readOnly }: LikertInputP
             >
               <span
                 className={cn(
-                  "text-xs leading-snug flex-1 flex items-center justify-center text-center",
+                  "w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 sm:hidden",
+                  isSelected ? "border-orange-500 bg-orange-500 text-white text-xs font-bold" : "border-neutral-300 text-neutral-500 text-xs font-bold",
+                )}
+              >
+                {i + 1}
+              </span>
+              <span
+                className={cn(
+                  "text-xs leading-snug flex-1 sm:flex sm:items-center sm:justify-center sm:text-center",
                   isSelected ? "text-orange-900 font-medium" : "text-neutral-700",
                 )}
               >
@@ -49,7 +60,7 @@ export function LikertInput({ options, value, onChange, readOnly }: LikertInputP
               </span>
               <span
                 className={cn(
-                  "text-xs font-semibold",
+                  "text-xs font-semibold hidden sm:block",
                   isSelected ? "text-orange-500" : "text-neutral-400",
                 )}
               >

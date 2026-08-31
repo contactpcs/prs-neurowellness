@@ -51,6 +51,14 @@ export interface ScaleQuestion {
   step?: number;
   conditional?: ConditionalRule;
   isVAS?: boolean;
+  /** Real backend skip_logic (prs_questions.skip_logic), parsed server-side —
+   * "hide this question unless the question at refIndex has this answer".
+   * Exactly one of hiddenWhenLabel/visibleOnlyWhenLabel is set. */
+  hiddenUnless?: {
+    refIndex: number;
+    hiddenWhenLabel?: string;
+    visibleOnlyWhenLabel?: string;
+  } | null;
 }
 
 export interface QuestionOption {

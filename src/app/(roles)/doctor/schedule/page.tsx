@@ -7,6 +7,7 @@ import {
 import { useAuth } from "@/lib/hooks/useAuth";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
+import { extractErrorMessage } from "@/lib/api/errors";
 import { BookingModal } from "@/components/appointments/BookingModal";
 import type {
   WeeklyScheduleRow, ScheduleOverride, AvailabilitySlot,
@@ -27,7 +28,7 @@ const DISPLAY_DAYS = [
 
 const SLOT_DURATIONS = [15, 20, 30, 45, 60];
 
-const BRAND_GRADIENT = "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)";
+const BRAND_GRADIENT = "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -68,7 +69,7 @@ function toHHMM(t: string | null | undefined): string {
 
 export default function DoctorSchedulePage() {
   const { user } = useAuth();
-  const doctorId = (user as any)?.id ?? "";
+  const doctorId = (user as any)?.doctor_id ?? "";
 
   const today    = useMemo(() => new Date(), []);
   const todayStr = useMemo(() => toDateStr(today), [today]);
@@ -88,14 +89,13 @@ export default function DoctorSchedulePage() {
   // ── Data fetchers ──────────────────────────────────────────────────────────
 
   const fetchSchedule = useCallback(async () => {
-    if (!doctorId) return;
     try {
       const { data } = await apiClient.get(ENDPOINTS.SCHEDULE.MY);
       const payload = data.data ?? data;
       setWeekly(payload.weekly ?? []);
       setOverrides(payload.overrides ?? []);
     } catch { /* no schedule yet */ }
-  }, [doctorId]);
+  }, []);
 
   const fetchSlots = useCallback(async (monday: Date) => {
     if (!doctorId) return;
@@ -108,7 +108,7 @@ export default function DoctorSchedulePage() {
       const { data } = await apiClient.get(ENDPOINTS.SCHEDULE.SLOTS(doctorId), {
         params: { from_date: dateFrom, to_date: dateTo, include_unavailable: true },
       });
-      setSlots(data.data ?? []);
+      setSlots(Array.isArray(data) ? data : []);
     } catch {
       setSlots([]);
     } finally {
@@ -118,6 +118,14 @@ export default function DoctorSchedulePage() {
 
   useEffect(() => { fetchSchedule(); }, [fetchSchedule]);
   useEffect(() => { fetchSlots(weekMonday); }, [weekMonday, fetchSlots]);
+
+  // Live update via SSE — a booking made from the calendar/booking-request
+  // side changes which slots on this page are still free.
+  useEffect(() => {
+    const onAppointmentEvent = () => fetchSlots(weekMonday);
+    window.addEventListener("sse:appointment", onAppointmentEvent);
+    return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
+  }, [weekMonday, fetchSlots]);
 
   const prevWeek = () => setWeekMonday((m) => { const d = new Date(m); d.setDate(d.getDate() - 7); return d; });
   const nextWeek = () => setWeekMonday((m) => { const d = new Date(m); d.setDate(d.getDate() + 7); return d; });
@@ -168,7 +176,7 @@ export default function DoctorSchedulePage() {
         </button>
       </div>
 
-      <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 288px" }}>
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-[1fr_288px]">
         {/* ── Slot calendar ── */}
         <div className="bg-white rounded-2xl border border-neutral-200 shadow-card overflow-hidden">
           {/* toolbar */}
@@ -286,8 +294,7 @@ export default function DoctorSchedulePage() {
               <h3 className="text-sm font-semibold text-neutral-900">Weekly Template</h3>
               <button
                 onClick={() => setShowEditSched(true)}
-                className="text-xs font-medium hover:underline"
-                style={{ color: "#00A1E4" }}
+                className="text-xs font-medium hover:underline text-accent"
               >
                 Edit
               </button>
@@ -298,8 +305,7 @@ export default function DoctorSchedulePage() {
                 <p className="text-xs text-neutral-400">No schedule set yet</p>
                 <button
                   onClick={() => setShowEditSched(true)}
-                  className="mt-2 text-xs font-medium hover:underline"
-                  style={{ color: "#00A1E4" }}
+                  className="mt-2 text-xs font-medium hover:underline text-accent"
                 >
                   Set up schedule
                 </button>
@@ -334,8 +340,7 @@ export default function DoctorSchedulePage() {
               <h3 className="text-sm font-semibold text-neutral-900">Date Overrides</h3>
               <button
                 onClick={() => setShowAddOverride(true)}
-                className="flex items-center gap-1 text-xs font-medium hover:underline"
-                style={{ color: "#00A1E4" }}
+                className="flex items-center gap-1 text-xs font-medium hover:underline text-accent"
               >
                 <Plus className="w-3 h-3" />
                 Add
@@ -476,7 +481,7 @@ function EditScheduleModal({
       await apiClient.put(ENDPOINTS.SCHEDULE.MY, { items });
       onSuccess();
     } catch (e: any) {
-      setError(e?.response?.data?.detail ?? "Save failed");
+      setError(extractErrorMessage(e, "Save failed"));
     } finally {
       setBusy(false);
     }
@@ -583,7 +588,7 @@ function AddOverrideModal({ onClose, onSuccess }: { onClose: () => void; onSucce
       await apiClient.post(ENDPOINTS.SCHEDULE.ADD_OVERRIDE, body);
       onSuccess();
     } catch (e: any) {
-      setError(e?.response?.data?.detail ?? "Save failed");
+      setError(extractErrorMessage(e, "Save failed"));
     } finally {
       setBusy(false);
     }

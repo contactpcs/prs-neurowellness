@@ -7,6 +7,7 @@ import {
   initQuestionnaire, setAnswer,
   nextQuestion, prevQuestion,
   nextScale, prevScale, goToScale,
+  setCurrentQuestionIndex,
   clearScaleResponses,
   toggleVoiceMode, resetQuestionnaire,
 } from "@/store/slices/questionnaireSlice";
@@ -17,8 +18,8 @@ export function useQuestionnaire() {
   const state = useSelector((s: RootState) => s.questionnaire);
   const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
 
-  const init = useCallback((sessionId: string, scaleOrder: string[], existingResponses?: Record<string, Record<string, number | string>>) => {
-    dispatch(initQuestionnaire({ sessionId, scaleOrder, existingResponses }));
+  const init = useCallback((sessionId: string, scaleOrder: string[], existingResponses?: Record<string, Record<string, number | string>>, initialScaleIndex?: number) => {
+    dispatch(initQuestionnaire({ sessionId, scaleOrder, existingResponses, initialScaleIndex }));
   }, [dispatch]);
 
   const answer = useCallback((scaleId: string, questionIndex: number, value: number | string) => {
@@ -57,6 +58,7 @@ export function useQuestionnaire() {
     submitCurrentScale,
     nextQuestion: (total: number) => dispatch(nextQuestion({ totalQuestions: total })),
     prevQuestion: () => dispatch(prevQuestion()),
+    goToQuestion: (idx: number) => dispatch(setCurrentQuestionIndex(idx)),
     nextScale: () => dispatch(nextScale()),
     prevScale: () => dispatch(prevScale()),
     goToScale: (idx: number) => dispatch(goToScale(idx)),

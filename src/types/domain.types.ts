@@ -2,6 +2,7 @@
 
 export interface PatientListItem {
   id: string;
+  profile_id?: string;
   full_name: string;
   first_name: string;
   last_name: string;
@@ -9,15 +10,19 @@ export interface PatientListItem {
   phone?: string;
   mrn?: string;
   date_of_birth?: string;
+  age?: number;
   gender?: string;
   condition?: string;
   status?: string;
+  approval_status?: string;
   assigned_at?: string;
   registered_at?: string;
   created_at?: string;
   clinic_id?: string;
   clinic_name?: string;
   clinic_city?: string;
+  doctor_id?: string | null;
+  doctor_name?: string | null;
   last_prs?: {
     disease_id?: string;
     disease_name?: string;
@@ -70,6 +75,11 @@ export interface PatientDashboard {
     phone?: string;
     date_of_birth?: string;
     gender?: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    pincode?: string;
   };
   assigned_doctor?: {
     id: string;
@@ -85,6 +95,7 @@ export interface PatientDashboard {
 
 export interface AssessmentPermission {
   permission_id: string;
+  patient_id?: string;
   disease_id: string;
   disease_name: string;
   granted_at: string;
@@ -238,14 +249,55 @@ export interface AvailabilitySlot {
   is_available: boolean;
 }
 
+// Device capacity is counted, not a binary lock like a doctor's slot —
+// "available" means fewer than capacity have booked it.
+export interface DeviceSlot {
+  date: string;
+  start_time: string;
+  end_time: string;
+  capacity: number;
+  booked: number;
+  remaining: number;
+  is_available: boolean;
+}
+
+export interface DeviceBusyInterval {
+  start_time: string;
+  end_time: string;
+}
+
+// Continuous booked/free view of one device's day for a specific planned
+// session — red/green timeline instead of a discrete slot list.
+// duration_minutes is that appointment's own required length (resolved
+// server-side from reference.billable_items), not chosen by the patient.
+export interface DeviceDayAvailability {
+  date: string;
+  is_open: boolean;
+  open_start: string | null;
+  open_end: string | null;
+  break_start: string | null;
+  break_end: string | null;
+  capacity: number | null;
+  duration_minutes: number;
+  busy: DeviceBusyInterval[];
+}
+
 // ─── Appointments ─────────────────────────────────────────────────
 
+// Matches backend's core.appointments status FSM exactly (scheduling/service.py
+// _ALLOWED_FROM, locked in DB by SQL/v1/43_mock_payment_lifecycle_lock.sql's
+// chk_appointments_status). 'planned' only occurs for protocol-born types
+// (device_session/protocol_followup) before a slot is claimed; a patient- or
+// staff-booked initial/follow_up starts directly at 'selected'. 'scheduled'/
+// 'confirmed' never occur — payment is what confirms a visit now.
 export type AppointmentStatus =
-  | "scheduled" | "confirmed" | "checked_in" | "in_progress"
+  | "planned" | "selected" | "paid" | "checked_in" | "in_progress"
   | "completed" | "cancelled" | "no_show" | "rescheduled";
 
+// Matches backend's APPOINTMENT_TYPES pattern (scheduling/schemas.py) —
+// the only 4 values the API accepts.
 export type AppointmentType =
-  | "consultation" | "follow_up" | "assessment" | "emergency" | "video";
+  | "initial" | "follow_up" | "device_session" | "protocol_followup";
 
 export interface Appointment {
   appointment_id: string;
@@ -254,6 +306,10 @@ export interface Appointment {
   patient_name?: string;
   doctor_id: string;
   doctor_name?: string;
+  doctor_public_id?: string | null;
+  /** patients.patient_id — GET /doctor/patients/{id} and other patient-scoped
+   *  routes expect this, not patient_id above (which is profiles.id). */
+  patient_public_id?: string | null;
   appointment_date: string;
   start_time: string;
   end_time: string;
@@ -264,10 +320,27 @@ export interface Appointment {
   reason?: string;
   notes?: string;
   patient_complaint?: string;
+  cancellation_reason?: string | null;
   booked_by: string;
   booked_by_role: string;
   created_at: string;
   updated_at: string;
+  /** Set only for appointment_type = device_session | protocol_followup —
+   *  the protocol course this appointment was generated from (30/32/41).
+   *  NULL for a manually-booked consultation. */
+  protocol_id?: string | null;
+  /** Which unit of the clinic's inventory this device session runs on —
+   *  set only for appointment_type = device_session (41). */
+  clinic_device_id?: string | null;
+  /** Ordinal within the protocol's course — set for device_session and
+   *  protocol_followup rows (30). */
+  session_number?: number | null;
+  /** Visit timeline — set as the appointment actually progresses through
+   *  checked_in -> in_progress -> completed, independent of the booked
+   *  appointment_date/start_time/end_time slot above. All null until reached. */
+  checked_in_at?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
 }
 
 // ─── Anamnesis ────────────────────────────────────────────────────
@@ -283,6 +356,10 @@ export interface AnamnesisRecord {
   patient_id: string;
   submitted_by: string | null;
   taken_by: string;
+  assessment_stage: "registration" | "main";
+  /** The visit this anamnesis was captured/edited during. Null on records
+   *  predating this column, and on anamnesis taken outside a booked visit. */
+  appointment_id?: string | null;
   status: "in_progress" | "completed";
   completed_at: string | null;
   responses?: AnamnesisResponse[];

@@ -10,6 +10,8 @@ import {
   selectDoctorPatientsTotal,
   selectDoctorPatientsStatus,
   selectDoctorPatientDetail,
+  selectDoctorPatientDetailStatus,
+  selectDoctorPatientDetailError,
   selectPatientResults,
 } from "@/store/slices/doctorsSlice";
 import {
@@ -40,12 +42,19 @@ export function useDoctorPatients(params?: { page?: number; limit?: number; sear
 export function useDoctorPatient(id: string) {
   const dispatch = useAppDispatch();
   const detail   = useAppSelector(selectDoctorPatientDetail);
+  const status   = useAppSelector(selectDoctorPatientDetailStatus);
+  const error    = useAppSelector(selectDoctorPatientDetailError);
 
   useEffect(() => {
     dispatch(fetchDoctorPatient(id));
   }, [dispatch, id]);
 
-  return detail[id] || detail.current || null;
+  return {
+    patient: detail[id] || null,
+    isLoading: !detail[id] && status !== "failed",
+    isError: !detail[id] && status === "failed",
+    error,
+  };
 }
 
 export function usePatientResult(patientId: string, instanceId: string) {

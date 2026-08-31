@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import type { AnamnesisStage } from "@/lib/api/services/anamnesis.service";
 import {
   fetchAnamnesisQuestions,
   fetchMyAnamnesis,
@@ -13,37 +14,37 @@ import {
   selectPatientAnamnesis,
 } from "@/store/slices/anamnesisSlice";
 
-export function useAnamnesisQuestions() {
+export function useAnamnesisQuestions(stage: AnamnesisStage) {
   const dispatch  = useAppDispatch();
-  const questions = useAppSelector(selectAnamnesisQuestions);
-  const status    = useAppSelector(selectAnamnesisQuestionsStatus);
+  const questions = useAppSelector(selectAnamnesisQuestions(stage));
+  const status    = useAppSelector(selectAnamnesisQuestionsStatus(stage));
 
   useEffect(() => {
-    dispatch(fetchAnamnesisQuestions());
-  }, [dispatch]);
+    dispatch(fetchAnamnesisQuestions(stage));
+  }, [dispatch, stage]);
 
   return { questions, isLoading: status === "loading", isReady: status === "succeeded" };
 }
 
-export function useMyAnamnesis() {
+export function useMyAnamnesis(stage: AnamnesisStage) {
   const dispatch = useAppDispatch();
-  const record   = useAppSelector(selectMyAnamnesis);
-  const status   = useAppSelector(selectMyAnamnesisStatus);
+  const record   = useAppSelector(selectMyAnamnesis(stage));
+  const status   = useAppSelector(selectMyAnamnesisStatus(stage));
 
   useEffect(() => {
-    dispatch(fetchMyAnamnesis());
-  }, [dispatch]);
+    dispatch(fetchMyAnamnesis(stage));
+  }, [dispatch, stage]);
 
   return { record, isLoading: status === "loading", isReady: status === "succeeded" };
 }
 
-export function usePatientAnamnesis(patientId: string) {
+export function usePatientAnamnesis(patientId: string, stage: AnamnesisStage) {
   const dispatch = useAppDispatch();
-  const entry    = useAppSelector(selectPatientAnamnesis(patientId));
+  const entry    = useAppSelector(selectPatientAnamnesis(patientId, stage));
 
   useEffect(() => {
-    if (patientId) dispatch(fetchPatientAnamnesis(patientId));
-  }, [dispatch, patientId]);
+    if (patientId) dispatch(fetchPatientAnamnesis({ patientId, stage }));
+  }, [dispatch, patientId, stage]);
 
   return {
     record: entry?.record ?? null,

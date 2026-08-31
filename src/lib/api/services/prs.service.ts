@@ -139,130 +139,51 @@ function normalizeConditionDetail(payload: unknown): ConditionBattery {
   );
 }
 
+// backend-v2's PRS module has no scales/sessions/alerts/clinician-rating/
+// score-history subsystem at all (confirmed against app/modules/prs/router.py
+// — it only exposes: diseases list, patient-scale-assignments, and
+// prs-assessment-instances start/get/responses/results). Every method below
+// with no real equivalent throws instead of hitting a dead endpoint.
+const NOT_AVAILABLE = "This PRS feature (sessions/scales-catalog/clinician-rating/risk-alerts/score-history) has no backend-v2 equivalent.";
+
 export const prsService = {
-  // ─── Scales ───
-  async getScales(): Promise<{ scales: Scale[]; total: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.SCALES);
-    return data;
-  },
+  async getScales(): Promise<{ scales: Scale[]; total: number }> { throw new Error(NOT_AVAILABLE); },
+  async getScale(_scaleId: string): Promise<Scale> { throw new Error(NOT_AVAILABLE); },
 
-  async getScale(scaleId: string): Promise<Scale> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.SCALE(scaleId));
-    return data;
-  },
-
-  // ─── Conditions ───
+  // ─── Conditions — real endpoint, existing normalizer already handles the raw disease_id/disease_name shape ───
   async getConditions(): Promise<{ conditions: ConditionBattery[]; total: number }> {
     const { data } = await apiClient.get(ENDPOINTS.PRS.CONDITIONS);
     return normalizeConditionsList(data);
   },
 
-  async getCondition(conditionId: string): Promise<ConditionBattery> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.CONDITION(conditionId));
-    return normalizeConditionDetail(data);
+  async getCondition(_conditionId: string): Promise<ConditionBattery> { throw new Error(NOT_AVAILABLE); },
+
+  /** Real: GET /prs-catalog/scale-questions?scale_id= — used by the
+   * self-registration wizard's PRS step. Rows now include question_index
+   * and the full options[] (option_id, value, label, points, display_order). */
+  async getScaleQuestions(scaleId: string): Promise<{
+    question_id: string; question_text: string; answer_type: string;
+    min_value: number | null; max_value: number | null; is_required: boolean; display_order: number;
+    question_index?: number;
+    options?: { option_id: string; value: string; label: string; points?: number; display_order?: number }[];
+  }[]> {
+    const { data } = await apiClient.get(ENDPOINTS.PRS.SCALE_QUESTIONS, { params: { scale_id: scaleId } });
+    return Array.isArray(data) ? data : [];
   },
 
-  // ─── Sessions ───
-  async createSession(payload: {
-    patient_id: string;
-    condition_id?: string;
-    custom_scale_ids?: string[];
-    title?: string;
-    clinical_notes?: string;
-    patient_instructions?: string;
-    mode?: string;
-    due_date?: string;
-  }): Promise<AssessmentSession> {
-    const { data } = await apiClient.post(ENDPOINTS.PRS.SESSIONS, payload);
-    return data;
-  },
-
-  async getMySessions(params?: { skip?: number; limit?: number }): Promise<{ sessions: AssessmentSession[]; total: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.MY_SESSIONS, { params });
-    return data;
-  },
-
-  async getPatientSessions(patientId: string, params?: { skip?: number; limit?: number }): Promise<{ sessions: AssessmentSession[]; total: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.PATIENT_SESSIONS(patientId), { params });
-    return data;
-  },
-
-  async getSession(sessionId: string): Promise<AssessmentSession> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.SESSION(sessionId));
-    return data;
-  },
-
-  async startSession(sessionId: string): Promise<AssessmentSession> {
-    const { data } = await apiClient.patch(ENDPOINTS.PRS.START_SESSION(sessionId));
-    return data;
-  },
-
-  async cancelSession(sessionId: string): Promise<AssessmentSession> {
-    const { data } = await apiClient.patch(ENDPOINTS.PRS.CANCEL_SESSION(sessionId));
-    return data;
-  },
-
-  // ─── Responses ───
-  async autoSave(sessionId: string, scaleId: string, questionIndex: number, value: number | string): Promise<void> {
-    await apiClient.patch(ENDPOINTS.PRS.AUTO_SAVE(sessionId, scaleId), {
-      question_index: questionIndex,
-      value,
-    });
-  },
-
-  async submitResponse(sessionId: string, scaleId: string, responses: Record<string, number | string>): Promise<{
-    response: ScaleResponse;
-    score: Record<string, unknown>;
-    risk_alerts_created: number;
-    session_completed: boolean;
-  }> {
-    const { data } = await apiClient.post(ENDPOINTS.PRS.SUBMIT_RESPONSE(sessionId, scaleId), { responses });
-    return data;
-  },
-
-  async submitClinicianRating(sessionId: string, scaleId: string, responses: Record<string, number | string>, clinicianNotes?: string): Promise<unknown> {
-    const { data } = await apiClient.post(ENDPOINTS.PRS.CLINICIAN_RATING(sessionId, scaleId), {
-      responses,
-      clinician_notes: clinicianNotes,
-    });
-    return data;
-  },
-
-  // ─── Consent ───
-  async recordConsent(sessionId: string, consentType: string, consented: boolean, consentText?: string): Promise<void> {
-    await apiClient.post(ENDPOINTS.PRS.CONSENT(sessionId), {
-      consent_type: consentType,
-      consented,
-      consent_text: consentText,
-    });
-  },
-
-  // ─── Alerts ───
-  async getMyAlerts(status?: string): Promise<{ alerts: RiskAlert[]; total: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.MY_ALERTS, { params: { status } });
-    return data;
-  },
-
-  async getPatientAlerts(patientId: string, status?: string): Promise<{ alerts: RiskAlert[]; total: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.PATIENT_ALERTS(patientId), { params: { status } });
-    return data;
-  },
-
-  async acknowledgeAlert(alertId: string): Promise<RiskAlert> {
-    const { data } = await apiClient.patch(ENDPOINTS.PRS.ACKNOWLEDGE_ALERT(alertId));
-    return data;
-  },
-
-  async resolveAlert(alertId: string, resolutionNotes: string): Promise<RiskAlert> {
-    const { data } = await apiClient.patch(ENDPOINTS.PRS.RESOLVE_ALERT(alertId), {
-      resolution_notes: resolutionNotes,
-    });
-    return data;
-  },
-
-  // ─── Score History ───
-  async getScoreHistory(patientId: string, scaleId?: string): Promise<{ history: ScoreHistory[]; total: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.SCORE_HISTORY(patientId), { params: { scale_id: scaleId } });
-    return data;
-  },
+  async createSession(_payload?: Record<string, unknown>): Promise<AssessmentSession> { throw new Error(NOT_AVAILABLE); },
+  async getMySessions(_params?: { skip?: number; limit?: number }): Promise<{ sessions: AssessmentSession[]; total: number }> { return { sessions: [], total: 0 }; },
+  async getPatientSessions(_patientId: string, _params?: { skip?: number; limit?: number }): Promise<{ sessions: AssessmentSession[]; total: number }> { return { sessions: [], total: 0 }; },
+  async getSession(_sessionId: string): Promise<AssessmentSession> { throw new Error(NOT_AVAILABLE); },
+  async startSession(_sessionId: string): Promise<AssessmentSession> { throw new Error(NOT_AVAILABLE); },
+  async cancelSession(_sessionId: string): Promise<AssessmentSession> { throw new Error(NOT_AVAILABLE); },
+  async autoSave(_sessionId: string, _scaleId: string, _questionIndex: number, _value: number | string): Promise<void> { throw new Error(NOT_AVAILABLE); },
+  async submitResponse(_sessionId: string, _scaleId: string, _responses: Record<string, number | string>): Promise<{ response: ScaleResponse; score: Record<string, unknown>; risk_alerts_created: number; session_completed: boolean }> { throw new Error(NOT_AVAILABLE); },
+  async submitClinicianRating(_sessionId: string, _scaleId: string, _responses: Record<string, number | string>, _clinicianNotes?: string): Promise<unknown> { throw new Error(NOT_AVAILABLE); },
+  async recordConsent(_sessionId: string, _consentType: string, _consented: boolean, _consentText?: string): Promise<void> { throw new Error(NOT_AVAILABLE); },
+  async getMyAlerts(_status?: string): Promise<{ alerts: RiskAlert[]; total: number }> { return { alerts: [], total: 0 }; },
+  async getPatientAlerts(_patientId: string, _status?: string): Promise<{ alerts: RiskAlert[]; total: number }> { return { alerts: [], total: 0 }; },
+  async acknowledgeAlert(_alertId: string): Promise<RiskAlert> { throw new Error(NOT_AVAILABLE); },
+  async resolveAlert(_alertId: string, _resolutionNotes: string): Promise<RiskAlert> { throw new Error(NOT_AVAILABLE); },
+  async getScoreHistory(_patientId: string, _scaleId?: string): Promise<{ history: ScoreHistory[]; total: number }> { return { history: [], total: 0 }; },
 };

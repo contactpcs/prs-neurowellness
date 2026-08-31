@@ -2,35 +2,15 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
-  Search, ChevronLeft, ChevronRight, CalendarDays, Phone, MessageSquare,
-  Users, UserPlus, Clock, TrendingUp, TrendingDown,
+  Search, ChevronLeft, ChevronRight, CalendarDays, Phone, MessageSquare, Eye, Siren,
 } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
 import { BookingModal } from "@/components/appointments/BookingModal";
 import type { Appointment, AvailabilitySlot } from "@/types/domain.types";
-
-// ─── KPI types ────────────────────────────────────────────────────
-interface KpiStats {
-  todayAppts: number;
-  yesterdayAppts: number;
-  totalPatients: number;
-  newPatients30d: number;
-  newPatientsPrev30d: number;
-  pendingToday: number;
-  pendingYesterday: number;
-}
-
-const ACTIVE_STATUSES = new Set(["scheduled", "confirmed", "checked_in", "in_progress"]);
-
-function pctChange(current: number, prev: number) {
-  if (prev === 0 && current === 0) return { label: "0% from yesterday", up: true };
-  if (prev === 0) return { label: "+100% from yesterday", up: true };
-  const pct = Math.round(((current - prev) / prev) * 100);
-  return { label: `${pct >= 0 ? "+" : ""}${pct}% from yesterday`, up: pct >= 0 };
-}
 
 // ─── types ────────────────────────────────────────────────────────
 
@@ -75,12 +55,14 @@ function toDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function timeToMins(t: string): number {
+function timeToMins(t: string | null | undefined): number {
+  if (!t) return 0;
   const [h, m] = t.split(":").map(Number);
   return h * 60 + (m || 0);
 }
 
-function fmt12(t: string): string {
+function fmt12(t: string | null | undefined): string {
+  if (!t) return "";
   const [h, m] = t.split(":").map(Number);
   const ampm = h >= 12 ? "PM" : "AM";
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
@@ -92,11 +74,12 @@ const DAY_LABELS  = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const CAL_START   = 8;
 const CAL_END     = 15;
 const HOUR_PX     = 64;
-const BRAND       = "linear-gradient(135deg, #00A1E4 0%, #17749B 100%)";
+const BRAND       = "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)";
 
 const APPT_STYLE: Record<string, { bg: string; border: string; text: string }> = {
-  confirmed:   { bg: "#f0fdf4", border: "#4ade80", text: "#15803d" },
-  scheduled:   { bg: "#fffbeb", border: "#fbbf24", text: "#92400e" },
+  planned:     { bg: "#fafafa", border: "#d4d4d8", text: "#52525b" },
+  selected:    { bg: "#fffbeb", border: "#fbbf24", text: "#92400e" },
+  paid:        { bg: "#f0fdf4", border: "#4ade80", text: "#15803d" },
   checked_in:  { bg: "#eff6ff", border: "#60a5fa", text: "#1e40af" },
   in_progress: { bg: "#dbeafe", border: "#3b82f6", text: "#1e3a8a" },
   cancelled:   { bg: "#fff1f2", border: "#f87171", text: "#991b1b" },
@@ -106,33 +89,20 @@ const APPT_STYLE: Record<string, { bg: string; border: string; text: string }> =
 };
 
 const STATUS_DOT: Record<string, string> = {
-  confirmed:  "#22c55e",
-  scheduled:  "#f59e0b",
+  planned:    "#a3a3a3",
+  selected:   "#f59e0b",
+  paid:       "#22c55e",
   checked_in: "#3b82f6",
   cancelled:  "#ef4444",
   completed:  "#94a3b8",
 };
 
-const BADGE_CLS: Record<string, string> = {
-  confirmed:   "bg-green-100 text-green-700",
-  scheduled:   "bg-amber-100 text-amber-700",
-  checked_in:  "bg-blue-100 text-blue-700",
-  in_progress: "bg-blue-200 text-blue-900",
-  cancelled:   "bg-red-100 text-red-700",
-  no_show:     "bg-gray-100 text-gray-600",
-  completed:   "bg-slate-100 text-slate-600",
-  rescheduled: "bg-purple-100 text-purple-700",
-};
-
-function statusLabel(s: string) {
-  return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 // ─── component ────────────────────────────────────────────────────
 
 export default function DoctorDashboard() {
+  const router   = useRouter();
   const { user } = useAuth();
-  const doctorId = (user as any)?.id ?? "";
+  const doctorId = (user as any)?.doctor_id ?? "";
   const today    = useMemo(() => new Date(), []);
   const todayStr = useMemo(() => toDateStr(today), [today]);
 
@@ -146,7 +116,6 @@ export default function DoctorDashboard() {
   const [bookingSlot,  setBookingSlot]  = useState<AvailabilitySlot | null>(null);
   const [ghost, setGhost] = useState<{ colIdx: number; top: number; height: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [kpiStats, setKpiStats] = useState<KpiStats | null>(null);
 
   // ── fetch range per view ──────────────────────────────────────────
 
@@ -165,9 +134,9 @@ export default function DoctorDashboard() {
   const fetchAppointments = useCallback(async (from: Date, to: Date) => {
     try {
       const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, {
-        params: { date_from: toDateStr(from), date_to: toDateStr(to), limit: 200 },
+        params: { date_from: toDateStr(from), date_to: toDateStr(to), limit: 100 },
       });
-      setAppointments(data.data ?? []);
+      setAppointments(Array.isArray(data) ? data : []);
     } catch { setAppointments([]); }
   }, []);
 
@@ -177,7 +146,7 @@ export default function DoctorDashboard() {
       const { data } = await apiClient.get(ENDPOINTS.SCHEDULE.SLOTS(doctorId), {
         params: { from_date: toDateStr(from), to_date: toDateStr(to), include_unavailable: true },
       });
-      setSlots(data.data ?? []);
+      setSlots(Array.isArray(data) ? data : []);
     } catch { setSlots([]); }
   }, [doctorId]);
 
@@ -186,48 +155,15 @@ export default function DoctorDashboard() {
     fetchSlots(fetchRange.from, fetchRange.to);
   }, [fetchRange, fetchAppointments, fetchSlots]);
 
+  // Live update via SSE.
   useEffect(() => {
-    const yesterdayStr = toDateStr(addDays(today, -1));
-    const thirtyDaysAgo = toDateStr(addDays(today, -30));
-    const sixtyDaysAgo = toDateStr(addDays(today, -60));
-
-    Promise.all([
-      apiClient.get(ENDPOINTS.APPOINTMENTS.TODAY).catch(() => ({ data: { data: [] } })),
-      apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, {
-        params: { date_from: yesterdayStr, date_to: yesterdayStr, limit: 200 },
-      }).catch(() => ({ data: { data: [] } })),
-      apiClient.get(ENDPOINTS.DOCTORS.DASHBOARD).catch(() => ({ data: { data: {} } })),
-      apiClient.get(ENDPOINTS.DOCTORS.PATIENTS, { params: { limit: 200 } }).catch(() => ({ data: { data: [] } })),
-    ]).then(([todayRes, yesterdayRes, dashRes, patientsRes]) => {
-      const todayAppts: Appointment[] = todayRes.data?.data ?? [];
-      const yesterdayAppts: Appointment[] = yesterdayRes.data?.data ?? [];
-      const dashData = dashRes.data?.data ?? {};
-      const patientsList: { created_at?: string }[] = patientsRes.data?.data ?? [];
-
-      const totalPatients: number = dashData.patients_summary?.total ?? patientsList.length;
-      const todayStr2 = toDateStr(today);
-      const newPatients30d = patientsList.filter((p) => {
-        if (!p.created_at) return false;
-        const d = p.created_at.slice(0, 10);
-        return d >= thirtyDaysAgo && d <= todayStr2;
-      }).length;
-      const newPatientsPrev30d = patientsList.filter((p) => {
-        if (!p.created_at) return false;
-        const d = p.created_at.slice(0, 10);
-        return d >= sixtyDaysAgo && d < thirtyDaysAgo;
-      }).length;
-
-      setKpiStats({
-        todayAppts: todayAppts.length,
-        yesterdayAppts: yesterdayAppts.length,
-        totalPatients,
-        newPatients30d,
-        newPatientsPrev30d,
-        pendingToday: todayAppts.filter((a) => ACTIVE_STATUSES.has(a.status)).length,
-        pendingYesterday: yesterdayAppts.filter((a) => ACTIVE_STATUSES.has(a.status)).length,
-      });
-    });
-  }, [today]); // eslint-disable-line react-hooks/exhaustive-deps
+    const onAppointmentEvent = () => {
+      fetchAppointments(fetchRange.from, fetchRange.to);
+      fetchSlots(fetchRange.from, fetchRange.to);
+    };
+    window.addEventListener("sse:appointment", onAppointmentEvent);
+    return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
+  }, [fetchRange, fetchAppointments, fetchSlots]);
 
   // ── navigation ────────────────────────────────────────────────────
 
@@ -288,16 +224,16 @@ export default function DoctorDashboard() {
     const q = searchQuery.toLowerCase();
     return [...appointments]
       .filter((a) => {
-        if (a.appointment_date < todayStr) return false;
+        if ((a.appointment_date || "") < todayStr) return false;
         if (a.status === "cancelled" || a.status === "completed") return false;
         if (q) return (a.patient_name || "").toLowerCase().includes(q) || (a.reason || "").toLowerCase().includes(q);
         return true;
       })
       .sort((a, b) => {
-        const dc = a.appointment_date.localeCompare(b.appointment_date);
-        return dc !== 0 ? dc : a.start_time.localeCompare(b.start_time);
+        const dc = (a.appointment_date || "").localeCompare(b.appointment_date || "");
+        return dc !== 0 ? dc : (a.start_time || "").localeCompare(b.start_time || "");
       })
-      .slice(0, 10);
+      .slice(0, 1);
   }, [appointments, todayStr, searchQuery]);
 
   // ── booking helpers ───────────────────────────────────────────────
@@ -349,7 +285,11 @@ export default function DoctorDashboard() {
   // ── time-grid column renderer (shared by Week + Day) ─────────────
 
   const renderTimeColumn = (dateStr: string, colIdx: number) => {
-    const dayAppts = apptByDay[dateStr] || [];
+    // Device-session appointments start life as 'planned' with a date and no
+    // start_time (fn_generate_protocol_sessions) until the patient claims a
+    // slot — they have no position on a time axis, so they're excluded here
+    // rather than crashing timeToMins/fmt12 on a null time.
+    const dayAppts = (apptByDay[dateStr] || []).filter((a) => a.start_time && a.end_time);
     const hasSlots = (slotsByDate[dateStr] ?? []).some((s) => s.is_available);
     return (
       <div
@@ -382,7 +322,7 @@ export default function DoctorDashboard() {
           const top    = timeToMins(appt.start_time) - CAL_START * 60;
           const height = Math.max(timeToMins(appt.end_time) - timeToMins(appt.start_time), 24);
           if (top < 0 || top >= gridHeight) return null;
-          const sty = APPT_STYLE[appt.status] ?? APPT_STYLE.scheduled;
+          const sty = APPT_STYLE[appt.status] ?? APPT_STYLE.selected;
           return (
             <div
               key={appt.appointment_id}
@@ -394,7 +334,7 @@ export default function DoctorDashboard() {
                 borderLeft: `3px solid ${sty.border}`,
                 color: sty.text,
               }}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); router.push(`/doctor/appointments/${appt.appointment_id}`); }}
             >
               <div className="text-[10px] font-semibold leading-tight truncate">
                 {fmt12(appt.start_time).replace(" AM","").replace(" PM","")}–{fmt12(appt.end_time).replace(" AM","").replace(" PM","")}
@@ -429,68 +369,77 @@ export default function DoctorDashboard() {
               placeholder="Search patients, appointments..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-4 py-2 text-sm bg-white border border-neutral-200 rounded-lg text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:border-transparent w-64 transition-all"
+              className="pl-9 pr-4 py-2 text-sm bg-white border border-neutral-200 rounded-lg text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:border-transparent w-full sm:w-64 transition-all"
             />
           </div>
           <div className="flex items-center gap-2 bg-white border border-neutral-200 rounded-lg px-3 py-2 text-sm text-neutral-700">
-            <CalendarDays className="w-4 h-4 flex-shrink-0" style={{ color: "#00A1E4" }} />
+            <CalendarDays className="w-4 h-4 flex-shrink-0 text-accent" />
             <span>Today, {todayDisplay}</span>
           </div>
         </div>
       </div>
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {[
-          {
-            icon: CalendarDays,
-            label: "Today's Appointments",
-            value: kpiStats?.todayAppts ?? "—",
-            change: kpiStats ? pctChange(kpiStats.todayAppts, kpiStats.yesterdayAppts) : null,
-          },
-          {
-            icon: Users,
-            label: "Total Patients",
-            value: kpiStats?.totalPatients ?? "—",
-            change: kpiStats ? pctChange(kpiStats.newPatients30d, kpiStats.newPatientsPrev30d) : null,
-          },
-          {
-            icon: UserPlus,
-            label: "New Patients",
-            value: kpiStats?.newPatients30d ?? "—",
-            change: kpiStats ? pctChange(kpiStats.newPatients30d, kpiStats.newPatientsPrev30d) : null,
-          },
-          {
-            icon: Clock,
-            label: "Pending Appointments",
-            value: kpiStats?.pendingToday ?? "—",
-            change: kpiStats ? pctChange(kpiStats.pendingToday, kpiStats.pendingYesterday) : null,
-          },
-        ].map(({ icon: Icon, label, value, change }) => (
-          <div
-            key={label}
-            className="rounded-xl px-4 py-3 flex flex-col gap-1.5"
-            style={{ background: BRAND }}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-white/80">{label}</span>
-              <div className="w-7 h-7 rounded-full flex items-center justify-center bg-white/15">
-                <Icon className="w-3.5 h-3.5 text-white" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-white">{value}</div>
-            {change ? (
-              <div className="flex items-center gap-1 text-[11px] text-white/80">
-                {change.up
-                  ? <TrendingUp className="w-3 h-3 text-green-300" />
-                  : <TrendingDown className="w-3 h-3 text-red-300" />}
-                <span>{change.label}</span>
-              </div>
-            ) : (
-              <div className="text-[11px] text-white/40">Loading…</div>
-            )}
+      {/* next appointments + quick actions */}
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-[1fr_300px] mb-5">
+        <div className="bg-white rounded-2xl border border-neutral-200 shadow-card overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100">
+            <h2 className="text-base font-semibold text-neutral-900">Next Appointment</h2>
+            <Link href="/doctor/appointments" className="text-sm font-medium text-accent hover:underline">
+              All appointments →
+            </Link>
           </div>
-        ))}
+          <div className="divide-y divide-neutral-100">
+            {upcoming.length === 0 ? (
+              <p className="px-6 py-10 text-center text-sm text-neutral-400">No upcoming appointments</p>
+            ) : upcoming.map((appt) => (
+              <div key={appt.appointment_id} className="px-5 py-4 hover:bg-neutral-50/60 transition-colors">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <p className="text-base font-bold text-neutral-900 leading-tight truncate">{appt.patient_name || "—"}</p>
+                      <Link href={`/doctor/patients/${appt.patient_public_id ?? appt.patient_id}`} className="flex-shrink-0">
+                        <Eye className="w-3.5 h-3.5 text-neutral-400 hover:text-neutral-600 transition-colors" />
+                      </Link>
+                    </div>
+                    {(appt.appointment_type || appt.reason) && (
+                      <span className="inline-block text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-sky-50 text-sky-700">
+                        {(appt.appointment_type || appt.reason || "").replace(/_/g, " ")}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                    <p className="text-xl font-bold text-neutral-900 leading-none">{fmt12(appt.start_time)}</p>
+                    <p className="text-xs text-neutral-500 leading-none">
+                      {new Date(appt.appointment_date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                    </p>
+                    <Link href={`/doctor/appointments/${appt.appointment_id}`}>
+                      <button className="px-4 py-1.5 rounded-full bg-action-orange text-white text-xs font-semibold hover:bg-action-orange-dark transition-colors">
+                        Start Visit
+                      </button>
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-neutral-200 shadow-card p-4 flex flex-col gap-2.5">
+          <h2 className="text-sm font-semibold text-neutral-900">Emergency Services</h2>
+          <button className="flex items-center justify-center gap-2 h-[38px] rounded-lg bg-danger-500 text-white font-semibold text-xs hover:bg-danger-700 transition-colors">
+            <Siren className="w-[15px] h-[15px] flex-shrink-0" />
+            Contact Emergency Services
+          </button>
+          <div className="h-px bg-neutral-100 my-0.5" />
+          <button className="flex items-center gap-2.5 h-[34px] px-3 rounded-lg bg-white border border-neutral-200 text-neutral-700 font-medium text-xs hover:bg-neutral-50 transition-colors">
+            <Phone className="w-3.5 h-3.5 flex-shrink-0" />
+            Contact Receptionist
+          </button>
+          <button className="flex items-center gap-2.5 h-[34px] px-3 rounded-lg bg-white border border-neutral-200 text-neutral-700 font-medium text-xs hover:bg-neutral-50 transition-colors">
+            <MessageSquare className="w-3.5 h-3.5 flex-shrink-0" />
+            Contact Clinical Assistant
+          </button>
+        </div>
       </div>
 
       {/* calendar */}
@@ -516,15 +465,16 @@ export default function DoctorDashboard() {
             </div>
 
             {/* view switcher */}
-            <div className="flex items-center rounded-lg border border-neutral-200 overflow-hidden text-sm font-medium">
+            <div className="flex items-center gap-0.5 rounded-lg bg-neutral-100 p-0.5 text-sm font-medium">
               {(["Week", "Day", "Month"] as CalView[]).map((v) => (
                 <button
                   key={v}
                   onClick={() => setView(v)}
-                  className="px-3 py-1.5 transition-colors"
-                  style={view === v
-                    ? { background: BRAND, color: "#fff" }
-                    : { background: "#fff", color: "#525252" }}
+                  className={
+                    view === v
+                      ? "px-3 py-1.5 rounded-md bg-white text-neutral-900 shadow-xs transition-colors"
+                      : "px-3 py-1.5 rounded-md text-neutral-500 transition-colors"
+                  }
                 >
                   {v}
                 </button>
@@ -728,78 +678,6 @@ export default function DoctorDashboard() {
               <span className="text-xs text-neutral-400">Click a day to view schedule</span>
             </div>
           )}
-        </div>
-      </div>
-
-      {/* upcoming + quick actions */}
-      <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 280px" }}>
-        <div className="bg-white rounded-2xl border border-neutral-200 shadow-card overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100">
-            <h2 className="text-base font-semibold text-neutral-900">Upcoming Appointments</h2>
-            <Link href="/doctor/patients" className="text-sm font-medium hover:underline" style={{ color: "#00A1E4" }}>
-              View all appointments
-            </Link>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-neutral-100">
-                  {["Time", "Patient", "Reason", "Type", "Status"].map((h) => (
-                    <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {upcoming.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-10 text-center text-sm text-neutral-400">
-                      No upcoming appointments
-                    </td>
-                  </tr>
-                ) : upcoming.map((appt) => (
-                  <tr key={appt.appointment_id} className="hover:bg-neutral-50 transition-colors">
-                    <td className="px-5 py-3 text-sm font-semibold text-neutral-800 whitespace-nowrap">
-                      {fmt12(appt.start_time)}
-                    </td>
-                    <td className="px-5 py-3 text-sm text-neutral-800">{appt.patient_name || "—"}</td>
-                    <td className="px-5 py-3 text-sm text-neutral-600 max-w-[160px] truncate">{appt.reason || "—"}</td>
-                    <td className="px-5 py-3 text-sm text-neutral-600 capitalize">
-                      {(appt.appointment_type || "—").replace(/_/g, "-")}
-                    </td>
-                    <td className="px-5 py-3">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                        BADGE_CLS[appt.status] ?? "bg-gray-100 text-gray-600"
-                      }`}>
-                        {statusLabel(appt.status)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-neutral-200 shadow-card p-6">
-          <h2 className="text-base font-semibold text-neutral-900 mb-4">Quick Actions</h2>
-          <div className="space-y-3">
-            <button
-              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
-              style={{ background: BRAND }}
-            >
-              <Phone className="w-5 h-5 flex-shrink-0" />
-              Contact Receptionist
-            </button>
-            <button
-              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
-              style={{ background: BRAND }}
-            >
-              <MessageSquare className="w-5 h-5 flex-shrink-0" />
-              Contact Clinical Assistant
-            </button>
-          </div>
         </div>
       </div>
 

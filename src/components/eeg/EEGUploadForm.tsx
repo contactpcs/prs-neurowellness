@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { eegService } from "@/lib/api/services/eeg.service";
+import { extractErrorMessage } from "@/lib/api/errors";
 
 const MAX_MB = 20;
 const MAX_BYTES = MAX_MB * 1024 * 1024;
@@ -45,14 +46,7 @@ export function EEGUploadForm({ patientId, sessionId, onUploaded }: Props) {
       if (fileRef.current) fileRef.current.value = "";
       onUploaded?.();
     } catch (err: any) {
-      const detail = err?.response?.data?.detail;
-      if (detail?.message) {
-        setError(detail.message);
-      } else if (typeof detail === "string") {
-        setError(detail);
-      } else {
-        setError("Upload failed. Please try again.");
-      }
+      setError(extractErrorMessage(err, "Upload failed. Please try again."));
     } finally {
       setUploading(false);
     }

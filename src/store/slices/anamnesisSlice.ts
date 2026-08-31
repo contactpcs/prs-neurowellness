@@ -1,11 +1,11 @@
 /**
  * Anamnesis slice — caches:
- * - the static questions catalog (long TTL: questions are reference data)
- * - the current user's anamnesis record
- * - per-patient anamnesis records (keyed by patientId, used by doctors)
+ * - the static questions catalog, per stage (long TTL: questions are reference data)
+ * - the current user's anamnesis record, per stage
+ * - per-patient anamnesis records (keyed by patientId + stage, used by doctors)
  */
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { anamnesisService, type AnamnesisQuestion } from "@/lib/api/services/anamnesis.service";
+import { anamnesisService, type AnamnesisQuestion, type AnamnesisStage } from "@/lib/api/services/anamnesis.service";
 import type { AnamnesisRecord } from "@/types/domain.types";
 import type { RootState } from "../store";
 
@@ -14,87 +14,93 @@ const RECORD_TTL_MS    = 2 * 60 * 1000;  // 2 min — anamnesis records change a
 
 type LoadStatus = "idle" | "loading" | "succeeded" | "failed";
 
-interface PatientAnamnesisEntry {
+interface QuestionsEntry {
+  questions: AnamnesisQuestion[];
+  status: LoadStatus;
+  loadedAt: number | null;
+}
+
+interface RecordEntry {
   record: AnamnesisRecord | null;
   status: LoadStatus;
   loadedAt: number | null;
 }
 
+function emptyQuestionsEntry(): QuestionsEntry {
+  return { questions: [], status: "idle", loadedAt: null };
+}
+
+function emptyRecordEntry(): RecordEntry {
+  return { record: null, status: "idle", loadedAt: null };
+}
+
 interface AnamnesisState {
-  questions: AnamnesisQuestion[];
-  questionsStatus: LoadStatus;
-  questionsLoadedAt: number | null;
-
-  myAnamnesis: AnamnesisRecord | null;
-  myAnamnesisStatus: LoadStatus;
-  myAnamnesisLoadedAt: number | null;
-
-  byPatientId: Record<string, PatientAnamnesisEntry>;
+  questionsByStage: Record<AnamnesisStage, QuestionsEntry>;
+  myAnamnesisByStage: Record<AnamnesisStage, RecordEntry>;
+  byPatientIdAndStage: Record<string, RecordEntry>; // key: `${patientId}:${stage}`
 }
 
 const initialState: AnamnesisState = {
-  questions: [],
-  questionsStatus: "idle",
-  questionsLoadedAt: null,
-
-  myAnamnesis: null,
-  myAnamnesisStatus: "idle",
-  myAnamnesisLoadedAt: null,
-
-  byPatientId: {},
+  questionsByStage: { registration: emptyQuestionsEntry(), main: emptyQuestionsEntry() },
+  myAnamnesisByStage: { registration: emptyRecordEntry(), main: emptyRecordEntry() },
+  byPatientIdAndStage: {},
 };
 
 function isFresh(loadedAt: number | null, ttl: number): boolean {
   return loadedAt !== null && Date.now() - loadedAt < ttl;
 }
 
+function patientStageKey(patientId: string, stage: AnamnesisStage): string {
+  return `${patientId}:${stage}`;
+}
+
 export const fetchAnamnesisQuestions = createAsyncThunk<
-  AnamnesisQuestion[],
-  void,
+  { stage: AnamnesisStage; questions: AnamnesisQuestion[] },
+  AnamnesisStage,
   { state: RootState }
 >(
   "anamnesis/fetchQuestions",
-  async () => anamnesisService.getQuestions(),
+  async (stage) => ({ stage, questions: await anamnesisService.getQuestions(stage) }),
   {
-    condition: (_, { getState }) => {
-      const { questionsStatus, questionsLoadedAt } = getState().anamnesis;
-      if (questionsStatus === "loading") return false;
-      if (questionsStatus === "succeeded" && isFresh(questionsLoadedAt, QUESTIONS_TTL_MS)) return false;
+    condition: (stage, { getState }) => {
+      const entry = getState().anamnesis.questionsByStage[stage];
+      if (entry.status === "loading") return false;
+      if (entry.status === "succeeded" && isFresh(entry.loadedAt, QUESTIONS_TTL_MS)) return false;
       return true;
     },
   },
 );
 
 export const fetchMyAnamnesis = createAsyncThunk<
-  AnamnesisRecord,
-  void,
+  { stage: AnamnesisStage; record: AnamnesisRecord },
+  AnamnesisStage,
   { state: RootState }
 >(
   "anamnesis/fetchMine",
-  async () => anamnesisService.getMyAnamnesis(),
+  async (stage) => ({ stage, record: await anamnesisService.getMyAnamnesis(stage) }),
   {
-    condition: (_, { getState }) => {
-      const { myAnamnesisStatus, myAnamnesisLoadedAt } = getState().anamnesis;
-      if (myAnamnesisStatus === "loading") return false;
-      if (myAnamnesisStatus === "succeeded" && isFresh(myAnamnesisLoadedAt, RECORD_TTL_MS)) return false;
+    condition: (stage, { getState }) => {
+      const entry = getState().anamnesis.myAnamnesisByStage[stage];
+      if (entry.status === "loading") return false;
+      if (entry.status === "succeeded" && isFresh(entry.loadedAt, RECORD_TTL_MS)) return false;
       return true;
     },
   },
 );
 
 export const fetchPatientAnamnesis = createAsyncThunk<
-  { patientId: string; record: AnamnesisRecord },
-  string,
+  { patientId: string; stage: AnamnesisStage; record: AnamnesisRecord | null },
+  { patientId: string; stage: AnamnesisStage },
   { state: RootState }
 >(
   "anamnesis/fetchForPatient",
-  async (patientId) => {
-    const record = await anamnesisService.getForPatient(patientId);
-    return { patientId, record };
+  async ({ patientId, stage }) => {
+    const record = await anamnesisService.getForPatient(patientId, stage);
+    return { patientId, stage, record };
   },
   {
-    condition: (patientId, { getState }) => {
-      const entry = getState().anamnesis.byPatientId[patientId];
+    condition: ({ patientId, stage }, { getState }) => {
+      const entry = getState().anamnesis.byPatientIdAndStage[patientStageKey(patientId, stage)];
       if (!entry) return true;
       if (entry.status === "loading") return false;
       if (entry.status === "succeeded" && isFresh(entry.loadedAt, RECORD_TTL_MS)) return false;
@@ -107,50 +113,54 @@ const anamnesisSlice = createSlice({
   name: "anamnesis",
   initialState,
   reducers: {
-    invalidateMyAnamnesis: (state) => {
-      state.myAnamnesisLoadedAt = null;
-      state.myAnamnesisStatus = "idle";
+    invalidateMyAnamnesis: (state, action: { payload: AnamnesisStage }) => {
+      state.myAnamnesisByStage[action.payload] = emptyRecordEntry();
     },
-    invalidatePatientAnamnesis: (state, action: { payload: string }) => {
-      delete state.byPatientId[action.payload];
+    invalidatePatientAnamnesis: (state, action: { payload: { patientId: string; stage: AnamnesisStage } }) => {
+      delete state.byPatientIdAndStage[patientStageKey(action.payload.patientId, action.payload.stage)];
     },
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchAnamnesisQuestions.pending, (s) => { s.questionsStatus = "loading"; })
+      .addCase(fetchAnamnesisQuestions.pending, (s, a) => {
+        s.questionsByStage[a.meta.arg].status = "loading";
+      })
       .addCase(fetchAnamnesisQuestions.fulfilled, (s, a) => {
-        s.questionsStatus = "succeeded";
-        s.questions = a.payload;
-        s.questionsLoadedAt = Date.now();
-      })
-      .addCase(fetchAnamnesisQuestions.rejected, (s) => { s.questionsStatus = "failed"; })
-
-      .addCase(fetchMyAnamnesis.pending, (s) => { s.myAnamnesisStatus = "loading"; })
-      .addCase(fetchMyAnamnesis.fulfilled, (s, a) => {
-        s.myAnamnesisStatus = "succeeded";
-        s.myAnamnesis = a.payload;
-        s.myAnamnesisLoadedAt = Date.now();
-      })
-      .addCase(fetchMyAnamnesis.rejected, (s) => { s.myAnamnesisStatus = "failed"; })
-
-      .addCase(fetchPatientAnamnesis.pending, (s, a) => {
-        s.byPatientId[a.meta.arg] = {
-          ...(s.byPatientId[a.meta.arg] || { record: null, loadedAt: null, status: "idle" }),
-          status: "loading",
+        s.questionsByStage[a.payload.stage] = {
+          questions: a.payload.questions,
+          status: "succeeded",
+          loadedAt: Date.now(),
         };
       })
-      .addCase(fetchPatientAnamnesis.fulfilled, (s, a) => {
-        s.byPatientId[a.payload.patientId] = {
+      .addCase(fetchAnamnesisQuestions.rejected, (s, a) => {
+        s.questionsByStage[a.meta.arg].status = "failed";
+      })
+
+      .addCase(fetchMyAnamnesis.pending, (s, a) => {
+        s.myAnamnesisByStage[a.meta.arg].status = "loading";
+      })
+      .addCase(fetchMyAnamnesis.fulfilled, (s, a) => {
+        s.myAnamnesisByStage[a.payload.stage] = {
           record: a.payload.record,
           status: "succeeded",
           loadedAt: Date.now(),
         };
       })
+      .addCase(fetchMyAnamnesis.rejected, (s, a) => {
+        s.myAnamnesisByStage[a.meta.arg].status = "failed";
+      })
+
+      .addCase(fetchPatientAnamnesis.pending, (s, a) => {
+        const key = patientStageKey(a.meta.arg.patientId, a.meta.arg.stage);
+        s.byPatientIdAndStage[key] = { ...(s.byPatientIdAndStage[key] || emptyRecordEntry()), status: "loading" };
+      })
+      .addCase(fetchPatientAnamnesis.fulfilled, (s, a) => {
+        const key = patientStageKey(a.payload.patientId, a.payload.stage);
+        s.byPatientIdAndStage[key] = { record: a.payload.record, status: "succeeded", loadedAt: Date.now() };
+      })
       .addCase(fetchPatientAnamnesis.rejected, (s, a) => {
-        s.byPatientId[a.meta.arg] = {
-          ...(s.byPatientId[a.meta.arg] || { record: null, loadedAt: null }),
-          status: "failed",
-        } as PatientAnamnesisEntry;
+        const key = patientStageKey(a.meta.arg.patientId, a.meta.arg.stage);
+        s.byPatientIdAndStage[key] = { ...(s.byPatientIdAndStage[key] || emptyRecordEntry()), status: "failed" };
       });
   },
 });
@@ -158,8 +168,9 @@ const anamnesisSlice = createSlice({
 export const { invalidateMyAnamnesis, invalidatePatientAnamnesis } = anamnesisSlice.actions;
 export default anamnesisSlice.reducer;
 
-export const selectAnamnesisQuestions       = (s: RootState) => s.anamnesis.questions;
-export const selectAnamnesisQuestionsStatus = (s: RootState) => s.anamnesis.questionsStatus;
-export const selectMyAnamnesis              = (s: RootState) => s.anamnesis.myAnamnesis;
-export const selectMyAnamnesisStatus        = (s: RootState) => s.anamnesis.myAnamnesisStatus;
-export const selectPatientAnamnesis         = (patientId: string) => (s: RootState) => s.anamnesis.byPatientId[patientId];
+export const selectAnamnesisQuestions = (stage: AnamnesisStage) => (s: RootState) => s.anamnesis.questionsByStage[stage].questions;
+export const selectAnamnesisQuestionsStatus = (stage: AnamnesisStage) => (s: RootState) => s.anamnesis.questionsByStage[stage].status;
+export const selectMyAnamnesis = (stage: AnamnesisStage) => (s: RootState) => s.anamnesis.myAnamnesisByStage[stage].record;
+export const selectMyAnamnesisStatus = (stage: AnamnesisStage) => (s: RootState) => s.anamnesis.myAnamnesisByStage[stage].status;
+export const selectPatientAnamnesis = (patientId: string, stage: AnamnesisStage) => (s: RootState) =>
+  s.anamnesis.byPatientIdAndStage[patientStageKey(patientId, stage)];
