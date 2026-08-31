@@ -3,6 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { TreatmentProtocolPanel } from "@/components/doctor/TreatmentProtocolPanel";
+import { PatientClinicalSnapshot } from "@/components/doctor/PatientClinicalSnapshot";
 
 export default function TreatmentProtocolPage() {
   const { id } = useParams<{ id: string }>();
@@ -16,6 +17,7 @@ export default function TreatmentProtocolPage() {
       >
         <ArrowLeft className="h-4 w-4" /> Back to patient
       </button>
+      <PatientClinicalSnapshot patientId={id} />
       <TreatmentProtocolPanel patientId={id} />
     </div>
   );

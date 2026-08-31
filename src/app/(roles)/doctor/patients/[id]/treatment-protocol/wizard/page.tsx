@@ -11,6 +11,7 @@ import { clinicDevicesService } from "@/lib/api/services/clinicDevices.service";
 import { useAuth } from "@/lib/hooks";
 import { Card, CardContent, Input, Select, Button, PageLoader } from "@/components/ui";
 import { PlacementMap } from "./PlacementMap";
+import { PatientClinicalSnapshot } from "@/components/doctor/PatientClinicalSnapshot";
 import type {
   DeviceRead, ConditionRead, DiagnosisRead, DiagnosisResolution, PlacementRead, DosingRead, ScaleRead,
   SchedulePreview, ProtocolCreate, ProtocolScaleAssignment, ProtocolRead, CustomMontageCreate,
@@ -527,6 +528,8 @@ export default function TreatmentProtocolWizardPage() {
         <h1 className="text-xl font-bold text-neutral-900">{mode === "modify" ? "Modify Treatment Protocol" : "New Treatment Protocol"}</h1>
         <p className="text-xs text-neutral-400 mt-0.5">Step {step + 1} of 8 · {STEP_LABELS[step]}</p>
       </div>
+
+      <PatientClinicalSnapshot patientId={patientId} />
 
       {/* Stepper */}
       <div className="flex items-stretch overflow-hidden rounded-xl border border-neutral-200 bg-white overflow-x-auto">
