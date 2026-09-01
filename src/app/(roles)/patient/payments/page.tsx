@@ -41,7 +41,7 @@ export default function PatientPaymentsPage() {
   if (isLoading) return <PageLoader />;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="space-y-6">
       <h1 className="text-2xl font-bold text-neutral-900">Payments &amp; Bills</h1>
 
       {payments.length === 0 ? (

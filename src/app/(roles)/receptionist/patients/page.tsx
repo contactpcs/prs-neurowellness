@@ -45,11 +45,8 @@ export default function ReceptionistPatientsPage() {
 
   return (
     <div className="space-y-5">
-      {/* Breadcrumb + header */}
+      {/* Header */}
       <div>
-        <nav className="flex items-center gap-1.5 mb-1.5 text-xs">
-          <span className="text-neutral-700 font-medium">All Patients</span>
-        </nav>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-neutral-900">All Patients</h1>

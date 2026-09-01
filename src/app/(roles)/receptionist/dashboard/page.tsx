@@ -64,13 +64,8 @@ export default function ReceptionistDashboard() {
 
   return (
     <div className="space-y-5">
-      {/* Breadcrumb + header */}
+      {/* Header */}
       <div>
-        <nav className="flex items-center gap-1.5 mb-1.5 text-xs">
-          <span className="text-neutral-400">Receptionist</span>
-          <span className="text-neutral-300">/</span>
-          <span className="text-neutral-700 font-medium">Dashboard</span>
-        </nav>
         <h1 className="text-2xl font-bold text-neutral-900">Welcome back, {user?.first_name}</h1>
         {user?.clinic_name && (
           <p className="text-xs font-medium text-primary-600 mt-0.5">{user.clinic_name}</p>
