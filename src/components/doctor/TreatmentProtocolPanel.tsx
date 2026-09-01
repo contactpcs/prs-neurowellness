@@ -469,13 +469,17 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
 }
 
 /** Standalone "Sessions" journey section — sits between Treatment Protocol
- * and Treatment Plan in the patient workspace. Reuses SessionsList so the
- * device-session/follow-up table stays identical to the one embedded in the
- * Treatment Protocol panel's own Sessions tab. */
+ * and Treatment Plan in the patient workspace. Two levels: a parent list of
+ * "Treatment Session N" rows (one per treatment protocol, oldest first —
+ * same numbering as the Treatment Protocol panel's version list), and, once
+ * a parent is clicked, the child Device Sessions / follow-up list for that
+ * protocol. SessionsList is reused so the child table stays identical to the
+ * one embedded in the Treatment Protocol panel's own Sessions tab. */
 export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
   const router = useRouter();
   const [protocols, setProtocols] = useState<ProtocolRead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [openProtocolId, setOpenProtocolId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ProtocolDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -489,17 +493,19 @@ export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
       .finally(() => setIsLoading(false));
   }, [patientId]);
 
-  const active = protocols.find((p) => p.status === "active") ?? protocols[protocols.length - 1] ?? null;
+  const patientName = protocols[0]?.patient_name ?? null;
+  const openProtocol = protocols.find((p) => p.protocol_id === openProtocolId) ?? null;
+  const treatmentSessionNumber = openProtocol ? protocols.findIndex((p) => p.protocol_id === openProtocol.protocol_id) + 1 : null;
 
   useEffect(() => {
-    if (!active) { setDetail(null); setDetailError(null); return; }
+    if (!openProtocolId) { setDetail(null); setDetailError(null); setOpenSessionId(null); return; }
     setDetailLoading(true);
     setDetailError(null);
-    treatmentProtocolService.getProtocolDetail(active.protocol_id)
+    treatmentProtocolService.getProtocolDetail(openProtocolId)
       .then((d) => setDetail(d))
       .catch((err) => { setDetail(null); setDetailError(err instanceof Error ? err.message : "Failed to load protocol detail"); })
       .finally(() => setDetailLoading(false));
-  }, [active]);
+  }, [openProtocolId]);
 
   if (isLoading) return <PageLoader />;
 
@@ -507,7 +513,7 @@ export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
     return (
       <SessionReviewPanel
         patientId={patientId}
-        patientName={active?.patient_name}
+        patientName={openProtocol?.patient_name}
         protocol={detail}
         session={detail.sessions.find((s) => s.appointment_id === openSessionId)!}
         sessions={detail.sessions}
@@ -517,16 +523,44 @@ export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
     );
   }
 
+  // ─── Child level — device sessions for the picked Treatment Session ───
+  if (openProtocolId) {
+    return (
+      <div className="space-y-5">
+        <button
+          onClick={() => setOpenProtocolId(null)}
+          className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" /> Back to treatment sessions
+        </button>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-neutral-900">Treatment Session {treatmentSessionNumber}</h1>
+          {openProtocol && <Badge className={statusTone(openProtocol.status)}>{openProtocol.status}</Badge>}
+        </div>
+        {detailLoading ? (
+          <p className="text-sm text-neutral-400 px-2">Loading…</p>
+        ) : !detail ? (
+          <div className="border border-danger-100 bg-danger-50 rounded-lg px-4 py-3 text-sm text-danger-700">
+            {detailError || "Couldn't load session detail."}
+          </div>
+        ) : (
+          <SessionsList detail={detail} onOpenSession={setOpenSessionId} />
+        )}
+      </div>
+    );
+  }
+
+  // ─── Parent level — one row per Treatment Session ───
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-neutral-900">Sessions</h1>
         <p className="text-sm text-neutral-500 mt-0.5">
-          Device sessions and follow-up appointments generated from{active?.patient_name ? ` ${active.patient_name}'s` : " this patient's"} active treatment protocol.
+          {patientName ? `${patientName}'s` : "This patient's"} treatment sessions. Open one to see its device sessions and follow-up appointments.
         </p>
       </div>
 
-      {!active ? (
+      {protocols.length === 0 ? (
         <Card>
           <CardContent className="space-y-4">
             <div className="border border-dashed border-neutral-200 rounded-xl py-14 text-center">
@@ -543,14 +577,29 @@ export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
             </button>
           </CardContent>
         </Card>
-      ) : detailLoading ? (
-        <p className="text-sm text-neutral-400 px-2">Loading…</p>
-      ) : !detail ? (
-        <div className="border border-danger-100 bg-danger-50 rounded-lg px-4 py-3 text-sm text-danger-700">
-          {detailError || "Couldn't load session detail."}
-        </div>
       ) : (
-        <SessionsList detail={detail} onOpenSession={setOpenSessionId} />
+        <div className="space-y-2">
+          {protocols.map((p, i) => (
+            <button key={p.protocol_id} onClick={() => setOpenProtocolId(p.protocol_id)} className="w-full text-left">
+              <Card className={p.status === "active" ? "border-blue-200" : ""}>
+                <CardContent className="flex items-center gap-4 py-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-neutral-900">Treatment Session {i + 1}</span>
+                      <Badge className={statusTone(p.status)}>{p.status}</Badge>
+                    </div>
+                    <p className="text-xs text-neutral-400 mt-1">
+                      {p.device_name ? `${p.device_name} · ${p.modality}` : p.modality || "Protocol"}
+                      {" · "}{p.session_count} session{p.session_count === 1 ? "" : "s"}
+                      {" · "}Started {fmtDate(p.activated_at || p.created_at)}
+                    </p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-neutral-300" />
+                </CardContent>
+              </Card>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );

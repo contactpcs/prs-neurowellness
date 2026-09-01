@@ -22,7 +22,7 @@ export default function PatientResultsPage() {
   if (isLoading) return <PageLoader />;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="space-y-6">
       <h1 className="text-2xl font-bold text-neutral-900">My Results</h1>
 
       {instances.length === 0 ? (

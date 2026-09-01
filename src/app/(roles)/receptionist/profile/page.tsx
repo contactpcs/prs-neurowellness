@@ -97,12 +97,9 @@ export default function ReceptionistProfilePage() {
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Breadcrumb + header */}
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <nav className="flex items-center gap-1.5 mb-1.5 text-xs">
-            <span className="text-neutral-700 font-medium">Profile</span>
-          </nav>
           <h1 className="text-2xl font-bold text-neutral-900">Profile</h1>
         </div>
         <div className="flex gap-2">

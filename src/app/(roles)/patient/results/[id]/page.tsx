@@ -35,7 +35,7 @@ export default function PatientResultDetailPage() {
   const overallResult = weighted_result ?? disease_result;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="space-y-6">
       {/* Back */}
       <button
         onClick={() => router.back()}

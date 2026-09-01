@@ -201,15 +201,6 @@ export default function PatientDetailPage() {
 
   return (
     <div className="space-y-5">
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-xs">
-        <Link href="/receptionist/dashboard" className="text-neutral-400 hover:text-neutral-600">Receptionist</Link>
-        <span className="text-neutral-300">/</span>
-        <Link href="/receptionist/patients" className="text-neutral-400 hover:text-neutral-600">All Patients</Link>
-        <span className="text-neutral-300">/</span>
-        <span className="text-neutral-700 font-medium">{name}</span>
-      </nav>
-
       {/* Toast */}
       {toast && (
         <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-dropdown text-sm font-medium text-white transition-all ${toast.ok ? "bg-success-500" : "bg-danger-500"}`}>

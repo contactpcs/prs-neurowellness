@@ -84,11 +84,8 @@ export default function ReceptionistApprovalsPage() {
         </div>
       )}
 
-      {/* Breadcrumb + header */}
+      {/* Header */}
       <div>
-        <nav className="flex items-center gap-1.5 mb-1.5 text-xs">
-          <span className="text-neutral-700 font-medium">Approvals</span>
-        </nav>
         <h1 className="text-2xl font-bold text-neutral-900">Approvals</h1>
         {user?.clinic_name && (
           <p className="text-xs font-medium text-primary-600 mt-0.5">{user.clinic_name}</p>
