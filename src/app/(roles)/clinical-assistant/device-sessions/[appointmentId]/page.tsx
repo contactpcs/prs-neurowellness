@@ -41,6 +41,15 @@ const CONTRAINDICATION_ITEMS = [
   { code: "patient_ready", label: "Patient alert, hydrated, fed, and consents understood" },
 ];
 
+const DEVICE_FIT_ITEMS = [
+  { code: "sponges_saline_soaked", label: "Sponges saline-soaked" },
+  { code: "placement_measured", label: "Anode/cathode placement measured against map" },
+  { code: "headstrap_secured", label: "Headstrap secured, hair clear" },
+  { code: "cable_routing_checked", label: "Cable routing checked" },
+  { code: "impedance_checked", label: "Impedance checked pre-ramp" },
+  { code: "patient_briefed", label: "Patient briefed to report pain" },
+];
+
 const PATIENT_CONSENT_STATEMENTS = [
   { code: "no_skull_injury", label: "I confirm I have no known skull injury or fracture" },
   { code: "no_implants", label: "I confirm I have no implanted metal or electronic devices" },
@@ -83,6 +92,7 @@ export default function DeviceSessionChecklistPage() {
   const [rampDown, setRampDown] = useState<string>("");
   const [montageVerified, setMontageVerified] = useState(false);
   const [contraindications, setContraindications] = useState<Record<string, boolean>>({});
+  const [deviceFit, setDeviceFit] = useState<Record<string, boolean>>({});
   const [patientConsent, setPatientConsent] = useState<Record<string, boolean>>({});
   const [caDeclaration, setCaDeclaration] = useState<Record<string, boolean>>({});
   const [isStarting, setIsStarting] = useState(false);
@@ -134,6 +144,7 @@ export default function DeviceSessionChecklistPage() {
     if (session.actual_ramp_down_sec != null) setRampDown(String(session.actual_ramp_down_sec));
     setMontageVerified(session.montage_verified);
     setContraindications(session.contraindication_checklist ?? {});
+    setDeviceFit(session.device_fit_checklist ?? {});
     if (session.patient_consent) {
       setPatientConsent(Object.fromEntries(session.patient_consent.statements.map((s) => [s.code, s.confirmed])));
     }
@@ -168,6 +179,7 @@ export default function DeviceSessionChecklistPage() {
   const rampDownDeviates = prescribedRamp != null && rampDown !== "" && Number(rampDown) !== prescribedRamp;
 
   const allContraindicationsChecked = CONTRAINDICATION_ITEMS.every((i) => contraindications[i.code]);
+  const allDeviceFitChecked = DEVICE_FIT_ITEMS.every((i) => deviceFit[i.code]);
   const allPatientConsentChecked = PATIENT_CONSENT_STATEMENTS.every((s) => patientConsent[s.code]);
   const allCaDeclarationChecked = CA_DECLARATION_STATEMENTS.every((s) => caDeclaration[s.code]);
   // "Paid" on the underlying appointment (a real payment record via the
@@ -184,6 +196,7 @@ export default function DeviceSessionChecklistPage() {
   if (!intensity || !duration) missing.push("Stimulation parameters");
   if (!montageVerified) missing.push("Montage verification");
   if (!allContraindicationsChecked) missing.push("Contraindication checklist");
+  if (!allDeviceFitChecked) missing.push("Device fit checklist");
   if (!allPatientConsentChecked || !allCaDeclarationChecked) missing.push("Consent & declaration");
 
   const canStart = missing.length === 0;
@@ -208,6 +221,7 @@ export default function DeviceSessionChecklistPage() {
     ramp_down_deviates: rampDownDeviates,
     montage_verified: montageVerified,
     contraindication_checklist: contraindications,
+    device_fit_checklist: deviceFit,
   });
 
   const persistChecklist = async () => {
@@ -452,6 +466,27 @@ export default function DeviceSessionChecklistPage() {
                 I confirm all of the above
               </label>
               <p className="text-xs text-neutral-400 pt-1">If any item cannot be confirmed, do not start — refer back to the doctor.</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><h3 className="text-sm font-semibold text-neutral-900">Device Fit</h3></CardHeader>
+            <CardContent className="space-y-2">
+              <ul className="text-sm text-neutral-600 list-disc pl-5 space-y-1">
+                {DEVICE_FIT_ITEMS.map((item) => <li key={item.code}>{item.label}</li>)}
+              </ul>
+              <label className="flex items-start gap-2 text-sm font-medium pt-1">
+                <input
+                  type="checkbox"
+                  checked={allDeviceFitChecked}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setDeviceFit(Object.fromEntries(DEVICE_FIT_ITEMS.map((i) => [i.code, checked])));
+                  }}
+                  className="mt-0.5"
+                />
+                I confirm all of the above
+              </label>
             </CardContent>
           </Card>
 

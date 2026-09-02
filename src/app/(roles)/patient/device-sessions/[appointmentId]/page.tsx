@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Siren, Wind, Grid3x3, Puzzle, ArrowLeft, Lock, ClipboardList, CheckCircle2, UserCog } from "lucide-react";
+import { Siren, Wind, Grid3x3, Puzzle, ArrowLeft, Lock, ClipboardList, CheckCircle2, UserCog, Star } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useDeviceSession } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services";
 import { Button, Card, CardContent, Modal, PageLoader } from "@/components/ui";
@@ -32,19 +33,134 @@ function fmtWhen(a: Appointment): string {
   return a.start_time ? `${date} · ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : date;
 }
 
-function BreathingView({ onBack }: { onBack: () => void }) {
+/* ─── Minimal per-session reward system ───
+ * One entry per activity, kept as the best score so far. Total = sum of the
+ * three. Stored in localStorage keyed by appointment so it survives a reload
+ * of the tablet but never leaves the device. */
+type GameKey = "breathe" | "game" | "puzzle";
+type StarMap = Record<GameKey, number>;
+
+function useSessionStars(appointmentId: string) {
+  const storageKey = `prs:session-stars:${appointmentId}`;
+  const [stars, setStars] = useState<StarMap>({ breathe: 0, game: 0, puzzle: 0 });
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (raw) setStars({ breathe: 0, game: 0, puzzle: 0, ...JSON.parse(raw) });
+    } catch {
+      /* private mode / blocked storage — start from zero */
+    }
+  }, [storageKey]);
+
+  /** Record a result for one activity; only ever raises the stored score. */
+  const award = (key: GameKey, value: number) => {
+    setStars((prev) => {
+      if (value <= prev[key]) return prev;
+      const next = { ...prev, [key]: value };
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
+  const total = stars.breathe + stars.game + stars.puzzle;
+  return { stars, total, award };
+}
+
+/** Row of up to `max` stars, `count` of them filled. */
+function StarRow({ count, max = 3 }: { count: number; max?: number }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-6">
-      <button onClick={onBack} className="self-start flex items-center gap-1.5 text-sm text-neutral-500"><ArrowLeft className="h-4 w-4" /> Back</button>
-      <div className="w-40 h-40 rounded-full bg-primary-100 border-2 border-primary-300 animate-[pulse_8s_ease-in-out_infinite]" />
-      <p className="text-sm text-neutral-500">Breathe in for 4s, hold for 4s, out for 6s.</p>
+    <span className="inline-flex items-center gap-0.5">
+      {Array.from({ length: max }).map((_, i) => (
+        <Star
+          key={i}
+          className={`h-4 w-4 ${i < count ? "fill-warning-500 text-warning-500" : "text-neutral-300"}`}
+        />
+      ))}
+    </span>
+  );
+}
+
+/** Instructions panel — sits beside the activity on wider screens, and above
+ * it on a phone so the how-to is the first thing the patient sees. */
+function HowToPlay({ title, icon: Icon, steps }: { title: string; icon: LucideIcon; steps: string[] }) {
+  return (
+    <aside className="order-first lg:order-none lg:w-64 lg:flex-shrink-0 rounded-2xl border border-primary-100 bg-gradient-to-b from-primary-50 to-white p-5 shadow-sm">
+      <div className="flex items-center gap-2 pb-3 border-b border-primary-100">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-100 text-primary-600">
+          <Icon className="h-4 w-4" />
+        </span>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-500">How to play</p>
+          <p className="text-sm font-semibold text-neutral-900 leading-tight">{title}</p>
+        </div>
+      </div>
+      <ol className="mt-3 space-y-2.5">
+        {steps.map((s, i) => (
+          <li key={s} className="flex gap-2.5 text-sm text-neutral-600 leading-snug">
+            <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary-100 text-[11px] font-semibold text-primary-700">
+              {i + 1}
+            </span>
+            <span>{s}</span>
+          </li>
+        ))}
+      </ol>
+      <p className="mt-4 flex items-center gap-1.5 rounded-lg bg-warning-50 px-2.5 py-1.5 text-xs font-medium text-warning-700">
+        <Star className="h-3.5 w-3.5 fill-warning-500 text-warning-500" /> Finish to earn up to 3 stars
+      </p>
+    </aside>
+  );
+}
+
+function BreathingView({ onBack, award, earned }: { onBack: () => void; award: (n: number) => void; earned: number }) {
+  const [rounds, setRounds] = useState(0);
+
+  const markRound = () => {
+    const next = rounds + 1;
+    setRounds(next);
+    award(Math.min(next, 3));
+  };
+
+  return (
+    <div className="flex flex-col lg:flex-row lg:items-start gap-5 max-w-3xl mx-auto">
+      <div className="flex-1 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm flex flex-col items-center justify-center gap-6 min-h-[340px]">
+        <button onClick={onBack} className="self-start flex items-center gap-1.5 text-sm text-neutral-500"><ArrowLeft className="h-4 w-4" /> Back</button>
+        <div className="w-40 h-40 rounded-full bg-primary-100 border-2 border-primary-300 animate-[pulse_8s_ease-in-out_infinite]" />
+        <p className="text-sm text-neutral-500">Breathe in for 4s, hold for 4s, out for 6s.</p>
+        <button onClick={markRound} className="text-xs font-medium text-primary-600 hover:text-primary-800">I finished a round</button>
+        <div className="flex items-center gap-2 text-xs text-neutral-400">
+          <span>Rounds: {rounds}</span>
+          <StarRow count={Math.max(rounds, earned)} />
+        </div>
+      </div>
+      <HowToPlay
+        title="Breathing exercise"
+        icon={Wind}
+        steps={[
+          "Watch the circle: breathe in as it grows, out as it shrinks.",
+          "In for 4s, hold 4s, out for 6s.",
+          "Tap “I finished a round” after each full cycle.",
+          "A few slow rounds is enough.",
+        ]}
+      />
     </div>
   );
 }
 
+/** Stars from a move count: tighter solve = more stars. */
+function starsForMoves(moves: number, three: number, two: number): number {
+  if (moves <= three) return 3;
+  if (moves <= two) return 2;
+  return 1;
+}
+
 /** 3×3 sliding-tile puzzle. Click a tile next to the gap to slide it; solved
  * when tiles 1–8 are back in order. Self-contained, no library. */
-function PuzzleView({ onBack }: { onBack: () => void }) {
+function PuzzleView({ onBack, award, earned }: { onBack: () => void; award: (n: number) => void; earned: number }) {
   const SIZE = 3;
   const solved = [1, 2, 3, 4, 5, 6, 7, 8, 0];
 
@@ -70,6 +186,11 @@ function PuzzleView({ onBack }: { onBack: () => void }) {
   const [board, setBoard] = useState<number[]>(shuffle);
   const [moves, setMoves] = useState(0);
   const won = board.every((v, i) => v === solved[i]);
+  const wonStars = won ? starsForMoves(moves, 30, 60) : 0;
+
+  useEffect(() => {
+    if (won) award(wonStars);
+  }, [won]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tryMove = (idx: number) => {
     if (won) return;
@@ -85,32 +206,46 @@ function PuzzleView({ onBack }: { onBack: () => void }) {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-neutral-500"><ArrowLeft className="h-4 w-4" /> Back</button>
-        <button onClick={() => { setBoard(shuffle()); setMoves(0); }} className="text-xs font-medium text-primary-600 hover:text-primary-800">Shuffle</button>
+    <div className="flex flex-col lg:flex-row lg:items-start gap-5 max-w-3xl mx-auto">
+      <div className="flex-1 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-neutral-500"><ArrowLeft className="h-4 w-4" /> Back</button>
+          <button onClick={() => { setBoard(shuffle()); setMoves(0); }} className="text-xs font-medium text-primary-600 hover:text-primary-800">Shuffle</button>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-neutral-400">
+          <span>Moves: {moves}</span>
+          <StarRow count={Math.max(wonStars, earned)} />
+        </div>
+        {won && <p className="text-sm text-success-600 font-medium">Solved in {moves} moves — earned {wonStars} star{wonStars === 1 ? "" : "s"}.</p>}
+        <div className="grid grid-cols-3 gap-2 max-w-[240px]">
+          {board.map((v, i) => (
+            <button
+              key={i}
+              onClick={() => tryMove(i)}
+              disabled={v === 0}
+              className={`h-[72px] rounded-lg border text-xl font-semibold flex items-center justify-center transition-colors ${
+                v === 0 ? "border-transparent bg-transparent" : "bg-primary-50 border-primary-200 text-primary-800 hover:bg-primary-100"
+              }`}
+            >
+              {v === 0 ? "" : v}
+            </button>
+          ))}
+        </div>
       </div>
-      <p className="text-xs text-neutral-400">Moves: {moves}</p>
-      {won && <p className="text-sm text-success-600 font-medium">Solved in {moves} moves — nicely done.</p>}
-      <div className="grid grid-cols-3 gap-2 max-w-[240px]">
-        {board.map((v, i) => (
-          <button
-            key={i}
-            onClick={() => tryMove(i)}
-            disabled={v === 0}
-            className={`h-[72px] rounded-lg border text-xl font-semibold flex items-center justify-center transition-colors ${
-              v === 0 ? "border-transparent bg-transparent" : "bg-primary-50 border-primary-200 text-primary-800 hover:bg-primary-100"
-            }`}
-          >
-            {v === 0 ? "" : v}
-          </button>
-        ))}
-      </div>
+      <HowToPlay
+        title="Sliding puzzle"
+        icon={Puzzle}
+        steps={[
+          "Tap a numbered tile next to the empty space to slide it in.",
+          "Put tiles 1–8 back in order, empty space last.",
+          "Fewer moves earns more stars — Shuffle to restart.",
+        ]}
+      />
     </div>
   );
 }
 
-function GameView({ onBack }: { onBack: () => void }) {
+function GameView({ onBack, award, earned }: { onBack: () => void; award: (n: number) => void; earned: number }) {
   const [cards] = useState(() => {
     const symbols = ["🌙", "⭐", "🌸", "🍃", "☀️", "🌊"];
     return [...symbols, ...symbols].sort(() => Math.random() - 0.5);
@@ -135,28 +270,48 @@ function GameView({ onBack }: { onBack: () => void }) {
   };
 
   const won = matched.size === cards.length;
+  const wonStars = won ? starsForMoves(moves, 12, 18) : 0;
+
+  useEffect(() => {
+    if (won) award(wonStars);
+  }, [won]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="space-y-4">
-      <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-neutral-500"><ArrowLeft className="h-4 w-4" /> Back</button>
-      <p className="text-xs text-neutral-400">Moves: {moves}</p>
-      {won && <p className="text-sm text-success-600 font-medium">You matched them all — your assistant may note this in your session record.</p>}
-      <div className="grid grid-cols-4 gap-2 max-w-xs">
-        {cards.map((c, i) => {
-          const isVisible = flipped.includes(i) || matched.has(i);
-          return (
-            <button
-              key={i}
-              onClick={() => handleFlip(i)}
-              className={`h-16 rounded-lg border text-2xl flex items-center justify-center transition-colors ${
-                isVisible ? "bg-primary-50 border-primary-300" : "bg-neutral-100 border-neutral-200"
-              }`}
-            >
-              {isVisible ? c : ""}
-            </button>
-          );
-        })}
+    <div className="flex flex-col lg:flex-row lg:items-start gap-5 max-w-3xl mx-auto">
+      <div className="flex-1 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm space-y-4">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-neutral-500"><ArrowLeft className="h-4 w-4" /> Back</button>
+        <div className="flex items-center gap-2 text-xs text-neutral-400">
+          <span>Moves: {moves}</span>
+          <StarRow count={Math.max(wonStars, earned)} />
+        </div>
+        {won && <p className="text-sm text-success-600 font-medium">Matched them all in {moves} moves — earned {wonStars} star{wonStars === 1 ? "" : "s"}.</p>}
+        <div className="grid grid-cols-4 gap-2 max-w-xs">
+          {cards.map((c, i) => {
+            const isVisible = flipped.includes(i) || matched.has(i);
+            return (
+              <button
+                key={i}
+                onClick={() => handleFlip(i)}
+                className={`h-16 rounded-lg border text-2xl flex items-center justify-center transition-colors ${
+                  isVisible ? "bg-primary-50 border-primary-300" : "bg-neutral-100 border-neutral-200"
+                }`}
+              >
+                {isVisible ? c : ""}
+              </button>
+            );
+          })}
+        </div>
       </div>
+      <HowToPlay
+        title="Memory match"
+        icon={Grid3x3}
+        steps={[
+          "Tap a card to flip it, then tap a second card.",
+          "If the two symbols match they stay face up.",
+          "If not, they flip back — remember where they were.",
+          "Clear the board in as few moves as you can.",
+        ]}
+      />
     </div>
   );
 }
@@ -168,6 +323,7 @@ export default function PatientDeviceSessionPage() {
   const highlightScaleId = searchParams.get("assessment");
 
   const { session, isLoading, raiseSos } = useDeviceSession(appointmentId);
+  const { stars, total: totalStars, award } = useSessionStars(appointmentId);
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [view, setView] = useState<View>("home");
   const [sosOpen, setSosOpen] = useState(false);
@@ -299,19 +455,29 @@ export default function PatientDeviceSessionPage() {
 
               {/* ─── In-session calming tools ─── */}
               <div>
-                <h3 className="text-sm font-semibold text-neutral-700 mb-2">While you&apos;re in your session</h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-neutral-700">While you&apos;re in your session</h3>
+                  <span className="flex items-center gap-1 text-xs font-medium text-neutral-500">
+                    <Star className="h-3.5 w-3.5 fill-warning-500 text-warning-500" />
+                    {totalStars} / 9 stars
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-400 mb-2">Open an activity for a short how-to, then play to earn stars.</p>
                 <div className="grid grid-cols-2 gap-3">
                   <button onClick={() => setView("breathe")} className="p-4 rounded-xl border border-neutral-200 bg-white hover:border-primary-300 text-left space-y-1">
                     <Wind className="h-5 w-5 text-primary-500" />
                     <p className="text-sm font-medium">Breathing Exercise</p>
+                    <StarRow count={stars.breathe} />
                   </button>
                   <button onClick={() => setView("game")} className="p-4 rounded-xl border border-neutral-200 bg-white hover:border-primary-300 text-left space-y-1">
                     <Grid3x3 className="h-5 w-5 text-primary-500" />
                     <p className="text-sm font-medium">Memory Match</p>
+                    <StarRow count={stars.game} />
                   </button>
                   <button onClick={() => setView("puzzle")} className="p-4 rounded-xl border border-neutral-200 bg-white hover:border-primary-300 text-left space-y-1 col-span-2">
                     <Puzzle className="h-5 w-5 text-primary-500" />
                     <p className="text-sm font-medium">Puzzle</p>
+                    <StarRow count={stars.puzzle} />
                   </button>
                 </div>
               </div>
@@ -320,9 +486,9 @@ export default function PatientDeviceSessionPage() {
         </div>
       )}
 
-      {view === "breathe" && <div className="h-full p-6"><BreathingView onBack={() => setView("home")} /></div>}
-      {view === "game" && <div className="p-6"><GameView onBack={() => setView("home")} /></div>}
-      {view === "puzzle" && <div className="p-4 sm:p-6"><PuzzleView onBack={() => setView("home")} /></div>}
+      {view === "breathe" && <div className="p-4 sm:p-6"><BreathingView onBack={() => setView("home")} award={(n) => award("breathe", n)} earned={stars.breathe} /></div>}
+      {view === "game" && <div className="p-4 sm:p-6"><GameView onBack={() => setView("home")} award={(n) => award("game", n)} earned={stars.game} /></div>}
+      {view === "puzzle" && <div className="p-4 sm:p-6"><PuzzleView onBack={() => setView("home")} award={(n) => award("puzzle", n)} earned={stars.puzzle} /></div>}
 
       {/* SOS floating button — only meaningful while the session is live */}
       {isLive && (

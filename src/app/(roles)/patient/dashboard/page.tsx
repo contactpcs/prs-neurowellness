@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Bell, Search, Calendar, CheckCircle, Clock, ChevronRight,
   User, MessageSquare, PlayCircle, ClipboardList, TrendingUp,
-  FileText, Zap, Check, Circle,
+  FileText, Zap, Check, Circle, Upload, CreditCard,
 } from "lucide-react";
 import {
   usePatientDashboard,
@@ -99,7 +99,8 @@ function PatientDashboard() {
 
   const nextAppt = upcomingAppts[0];
   const daysToNext = nextAppt ? daysUntil(nextAppt.start_at) : null;
-  const hasUnpaidAppt = appointments.some((a) => a.status === "selected");
+  const unpaidAppts = upcomingAppts.filter((a) => a.status === "selected");
+  const hasUnpaidAppt = unpaidAppts.length > 0;
 
   const completedAppts = appointments.filter((a) => a.status === "completed").length;
   const totalPlannedAppts = appointments.length;
@@ -226,45 +227,8 @@ function PatientDashboard() {
           </div>
         )}
 
-        {/* Stats Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatCard
-            icon={<CheckCircle className="w-4 h-4 text-blue-500" />}
-            label="Sessions completed"
-            value={completedAppts.toString()}
-            sub={totalPlannedAppts > 0 ? `of ${totalPlannedAppts} planned` : "No sessions yet"}
-          />
-          <StatCard
-            icon={<TrendingUp className="w-4 h-4 text-orange-500" />}
-            label="Treatment progress"
-            value={`${treatmentPct}%`}
-            sub="On track"
-            highlight
-          />
-          <StatCard
-            icon={<ClipboardList className="w-4 h-4 text-orange-500" />}
-            label="PRS assessment"
-            value={
-              scoreInstances.length > 0 ? `${prsProgress}%`
-                : pendingAssessments.length > 0 ? "Pending" : "—"
-            }
-            sub={
-              pendingAssessments.length > 0 ? "Due soon"
-                : scoreInstances[0]?.completed_at
-                  ? `Last: ${formatShortDate(scoreInstances[0].completed_at)}`
-                  : "No data"
-            }
-          />
-          <StatCard
-            icon={<FileText className="w-4 h-4 text-green-500" />}
-            label="New reports"
-            value={scoreInstances.length.toString()}
-            sub={scoreInstances.length > 0 ? "Ready to view" : "No new reports"}
-          />
-        </div>
-
         {/* Action Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {/* Profile completion */}
           <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex flex-col">
             <div className="flex items-center justify-between mb-2">
@@ -344,6 +308,36 @@ function PatientDashboard() {
             )}
           </div>
 
+          {/* Pay for upcoming sessions */}
+          {hasUnpaidAppt && (
+            <div className="bg-white rounded-xl p-4 border border-orange-200 shadow-sm flex flex-col">
+              <div className="flex items-center justify-between mb-2">
+                <CreditCard className="w-4 h-4 text-orange-500" />
+                <span className="text-[10px] font-medium text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full">
+                  Payment due
+                </span>
+              </div>
+              <h3 className="text-sm font-semibold text-gray-900">Pay for upcoming sessions</h3>
+              <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                {unpaidAppts.length} upcoming session{unpaidAppts.length !== 1 ? "s" : ""} awaiting payment.
+                Settle now so your {unpaidAppts.length !== 1 ? "sessions can" : "session can"} proceed.
+              </p>
+              {unpaidAppts[0] && (
+                <div className="mt-2 flex items-center gap-1.5 text-[10px] text-orange-600 bg-orange-50 rounded-lg px-2.5 py-1.5">
+                  <Clock className="w-3 h-3 flex-shrink-0" />
+                  <span>Earliest: {formatShortDate(unpaidAppts[0].start_at)}</span>
+                </div>
+              )}
+              <button
+                onClick={() => unpaidAppts[0] && setPayingId(unpaidAppts[0].appointment_id)}
+                className="mt-auto w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium hover:opacity-90 transition-opacity"
+                style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
+              >
+                <CreditCard className="w-3.5 h-3.5" /> Pay now
+              </button>
+            </div>
+          )}
+
           {/* Book appointment */}
           <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex flex-col">
             <div className="flex items-center justify-between mb-2">
@@ -358,12 +352,70 @@ function PatientDashboard() {
             </p>
             <div className="mt-2 flex items-center gap-1 text-[10px] text-gray-500">
               <Zap className="w-3 h-3 text-orange-400" />
-              NW Assistant can find the best available slot for you.
+              Find the best available slot for you.
             </div>
             <Link href="/patient/appointments" className="mt-auto w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium hover:opacity-90 transition-opacity" style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}>
               <Zap className="w-3.5 h-3.5" /> Book appointment
             </Link>
           </div>
+
+          {/* Upload medical history */}
+          <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex flex-col">
+            <div className="flex items-center justify-between mb-2">
+              <FileText className="w-4 h-4 text-blue-500" />
+              <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
+                Quick action
+              </span>
+            </div>
+            <h3 className="text-sm font-semibold text-gray-900">Upload your medical history</h3>
+            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+              Add previous prescriptions, lab reports, or scans so your care team has the full picture before your session.
+            </p>
+            <Link
+              href="/patient/profile?tab=files"
+              className="mt-auto w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium hover:opacity-90 transition-opacity"
+              style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
+            >
+              <Upload className="w-3.5 h-3.5" /> Upload documents
+            </Link>
+          </div>
+        </div>
+
+        {/* Stats Row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <StatCard
+            icon={<CheckCircle className="w-4 h-4 text-blue-500" />}
+            label="Sessions completed"
+            value={completedAppts.toString()}
+            sub={totalPlannedAppts > 0 ? `of ${totalPlannedAppts} planned` : "No sessions yet"}
+          />
+          <StatCard
+            icon={<TrendingUp className="w-4 h-4 text-orange-500" />}
+            label="Treatment progress"
+            value={`${treatmentPct}%`}
+            sub="On track"
+            highlight
+          />
+          <StatCard
+            icon={<ClipboardList className="w-4 h-4 text-orange-500" />}
+            label="PRS assessment"
+            value={
+              scoreInstances.length > 0 ? `${prsProgress}%`
+                : pendingAssessments.length > 0 ? "Pending" : "—"
+            }
+            sub={
+              pendingAssessments.length > 0 ? "Due soon"
+                : scoreInstances[0]?.completed_at
+                  ? `Last: ${formatShortDate(scoreInstances[0].completed_at)}`
+                  : "No data"
+            }
+          />
+          <StatCard
+            icon={<FileText className="w-4 h-4 text-green-500" />}
+            label="New reports"
+            value={scoreInstances.length.toString()}
+            sub={scoreInstances.length > 0 ? "Ready to view" : "No new reports"}
+          />
         </div>
 
         {/* Middle row: Appointments + Clinician */}
@@ -403,7 +455,18 @@ function PatientDashboard() {
                         {" · In-person"}
                       </p>
                     </div>
-                    <AppointmentStatusBadge status={appt.status} />
+                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                      <AppointmentStatusBadge status={appt.status} />
+                      {appt.status === "selected" && (
+                        <button
+                          onClick={() => setPayingId(appt.appointment_id)}
+                          className="flex items-center gap-1 text-[10px] font-semibold text-white px-2 py-1 rounded-md hover:opacity-90"
+                          style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
+                        >
+                          <CreditCard className="w-3 h-3" /> Pay now
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
