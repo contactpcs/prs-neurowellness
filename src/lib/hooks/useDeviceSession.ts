@@ -130,9 +130,9 @@ export function useDeviceSession(appointmentId: string | undefined) {
       await reload();
     },
 
-    async complete() {
+    async complete(earlyCompletionOverrideReason?: string) {
       if (!appointmentId) return;
-      await deviceSessionService.complete(appointmentId);
+      await deviceSessionService.complete(appointmentId, earlyCompletionOverrideReason);
       await reload();
     },
 

@@ -34,7 +34,8 @@ export const ENDPOINTS = {
 
   // ─── Users ───
   USERS: {
-    PROFILE: "/auth/me", // real — GET only, no PUT (no profile-edit endpoint exists)
+    PROFILE: "/auth/me", // real — GET only
+    PATIENT_SELF_UPDATE: (patientId: string) => `/patients/${patientId}/self`, // real — PATCH, patient self-edit
   },
 
   // ─── Billable Items (super_admin pricing catalog) ───
@@ -286,6 +287,11 @@ export const ENDPOINTS = {
   CLINIC_DEVICE_INVENTORY: {
     LIST: (clinicId: string) => `/clinics/${clinicId}/devices`,
     ITEM: (clinicId: string, clinicDeviceId: string) => `/clinics/${clinicId}/devices/${clinicDeviceId}`,
+    // Serial-numbered physical units under one clinic_device row (73_device_units.sql).
+    // Optional — a clinic can keep using quantity alone with no units listed.
+    UNITS: (clinicId: string, clinicDeviceId: string) => `/clinics/${clinicId}/devices/${clinicDeviceId}/units`,
+    UNIT: (clinicId: string, clinicDeviceId: string, deviceUnitId: string) =>
+      `/clinics/${clinicId}/devices/${clinicDeviceId}/units/${deviceUnitId}`,
   },
 
   // ─── Schedule ───

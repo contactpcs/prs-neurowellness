@@ -66,6 +66,28 @@ export interface ClinicDeviceUpdate {
   notes?: string | null;
 }
 
+// ─── Device units (serial-numbered physical units, 73_device_units.sql) ───
+// Optional layer under one ClinicDeviceRead row. A clinic can keep using
+// quantity alone with no units listed here.
+export interface DeviceUnitRead {
+  device_unit_id: string;
+  clinic_device_id: string;
+  serial_number: string;
+  status: "active" | "retired";
+  notes?: string | null;
+}
+
+export interface DeviceUnitCreate {
+  serial_number: string;
+  notes?: string | null;
+}
+
+export interface DeviceUnitUpdate {
+  serial_number?: string;
+  status?: "active" | "retired";
+  notes?: string | null;
+}
+
 // ─── Clinic device schedule (availability panel, Step 7) ───
 // One pool per DEVICE the clinic owns (clinic_device_id), not one blanket
 // number for the whole clinic — see backend SQL/v1/41_device_capacity_per_device.sql.
@@ -352,6 +374,11 @@ export interface ProtocolCreate {
    *  entirely. */
   instance_id: string;
   device_id: string;
+  /** Optional pinned physical unit (DeviceUnitRead), narrowing device_id to
+   *  one specific serialized machine. Omit for "any unit of this device
+   *  type" — existing behaviour. When set, device_sessions prefills the
+   *  CA's serial field from it at session start. */
+  device_unit_id?: string | null;
   /** Exactly one of placement_id (catalogue) or custom_montage_id
    *  (doctor-authored, 38/54) — chk_protocol_plan_one_placement.
    *  dosing_id is required with placement_id, and must be omitted with
@@ -433,6 +460,8 @@ export interface ProtocolRead {
   instance_number?: number | null;
   instance_status?: string | null;
   device_id: string;
+  device_unit_id?: string | null;
+  device_unit_serial_number?: string | null;
   set_by: string;
   session_count: number;
   follow_up_every_n?: number | null;

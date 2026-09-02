@@ -50,8 +50,12 @@ export const deviceSessionService = {
     return data;
   },
 
-  async complete(appointmentId: string): Promise<DeviceSessionRead> {
-    const { data } = await apiClient.post(ENDPOINTS.DEVICE_SESSIONS.COMPLETE(appointmentId));
+  // early_completion_override_reason is required by the server whenever
+  // elapsed time is under 75% of the prescribed duration.
+  async complete(appointmentId: string, earlyCompletionOverrideReason?: string): Promise<DeviceSessionRead> {
+    const { data } = await apiClient.post(ENDPOINTS.DEVICE_SESSIONS.COMPLETE(appointmentId), {
+      early_completion_override_reason: earlyCompletionOverrideReason,
+    });
     return data;
   },
 

@@ -16,6 +16,7 @@ import { CountdownTimer } from "@/components/deviceSession/CountdownTimer";
 import { SymptomChipSelector } from "@/components/deviceSession/SymptomChipSelector";
 import { AdverseEventForm } from "@/components/deviceSession/AdverseEventForm";
 import { PauseStopDialog } from "@/components/deviceSession/PauseStopDialog";
+import { EarlyCompletionDialog } from "@/components/deviceSession/EarlyCompletionDialog";
 import type { Appointment } from "@/types/domain.types";
 import type { ProtocolDetail } from "@/types/treatmentProtocol.types";
 import type { CognitiveActivity, ScaleDeliveryMode } from "@/types/deviceSession.types";
@@ -64,6 +65,7 @@ export default function DeviceSessionLivePage() {
   const [activeSection, setActiveSection] = useState<SectionKey>("device-fit");
   const [pauseOpen, setPauseOpen] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
+  const [earlyCompletionOpen, setEarlyCompletionOpen] = useState(false);
   const [showAeForm, setShowAeForm] = useState(false);
 
   // Section-local drafts
@@ -142,13 +144,19 @@ export default function DeviceSessionLivePage() {
   const feedbackDone = !!session.feedback;
   const nextSessionDone = !!session.next_session_confirmation;
   const timerDone = remaining <= 0;
+  // A CA may complete once >= 75% of the prescribed duration has elapsed,
+  // but must supply an override reason + patient-stable confirmation — see
+  // EarlyCompletionDialog and device_sessions/service.py complete() (server
+  // re-enforces this threshold; it is not just a UI gate).
+  const elapsedRatio = totalSeconds > 0 ? 1 - remaining / totalSeconds : 0;
+  const earlyEligible = elapsedRatio >= 0.75;
   // PRS assessments are standalone — whether a scale was sent to the
   // patient's app or answered by the CA is independent of the device
   // session's own lifecycle, so it must not block "Mark Session as
   // Completed" the way deviceFitDone/feedbackDone/nextSessionDone do.
-  const canComplete = timerDone && deviceFitDone && feedbackDone && nextSessionDone;
+  const canComplete = (timerDone || earlyEligible) && deviceFitDone && feedbackDone && nextSessionDone;
   const missingGates = [
-    !timerDone && "timer hasn't reached 0",
+    !timerDone && !earlyEligible && "under 75% of prescribed duration",
     !deviceFitDone && "device-fit checklist incomplete",
     !feedbackDone && "patient feedback not recorded",
     !nextSessionDone && "next session not confirmed",
@@ -266,7 +274,11 @@ export default function DeviceSessionLivePage() {
               </Button>
               <Button
                 size="sm"
-                onClick={async () => { await complete(); router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`); }}
+                onClick={async () => {
+                  if (!timerDone) { setEarlyCompletionOpen(true); return; }
+                  await complete();
+                  router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`);
+                }}
                 disabled={!canComplete}
                 title={missingGates.length ? `Still needed: ${missingGates.join(", ")}` : undefined}
               >
@@ -500,6 +512,15 @@ export default function DeviceSessionLivePage() {
         isOpen={stopOpen}
         onClose={() => setStopOpen(false)}
         onConfirm={async (r, d) => { await stop(r, d); setStopOpen(false); router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`); }}
+      />
+      <EarlyCompletionDialog
+        isOpen={earlyCompletionOpen}
+        onClose={() => setEarlyCompletionOpen(false)}
+        onConfirm={async (reason) => {
+          await complete(reason);
+          setEarlyCompletionOpen(false);
+          router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`);
+        }}
       />
     </div>
   );

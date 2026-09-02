@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Cpu, Plus, Pencil, Trash2, PowerOff, Power } from "lucide-react";
+import { ArrowLeft, Cpu, Plus, Pencil, Trash2, PowerOff, Power, Hash } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
 import { Card, CardContent, Button, Input, Select, Modal, Badge, Skeleton } from "@/components/ui";
 import { clinicDevicesService } from "@/lib/api/services/clinicDevices.service";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
+import { DeviceUnitsManager } from "@/components/deviceSession/DeviceUnitsManager";
 import type { ClinicDeviceRead, DeviceRead } from "@/types/treatmentProtocol.types";
 
 function extractErrorMessage(err: any, fallback: string): string {
@@ -219,6 +220,7 @@ export default function ClinicDevicesPage() {
 
   const [addOpen, setAddOpen] = useState(false);
   const [editRow, setEditRow] = useState<ClinicDeviceRead | null>(null);
+  const [unitsRow, setUnitsRow] = useState<ClinicDeviceRead | null>(null);
   const [deleteRow, setDeleteRow] = useState<ClinicDeviceRead | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -366,6 +368,13 @@ export default function ClinicDevicesPage() {
                 </div>
                 <div className="flex items-center gap-1 ml-4 flex-shrink-0">
                   <button
+                    onClick={() => setUnitsRow(row)}
+                    className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
+                    title="Manage serial numbers"
+                  >
+                    <Hash className="h-4 w-4" />
+                  </button>
+                  <button
                     onClick={() => setEditRow(row)}
                     className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
                     title="Edit quantity"
@@ -418,6 +427,16 @@ export default function ClinicDevicesPage() {
             }
             onClose={() => setEditRow(null)}
           />
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={!!unitsRow}
+        onClose={() => setUnitsRow(null)}
+        title={unitsRow ? `Serial Numbers — ${unitsRow.device_name ?? "Device"}` : "Serial Numbers"}
+      >
+        {clinicId && unitsRow && (
+          <DeviceUnitsManager clinicId={clinicId} clinicDeviceId={unitsRow.clinic_device_id} />
         )}
       </Modal>
 

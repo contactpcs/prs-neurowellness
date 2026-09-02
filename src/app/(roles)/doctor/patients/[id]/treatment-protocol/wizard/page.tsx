@@ -29,6 +29,10 @@ interface AssignedScale extends ProtocolScaleAssignment {
 
 interface WizardState {
   deviceId: string | null;
+  /** Optional pinned physical unit — narrows deviceId to one specific
+   *  serialized machine so device_sessions can auto-fetch its serial at
+   *  session start. null = "any unit of this device type" (default). */
+  deviceUnitId: string | null;
   conditionIds: string[];
   diagnosisIds: string[];
   placementId: string | null;
@@ -58,7 +62,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 
 function emptyState(): WizardState {
   return {
-    deviceId: null, conditionIds: [], diagnosisIds: [],
+    deviceId: null, deviceUnitId: null, conditionIds: [], diagnosisIds: [],
     placementId: null, anodeSite: null, cathodeSites: [],
     montageMode: "catalogue", customMontageId: null,
     dosingId: null, currentMa: "", sessionDurationMin: "", rampSeconds: "30",
@@ -134,6 +138,7 @@ export default function TreatmentProtocolWizardPage() {
       setState((s) => ({
         ...s,
         deviceId: detail.device_id,
+        deviceUnitId: detail.device_unit_id || null,
         placementId: detail.placement_id || null,
         anodeSite: detail.placement?.anode_site || null,
         cathodeSites: detail.placement?.cathode_site ? [detail.placement.cathode_site] : (detail.placement?.return_sites || []),
@@ -161,6 +166,24 @@ export default function TreatmentProtocolWizardPage() {
     treatmentProtocolService.listDevices({ clinicId: user.clinic_id })
       .then(setDevices).catch(() => setDevices([])).finally(() => setDevicesLoading(false));
   }, [user?.clinic_id]);
+
+  // Optional unit picker under Step 1 — pinning a specific serialized unit
+  // lets device_sessions auto-fetch its serial at session start instead of
+  // a CA typing one. Units list is empty (and the picker hides) for a
+  // clinic that hasn't registered any serials — quantity-only tracking
+  // keeps working exactly as before.
+  const [deviceUnits, setDeviceUnits] = useState<import("@/types/treatmentProtocol.types").DeviceUnitRead[]>([]);
+  useEffect(() => {
+    if (!user?.clinic_id || !state.deviceId) { setDeviceUnits([]); return; }
+    clinicDevicesService.list(user.clinic_id, true)
+      .then((rows) => {
+        const cd = rows.find((r) => r.device_id === state.deviceId);
+        if (!cd) return [];
+        return clinicDevicesService.listUnits(user.clinic_id!, cd.clinic_device_id, true);
+      })
+      .then((units) => setDeviceUnits(units || []))
+      .catch(() => setDeviceUnits([]));
+  }, [user?.clinic_id, state.deviceId]);
 
   // ─── Step 2: Condition ───
   useEffect(() => {
@@ -385,6 +408,7 @@ export default function TreatmentProtocolWizardPage() {
       const payload: ProtocolCreate = {
         instance_id: instanceId,
         device_id: state.deviceId,
+        device_unit_id: state.deviceUnitId || undefined,
         // Exactly one of placement_id (catalogue) or custom_montage_id
         // (doctor-authored, 38/54). dosing_id only accompanies the
         // catalogue path — a custom montage has no catalogued dose to
@@ -561,7 +585,28 @@ export default function TreatmentProtocolWizardPage() {
           <Card>
             <CardContent>
               {step === 0 && (
-                <DeviceStep devices={devices} loading={devicesLoading} selected={state.deviceId} onSelect={(id) => set("deviceId", id)} />
+                <>
+                  <DeviceStep
+                    devices={devices}
+                    loading={devicesLoading}
+                    selected={state.deviceId}
+                    onSelect={(id) => setState((s) => ({ ...s, deviceId: id, deviceUnitId: null }))}
+                  />
+                  {state.deviceId && deviceUnits.length > 0 && (
+                    <div className="mt-4">
+                      <Select
+                        label="Specific unit (optional)"
+                        value={state.deviceUnitId ?? ""}
+                        onChange={(e) => set("deviceUnitId", e.target.value || null)}
+                        options={deviceUnits.map((u) => ({ value: u.device_unit_id, label: u.serial_number }))}
+                        placeholder="Any unit of this device type"
+                      />
+                      <p className="mt-1 text-xs text-neutral-500">
+                        Pinning a unit pre-fills its serial for the clinical assistant at session start.
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
               {step === 1 && (
                 <ConditionStep conditions={conditions} selected={state.conditionIds} onToggle={(id) => {
