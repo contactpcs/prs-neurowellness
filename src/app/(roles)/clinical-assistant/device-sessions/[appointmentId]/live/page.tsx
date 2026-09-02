@@ -42,7 +42,7 @@ const ACTIVITY_OPTIONS: { value: CognitiveActivity; label: string }[] = [
 type SectionKey = "device-fit" | "symptoms" | "notes" | "adverse-events" | "activities" | "scales" | "feedback" | "media" | "next-session";
 
 const SECTIONS: { key: SectionKey; label: string; icon: typeof Gauge }[] = [
-  { key: "device-fit", label: "Device Fit & Impedance", icon: Gauge },
+  { key: "device-fit", label: "Impedance", icon: Gauge },
   { key: "symptoms", label: "Symptoms Observed", icon: Info },
   { key: "notes", label: "Clinical Notes", icon: FileText },
   { key: "adverse-events", label: "Adverse Events", icon: AlertTriangle },
@@ -300,17 +300,6 @@ export default function DeviceSessionLivePage() {
           <div className="max-w-2xl mx-auto">
             {activeSection === "device-fit" && (
               <Card><CardContent className="space-y-3 pt-4">
-                {DEVICE_FIT_ITEMS.map((item) => (
-                  <label key={item.code} className="flex items-start gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={!!deviceFitChecklist[item.code]}
-                      onChange={(e) => setDeviceFitChecklist((prev) => ({ ...prev, [item.code]: e.target.checked }))}
-                      className="mt-0.5"
-                    />
-                    {item.label}
-                  </label>
-                ))}
                 <Input label="Impedance reading (kΩ)" type="number" value={impedance} onChange={(e) => setImpedance(e.target.value)} />
                 {impedanceTone && <span className={`inline-block text-xs px-2 py-1 rounded-full border ${impedanceTone.tone}`}>{impedanceTone.label}</span>}
                 <Button size="sm" onClick={() => setDeviceFit(deviceFitChecklist, impedance ? Number(impedance) : undefined)}>Save</Button>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   User, ShoppingBag, CreditCard, Bell, Settings,
   Check, X, AlertCircle, Plus, Stethoscope, Edit2,
@@ -366,6 +367,14 @@ function MedicalFilesSection({ patientId, clinicId }: { patientId?: string; clin
 // ─── component ────────────────────────────────────────────────────
 
 export default function PatientProfilePage() {
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <PatientProfile />
+    </Suspense>
+  );
+}
+
+function PatientProfile() {
   const dispatch   = useAppDispatch();
   const myDoctor   = useAppSelector(selectMyDoctor);
   const { user }   = useAuth();
@@ -376,7 +385,14 @@ export default function PatientProfilePage() {
   const [isSaving,    setIsSaving]    = useState(false);
   const [saveError,   setSaveError]   = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const searchParams = useSearchParams();
   const [activeTab,   setActiveTab]   = useState<TabId>("overview");
+
+  // Deep-link support: /patient/profile?tab=files opens the Medical History tab.
+  useEffect(() => {
+    const t = searchParams.get("tab");
+    if (t && TABS.some((tab) => tab.id === t)) setActiveTab(t as TabId);
+  }, [searchParams]);
   const [settings,    setSettings]    = useState({
     emailReminders: true, weeklyReport: true, shareData: true, darkMode: false,
   });

@@ -56,6 +56,7 @@ export interface DeviceSessionChecklistUpdate {
   ramp_down_deviation_reason?: string | null;
   montage_verified?: boolean;
   contraindication_checklist?: Record<string, boolean>;
+  device_fit_checklist?: Record<string, boolean>;
   patient_consent?: ConsentBlock;
   ca_declaration?: ConsentBlock;
 }
