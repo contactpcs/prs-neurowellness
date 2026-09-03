@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight, ChevronLeft, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save, StickyNote, FileText, Stethoscope } from "lucide-react";
+import { ChevronRight, ChevronLeft, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save, StickyNote, FileText } from "lucide-react";
 import { PatientDetailSkeleton, Button } from "@/components/ui";
 import { AnamnesisForm } from "@/components/assessment/AnamnesisForm";
 import { adminService } from "@/lib/api/services/admin.service";
@@ -379,34 +379,21 @@ export default function DoctorPatientDetailPage() {
 
         {/* Session context banner — only for a Follow-up / Protocol Follow-up
             session; the Consultation view (no ?session=) doesn't need one. */}
-        {currentSession && sessionId && (
-          <div className={`rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap ${isLatestSession ? "bg-blue-50 border border-blue-100" : "bg-neutral-100 border border-neutral-200"}`}>
+        {currentSession && sessionId && !isLatestSession && (
+          <div className="rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap bg-neutral-100 border border-neutral-200">
             <div className="flex items-center gap-2 flex-1 min-w-[220px]">
-              {isLatestSession ? <Stethoscope className="w-4 h-4 text-blue-600 flex-shrink-0" /> : <Lock className="w-4 h-4 text-neutral-500 flex-shrink-0" />}
+              <Lock className="w-4 h-4 text-neutral-500 flex-shrink-0" />
               <div>
                 <p className="text-sm font-semibold text-neutral-900">{currentSession.label}</p>
-                <p className="text-xs text-neutral-500">
-                  {isLatestSession
-                    ? "Anything recorded here is new — it never changes a previous session's data."
-                    : "This session is frozen — a later session exists, so its data is read-only."}
-                </p>
+                <p className="text-xs text-neutral-500">This session is frozen — a later session exists, so its data is read-only.</p>
               </div>
             </div>
-            {isLatestSession ? (
-              <button
-                onClick={() => setSelectedSection("anamnesis")}
-                className="px-3.5 py-2 rounded-lg bg-brand-gradient text-white text-xs font-semibold flex-shrink-0"
-              >
-                Record New Anamnesis
-              </button>
-            ) : (
-              <button
-                onClick={() => openFinalReport(currentSession)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-xs font-semibold flex-shrink-0"
-              >
-                <FileText className="w-3.5 h-3.5" /> Generate Final Report
-              </button>
-            )}
+            <button
+              onClick={() => openFinalReport(currentSession)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-xs font-semibold flex-shrink-0"
+            >
+              <FileText className="w-3.5 h-3.5" /> Generate Final Report
+            </button>
           </div>
         )}
 

@@ -21,15 +21,6 @@ import type { Appointment } from "@/types/domain.types";
 import type { ProtocolDetail } from "@/types/treatmentProtocol.types";
 import type { CognitiveActivity, ScaleDeliveryMode } from "@/types/deviceSession.types";
 
-const DEVICE_FIT_ITEMS = [
-  { code: "sponges_soaked", label: "Sponges saline-soaked" },
-  { code: "placement_measured", label: "Anode/cathode placement measured against map" },
-  { code: "headstrap_hair", label: "Headstrap secured, hair clear" },
-  { code: "cable_routing", label: "Cable routing checked" },
-  { code: "impedance_checked", label: "Impedance checked pre-ramp" },
-  { code: "patient_briefed", label: "Patient briefed to report pain" },
-];
-
 const ACTIVITY_OPTIONS: { value: CognitiveActivity; label: string }[] = [
   { value: "sudoku", label: "Sudoku" },
   { value: "memory_game", label: "Memory card game" },
@@ -140,7 +131,6 @@ export default function DeviceSessionLivePage() {
     return { label: "Too high — re-wet sponges or adjust strap", tone: "text-danger-700 bg-danger-50 border-danger-200" };
   })();
 
-  const deviceFitDone = DEVICE_FIT_ITEMS.every((i) => deviceFitChecklist[i.code]);
   const feedbackDone = !!session.feedback;
   const nextSessionDone = !!session.next_session_confirmation;
   const timerDone = remaining <= 0;
@@ -153,11 +143,10 @@ export default function DeviceSessionLivePage() {
   // PRS assessments are standalone — whether a scale was sent to the
   // patient's app or answered by the CA is independent of the device
   // session's own lifecycle, so it must not block "Mark Session as
-  // Completed" the way deviceFitDone/feedbackDone/nextSessionDone do.
-  const canComplete = (timerDone || earlyEligible) && deviceFitDone && feedbackDone && nextSessionDone;
+  // Completed" the way feedbackDone/nextSessionDone do.
+  const canComplete = (timerDone || earlyEligible) && feedbackDone && nextSessionDone;
   const missingGates = [
     !timerDone && !earlyEligible && "under 75% of prescribed duration",
-    !deviceFitDone && "device-fit checklist incomplete",
     !feedbackDone && "patient feedback not recorded",
     !nextSessionDone && "next session not confirmed",
   ].filter(Boolean) as string[];

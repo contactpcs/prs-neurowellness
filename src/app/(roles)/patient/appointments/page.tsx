@@ -9,7 +9,7 @@ import {
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { BookAppointmentModal } from "@/components/appointments/BookAppointmentModal";
 import { PatientMonthCalendar } from "@/components/appointments/PatientMonthCalendar";
-import { STATUS_LABEL, ACTIVE_APPOINTMENT_STATUSES } from "@/lib/appointmentStatus";
+import { STATUS_LABEL, ACTIVE_APPOINTMENT_STATUSES, isSupersededCancellation } from "@/lib/appointmentStatus";
 import type { Appointment, AppointmentType } from "@/types/domain.types";
 
 function todayStr(): string {
@@ -77,16 +77,22 @@ export default function PatientAppointmentsPage() {
     return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
   }, [loadAppointments]);
 
+  // Drop appointments auto-cancelled by a protocol amendment superseding
+  // their protocol — that's the old version's slot being cleared, not a
+  // cancellation the patient should see; the new protocol's own appointments
+  // carry the current schedule.
+  const visibleAppts = useMemo(() => appts.filter((a) => !isSupersededCancellation(a)), [appts]);
+
   const now = new Date();
-  const upcoming = appts.filter((a) => {
+  const upcoming = visibleAppts.filter((a) => {
     const d = new Date(`${a.appointment_date}T${a.start_time || "00:00"}`);
     return d >= now && !["cancelled", "no_show", "completed"].includes(a.status);
   });
   // Same gate the backend enforces (book_initial / book_follow_up): a
   // completed initial unlocks follow-ups; an initial still in flight blocks
   // booking anything new until it resolves.
-  const hasCompletedInitial = appts.some((a) => a.appointment_type === "initial" && a.status === "completed");
-  const hasActiveInitial = appts.some(
+  const hasCompletedInitial = visibleAppts.some((a) => a.appointment_type === "initial" && a.status === "completed");
+  const hasActiveInitial = visibleAppts.some(
     (a) => a.appointment_type === "initial" && ACTIVE_APPOINTMENT_STATUSES.includes(a.status),
   );
   const bookableType: AppointmentType | null = hasActiveInitial ? null : hasCompletedInitial ? "follow_up" : "initial";
@@ -108,14 +114,14 @@ export default function PatientAppointmentsPage() {
     [upcoming],
   );
 
-  const dayAppts = appts.filter((a) => a.appointment_date === selectedDate);
+  const dayAppts = visibleAppts.filter((a) => a.appointment_date === selectedDate);
 
   // A day with exactly one appointment goes straight to its detail page —
   // no point making the patient click twice. Multiple on the same day still
   // land on the picker list below so they can choose which one.
   function handleSelectDate(dateStr: string) {
     setSelectedDate(dateStr);
-    const onThatDay = appts.filter((a) => a.appointment_date === dateStr);
+    const onThatDay = visibleAppts.filter((a) => a.appointment_date === dateStr);
     if (onThatDay.length === 1) router.push(`/patient/appointments/${onThatDay[0].appointment_id}`);
   }
 
@@ -161,7 +167,7 @@ export default function PatientAppointmentsPage() {
 
       {/* Calendar + day detail */}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4">
-        <PatientMonthCalendar appointments={appts} selectedDate={selectedDate} onSelectDate={handleSelectDate} />
+        <PatientMonthCalendar appointments={visibleAppts} selectedDate={selectedDate} onSelectDate={handleSelectDate} />
 
         <section className="space-y-3">
           <div className="flex items-center justify-between">
