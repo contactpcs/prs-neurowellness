@@ -579,7 +579,11 @@ export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
         </Card>
       ) : (
         <div className="space-y-2">
-          {protocols.map((p, i) => (
+          {/* protocols stays ascending (index i = chronological "Treatment
+              Session N" numbering, relied on above for treatmentSessionNumber
+              too) — only the RENDER order is reversed so the latest session
+              shows first, same trick as the History tab's protocols.slice().reverse(). */}
+          {protocols.map((p, i) => [p, i] as const).slice().reverse().map(([p, i]) => (
             <button key={p.protocol_id} onClick={() => setOpenProtocolId(p.protocol_id)} className="w-full text-left">
               <Card className={p.status === "active" ? "border-blue-200" : ""}>
                 <CardContent className="flex items-center gap-4 py-3">

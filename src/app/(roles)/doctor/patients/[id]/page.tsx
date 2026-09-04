@@ -489,6 +489,7 @@ export default function DoctorPatientDetailPage() {
                   }}
                   lockedForSession={sessionLocked}
                   appointmentId={currentSession?.appointment.appointment_id ?? sessionId}
+                  sessionDate={currentSession?.appointment.appointment_date}
                 />
               ) : selectedSection === "brain-mapping" ? (
                 <div className="space-y-5">

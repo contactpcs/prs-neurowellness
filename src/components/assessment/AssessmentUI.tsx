@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   RotateCcw,
@@ -111,7 +111,17 @@ export function AssessmentUI({
   backLabel = "Back to patient details",
 }: AssessmentUIProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const currentScale = scales[currentScaleIndex];
+
+  // Submitting a scale (or jumping via the sidebar) swaps in a whole new set
+  // of questions, but the internal overflow-y-auto container (not the
+  // window) keeps whatever scroll position the "Next Section" click left it
+  // at — usually near the bottom, so the new section opens off-screen and
+  // has to be scrolled up manually every time.
+  useEffect(() => {
+    scrollContainerRef.current?.scrollTo({ top: 0 });
+  }, [currentScaleIndex]);
   const currentScaleResponses = currentScale ? (responses[currentScale.scale_id] ?? {}) : {};
   const hiddenIndices = computeHiddenQuestionIndices(questions, currentScaleResponses);
   const totalQuestions = questions.length - hiddenIndices.size;
@@ -288,7 +298,7 @@ export function AssessmentUI({
         )}
 
         {/* Scrollable Questions */}
-        <div className="flex-1 overflow-y-auto">
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
           <div className="max-w-5xl mx-auto px-4 md:px-6 py-4">
             {/* Instructions box */}
             {currentScale.instructions && (

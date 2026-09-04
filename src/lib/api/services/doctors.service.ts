@@ -19,10 +19,27 @@ export type VisitSummary = {
   protocols: Array<ProtocolRead & { inherited?: boolean; lineage?: ProtocolRead[] }>;
 };
 
-/** PatientRead now joins profiles for first_name/last_name/email/phone. */
+/** dob is "YYYY-MM-DD" (a plain DATE column, no time/timezone) — age is a
+ * pure calendar calculation off it, not something the backend sends. */
+function ageFromDob(dob: string | undefined): number | undefined {
+  if (!dob) return undefined;
+  const birth = new Date(dob + "T00:00:00");
+  if (isNaN(birth.getTime())) return undefined;
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  if (today.getMonth() < birth.getMonth() || (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())) age--;
+  return age;
+}
+
+/** PatientRead now joins profiles for first_name/last_name/email/phone, and
+ * (73_device_units-era migration 75) carries weight_kg/blood_group directly
+ * on core.patients — both were already returned by the API but never
+ * extracted here, so PatientClinicalSnapshot's Weight field and every
+ * age display read as blank/"Not tracked" despite the data existing. */
 function mapPatient(p: Record<string, unknown>): PatientListItem {
   const first = String(p.first_name ?? "");
   const last = String(p.last_name ?? "");
+  const dob = (p.dob as string) ?? undefined;
   return {
     id: String(p.patient_id ?? ""),
     full_name: `${first} ${last}`.trim(),
@@ -31,11 +48,14 @@ function mapPatient(p: Record<string, unknown>): PatientListItem {
     email: String(p.email ?? ""),
     phone: (p.phone as string) ?? undefined,
     mrn: (p.mrn as string) ?? undefined,
-    date_of_birth: (p.dob as string) ?? undefined,
+    date_of_birth: dob,
+    age: ageFromDob(dob),
     gender: (p.gender as string) ?? undefined,
     status: (p.registration_status as string) ?? undefined,
     clinic_id: (p.primary_clinic_id as string) ?? undefined,
     created_at: (p.created_at as string) ?? undefined,
+    weight_kg: (p.weight_kg as number) ?? undefined,
+    blood_group: (p.blood_group as string) ?? undefined,
     last_prs: null,
   };
 }
@@ -98,10 +118,64 @@ export const doctorsService = {
     return results.map((r) => r.data);
   },
 
-  // NOT AVAILABLE — real toggle is PATCH /doctors/{own_doctor_id}, and the
-  // caller's own doctor_id isn't resolvable from /auth/me (that returns profile_id, not doctor_id).
-  async updateAvailability(_status: "available" | "unavailable"): Promise<unknown> {
-    throw new Error("Updating your own availability isn't available yet.");
+  // Own profile — the doctor-role equivalent of reception.service.ts's
+  // getMyProfile/updateMyProfile. doctor_id (public ID) comes off /auth/me;
+  // PATCH is self-scoped server-side (assert_staff_self, staff/router.py)
+  // so this can never touch another doctor's row.
+  async getMyProfile(): Promise<Record<string, unknown>> {
+    const me = await apiClient.get(ENDPOINTS.USERS.PROFILE);
+    const doctorId = me.data.doctor_id;
+    if (!doctorId) throw new Error("No doctor record for this account.");
+    const { data } = await apiClient.get(ENDPOINTS.DOCTORS.ME(doctorId));
+    return data;
+  },
+
+  // doctor/profile/page.tsx's form field names -> DoctorUpdate's column
+  // names. government_id/id_type/years_of_experience have no backing
+  // column on doctors and are dropped rather than silently no-op'd
+  // server-side (the frontend already sends "" for them unconditionally,
+  // never in the diff — see that page's fetch mapping).
+  async updateMyProfile(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const FIELD_MAP: Record<string, string> = {
+      date_of_birth: "dob",
+      address_line1: "address",
+      specialisation: "specialization",
+      hospital: "hospital_affiliation",
+    };
+    const SUPPORTED = new Set([
+      "first_name", "last_name", "email", "phone", "gender", "dob", "address",
+      "city", "state", "country", "pincode", "language_pref",
+      "specialization", "hospital_affiliation", "license_number",
+    ]);
+    const mapped: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(payload)) {
+      const mappedKey = FIELD_MAP[key] ?? key;
+      if (SUPPORTED.has(mappedKey)) mapped[mappedKey] = value;
+    }
+    // Nothing to save has no server target — throwing (rather than
+    // returning {}) stops a caller from ever merging an empty "success"
+    // response into a form that still has real data on screen (that exact
+    // bug already hit the patient profile page — see users.service.ts's
+    // NoSupportedFieldsError).
+    if (!Object.keys(mapped).length) {
+      throw new Error("None of the changed fields can be saved yet — this needs a database change.");
+    }
+
+    const me = await apiClient.get(ENDPOINTS.USERS.PROFILE);
+    const doctorId = me.data.doctor_id;
+    if (!doctorId) throw new Error("No doctor record for this account.");
+    const { data } = await apiClient.patch(ENDPOINTS.DOCTORS.ME(doctorId), mapped);
+    return data;
+  },
+
+  async updateAvailability(status: "available" | "unavailable"): Promise<unknown> {
+    const me = await apiClient.get(ENDPOINTS.USERS.PROFILE);
+    const doctorId = me.data.doctor_id;
+    if (!doctorId) throw new Error("No doctor record for this account.");
+    const { data } = await apiClient.patch(ENDPOINTS.DOCTORS.ME(doctorId), {
+      availability_status: status === "available" ? "available" : "on_leave",
+    });
+    return data;
   },
 
   /** Real: GET /doctors/{id}/weekly-schedules — the only working-hours

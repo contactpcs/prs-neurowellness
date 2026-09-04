@@ -3,8 +3,9 @@
 import { useCallback } from "react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import type { RootState, AppDispatch } from "@/store/store";
-import { fetchMySessions, fetchSession, fetchScales, fetchPatientSessions, createSession, clearCurrentCondition } from "@/store/slices/sessionSlice";
+import { fetchMySessions, fetchSession, fetchScales, fetchPatientSessions, createSession, clearCurrentCondition, setCurrentCondition } from "@/store/slices/sessionSlice";
 import { fetchConditions, selectConditions } from "@/store/slices/catalogSlice";
+import type { ConditionBattery } from "@/types/prs.types";
 
 export function useSessions() {
   const dispatch = useAppDispatch();
@@ -18,12 +19,14 @@ export function useSessions() {
   const loadScales = useCallback(() => { dispatch(fetchScales()); }, [dispatch]);
   const loadPatientSessions = useCallback((patientId: string) => { dispatch(fetchPatientSessions(patientId)); }, [dispatch]);
 
-  // Load condition detail by fetching from catalog (now just returns what's in conditions)
+  // No real per-condition detail endpoint exists (prsService.getCondition
+  // always throws NOT_AVAILABLE) — the list endpoint already returns each
+  // condition's full scales[], so this just picks the match out of the
+  // already-loaded catalog list instead of firing a second (broken) fetch.
   const loadConditionDetail = useCallback((conditionId: string) => {
-    // For now, just fetch conditions and let the caller extract by ID. This is fine since
-    // conditions are small and static. In future, could add per-condition fetch.
-    dispatch(fetchConditions());
-  }, [dispatch]);
+    const match = conditions.find((c: ConditionBattery) => c.id === conditionId || c.condition_id === conditionId) ?? null;
+    dispatch(setCurrentCondition(match));
+  }, [dispatch, conditions]);
 
   const resetConditionDetail = useCallback(() => { dispatch(clearCurrentCondition()); }, [dispatch]);
 

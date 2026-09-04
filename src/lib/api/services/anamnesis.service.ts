@@ -199,6 +199,17 @@ export const anamnesisService = {
       throw err;
     }
   },
+
+  // Every version ever started for this patient, newest first — editing
+  // (start() again) never overwrites the version being edited, it just
+  // stops being the one getForPatient/getMyAnamnesis returns. This is what
+  // the version picker reads to show prior versions.
+  async listVersions(patientId: string, assessmentStage?: AnamnesisStage): Promise<AnamnesisRecord[]> {
+    const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.VERSIONS(patientId), {
+      params: assessmentStage ? { assessment_stage: assessmentStage } : undefined,
+    });
+    return Array.isArray(data) ? data : [];
+  },
 };
 
 /** GET /patients/{id}/anamnesis (and the per-visit summary endpoint) return

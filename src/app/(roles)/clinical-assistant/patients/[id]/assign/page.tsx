@@ -2,22 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useSessions, useAuth } from "@/lib/hooks";
-import { Button, Input, Card, CardContent, PageLoader } from "@/components/ui";
+import { useSessions } from "@/lib/hooks";
+import { Button, Card, CardContent, PageLoader } from "@/components/ui";
 import { ConditionSelector } from "@/components/assessment";
-import { Clock } from "lucide-react";
+import { permissionsService } from "@/lib/api/services/permissions.service";
+import { Clock, AlertCircle } from "lucide-react";
 
 export default function CAAssignAssessmentPage() {
   const { id: patientId } = useParams<{ id: string }>();
   const router = useRouter();
-  const { conditions, currentCondition, loadConditions, loadConditionDetail, resetConditionDetail, assignSession } = useSessions();
+  const { conditions, currentCondition, loadConditions, loadConditionDetail, resetConditionDetail } = useSessions();
   const [selectedCondition, setSelectedCondition] = useState<string | null>(null);
-  const [mode, setMode] = useState<"self" | "clinician_administered" | "voice">("self");
-  const [title, setTitle] = useState("");
-  const [notes, setNotes] = useState("");
-  const [instructions, setInstructions] = useState("");
-  const [dueDate, setDueDate] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { loadConditions(); }, [loadConditions]);
 
@@ -37,21 +34,24 @@ export default function CAAssignAssessmentPage() {
   if (safeConditions.length === 0) return <PageLoader />;
 
   const handleAssign = async () => {
-    if (!selectedCondition) return;
+    if (!selectedCondition || !currentCondition?.scales?.length) return;
     setIsSubmitting(true);
+    setError(null);
     try {
-      await assignSession({
+      // Real backend has no single "assign a condition" call — one
+      // patient_scale_assignments row per scale, same as the doctor
+      // portal's grant flow (permissions.service.ts). The old assignSession/
+      // createSession path this used to call was a stub that always threw
+      // NOT_AVAILABLE (prs.service.ts) — every Assign click here silently
+      // failed with nothing shown, only a console.error.
+      await permissionsService.grantPermission({
         patient_id: patientId,
-        condition_id: selectedCondition,
-        title: title || undefined,
-        clinical_notes: notes || undefined,
-        patient_instructions: instructions || undefined,
-        mode,
-        due_date: dueDate || undefined,
+        disease_id: selectedCondition,
+        scale_ids: currentCondition.scales.map((s) => s.scale_id),
       });
       router.push(`/clinical-assistant/patients/${patientId}`);
     } catch (err) {
-      console.error("Assign error:", err);
+      setError(err instanceof Error ? err.message : "Failed to assign assessment — please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -93,40 +93,11 @@ export default function CAAssignAssessmentPage() {
 
       {selectedCondition && (
         <>
-          <Card>
-            <CardContent className="space-y-4">
-              <h3 className="font-medium text-neutral-900">Session Details</h3>
-              <Input label="Session Title (optional)" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Depression Assessment — March 2026" />
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-1">Mode</label>
-                <div className="flex gap-3">
-                  {[
-                    { value: "self" as const, label: "Patient Self-Report" },
-                    { value: "clinician_administered" as const, label: "Clinician Administered" },
-                    { value: "voice" as const, label: "Voice Assisted" },
-                  ].map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => setMode(opt.value)}
-                      className={`px-4 py-2 rounded-lg text-sm border transition-colors ${mode === opt.value ? "border-primary-500 bg-primary-50 text-primary-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50"}`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <Input label="Due Date (optional)" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-1">Clinical Notes (internal)</label>
-                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none" placeholder="Notes visible only to clinicians..." />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-1">Patient Instructions</label>
-                <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={2} className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none" placeholder="Instructions shown to the patient..." />
-              </div>
-            </CardContent>
-          </Card>
-
+          {error && (
+            <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+            </div>
+          )}
           <Button size="lg" className="w-full" onClick={handleAssign} isLoading={isSubmitting}>
             Assign Assessment to Patient
           </Button>

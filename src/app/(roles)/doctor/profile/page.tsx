@@ -7,7 +7,7 @@ import {
   Shield, KeyRound, Monitor, ClipboardCheck, TrendingUp,
 } from "lucide-react";
 import { PageLoader } from "@/components/ui";
-import { usersService } from "@/lib/api/services/users.service";
+import { doctorsService } from "@/lib/api/services/doctors.service";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
 import apiClient from "@/lib/api/client";
@@ -119,25 +119,25 @@ export default function DoctorProfilePage() {
 
   // ── profile fetch ─────────────────────────────────────────────────
   useEffect(() => {
-    usersService.getProfile()
+    doctorsService.getMyProfile()
       .then((data) => {
         setProfileRaw(data as unknown as Record<string, unknown>);
         const filled: FormState = {
           first_name:          (data.first_name        as string) ?? "",
           last_name:           (data.last_name         as string) ?? "",
-          date_of_birth:       (data.date_of_birth     as string) ?? "",
+          date_of_birth:       (data.dob               as string) ?? "",
           gender:              (data.gender            as string) ?? "",
-          government_id:       (data.government_id     as string) ?? "",
-          id_type:             (data.id_type           as string) ?? "",
-          language_pref:       ((data.language_pref ?? data.primary_language) as string) ?? "",
-          address_line1:       (data.address_line1     as string) ?? "",
+          government_id:       "", // no backing column on doctors — not sent, not saved
+          id_type:             "", // no backing column on doctors — not sent, not saved
+          language_pref:       (data.language_pref     as string) ?? "",
+          address_line1:       (data.address           as string) ?? "",
           city:                (data.city              as string) ?? "",
           state:               (data.state             as string) ?? "",
           country:             (data.country           as string) ?? "",
           pincode:             (data.pincode           as string) ?? "",
-          specialisation:      (data.specialisation    as string) ?? "",
-          hospital:            (data.hospital          as string) ?? "",
-          years_of_experience: String(data.years_of_experience ?? ""),
+          specialisation:      (data.specialization    as string) ?? "",
+          hospital:            (data.hospital_affiliation as string) ?? "",
+          years_of_experience: "", // no backing column on doctors — not sent, not saved
         };
         setForm(filled);
         originalRef.current = filled;
@@ -153,34 +153,32 @@ export default function DoctorProfilePage() {
     if (!Object.keys(diff).length) { setIsEditing(false); return; }
     setIsSaving(true); setSaveError(null); setSaveSuccess(false);
     try {
-      const updated = await usersService.updateProfile(diff);
+      const updated = await doctorsService.updateMyProfile(diff);
       const freshFilled: FormState = {
         first_name:          (updated.first_name        as string) ?? "",
         last_name:           (updated.last_name         as string) ?? "",
-        date_of_birth:       (updated.date_of_birth     as string) ?? "",
+        date_of_birth:       (updated.dob               as string) ?? "",
         gender:              (updated.gender            as string) ?? "",
-        government_id:       (updated.government_id     as string) ?? "",
-        id_type:             (updated.id_type           as string) ?? "",
-        language_pref:       ((updated.language_pref ?? updated.primary_language) as string) ?? "",
-        address_line1:       (updated.address_line1     as string) ?? "",
+        government_id:       "",
+        id_type:             "",
+        language_pref:       (updated.language_pref     as string) ?? "",
+        address_line1:       (updated.address           as string) ?? "",
         city:                (updated.city              as string) ?? "",
         state:               (updated.state             as string) ?? "",
         country:             (updated.country           as string) ?? "",
         pincode:             (updated.pincode           as string) ?? "",
-        specialisation:      (updated.specialisation    as string) ?? "",
-        hospital:            (updated.hospital          as string) ?? "",
-        years_of_experience: String(updated.years_of_experience ?? ""),
+        specialisation:      (updated.specialization    as string) ?? "",
+        hospital:            (updated.hospital_affiliation as string) ?? "",
+        years_of_experience: "",
       };
       setForm(freshFilled); originalRef.current = freshFilled;
       setProfileRaw(updated as unknown as Record<string, unknown>);
       dispatch(updateUserInStore({
         first_name: updated.first_name as string | undefined,
         last_name: updated.last_name as string | undefined,
-        full_name: updated.full_name as string | undefined,
-        specialisation: updated.specialisation as string | undefined,
         city: updated.city as string | undefined,
         gender: updated.gender as string | undefined,
-        date_of_birth: updated.date_of_birth as string | undefined,
+        date_of_birth: updated.dob as string | undefined,
       }));
       setSaveSuccess(true); setIsEditing(false);
     } catch (err) {

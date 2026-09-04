@@ -74,6 +74,8 @@ export default function DoctorAppointmentsPage() {
   const [loading,      setLoading]      = useState(true);
   const [status,       setStatus]       = useState<FilterValue>("all");
   const [q,            setQ]            = useState("");
+  const [dateFrom,     setDateFrom]     = useState("");
+  const [dateTo,       setDateTo]       = useState("");
   const [selId,        setSelId]        = useState<string | null>(null);
 
   const fetchAppointments = useCallback(async () => {
@@ -107,6 +109,11 @@ export default function DoctorAppointmentsPage() {
         return a.appointment_type !== "device_session" && (status === "all" || a.status === status);
       })
       .filter((a) => !query || `${a.appointment_id} ${a.patient_name ?? ""} ${a.appointment_type ?? ""}`.toLowerCase().includes(query))
+      // appointment_date is already a plain "YYYY-MM-DD" string (see
+      // fmtDate above) — lexicographic comparison sorts/bounds it correctly
+      // without parsing into a Date, and sidesteps timezone drift entirely.
+      .filter((a) => !dateFrom || (a.appointment_date || "") >= dateFrom)
+      .filter((a) => !dateTo || (a.appointment_date || "") <= dateTo)
       .sort((a, b) => {
         // Date-wise then time-wise, chronological (soonest first) — was
         // sorting newest-date-first, which mixed dates and times in a way
@@ -114,7 +121,7 @@ export default function DoctorAppointmentsPage() {
         const dc = (a.appointment_date || "").localeCompare(b.appointment_date || "");
         return dc !== 0 ? dc : (a.start_time || "").localeCompare(b.start_time || "");
       });
-  }, [appointments, status, q]);
+  }, [appointments, status, q, dateFrom, dateTo]);
 
   useEffect(() => {
     if (!selId && filtered.length > 0) setSelId(filtered[0].appointment_id);
@@ -139,6 +146,31 @@ export default function DoctorAppointmentsPage() {
             placeholder="Search patient, appointment ID…"
             className="w-full h-[38px] pl-8 pr-3 rounded-lg border border-neutral-300 bg-white text-sm outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
           />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            max={dateTo || undefined}
+            className="h-[38px] px-2.5 rounded-lg border border-neutral-300 bg-white text-sm text-neutral-700 outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+          />
+          <span className="text-xs text-neutral-400">to</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            min={dateFrom || undefined}
+            className="h-[38px] px-2.5 rounded-lg border border-neutral-300 bg-white text-sm text-neutral-700 outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+          />
+          {(dateFrom || dateTo) && (
+            <button
+              onClick={() => { setDateFrom(""); setDateTo(""); }}
+              className="h-[38px] px-2.5 rounded-lg text-xs font-medium text-neutral-500 hover:text-neutral-700 hover:bg-neutral-100 transition-colors"
+            >
+              Clear
+            </button>
+          )}
         </div>
         {STATUS_FILTERS.map((s) => (
           <button
@@ -210,7 +242,7 @@ export default function DoctorAppointmentsPage() {
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center px-6">
             <p className="text-sm font-medium text-neutral-400">No appointments match</p>
-            <p className="text-xs text-neutral-300 mt-1">Adjust the search or status filter.</p>
+            <p className="text-xs text-neutral-300 mt-1">Adjust the search, date range, or status filter.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">

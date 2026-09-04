@@ -60,17 +60,11 @@ const STATUS_LABEL: Record<string, string> = {
   no_show: "No show",
 };
 
-function iso(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
-
 function fmtDate(s: string) {
   return new Date(s + "T00:00:00").toLocaleDateString(undefined, {
     weekday: "short", day: "numeric", month: "short",
   });
 }
-
-type RangeKey = "today" | "week" | "all";
 
 export default function ClinicalAssistantAppointmentsPage() {
   const { user } = useAuth();
@@ -78,37 +72,30 @@ export default function ClinicalAssistantAppointmentsPage() {
   const [rows, setRows]         = useState<SessionRow[]>([]);
   const [loading, setLoading]   = useState(true);
   const [err, setErr]           = useState<string | null>(null);
-  const [range, setRange]       = useState<RangeKey>("today");
   const [status, setStatus]     = useState<string>("all");
   const [q, setQ]               = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo]     = useState("");
 
   const fetchRows = useCallback(() => {
     setLoading(true);
     setErr(null);
 
-    const today = new Date();
     const params: Record<string, unknown> = {
       // Device sessions only. Without this the CA sees the doctor's
       // consultations too, which are not theirs to run.
       appointment_type: "device_session",
       limit: 200,
     };
-    if (range === "today") {
-      params.date_from = iso(today);
-      params.date_to = iso(today);
-    } else if (range === "week") {
-      const end = new Date(today);
-      end.setDate(end.getDate() + 7);
-      params.date_from = iso(today);
-      params.date_to = iso(end);
-    }
+    if (dateFrom) params.date_from = dateFrom;
+    if (dateTo) params.date_to = dateTo;
 
     apiClient
       .get(ENDPOINTS.APPOINTMENTS.LIST, { params })
       .then((res: { data: SessionRow[] }) => setRows(Array.isArray(res.data) ? res.data : []))
       .catch(() => setErr("Couldn't load device sessions."))
       .finally(() => setLoading(false));
-  }, [range]);
+  }, [dateFrom, dateTo]);
 
   useEffect(() => { fetchRows(); }, [fetchRows]);
 
@@ -149,17 +136,6 @@ export default function ClinicalAssistantAppointmentsPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {(["today", "week", "all"] as RangeKey[]).map((r) => (
-          <button
-            key={r}
-            onClick={() => setRange(r)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-              range === r ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
-            }`}
-          >
-            {r === "today" ? "Today" : r === "week" ? "Next 7 days" : "All"}
-          </button>
-        ))}
         <div className="flex-1 min-w-[180px]">
           <div className="relative">
             <Search className="h-4 w-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -170,6 +146,31 @@ export default function ClinicalAssistantAppointmentsPage() {
               className="pl-9"
             />
           </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            max={dateTo || undefined}
+            className="h-[38px] px-2.5 rounded-lg border border-neutral-300 bg-white text-sm text-neutral-700 outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+          />
+          <span className="text-xs text-neutral-400">to</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            min={dateFrom || undefined}
+            className="h-[38px] px-2.5 rounded-lg border border-neutral-300 bg-white text-sm text-neutral-700 outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+          />
+          {(dateFrom || dateTo) && (
+            <button
+              onClick={() => { setDateFrom(""); setDateTo(""); }}
+              className="h-[38px] px-2.5 rounded-lg text-xs font-medium text-neutral-500 hover:text-neutral-700 hover:bg-neutral-100 transition-colors"
+            >
+              Clear
+            </button>
+          )}
         </div>
       </div>
 
@@ -195,9 +196,7 @@ export default function ClinicalAssistantAppointmentsPage() {
             <Activity className="h-8 w-8 text-neutral-300 mx-auto mb-3" />
             <p className="text-sm font-semibold text-neutral-900">No device sessions</p>
             <p className="text-sm text-neutral-500 mt-1">
-              {range === "today"
-                ? "Nothing scheduled for today. Try “Next 7 days”."
-                : "No sessions match these filters."}
+              {dateFrom || dateTo ? "No sessions match this date range." : "No sessions match these filters."}
             </p>
           </CardContent>
         </Card>

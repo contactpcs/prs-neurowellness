@@ -50,7 +50,15 @@ export function PatientClinicalSnapshot({ patientId }: { patientId: string }) {
   const [open, setOpen] = useState(true);
 
   useEffect(() => {
-    anamnesisService.getForPatient(patientId, "main").then(setAnamnesis).catch(() => setAnamnesis(null));
+    // Prefer the "main" (treatment-visit) anamnesis, since that's the one a
+    // doctor is about to prescribe against, but fall back to "registration"
+    // — a patient who hasn't reached main_clinical yet still has real
+    // anamnesis on file, and showing "Not recorded" for them was wrong, not
+    // just incomplete: the data exists, this just never looked for it.
+    anamnesisService.getForPatient(patientId, "main")
+      .then((main) => main ?? anamnesisService.getForPatient(patientId, "registration"))
+      .then(setAnamnesis)
+      .catch(() => setAnamnesis(null));
     eegService.getPatientReports(patientId).then((r) => setEegReports(r.data)).catch(() => setEegReports([]));
     treatmentProtocolService.listProtocols({ patientId })
       .then((list) => setProtocols(list.slice().sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""))))
@@ -89,9 +97,7 @@ export function PatientClinicalSnapshot({ patientId }: { patientId: string }) {
           <Box title="Demographics">
             <Field label="Age / Sex" value={`${patient?.age ?? "—"} · ${patient?.gender ?? "—"}`} />
             <Field label="MRN" value={patient?.mrn ?? "—"} />
-            <Field label="BP / HR" value="Not tracked" />
-            <Field label="Weight" value="Not tracked" />
-            <Field label="Handedness" value="Not tracked" />
+            <Field label="Weight" value={patient?.weight_kg != null ? `${patient.weight_kg} kg` : "Not tracked"} />
           </Box>
 
           <Box title="Anamnesis">

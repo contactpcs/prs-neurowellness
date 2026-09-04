@@ -12,6 +12,8 @@ export interface PatientListItem {
   date_of_birth?: string;
   age?: number;
   gender?: string;
+  weight_kg?: number;
+  blood_group?: string;
   condition?: string;
   status?: string;
   approval_status?: string;
@@ -37,7 +39,6 @@ export interface PatientDetail extends PatientListItem {
   recent_sessions?: PatientSessionRecord[];
   medical_history?: string;
   emergency_contact?: string;
-  blood_group?: string;
 }
 
 export interface PatientSessionRecord {
@@ -356,6 +357,10 @@ export interface AnamnesisRecord {
   patient_id: string;
   submitted_by: string | null;
   taken_by: string;
+  /** 1, 2, 3… — each edit (doctor's "Start on Patient's Behalf" on an
+   *  already-completed record) creates a new version rather than
+   *  overwriting the previous one; this is what distinguishes them. */
+  version?: number;
   assessment_stage: "registration" | "main";
   /** The visit this anamnesis was captured/edited during. Null on records
    *  predating this column, and on anamnesis taken outside a booked visit. */

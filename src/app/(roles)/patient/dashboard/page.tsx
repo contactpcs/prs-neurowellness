@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Bell, Search, Calendar, CheckCircle, Clock, ChevronRight,
-  User, MessageSquare, PlayCircle, ClipboardList, TrendingUp,
+  User, PlayCircle, ClipboardList,
   FileText, Zap, Check, Circle, Upload, CreditCard,
 } from "lucide-react";
 import {
@@ -110,11 +110,6 @@ function PatientDashboard() {
 
   const prsProgress =
     scoreInstances.length > 0 ? Math.round(scoreInstances[0].percentage ?? 0) : 0;
-
-  const treatmentPct = Math.round(
-    ((completedAppts + completedAssessments.length * 2) /
-      Math.max(totalPlannedAppts + assessments.length * 2, 1)) * 100,
-  );
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-neutral-900">
@@ -381,42 +376,6 @@ function PatientDashboard() {
           </div>
         </div>
 
-        {/* Stats Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatCard
-            icon={<CheckCircle className="w-4 h-4 text-blue-500" />}
-            label="Sessions completed"
-            value={completedAppts.toString()}
-            sub={totalPlannedAppts > 0 ? `of ${totalPlannedAppts} planned` : "No sessions yet"}
-          />
-          <StatCard
-            icon={<TrendingUp className="w-4 h-4 text-orange-500" />}
-            label="Treatment progress"
-            value={`${treatmentPct}%`}
-            sub="On track"
-            highlight
-          />
-          <StatCard
-            icon={<ClipboardList className="w-4 h-4 text-orange-500" />}
-            label="PRS assessment"
-            value={
-              scoreInstances.length > 0 ? `${prsProgress}%`
-                : pendingAssessments.length > 0 ? "Pending" : "—"
-            }
-            sub={
-              pendingAssessments.length > 0 ? "Due soon"
-                : scoreInstances[0]?.completed_at
-                  ? `Last: ${formatShortDate(scoreInstances[0].completed_at)}`
-                  : "No data"
-            }
-          />
-          <StatCard
-            icon={<FileText className="w-4 h-4 text-green-500" />}
-            label="New reports"
-            value={scoreInstances.length.toString()}
-            sub={scoreInstances.length > 0 ? "Ready to view" : "No new reports"}
-          />
-        </div>
 
         {/* Middle row: Appointments + Clinician */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -506,9 +465,6 @@ function PatientDashboard() {
                     <p className="text-[10px] text-gray-500">Days to next</p>
                   </div>
                 </div>
-                <button className="mt-3 w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium" style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}>
-                  <MessageSquare className="w-3.5 h-3.5" /> Message Dr. {doctor.last_name}
-                </button>
               </div>
             </div>
           ) : (
@@ -581,27 +537,6 @@ function PatientDashboard() {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────
-
-function StatCard({ icon, label, value, sub, highlight }: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  sub?: string;
-  highlight?: boolean;
-}) {
-  return (
-    <div className={`bg-white rounded-xl p-4 border shadow-sm ${
-      highlight ? "border-gray-200" : "border-gray-100"
-    }`}>
-      <div className="flex items-center gap-1.5 mb-1.5">
-        {icon}
-        <p className="text-sm text-gray-500">{label}</p>
-      </div>
-      <p className="text-xl font-[750] text-gray-700">{value}</p>
-      {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
-    </div>
-  );
-}
 
 function AppointmentStatusBadge({ status }: { status: string }) {
   const base = "text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap";

@@ -64,6 +64,11 @@ export const ENDPOINTS = {
     GRANT_ASSESSMENT: (_patientId: string) => `/patient-scale-assignments`, // real, but per-scale POST (see doctors.service.ts)
     AVAILABILITY: "/doctors/availability", // NOT AVAILABLE — real toggle needs PATCH /doctors/{own_doctor_id}, id not resolvable here
     VISIT_SUMMARY: (patientId: string, appointmentId: string) => `/patients/${patientId}/visits/${appointmentId}/summary`, // real
+    // Own profile — GET/PATCH /doctors/{doctor_id}. doctor_id (public ID)
+    // comes off /auth/me (auth.types.ts), the only place the frontend can
+    // learn it — PATCH is now self-scoped server-side (assert_staff_self)
+    // so this only ever succeeds for the caller's own row.
+    ME: (doctorId: string) => `/doctors/${doctorId}`,
   },
 
   // ─── Patients (patient-role self views) ───
@@ -114,6 +119,11 @@ export const ENDPOINTS = {
     NOTIFICATIONS: "/reception/notifications",
     NOTIFICATION_TOGGLE_READ: (notificationId: string) => `/reception/notifications/${notificationId}`,
     NOTIFICATIONS_MARK_ALL_READ: "/reception/notifications/mark-all-read",
+  },
+
+  // ─── Clinical Assistant ───
+  CLINICAL_ASSISTANT: {
+    ME: "/clinical-assistant/me", // real — GET/PATCH own profile, same shape as RECEPTION.ME
   },
 
   // ─── Admin ───
@@ -214,6 +224,7 @@ export const ENDPOINTS = {
     ME: "/patients",                                                    // real (composed — resolve own patient_id first)
     FOR_PATIENT: (patientId: string) => `/patients/${patientId}/anamnesis`, // real
     RESPONSES: (anamnesisId: string) => `/anamnesis/${anamnesisId}/responses`, // real
+    VERSIONS: (patientId: string) => `/patients/${patientId}/anamnesis/versions`, // real — every version, newest first
   },
 
   // ─── Neuromodulation catalogue (Treatment Protocol wizard, steps 1-6) ───
