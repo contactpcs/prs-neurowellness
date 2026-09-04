@@ -21,6 +21,7 @@ import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
 import { useAuth } from "@/lib/hooks";
 import { Input, Card, CardContent, PageLoader } from "@/components/ui";
+import { isSupersededCancellation } from "@/lib/appointmentStatus";
 
 interface SessionRow {
   appointment_id: string;
@@ -29,6 +30,7 @@ interface SessionRow {
   start_time: string | null;
   end_time: string | null;
   status: string;
+  cancellation_reason?: string | null;
   session_number: number | null;
   patient_id: string;
   patient_name: string | null;
@@ -113,6 +115,7 @@ export default function ClinicalAssistantAppointmentsPage() {
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
     return rows
+      .filter((r) => !isSupersededCancellation(r))
       .filter((r) => status === "all" || r.status === status)
       .filter((r) => !query || `${r.patient_name ?? ""} ${r.session_number ?? ""}`.toLowerCase().includes(query));
   }, [rows, status, q]);

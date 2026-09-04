@@ -5,24 +5,28 @@ import Link from "next/link";
 import { Search, Eye } from "lucide-react";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
-import { STATUS_LABEL, STATUS_TONE } from "@/lib/appointmentStatus";
+import { STATUS_LABEL, STATUS_TONE, isSupersededCancellation } from "@/lib/appointmentStatus";
 import type { Appointment, AppointmentStatus } from "@/types/domain.types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-// "device_sessions" is a type filter, not a status one — a device session has
-// no treating doctor (scheduling/service.py) and is run by a clinical
-// assistant, not started/completed from here, so it lives in its own filter
-// rather than mixed into the regular initial/follow_up/protocol_followup list.
-type FilterValue = AppointmentStatus | "all" | "device_sessions";
+// "device_sessions"/"follow_up"/"protocol_followup" are type filters, not
+// status ones — a device session has no treating doctor (scheduling/service.py)
+// and is run by a clinical assistant, not started/completed from here, so it
+// lives in its own filter rather than mixed into the regular status list;
+// follow_up/protocol_followup are likewise filtered by appointment_type so a
+// doctor can isolate those visit kinds regardless of their current status.
+type FilterValue = AppointmentStatus | "all" | "device_sessions" | "follow_up" | "protocol_followup";
 
 const STATUS_FILTERS: FilterValue[] = [
-  "all", "selected", "paid", "checked_in", "in_progress", "completed", "cancelled", "no_show", "device_sessions",
+  "all", "follow_up", "protocol_followup", "paid", "checked_in", "in_progress", "completed", "cancelled", "device_sessions",
 ];
 
 function filterLabel(f: FilterValue): string {
   if (f === "all") return "All";
   if (f === "device_sessions") return "Device Sessions";
+  if (f === "follow_up") return "Follow-up";
+  if (f === "protocol_followup") return "Protocol Follow-up";
   return STATUS_LABEL[f];
 }
 
@@ -95,11 +99,13 @@ export default function DoctorAppointmentsPage() {
   const filtered = useMemo(() => {
     const query = q.toLowerCase();
     return [...appointments]
-      .filter((a) =>
-        status === "device_sessions"
-          ? a.appointment_type === "device_session"
-          : a.appointment_type !== "device_session" && (status === "all" || a.status === status)
-      )
+      .filter((a) => !isSupersededCancellation(a))
+      .filter((a) => {
+        if (status === "device_sessions") return a.appointment_type === "device_session";
+        if (status === "follow_up") return a.appointment_type === "follow_up";
+        if (status === "protocol_followup") return a.appointment_type === "protocol_followup";
+        return a.appointment_type !== "device_session" && (status === "all" || a.status === status);
+      })
       .filter((a) => !query || `${a.appointment_id} ${a.patient_name ?? ""} ${a.appointment_type ?? ""}`.toLowerCase().includes(query))
       .sort((a, b) => {
         // Date-wise then time-wise, chronological (soonest first) — was

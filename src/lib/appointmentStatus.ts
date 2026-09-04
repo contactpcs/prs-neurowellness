@@ -53,3 +53,16 @@ export const STATUS_DOT: Record<AppointmentStatus, string> = {
 export const ACTIVE_APPOINTMENT_STATUSES: AppointmentStatus[] = [
   "planned", "selected", "paid", "checked_in", "in_progress",
 ];
+
+// A "planned" appointment auto-cancels with this exact reason when its
+// protocol is superseded by a new version (backend: treatment_protocols
+// ProtocolService.create()/cancel() -> AppointmentRepository.cancel_planned).
+// It was never a real cancellation the patient/CA/doctor asked for — just the
+// old version's slot being cleared out — so list/calendar views should drop
+// it rather than show a "Cancelled" row; the new protocol's own appointments
+// carry the current schedule.
+const SUPERSEDED_CANCELLATION_REASON = "Superseded by protocol amendment";
+
+export function isSupersededCancellation(appt: { status: string; cancellation_reason?: string | null }): boolean {
+  return appt.status === "cancelled" && appt.cancellation_reason === SUPERSEDED_CANCELLATION_REASON;
+}
