@@ -35,7 +35,7 @@ export function PatientListSkeleton() {
 
 export function PatientDetailSkeleton() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#f7f6f2] to-[#f4f0ef]">
+    <div className="min-h-screen bg-gradient-to-br from-[#f7f6f2] to-[#f4f0ef] dark:from-neutral-900 dark:to-neutral-900">
       {/* Sub-header */}
       <div className="bg-white border-b border-neutral-200">
         <div className="max-w-full px-8 py-4 flex items-center justify-between">

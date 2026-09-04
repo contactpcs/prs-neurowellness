@@ -1,78 +1,139 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
-import { useAuth } from "@/lib/hooks";
+import { useAuth, useSidebarBadges, type BadgeKey } from "@/lib/hooks";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { authService } from "@/lib/api/services";
 import {
   LayoutDashboard, Users, ClipboardList,
-  UserCircle, LogOut, Brain, ChevronLeft, Menu, Calendar,
-  ClipboardCheck, MapPin, Building2, UserCog, Settings,
+  UserCircle, LogOut, Brain, ChevronLeft, Menu, Calendar, CalendarDays,
+  ClipboardCheck, MapPin, Building2, UserCog, Settings, ShieldCheck,
+  ShoppingBag, Receipt, Bell, DollarSign, Activity, Syringe, BarChart2, Percent,
 } from "lucide-react";
 
-const NAV_ITEMS: Record<string, Array<{ label: string; href: string; icon: React.ElementType }>> = {
+interface NavItem {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  badge?: BadgeKey;
+}
+
+const NAV_ITEMS: Record<string, NavItem[]> = {
   patient: [
-    { label: "Dashboard",  href: "/patient/dashboard", icon: LayoutDashboard },
-    { label: "My Results", href: "/patient/results",   icon: ClipboardList },
-    { label: "Profile",    href: "/patient/profile",   icon: UserCircle },
+    { label: "Dashboard",    href: "/patient/dashboard",    icon: LayoutDashboard },
+    { label: "Appointments", href: "/patient/appointments", icon: CalendarDays },
+    { label: "Device Sessions", href: "/patient/device-sessions", icon: Activity },
+    { label: "Notifications", href: "/patient/notifications", icon: Bell, badge: "patientUnreadNotifications" },
+    { label: "Payments & Bills", href: "/patient/payments", icon: Receipt },
+    { label: "My Results",   href: "/patient/results",      icon: ClipboardList },
+    { label: "Profile",      href: "/patient/profile",      icon: UserCircle },
   ],
   doctor: [
-    { label: "Dashboard", href: "/doctor/dashboard", icon: LayoutDashboard },
-    { label: "Patients",  href: "/doctor/patients",  icon: Users },
-    { label: "Schedule",  href: "/doctor/schedule",  icon: Calendar },
+    { label: "Dashboard",    href: "/doctor/dashboard",    icon: LayoutDashboard },
+    { label: "Appointments", href: "/doctor/appointments", icon: CalendarDays, badge: "doctorPendingAppointments" },
+    { label: "Schedule",     href: "/doctor/schedule",     icon: Calendar },
+    { label: "Patients",     href: "/doctor/patients",     icon: Users },
+    { label: "Sessions",     href: "/doctor/sessions",     icon: Activity },
+    { label: "Treatment",    href: "/doctor/treatment",    icon: Syringe },
+    { label: "Notifications",href: "/doctor/notifications",icon: Bell, badge: "doctorUnreadNotifications" },
+    { label: "Reports",      href: "/doctor/reports",      icon: BarChart2 },
+    { label: "Settings",     href: "/doctor/settings",     icon: Settings },
+    { label: "Profile",      href: "/doctor/profile",      icon: UserCircle },
   ],
   clinical_assistant: [
-    { label: "Dashboard",    href: "/clinical-assistant/dashboard", icon: LayoutDashboard },
-    { label: "All Patients", href: "/clinical-assistant/patients",  icon: Users },
-    { label: "Approvals",    href: "/clinical-assistant/approvals", icon: ClipboardCheck },
-    { label: "Profile",      href: "/clinical-assistant/profile",   icon: UserCircle },
+    { label: "Dashboard",   href: "/clinical-assistant/dashboard",            icon: LayoutDashboard },
+    { label: "All Patients",href: "/clinical-assistant/patients",             icon: Users },
+    { label: "Device Sessions", href: "/clinical-assistant/appointments",      icon: Activity },
+    { label: "Approvals",   href: "/clinical-assistant/approvals",            icon: ClipboardCheck, badge: "patientApprovals" },
+    { label: "Profile",     href: "/clinical-assistant/profile",              icon: UserCircle },
   ],
   receptionist: [
-    { label: "Dashboard",    href: "/receptionist/dashboard", icon: LayoutDashboard },
-    { label: "All Patients", href: "/receptionist/patients",  icon: Users },
-    { label: "Approvals",    href: "/receptionist/approvals", icon: ClipboardCheck },
-    { label: "Profile",      href: "/receptionist/profile",   icon: UserCircle },
+    { label: "Dashboard",   href: "/receptionist/dashboard",            icon: LayoutDashboard },
+    { label: "Appointments",href: "/receptionist/appointments",         icon: Calendar },
+    { label: "All Patients",href: "/receptionist/patients",             icon: Users },
+    { label: "Approvals",   href: "/receptionist/approvals",            icon: ClipboardCheck, badge: "receptionPatientApprovals" },
+    { label: "Notifications", href: "/receptionist/notifications",      icon: Bell, badge: "receptionUnreadNotifications" },
+    { label: "Payments",    href: "/receptionist/payments",             icon: Receipt },
+    { label: "Profile",     href: "/receptionist/profile",              icon: UserCircle },
   ],
   platform_admin: [
-    { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
-    { label: "Patients",  href: "/admin/patients",  icon: Users },
-    { label: "Staff",     href: "/admin/staff",     icon: UserCog },
-    { label: "Clinics",   href: "/admin/clinics",   icon: Building2 },
-    { label: "Settings",  href: "/admin/settings",  icon: Settings },
+    { label: "Dashboard",       href: "/admin/dashboard",       icon: LayoutDashboard },
+    { label: "Patients",        href: "/admin/patients",        icon: Users },
+    { label: "Staff",           href: "/admin/staff",           icon: UserCog },
+    { label: "Regional Admins", href: "/admin/admins/regional", icon: ShieldCheck },
+    { label: "Clinic Admins",   href: "/admin/admins/clinical", icon: ShieldCheck },
+    { label: "Regions",         href: "/admin/regions",         icon: MapPin },
+    { label: "Clinics",         href: "/admin/clinics",         icon: Building2 },
+    { label: "Clinic Requests", href: "/admin/clinic-requests", icon: ClipboardList, badge: "clinicRequests" },
+    { label: "Billable Items",  href: "/admin/billable-items",  icon: DollarSign },
+    { label: "Fees & Cancellation", href: "/admin/fee-config",  icon: Percent },
+    { label: "Payments",        href: "/admin/payments",        icon: Receipt },
+    { label: "Settings",        href: "/admin/settings",        icon: Settings },
   ],
-  clinical_admin: [
-    { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
-    { label: "Patients",  href: "/admin/patients",  icon: Users },
-    { label: "Staff",     href: "/admin/staff",     icon: UserCog },
-    { label: "Clinics",   href: "/admin/clinics",   icon: Building2 },
-    { label: "Settings",  href: "/admin/settings",  icon: Settings },
+  regional_admin: [
+    { label: "Dashboard",       href: "/regional-admin/dashboard",       icon: LayoutDashboard },
+    { label: "Clinics",         href: "/regional-admin/clinics",         icon: Building2 },
+    { label: "Clinic Admins",   href: "/regional-admin/clinic-admins",   icon: ShieldCheck },
+    { label: "Staff",           href: "/regional-admin/staff",           icon: UserCog },
+    { label: "Patients",        href: "/regional-admin/patients",        icon: Users },
+    { label: "Appointments",    href: "/regional-admin/appointments",    icon: CalendarDays },
+    { label: "Staff Approvals", href: "/regional-admin/staff-approvals", icon: ClipboardCheck, badge: "staffApprovals" },
+    { label: "Payments",        href: "/regional-admin/payments",        icon: Receipt },
+  ],
+  clinic_admin: [
+    { label: "Dashboard",      href: "/clinic-admin/dashboard",      icon: LayoutDashboard },
+    { label: "My Clinic",      href: "/clinic-admin/my-clinic",      icon: Building2 },
+    { label: "Staff",          href: "/clinic-admin/staff",          icon: UserCog },
+    { label: "Patients",       href: "/clinic-admin/patients",       icon: Users },
+    { label: "Appointments",   href: "/clinic-admin/appointments",   icon: CalendarDays },
+    { label: "Staff Requests", href: "/clinic-admin/staff-requests", icon: ClipboardList, badge: "staffRequests" },
+    { label: "Store Orders",   href: "/clinic-admin/store-orders",   icon: ShoppingBag },
+    { label: "Payments",       href: "/clinic-admin/payments",       icon: Receipt },
+    { label: "Settings",       href: "/clinic-admin/settings",       icon: Settings },
   ],
 };
 
-export function Sidebar() {
+function SidebarInner() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
-  const { isCollapsed, setIsCollapsed } = useSidebar();
+  const { isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen } = useSidebar();
+  // On mobile, always show expanded content regardless of isCollapsed state
+  const expanded = !isCollapsed || isMobileOpen;
   const [clinicLabel, setClinicLabel] = useState<string | null>(null);
 
-  // Detect admin role first (backend may return "admin", "platform_admin", or "clinical_admin")
-  const rawRoles: string[] = user?.roles ?? [];
-  const isAdmin = rawRoles.some(
-    (r) =>
-      r === "platform_admin" ||
-      r === "clinical_admin" ||
-      String(r).toLowerCase().includes("admin")
-  );
-  const primaryRole = isAdmin
+  // Three distinct admin tiers, exact-matched — super_admin/regional_admin/
+  // clinic_admin are separate portals now, not one collapsed "admin".
+  // platform_admin/clinical_admin are dead legacy labels this backend never
+  // actually produces; folded into isSuperAdmin for zero-cost safety in case
+  // an old stored session still carries one.
+  const rawRoles: string[] = (user?.roles ?? []).map((r) => String(r).toLowerCase());
+  const isSuperAdmin = rawRoles.includes("super_admin") || rawRoles.includes("platform_admin") || rawRoles.includes("clinical_admin");
+  const isRegionalAdmin = rawRoles.includes("regional_admin");
+  const isClinicAdmin = rawRoles.includes("clinic_admin");
+
+  const primaryRole = isSuperAdmin
     ? "platform_admin"
-    : String(rawRoles[0] || (user as any)?.role || "patient").toLowerCase();
+    : isRegionalAdmin
+      ? "regional_admin"
+      : isClinicAdmin
+        ? "clinic_admin"
+        : String(rawRoles[0] || "patient");
   const role  = primaryRole;
   const items = NAV_ITEMS[role] || NAV_ITEMS.patient;
   const initials = [user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join("").toUpperCase();
-  const roleName = isAdmin ? "Admin" : role.replace(/_/g, " ");
+  const roleName = isSuperAdmin ? "Admin" : isRegionalAdmin ? "Regional Admin" : isClinicAdmin ? "Clinic Admin" : role.replace(/_/g, " ");
+
+  const badgeKeys = items.map((i) => i.badge).filter((b): b is BadgeKey => !!b);
+  const badgeCounts = useSidebarBadges(badgeKeys);
+
+  useEffect(() => {
+    if (/\/patients\/[^/]+/.test(pathname)) {
+      setIsCollapsed(true);
+    }
+  }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!user) return;
@@ -87,27 +148,44 @@ export function Sidebar() {
   }, [user]);
 
   return (
-    <aside className={cn(
-      "fixed left-0 top-0 h-full bg-blue-800 flex flex-col z-40 transition-all duration-200",
-      isCollapsed ? "w-16" : "w-64",
-    )}>
+    <>
+      {/* Mobile backdrop */}
+      {isMobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-30 md:hidden"
+          onClick={() => setIsMobileOpen(false)}
+        />
+      )}
+    <aside
+      className={cn(
+        "fixed left-0 top-0 h-full flex flex-col z-40 bg-sidebar-bg",
+        // Desktop: width toggle (no transition to avoid layout thrash)
+        isCollapsed ? "md:w-16" : "md:w-64",
+        // Mobile: always full width, slide in/out
+        "w-64",
+        // Transition only the transform, not all properties
+        "transition-transform duration-150 ease-in-out",
+        isMobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+      )}
+      style={{ willChange: "transform" }}
+    >
       {/* Logo + toggle */}
-      <div className="h-16 border-b border-blue-700 flex-shrink-0 flex items-center">
-        {!isCollapsed ? (
+      <div className="h-16 border-b border-white/20 flex-shrink-0 flex items-center">
+        {expanded ? (
           <div className="flex items-center gap-2 w-full px-4">
             <Link href="/" className="flex items-center gap-2 flex-1 min-w-0">
               <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center flex-shrink-0">
                 <Brain className="h-4 w-4 text-white" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-bold text-white leading-tight">NeuroWellness</p>
+                <p className="text-sm font-bold text-white leading-tight">Anava</p>
                 <p className="text-[10px] font-semibold text-blue-300 uppercase tracking-widest leading-tight">PRS</p>
               </div>
             </Link>
             <button
-              onClick={() => setIsCollapsed(true)}
+              onClick={() => isMobileOpen ? setIsMobileOpen(false) : setIsCollapsed(true)}
               className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-white/10 transition-colors flex-shrink-0 text-white"
-              title="Collapse sidebar"
+              title={isMobileOpen ? "Close menu" : "Collapse sidebar"}
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
@@ -127,29 +205,45 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-0.5">
         {items.map((item) => {
           const isActive = pathname.startsWith(item.href);
+          const count = item.badge ? badgeCounts[item.badge] ?? 0 : 0;
           return (
             <Link
               key={item.href}
               href={item.href}
-              title={isCollapsed ? item.label : undefined}
+              title={!expanded ? (count > 0 ? `${item.label} (${count})` : item.label) : undefined}
+              onClick={() => setIsMobileOpen(false)}
               className={cn(
-                "flex items-center rounded-lg text-sm font-medium transition-colors border-l-2",
-                isCollapsed ? "justify-center px-2 py-2.5" : "gap-3 px-3 py-2.5",
+                "relative flex items-center rounded-lg text-sm font-medium transition-colors border-l-2",
+                expanded ? "gap-3 px-3 py-2.5" : "justify-center px-2 py-2.5",
                 isActive
                   ? "bg-white/15 text-white border-white"
                   : "text-blue-100 hover:bg-white/10 hover:text-white border-transparent",
               )}
             >
-              <item.icon className={cn("h-4.5 w-4.5 flex-shrink-0", isActive ? "text-white" : "text-blue-300")} />
-              {!isCollapsed && <span>{item.label}</span>}
+              <span className="relative flex-shrink-0">
+                <item.icon className={cn("h-4.5 w-4.5", isActive ? "text-white" : "text-blue-300")} />
+                {!expanded && count > 0 && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 ring-2 ring-sidebar-bg" />
+                )}
+              </span>
+              {expanded && (
+                <span className="flex-1 flex items-center justify-between gap-2">
+                  {item.label}
+                  {count > 0 && (
+                    <span className="flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full bg-red-500 text-white text-[11px] font-semibold leading-none">
+                      {count > 99 ? "99+" : count}
+                    </span>
+                  )}
+                </span>
+              )}
             </Link>
           );
         })}
       </nav>
 
       {/* User section */}
-      <div className="border-t border-blue-700 px-2 py-3 flex-shrink-0">
-        {!isCollapsed ? (
+      <div className="border-t border-white/20 px-2 py-3 flex-shrink-0">
+        {expanded ? (
           <div className="flex items-center gap-3 px-3 py-2 rounded-lg mb-1">
             <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
               {initials}
@@ -176,16 +270,19 @@ export function Sidebar() {
         )}
         <button
           onClick={logout}
-          title={isCollapsed ? "Sign out" : undefined}
+          title={!expanded ? "Sign out" : undefined}
           className={cn(
             "flex items-center rounded-lg text-sm font-medium text-blue-200 hover:bg-white/10 hover:text-white w-full transition-colors",
-            isCollapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-2",
+            expanded ? "gap-3 px-3 py-2" : "justify-center px-2 py-2",
           )}
         >
           <LogOut className="h-4 w-4 flex-shrink-0" />
-          {!isCollapsed && <span>Sign out</span>}
+          {expanded && <span>Sign out</span>}
         </button>
       </div>
     </aside>
+    </>
   );
 }
+
+export const Sidebar = memo(SidebarInner);

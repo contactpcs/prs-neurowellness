@@ -26,7 +26,7 @@ export default function DoctorPatientResultPage() {
 
   if (!detail) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#f7f6f2] to-[#f4f0ef] flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-[#f7f6f2] to-[#f4f0ef] dark:from-neutral-900 dark:to-neutral-900 flex items-center justify-center">
         <p className="text-neutral-500">Could not load assessment results.</p>
       </div>
     );
@@ -36,7 +36,7 @@ export default function DoctorPatientResultPage() {
   const overallResult = disease_result;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#f7f6f2] to-[#f4f0ef]">
+    <div className="min-h-screen bg-gradient-to-br from-[#f7f6f2] to-[#f4f0ef] dark:from-neutral-900 dark:to-neutral-900">
       {/* Sub-header */}
       <div className="bg-white border-b border-neutral-200">
         <div className="max-w-full px-8 py-4 flex items-center justify-between">
@@ -78,7 +78,7 @@ export default function DoctorPatientResultPage() {
         {overallResult && (
           <Card>
             <CardContent className="flex items-center justify-between gap-6">
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs text-neutral-500 uppercase tracking-wide mb-1">Overall Disease Score</p>
                 <p className="text-4xl font-bold text-neutral-900">
                   {overallResult.disease_score != null
@@ -88,7 +88,7 @@ export default function DoctorPatientResultPage() {
                 </p>
               </div>
               {overallResult.severity_label && (
-                <div className="text-right">
+                <div className="shrink-0 text-right">
                   <p className="text-xs text-neutral-500 mb-1">Severity</p>
                   <span className={`text-base font-semibold px-4 py-2 rounded-full border ${severityColor(overallResult.severity_level)}`}>
                     {overallResult.severity_label}

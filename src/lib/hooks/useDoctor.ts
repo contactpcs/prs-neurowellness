@@ -7,8 +7,11 @@ import {
   fetchDoctorPatient,
   fetchPatientResult,
   selectDoctorPatients,
+  selectDoctorPatientsTotal,
   selectDoctorPatientsStatus,
   selectDoctorPatientDetail,
+  selectDoctorPatientDetailStatus,
+  selectDoctorPatientDetailError,
   selectPatientResults,
 } from "@/store/slices/doctorsSlice";
 import {
@@ -21,27 +24,37 @@ import {
   selectAlertsStatus,
 } from "@/store/slices/alertsSlice";
 
-export function useDoctorPatients() {
+export function useDoctorPatients(params?: { page?: number; limit?: number; search?: string }) {
   const dispatch = useAppDispatch();
   const patients = useAppSelector(selectDoctorPatients);
+  const total    = useAppSelector(selectDoctorPatientsTotal);
   const status   = useAppSelector(selectDoctorPatientsStatus);
+  const { page, limit, search } = params ?? {};
 
   useEffect(() => {
-    dispatch(fetchDoctorPatients());
-  }, [dispatch]);
+    dispatch(fetchDoctorPatients(params));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, page, limit, search]);
 
-  return { patients, isLoading: status === "loading", isReady: status === "succeeded" };
+  return { patients, total, isLoading: status === "loading", isReady: status === "succeeded" };
 }
 
 export function useDoctorPatient(id: string) {
   const dispatch = useAppDispatch();
   const detail   = useAppSelector(selectDoctorPatientDetail);
+  const status   = useAppSelector(selectDoctorPatientDetailStatus);
+  const error    = useAppSelector(selectDoctorPatientDetailError);
 
   useEffect(() => {
     dispatch(fetchDoctorPatient(id));
   }, [dispatch, id]);
 
-  return detail[id] || detail.current || null;
+  return {
+    patient: detail[id] || null,
+    isLoading: !detail[id] && status !== "failed",
+    isError: !detail[id] && status === "failed",
+    error,
+  };
 }
 
 export function usePatientResult(patientId: string, instanceId: string) {

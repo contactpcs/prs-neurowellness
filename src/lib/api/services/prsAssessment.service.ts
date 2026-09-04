@@ -1,6 +1,13 @@
 import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
 
+// POST /prs-assessment-instances returns the full AssessmentStartRead
+// (instance_id, is_resumed, scales[] each with questions[] incl. options[])
+// and resumes an in-progress instance instead of duplicating. Saved answers
+// are restorable via GET /prs-assessment-instances/{id}/responses. The only
+// remaining gap is a per-question options endpoint — options now arrive
+// embedded in each question, so getQuestionOptions stays a stub.
+
 type ApiSuccessResponse<T> = {
   success: boolean;
   message: string;
@@ -41,6 +48,11 @@ export type PrsAssessmentQuestion = {
   display_order?: number;
   question_index: number;
   options?: PrsQuestionOption[];
+  hidden_unless?: {
+    question_id: string;
+    hidden_when_label?: string;
+    visible_only_when_label?: string;
+  } | null;
 };
 
 export type PrsAssessmentScaleResult = {
@@ -58,11 +70,23 @@ export type PrsAssessmentStartResult = {
   scales: PrsAssessmentScaleResult[];
 };
 
+export const PRS_LANGUAGES = [
+  { code: "en", label: "English" },
+  { code: "hi", label: "हिन्दी" },
+  { code: "mr", label: "मराठी" },
+] as const;
+
 export type PrsSavedResponse = {
   response_id: string;
   question_id: string;
   given_response: string;
   response_value: number | null;
+  // Only populated when getResponses() is called with a `language` — the
+  // doctor/staff translated report view (question_text/response_label in the
+  // requested language). Absent on the plain resume-flow call.
+  question_text?: string;
+  response_label?: string;
+  language_code?: string;
 };
 
 export type PrsInstanceResponses = {
@@ -71,6 +95,22 @@ export type PrsInstanceResponses = {
   responses_count: number;
   responses: PrsSavedResponse[];
   responses_by_qid: Record<string, PrsSavedResponse>;
+};
+
+export type PrsScaleQuestionResponse = {
+  question_id: string;
+  question_text: string;
+  given_response: string | null;
+  response_label: string | null;
+  is_answered: boolean;
+  is_skipped: boolean;
+};
+
+export type PrsScaleResponses = {
+  scale_id: string;
+  scale_code: string;
+  scale_name: string;
+  questions: PrsScaleQuestionResponse[];
 };
 
 export type PrsQuestionOption = {
@@ -91,64 +131,191 @@ export type PrsQuestionOptionsResult = {
 };
 
 export const prsAssessmentService = {
+  /** Composed from GET /prs-catalog/diseases — each disease row now carries
+   * its scales[] (scale_id, scale_code, scale_name, full_name, short_name). */
   async getConditionDetails(conditionId: string): Promise<PrsConditionDetails> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.CONDITION(conditionId));
-    return unwrap<PrsConditionDetails>(data);
+    const { data } = await apiClient.get(ENDPOINTS.PRS.CONDITIONS);
+    const list = unwrap<Record<string, unknown>[]>(data);
+    const match = Array.isArray(list)
+      ? list.find((d) => d.disease_id === conditionId)
+      : undefined;
+    if (!match) return { disease_id: conditionId, scales: [] };
+    return {
+      ...match,
+      disease_id: conditionId,
+      scales: Array.isArray(match.scales) ? (match.scales as PrsConditionScale[]) : [],
+    };
   },
 
+  /** Treatment protocols prescribe scales via the PRS catalogue (51 —
+   * reference.prs_scales/prs_disease_scale_map) but device_session_scales
+   * only carries scale_code, not the disease_id (or PRS scale_id)
+   * startAssessment()/grantPermission() need — treatment_protocols has no
+   * endpoint exposing that mapping, and a scale can legitimately belong to
+   * more than one disease (e.g. GAD-7 under Depression/Anxiety). Any disease
+   * that maps the scale renders the same questionnaire, so a reverse scan
+   * over the same /prs-catalog/diseases list getConditionDetails already
+   * uses is sufficient — first match wins. */
+  async resolveDiseaseAndScaleId(scaleCode: string): Promise<{ diseaseId: string; scaleId: string } | null> {
+    const { data } = await apiClient.get(ENDPOINTS.PRS.CONDITIONS);
+    const list = unwrap<Record<string, unknown>[]>(data);
+    if (!Array.isArray(list)) return null;
+    for (const disease of list) {
+      const scales = Array.isArray(disease.scales) ? (disease.scales as PrsConditionScale[]) : [];
+      const match = scales.find((s) => s.scale_code === scaleCode);
+      if (match) {
+        return { diseaseId: String(disease.disease_id), scaleId: match.scale_id };
+      }
+    }
+    return null;
+  },
+
+  /** Real endpoint (POST /prs-assessment-instances) needs assessment_stage,
+   * which the old payload never carried — defaulted to "main_clinical".
+   * Returns AssessmentStartRead: resumes an in-progress instance
+   * (is_resumed: true) instead of duplicating, and carries the full
+   * scales → questions → options tree in one call. */
   async startAssessment(payload: {
     disease_id: string;
     taken_by: "patient" | "doctor_on_behalf";
     patient_id?: string;
+    session_id?: string;
+    cycle_id?: string;
+    language_code?: string;
+    /** The visit this instance is assigned at, for the doctor portal's
+     *  per-visit bundle. Distinct from session_id — covers any appointment
+     *  type, not just a device session. */
+    appointment_id?: string;
   }): Promise<PrsAssessmentStartResult> {
-    const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_START, payload);
-    return unwrap<PrsAssessmentStartResult>(data);
+    if (!payload.patient_id) throw new Error("patient_id is required to start an assessment.");
+    const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_START, {
+      patient_id: payload.patient_id,
+      disease_id: payload.disease_id,
+      assessment_stage: "main_clinical",
+      language_code: payload.language_code ?? "en",
+      ...(payload.session_id ? { session_id: payload.session_id } : {}),
+      ...(payload.cycle_id ? { cycle_id: payload.cycle_id } : {}),
+      ...(payload.appointment_id ? { appointment_id: payload.appointment_id } : {}),
+    });
+    const result = unwrap<PrsAssessmentStartResult>(data);
+    return {
+      instance_id: result.instance_id,
+      is_resumed: result.is_resumed ?? false,
+      scales: Array.isArray(result.scales) ? result.scales : [],
+    };
   },
 
+  /** Real: PATCH /prs-assessment-instances/{id}/language — language dropdown
+   * shown after "Start Assessment". Updates the instance's stored
+   * language_code and returns the same scales[] shape as startAssessment(),
+   * fully re-translated, so callers just re-map and re-render. */
+  async setLanguage(instanceId: string, languageCode: string): Promise<PrsAssessmentStartResult> {
+    const { data } = await apiClient.patch(ENDPOINTS.PRS.ASSESSMENT_LANGUAGE(instanceId), {
+      language_code: languageCode,
+    });
+    const result = unwrap<PrsAssessmentStartResult>(data);
+    return {
+      instance_id: result.instance_id,
+      is_resumed: result.is_resumed ?? true,
+      scales: Array.isArray(result.scales) ? result.scales : [],
+    };
+  },
+
+  /** Real: POST /prs-assessment-instances with assessment_stage=general_registration
+   * — used by the self-registration wizard's PRS step, separate from
+   * startAssessment() above (which hardcodes main_clinical for the doctor
+   * flow, not touched here). No disease_id — registration's PRS step is
+   * hardcoded to EQ-5D-5L regardless of condition (disease selection
+   * removed from registration, 70_remove_disease_selection.sql, 27 Aug
+   * 2026) — and returns the full scales→questions→options tree, same as
+   * startAssessment(), so the caller doesn't need a second round trip
+   * through scale-assignments/scale-questions to render anything. */
+  async startGeneralRegistrationAssessment(patientId: string): Promise<PrsAssessmentStartResult> {
+    const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_START, {
+      patient_id: patientId,
+      assessment_stage: "general_registration",
+    });
+    const result = unwrap<PrsAssessmentStartResult>(data);
+    return {
+      instance_id: result.instance_id,
+      is_resumed: result.is_resumed ?? false,
+      scales: Array.isArray(result.scales) ? result.scales : [],
+    };
+  },
+
+  // NOT AVAILABLE — no per-question options endpoint.
   async getQuestionOptions(questionId: string): Promise<PrsQuestionOptionsResult> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.QUESTION_OPTIONS(questionId));
-    return unwrap<PrsQuestionOptionsResult>(data);
+    return { question_id: questionId, answer_type: "text", is_required: false, options: [] };
   },
 
+  /** Real endpoint has no scale_id/question_index/label fields — only
+   * question_id + given_response. */
   async saveResponse(
     instanceId: string,
-    scaleId: string,
-    questionIndex: number,
+    _scaleId: string,
+    _questionIndex: number,
     questionId: string,
     value: number | string,
-    label?: string | null
+    _label?: string | null
   ): Promise<void> {
-    await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_SAVE_RESPONSE, {
-      instance_id: instanceId,
-      scale_id: scaleId,
-      question_index: questionIndex,
-      question_id: questionId,
-      response_value: String(value),
-      response_label: label ?? undefined,
+    await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_SAVE_RESPONSE(instanceId), {
+      responses: [{ question_id: questionId, given_response: String(value) }],
     });
   },
 
-  async getResponses(instanceId: string): Promise<PrsInstanceResponses> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.ASSESSMENT_RESPONSES(instanceId));
-    return unwrap<PrsInstanceResponses>(data);
+  /** Real: GET /prs-assessment-instances/{id}/responses — returns saved
+   * ResponseRead[], used to restore answers when resuming an instance.
+   * Pass `language` for the doctor/staff report view — backend translates
+   * question_text/response_label into that language (given_response, the
+   * canonical option_value, is untouched either way). */
+  async getResponses(instanceId: string, language?: string): Promise<PrsInstanceResponses> {
+    const { data } = await apiClient.get(ENDPOINTS.PRS.ASSESSMENT_RESPONSES(instanceId), {
+      params: language ? { language } : undefined,
+    });
+    const raw = unwrap<unknown>(data);
+    const list: PrsSavedResponse[] = Array.isArray(raw)
+      ? (raw as PrsSavedResponse[])
+      : Array.isArray((raw as { responses?: unknown })?.responses)
+        ? ((raw as { responses: PrsSavedResponse[] }).responses)
+        : [];
+    const byQid: Record<string, PrsSavedResponse> = {};
+    for (const r of list) byQid[r.question_id] = r;
+    return {
+      instance_id: (raw as { instance_id?: string })?.instance_id ?? instanceId,
+      status: (raw as { status?: string })?.status ?? "in_progress",
+      responses_count: list.length,
+      responses: list,
+      responses_by_qid: byQid,
+    };
   },
 
+  /** Real: GET /prs-assessment-instances/{id}/responses-by-scale?language=
+   * — detailed report view. Unlike getResponses() above, this includes every
+   * question the patient was assigned (answered, unanswered, or skipped via
+   * skip_logic), grouped by scale — not just the ones with a saved answer. */
+  async getResponsesByScale(instanceId: string, language: string = "en"): Promise<PrsScaleResponses[]> {
+    const { data } = await apiClient.get(ENDPOINTS.PRS.ASSESSMENT_RESPONSES_BY_SCALE(instanceId), {
+      params: { language },
+    });
+    const raw = unwrap<unknown>(data);
+    return Array.isArray(raw) ? (raw as PrsScaleResponses[]) : [];
+  },
+
+  /** Old `responses` keys were question_index numbers (never real question_ids,
+   * since no question catalog was ever fetched for scales) — passed through
+   * as question_id best-effort, but they won't match the real catalog's ids. */
   async submitAssessment(
     instanceId: string,
     scaleId: string,
     responses: Record<string, number | string>
   ): Promise<unknown> {
-    const responseList = Object.entries(responses)
-      .map(([idx, v]) => ({
-        question_index: Number(idx),
-        response_value: String(v),
-      }))
-      .filter((r) => Number.isFinite(r.question_index));
-
-    const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_SUBMIT, {
-      instance_id: instanceId,
-      scale_id: scaleId,
+    const responseList = Object.entries(responses).map(([question_id, v]) => ({
+      question_id,
+      given_response: String(v),
+    }));
+    const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_SUBMIT(instanceId), {
       responses: responseList,
+      finalize_scale_id: scaleId,
     });
     return unwrap<unknown>(data);
   },

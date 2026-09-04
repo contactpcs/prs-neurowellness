@@ -3,24 +3,34 @@
 import { useEffect, useState } from "react";
 import {
   UserCog, Plus, Search, Edit2, Power, PowerOff, Trash2,
-  X, Mail, Building2,
+  X, Mail, Building2, RefreshCw, ShieldCheck,
 } from "lucide-react";
 import { useAdminStaff, useAdminClinics } from "@/lib/hooks";
-import { Card, CardContent, Button, Input, Skeleton, Modal } from "@/components/ui";
-import type { AdminStaffMember, RegisterStaffPayload } from "@/types/admin.types";
+import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
+import { consentService, type ConsentRecord } from "@/lib/api/services/consent.service";
+import { adminService } from "@/lib/api/services/admin.service";
+import type { AdminClinic, AdminStaffMember, RegisterStaffPayload } from "@/types/admin.types";
+
+const CLINIC_STATUS_STYLES: Record<AdminClinic["status"], string> = {
+  setup: "bg-amber-100 text-amber-700",
+  active: "bg-green-100 text-green-700",
+  pending_closure: "bg-orange-100 text-orange-700",
+  closed: "bg-neutral-200 text-neutral-600",
+};
+const CLINIC_STATUS_LABELS: Record<AdminClinic["status"], string> = {
+  setup: "Setup", active: "Active", pending_closure: "Closing", closed: "Closed",
+};
 
 const ROLES = [
   { value: "doctor",             label: "Doctor" },
   { value: "receptionist",       label: "Receptionist" },
   { value: "clinical_assistant", label: "Clinical Assistant" },
-  { value: "clinical_admin",     label: "Clinical Admin" },
 ];
 
 const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
   doctor:             { bg: "bg-blue-100",   text: "text-blue-700" },
   receptionist:       { bg: "bg-cyan-100",   text: "text-cyan-700" },
   clinical_assistant: { bg: "bg-teal-100",   text: "text-teal-700" },
-  clinical_admin:     { bg: "bg-purple-100", text: "text-purple-700" },
   platform_admin:     { bg: "bg-rose-100",   text: "text-rose-700" },
 };
 
@@ -83,6 +93,13 @@ function StaffForm({ initial, clinicOptions, onSubmit, onClose, isEdit }: StaffF
     role: initial?.role ?? "doctor",
     clinic_id: initial?.clinic_id ?? "",
     phone: initial?.phone ?? "",
+    gender: undefined,
+    dob: "",
+    address: "",
+    city: "",
+    state: "",
+    country: "India",
+    pincode: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -162,6 +179,49 @@ function StaffForm({ initial, clinicOptions, onSubmit, onClose, isEdit }: StaffF
           ))}
         </select>
       </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-neutral-600 mb-1">Gender</label>
+          <select
+            value={form.gender ?? ""}
+            onChange={(e) => set("gender", (e.target.value || undefined) as RegisterStaffPayload["gender"])}
+            className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white h-9"
+          >
+            <option value="">—</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-neutral-600 mb-1">Date of Birth</label>
+          <Input type="date" value={form.dob ?? ""} onChange={(e) => set("dob", e.target.value)} />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-neutral-600 mb-1">Address</label>
+        <Input value={form.address ?? ""} onChange={(e) => set("address", e.target.value)} placeholder="Full address" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-neutral-600 mb-1">City</label>
+          <Input value={form.city ?? ""} onChange={(e) => set("city", e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-neutral-600 mb-1">State</label>
+          <Input value={form.state ?? ""} onChange={(e) => set("state", e.target.value)} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-neutral-600 mb-1">Country</label>
+          <Input value={form.country ?? ""} onChange={(e) => set("country", e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-neutral-600 mb-1">Pincode</label>
+          <Input value={form.pincode ?? ""} onChange={(e) => set("pincode", e.target.value)} />
+        </div>
+      </div>
 
       {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
 
@@ -208,6 +268,77 @@ function ConfirmDeleteModal({ member, onConfirm, onClose }: {
   );
 }
 
+// ─── Detail Modal ─────────────────────────────────────────────────
+
+function StaffDetailModal({ member }: { member: AdminStaffMember }) {
+  const rc = roleColor(member.role);
+  const [consents, setConsents] = useState<ConsentRecord[] | null>(null);
+  const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setConsents(null);
+    if (!member.profile_id) return;
+    consentService.listForSubject({ staff_id: member.profile_id }).then(setConsents).catch(() => setConsents([]));
+  }, [member.profile_id]);
+
+  useEffect(() => {
+    setDetail(null);
+    setDetailError(null);
+    adminService.getStaffDetail(member.id, member.role).then(setDetail).catch(() => setDetailError("Couldn't load full record"));
+  }, [member.id, member.role]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-semibold flex-shrink-0">
+          {[member.first_name?.[0], member.last_name?.[0]].filter(Boolean).join("").toUpperCase() || "?"}
+        </div>
+        <div>
+          <p className="font-semibold text-neutral-900">{member.first_name} {member.last_name}</p>
+          <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${rc.bg} ${rc.text}`}>{roleLabel(member.role)}</span>
+        </div>
+      </div>
+
+      {detail === null ? (
+        detailError ? <p className="text-xs text-red-500">{detailError}</p> : <p className="text-xs text-neutral-400">Loading full record…</p>
+      ) : (
+        <DetailFieldList data={detail} exclude={["doctor_id", "ca_id", "receptionist_id", "profile_id"]} />
+      )}
+
+      <div>
+        <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+          <ShieldCheck className="h-3.5 w-3.5" />Consent Records
+        </p>
+        {!member.profile_id ? (
+          <p className="text-xs text-neutral-400">No profile_id on record — can't look up consent.</p>
+        ) : consents === null ? (
+          <p className="text-xs text-neutral-400">Loading…</p>
+        ) : consents.length === 0 ? (
+          <p className="text-xs text-neutral-400">No consent records found.</p>
+        ) : (
+          <div className="divide-y divide-neutral-100 border border-neutral-100 rounded-lg overflow-hidden">
+            {consents.map((c) => (
+              <div key={c.consent_id} className="flex items-center justify-between px-4 py-2 text-sm">
+                <span className="text-neutral-700 capitalize">{c.consent_type.replace(/_/g, " ")}</span>
+                <span className="flex items-center gap-2">
+                  {c.signed_at && <span className="text-xs text-neutral-400">{new Date(c.signed_at).toLocaleDateString()}</span>}
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                    c.status === "signed" ? "bg-green-100 text-green-700" : c.status === "revoked" ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-700"
+                  }`}>
+                    {c.status}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────
 
 export default function AdminStaffPage() {
@@ -220,12 +351,24 @@ export default function AdminStaffPage() {
   const [showRegister, setShowRegister] = useState(false);
   const [editMember, setEditMember] = useState<AdminStaffMember | null>(null);
   const [deleteMember, setDeleteMember] = useState<AdminStaffMember | null>(null);
+  const [detailMember, setDetailMember] = useState<AdminStaffMember | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => { fetch(); fetchClinics(); }, [fetch, fetchClinics]);
 
+  function closeRegister() {
+    setShowRegister(false);
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    try { await Promise.all([fetch(), fetchClinics()]); } finally { setRefreshing(false); }
+  }
+
   const clinicOptions = clinics.map((c) => ({ value: c.clinic_id, label: c.clinic_name }));
+  const clinicById = new Map(clinics.map((c) => [c.clinic_id, c]));
 
   const filtered = staff.filter((s) => {
     const name = `${s.first_name} ${s.last_name}`.toLowerCase();
@@ -241,7 +384,7 @@ export default function AdminStaffPage() {
     setTogglingId(member.id);
     setActionError(null);
     try {
-      await toggleStaff(member.id, !member.is_active);
+      await toggleStaff(member.id, !member.is_active, member.role);
     } catch (e: any) {
       setActionError(e?.response?.data?.detail || "Failed to update staff status");
     } finally {
@@ -257,14 +400,24 @@ export default function AdminStaffPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">Staff</h1>
           <p className="text-sm text-neutral-500 mt-0.5">{staff.length} staff member{staff.length !== 1 ? "s" : ""}</p>
         </div>
-        <Button onClick={() => setShowRegister(true)}>
-          <Plus className="h-4 w-4 mr-1.5" />Register Staff
-        </Button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            title="Refresh"
+            className="p-2.5 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 rounded-lg border border-neutral-200 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+          </button>
+          <Button onClick={() => setShowRegister(true)}>
+            <Plus className="h-4 w-4 mr-1.5" />Register Staff
+          </Button>
+        </div>
       </div>
 
       {(error || actionError) && (
@@ -338,22 +491,26 @@ export default function AdminStaffPage() {
               <tbody className="divide-y divide-neutral-100">
                 {filtered.map((member) => {
                   const rc = roleColor(member.role);
+                  const memberClinic = member.clinic_id ? clinicById.get(member.clinic_id) : undefined;
                   return (
                     <tr key={member.id} className="hover:bg-neutral-50/60 transition-colors">
                       <td className="px-6 py-3.5">
-                        <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => setDetailMember(member)}
+                          className="flex items-center gap-3 text-left hover:opacity-75 transition-opacity"
+                        >
                           <div className="w-9 h-9 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-semibold text-xs flex-shrink-0">
                             {initials(member)}
                           </div>
                           <div>
-                            <p className="font-medium text-neutral-900">
+                            <p className="font-medium text-neutral-900 underline decoration-dotted decoration-neutral-300 underline-offset-2">
                               {member.first_name} {member.last_name}
                             </p>
                             <p className="text-xs text-neutral-500 flex items-center gap-1 mt-0.5">
                               <Mail className="h-3 w-3" />{member.email}
                             </p>
                           </div>
-                        </div>
+                        </button>
                       </td>
                       <td className="px-4 py-3.5">
                         <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${rc.bg} ${rc.text}`}>
@@ -363,7 +520,12 @@ export default function AdminStaffPage() {
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-1.5 text-xs text-neutral-600">
                           <Building2 className="h-3.5 w-3.5 text-neutral-400 flex-shrink-0" />
-                          <span className="truncate max-w-[140px]">{member.clinic_name ?? member.clinic_id ?? "—"}</span>
+                          <span className="truncate max-w-[110px]">{member.clinic_name ?? member.clinic_id ?? "—"}</span>
+                          {memberClinic && (
+                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0 ${CLINIC_STATUS_STYLES[memberClinic.status]}`}>
+                              {CLINIC_STATUS_LABELS[memberClinic.status]}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3.5 text-center">
@@ -413,11 +575,11 @@ export default function AdminStaffPage() {
       </Card>
 
       {/* Register modal */}
-      <Modal isOpen={showRegister} onClose={() => setShowRegister(false)} title="Register Staff Member">
+      <Modal isOpen={showRegister} onClose={closeRegister} title="Register Staff Member">
         <StaffForm
           clinicOptions={clinicOptions}
           onSubmit={registerStaff}
-          onClose={() => setShowRegister(false)}
+          onClose={closeRegister}
         />
       </Modal>
 
@@ -434,12 +596,17 @@ export default function AdminStaffPage() {
         )}
       </Modal>
 
+      {/* Detail modal */}
+      <Modal isOpen={!!detailMember} onClose={() => setDetailMember(null)} title="Staff Details" className="max-w-3xl">
+        {detailMember && <StaffDetailModal member={detailMember} />}
+      </Modal>
+
       {/* Delete confirm modal */}
       <Modal isOpen={!!deleteMember} onClose={() => setDeleteMember(null)} title="Delete Staff Member">
         {deleteMember && (
           <ConfirmDeleteModal
             member={deleteMember}
-            onConfirm={() => deleteStaff(deleteMember.id)}
+            onConfirm={() => deleteStaff(deleteMember.id, deleteMember.role)}
             onClose={() => setDeleteMember(null)}
           />
         )}

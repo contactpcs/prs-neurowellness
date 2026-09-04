@@ -1,0 +1,516 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import {
+  Gauge, AlertTriangle, FileText, Dumbbell, ClipboardList, MessageSquare,
+  Camera, CalendarCheck, Pause, Square, CheckCircle2, Info,
+} from "lucide-react";
+import { useDeviceSession } from "@/lib/hooks";
+import { appointmentsService } from "@/lib/api/services";
+import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
+import { prsAssessmentService } from "@/lib/api/services/prsAssessment.service";
+import { permissionsService } from "@/lib/api/services/permissions.service";
+import { Button, Card, CardContent, Input, PageLoader } from "@/components/ui";
+import { CountdownTimer } from "@/components/deviceSession/CountdownTimer";
+import { SymptomChipSelector } from "@/components/deviceSession/SymptomChipSelector";
+import { AdverseEventForm } from "@/components/deviceSession/AdverseEventForm";
+import { PauseStopDialog } from "@/components/deviceSession/PauseStopDialog";
+import { EarlyCompletionDialog } from "@/components/deviceSession/EarlyCompletionDialog";
+import type { Appointment } from "@/types/domain.types";
+import type { ProtocolDetail } from "@/types/treatmentProtocol.types";
+import type { CognitiveActivity, ScaleDeliveryMode } from "@/types/deviceSession.types";
+
+const ACTIVITY_OPTIONS: { value: CognitiveActivity; label: string }[] = [
+  { value: "sudoku", label: "Sudoku" },
+  { value: "memory_game", label: "Memory card game" },
+  { value: "word_recall", label: "Word recall" },
+  { value: "reading_aloud", label: "Reading aloud" },
+  { value: "breathing", label: "Breathing exercise" },
+  { value: "sit_to_stand", label: "Sit-to-stand" },
+  { value: "drawing", label: "Drawing" },
+];
+
+type SectionKey = "device-fit" | "symptoms" | "notes" | "adverse-events" | "activities" | "scales" | "feedback" | "media" | "next-session";
+
+const SECTIONS: { key: SectionKey; label: string; icon: typeof Gauge }[] = [
+  { key: "device-fit", label: "Impedance", icon: Gauge },
+  { key: "symptoms", label: "Symptoms Observed", icon: Info },
+  { key: "notes", label: "Clinical Notes", icon: FileText },
+  { key: "adverse-events", label: "Adverse Events", icon: AlertTriangle },
+  { key: "activities", label: "Cognitive Activities", icon: Dumbbell },
+  { key: "scales", label: "Scales & Assessments", icon: ClipboardList },
+  { key: "feedback", label: "Patient Feedback", icon: MessageSquare },
+  { key: "media", label: "Media & Recordings", icon: Camera },
+  { key: "next-session", label: "Next Session", icon: CalendarCheck },
+];
+
+export default function DeviceSessionLivePage() {
+  const { appointmentId } = useParams<{ appointmentId: string }>();
+  const router = useRouter();
+  const { session, isLoading, pause, resume, stop, complete, setDeviceFit, recordSymptom, recordAdverseEvent, addNote, recordActivity, setScaleDelivery, recordFeedback, confirmNextSession } =
+    useDeviceSession(appointmentId);
+
+  const [appointment, setAppointment] = useState<Appointment | null>(null);
+  const [protocol, setProtocol] = useState<ProtocolDetail | null>(null);
+  const [activeSection, setActiveSection] = useState<SectionKey>("device-fit");
+  const [pauseOpen, setPauseOpen] = useState(false);
+  const [stopOpen, setStopOpen] = useState(false);
+  const [earlyCompletionOpen, setEarlyCompletionOpen] = useState(false);
+  const [showAeForm, setShowAeForm] = useState(false);
+
+  // Section-local drafts
+  const [deviceFitChecklist, setDeviceFitChecklist] = useState<Record<string, boolean>>({});
+  const [impedance, setImpedance] = useState("");
+  const [noteText, setNoteText] = useState("");
+  const [activitySelection, setActivitySelection] = useState<CognitiveActivity[]>([]);
+  const [activityFreeText, setActivityFreeText] = useState("");
+  const [feedbackComfort, setFeedbackComfort] = useState<"comfortable" | "tolerable" | "uncomfortable" | null>(null);
+  const [feedbackFeltAfter, setFeedbackFeltAfter] = useState<"better" | "no_change" | "worse" | null>(null);
+  const [feedbackNextIntensity, setFeedbackNextIntensity] = useState<"decrease" | "keep_same" | "increase" | null>(null);
+  const [feedbackQuote, setFeedbackQuote] = useState("");
+  const [nextConfirmed, setNextConfirmed] = useState<boolean | null>(null);
+  const [sendingScaleId, setSendingScaleId] = useState<string | null>(null);
+  const [scaleSendError, setScaleSendError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!appointmentId) return;
+    appointmentsService.getById(appointmentId).then(async (appt) => {
+      setAppointment(appt);
+      const protocolId = appt.protocol_id;
+      if (protocolId) setProtocol(await treatmentProtocolService.getProtocolDetail(protocolId));
+    });
+  }, [appointmentId]);
+
+  useEffect(() => {
+    if (session?.device_fit_checklist) setDeviceFitChecklist(session.device_fit_checklist);
+    if (session?.impedance_kohm != null) setImpedance(String(session.impedance_kohm));
+  }, [session]);
+
+  const prescribedDuration = protocol?.prescribed_duration_min ?? session?.actual_duration_min ?? 0;
+  const rampSec = protocol?.ramp_seconds ?? 0;
+  const totalSeconds = prescribedDuration * 60 + rampSec * 2;
+
+  // Ticks once a second so `remaining` (and therefore canComplete's
+  // timerDone gate below) actually reaches 0 in real time — CountdownTimer
+  // has its own internal tick for the DISPLAY, but that's a separate
+  // component's local state; this page's own `remaining` was a useMemo
+  // that only recomputed on session/totalSeconds changes, so it stayed
+  // frozen at whatever it was right after the last reload and "Mark as
+  // Completed" could stay disabled forever even once the visible timer hit
+  // 00:00.
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (session?.session_status !== "in_progress") return;
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [session?.session_status]);
+
+  const remaining = useMemo(() => {
+    if (!session) return totalSeconds;
+    if (!session.started_at) return totalSeconds;
+    if (session.session_status === "paused" && session.paused_at) {
+      const elapsedMs = new Date(session.paused_at).getTime() - new Date(session.started_at).getTime();
+      return Math.max(0, Math.round(totalSeconds - elapsedMs / 1000));
+    }
+    const elapsedMs = Date.now() - new Date(session.started_at).getTime();
+    return Math.max(0, Math.round(totalSeconds - elapsedMs / 1000));
+    // tick is a deliberate dependency, not read in the body — it forces
+    // this memo to recompute every second while in_progress instead of
+    // staying frozen at the value from the last session reload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, totalSeconds, tick]);
+
+  if (!appointment || isLoading || !session) return <PageLoader />;
+
+  const impedanceTone = (() => {
+    const v = Number(impedance);
+    if (!impedance || isNaN(v)) return null;
+    if (v < 5) return { label: "Good", tone: "text-success-600 bg-success-50 border-success-200" };
+    if (v <= 10) return { label: "Acceptable", tone: "text-amber-700 bg-amber-50 border-amber-200" };
+    return { label: "Too high — re-wet sponges or adjust strap", tone: "text-danger-700 bg-danger-50 border-danger-200" };
+  })();
+
+  const feedbackDone = !!session.feedback;
+  const nextSessionDone = !!session.next_session_confirmation;
+  const timerDone = remaining <= 0;
+  // A CA may complete once >= 75% of the prescribed duration has elapsed,
+  // but must supply an override reason + patient-stable confirmation — see
+  // EarlyCompletionDialog and device_sessions/service.py complete() (server
+  // re-enforces this threshold; it is not just a UI gate).
+  const elapsedRatio = totalSeconds > 0 ? 1 - remaining / totalSeconds : 0;
+  const earlyEligible = elapsedRatio >= 0.75;
+  // PRS assessments are standalone — whether a scale was sent to the
+  // patient's app or answered by the CA is independent of the device
+  // session's own lifecycle, so it must not block "Mark Session as
+  // Completed" the way feedbackDone/nextSessionDone do.
+  const canComplete = (timerDone || earlyEligible) && feedbackDone && nextSessionDone;
+  const missingGates = [
+    !timerDone && !earlyEligible && "under 75% of prescribed duration",
+    !feedbackDone && "patient feedback not recorded",
+    !nextSessionDone && "next session not confirmed",
+  ].filter(Boolean) as string[];
+
+  const handleSaveFeedback = async () => {
+    if (!feedbackComfort || !feedbackFeltAfter || !feedbackNextIntensity) return;
+    await recordFeedback({ comfort: feedbackComfort, felt_after: feedbackFeltAfter, next_intensity: feedbackNextIntensity }, feedbackQuote || undefined);
+  };
+
+  // "Send to patient app" previously only flipped device_session_scales.
+  // delivery_mode — no PRS assessment instance was ever created, so nothing
+  // ever showed up for the patient to fill in. Two things were actually
+  // missing:
+  //  1. startAssessment() only loads scales already in patient_scale_
+  //     assignments (prs.service.py start()'s _compose_scales) — it does
+  //     NOT create the assignment itself. Without one, the created instance
+  //     would carry zero questions.
+  //  2. The patient's own "My Assessments" list (getMyAssessments) reads
+  //     patient_scale_assignments, not prs_assessment_instances — so even a
+  //     populated instance wouldn't be *listed* there without this row.
+  // grantPermission (already used by the doctor's manual-assign flow) is
+  // what creates that row; startAssessment then finds it and renders.
+  const handleSendToPatient = async (protocolScaleId: string, scaleCode?: string) => {
+    if (!scaleCode) { setScaleSendError("Missing scale code for this row"); return; }
+    setSendingScaleId(protocolScaleId);
+    setScaleSendError(null);
+    try {
+      const resolved = await prsAssessmentService.resolveDiseaseAndScaleId(scaleCode);
+      if (!resolved) throw new Error(`No PRS disease maps to ${scaleCode}`);
+      const { diseaseId, scaleId } = resolved;
+      const patientId = appointment.patient_public_id ?? appointment.patient_id;
+      if (!patientId) throw new Error("No patient id on this appointment");
+      // patient_scale_assignments has no uniqueness constraint — granting
+      // again for a scale that's already assigned creates a second row,
+      // which _compose_scales used to render as a duplicate question block
+      // (fixed server-side too, but no reason to keep adding rows here).
+      const { permissions: existing } = await permissionsService.getPatientPermissions(patientId);
+      const alreadyAssigned = existing.some(
+        (p) => p.disease_id === diseaseId && p.scale_ids.includes(scaleId),
+      );
+      if (!alreadyAssigned) {
+        await permissionsService.grantPermission({ patient_id: patientId, disease_id: diseaseId, scale_ids: [scaleId] });
+      }
+      await prsAssessmentService.startAssessment({
+        disease_id: diseaseId,
+        taken_by: "patient",
+        patient_id: patientId,
+        appointment_id: appointmentId,
+      });
+      await setScaleDelivery(protocolScaleId, "patient_app" as ScaleDeliveryMode);
+    } catch (e: unknown) {
+      const msg = (e as { message?: string })?.message ?? "Failed to send to patient app";
+      setScaleSendError(String(msg));
+    } finally {
+      setSendingScaleId(null);
+    }
+  };
+
+  const nonMildAe = session.adverse_events.some((ae) => ae.severity !== "mild");
+
+  return (
+    <div className="flex h-[calc(100vh-4rem)] -mx-6 -mb-6">
+      {/* Left rail */}
+      <div className="w-64 flex-none border-r border-neutral-100 bg-white overflow-y-auto py-3">
+        {SECTIONS.map((s) => {
+          const Icon = s.icon;
+          const count =
+            s.key === "symptoms" ? session.symptoms.length :
+            s.key === "adverse-events" ? session.adverse_events.length :
+            s.key === "notes" ? session.notes.length :
+            s.key === "activities" ? session.activities.length :
+            s.key === "scales" ? session.scales.filter((sc) => sc.status !== "pending").length :
+            s.key === "media" ? session.media.length :
+            undefined;
+          return (
+            <button
+              key={s.key}
+              onClick={() => setActiveSection(s.key)}
+              className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-left transition-colors ${
+                activeSection === s.key ? "bg-primary-50 text-primary-800 border-r-2 border-primary-500" : "text-neutral-600 hover:bg-neutral-50"
+              }`}
+            >
+              <Icon className="h-4 w-4 flex-shrink-0" />
+              <span className="flex-1">{s.label}</span>
+              {count !== undefined && count > 0 && <span className="text-xs text-neutral-400">{count}</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Sticky timer header */}
+        <div className="bg-white border-b border-neutral-100 px-6 py-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="w-2 h-2 rounded-full bg-danger-500 animate-pulse" />
+              <div>
+                <p className="text-sm font-semibold text-neutral-900">{appointment.patient_name ?? "Patient"}</p>
+                <p className="text-xs text-neutral-400">
+                  Session {protocol?.session_count ? `of ${protocol.session_count}` : ""} · {protocol?.modality} · {protocol?.device_name}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {session.session_status === "paused" ? (
+                <Button variant="outline" size="sm" onClick={() => resume()}>Resume</Button>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => setPauseOpen(true)}>
+                  <Pause className="h-3.5 w-3.5" /> Pause
+                </Button>
+              )}
+              <Button variant="danger" size="sm" onClick={() => setStopOpen(true)}>
+                <Square className="h-3.5 w-3.5" /> Stop Session
+              </Button>
+              <Button
+                size="sm"
+                onClick={async () => {
+                  if (!timerDone) { setEarlyCompletionOpen(true); return; }
+                  await complete();
+                  router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`);
+                }}
+                disabled={!canComplete}
+                title={missingGates.length ? `Still needed: ${missingGates.join(", ")}` : undefined}
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" /> Mark Session as Completed
+              </Button>
+            </div>
+          </div>
+
+          <CountdownTimer remainingSeconds={remaining} totalSeconds={totalSeconds} sessionStatus={session.session_status} />
+          {missingGates.length > 0 && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+              Still needed before completing: {missingGates.join(", ")}.
+            </p>
+          )}
+
+          {session.session_status === "paused" && (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+              Session paused — {session.pause_stop_reason?.replace(/_/g, " ")} · Timer is held.
+            </div>
+          )}
+          {nonMildAe && (
+            <div className="rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-xs text-danger-800 flex items-center gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5" /> Non-mild adverse event recorded — consider pausing or stopping and notify the doctor.
+            </div>
+          )}
+          <p className="text-xs text-neutral-400">This screen does not lock — the session keeps running if you leave.</p>
+        </div>
+
+        {/* Section content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-2xl mx-auto">
+            {activeSection === "device-fit" && (
+              <Card><CardContent className="space-y-3 pt-4">
+                <Input label="Impedance reading (kΩ)" type="number" value={impedance} onChange={(e) => setImpedance(e.target.value)} />
+                {impedanceTone && <span className={`inline-block text-xs px-2 py-1 rounded-full border ${impedanceTone.tone}`}>{impedanceTone.label}</span>}
+                <Button size="sm" onClick={() => setDeviceFit(deviceFitChecklist, impedance ? Number(impedance) : undefined)}>Save</Button>
+              </CardContent></Card>
+            )}
+
+            {activeSection === "symptoms" && (
+              <div className="space-y-4">
+                <Card><CardContent className="pt-4"><SymptomChipSelector onRecord={recordSymptom} /></CardContent></Card>
+                {session.symptoms.length > 0 && (
+                  <div className="space-y-2">
+                    {session.symptoms.map((s) => (
+                      <div key={s.symptom_record_id} className="text-sm border-b border-neutral-100 pb-2">
+                        <span className="font-medium capitalize">{s.symptom.replace(/_/g, " ")}</span> — {s.severity}
+                        {s.note && <span className="text-neutral-400"> · {s.note}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeSection === "notes" && (
+              <div className="space-y-4">
+                <Card><CardContent className="space-y-2 pt-4">
+                  <Input placeholder="Add a note" value={noteText} onChange={(e) => setNoteText(e.target.value)} />
+                  <Button size="sm" disabled={!noteText.trim()} onClick={async () => { await addNote(noteText.trim()); setNoteText(""); }}>Add note</Button>
+                </CardContent></Card>
+                {session.notes.map((n) => (
+                  <div key={n.note_id} className="text-sm border-b border-neutral-100 pb-2">
+                    <p className="text-neutral-800">{n.note_text}</p>
+                    <p className="text-xs text-neutral-400">{new Date(n.recorded_at).toLocaleTimeString()}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {activeSection === "adverse-events" && (
+              <div className="space-y-4">
+                {showAeForm ? (
+                  <AdverseEventForm onRecord={async (body) => { await recordAdverseEvent(body); setShowAeForm(false); }} onCancel={() => setShowAeForm(false)} />
+                ) : (
+                  <Button variant="danger" onClick={() => setShowAeForm(true)}>Record Adverse Event</Button>
+                )}
+                {session.adverse_events.map((ae) => (
+                  <div key={ae.ae_record_id} className="text-sm border-b border-neutral-100 pb-2">
+                    <span className="font-medium capitalize">{ae.event_type.replace(/_/g, " ")}</span> — {ae.severity}
+                    <p className="text-neutral-500">{ae.description}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {activeSection === "activities" && (
+              <Card><CardContent className="space-y-3 pt-4">
+                <div className="flex flex-wrap gap-2">
+                  {ACTIVITY_OPTIONS.map((a) => (
+                    <button
+                      key={a.value}
+                      onClick={() => setActivitySelection((prev) => prev.includes(a.value) ? prev.filter((v) => v !== a.value) : [...prev, a.value])}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                        activitySelection.includes(a.value) ? "bg-primary-100 border-primary-400 text-primary-800" : "bg-white border-neutral-200 text-neutral-600"
+                      }`}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+                <Input placeholder="Other activity (free text)" value={activityFreeText} onChange={(e) => setActivityFreeText(e.target.value)} />
+                <Button
+                  size="sm"
+                  disabled={activitySelection.length === 0 && !activityFreeText}
+                  onClick={async () => { await recordActivity(activitySelection, activityFreeText || undefined); setActivitySelection([]); setActivityFreeText(""); }}
+                >
+                  Log activities
+                </Button>
+              </CardContent></Card>
+            )}
+
+            {activeSection === "scales" && (
+              <div className="space-y-3">
+                {scaleSendError && <p className="text-xs text-danger-600">{scaleSendError}</p>}
+                {session.scales.length === 0 && <p className="text-sm text-neutral-400">No scales due this session.</p>}
+                {session.scales.map((sc) => {
+                  // "completed" (status advances here once record_device_session_prs
+                  // links a finished instance back) is the only truly-done state.
+                  // "Sent to patient" is still awaiting the patient's own submission
+                  // in their app — not the same thing, so it gets its own label.
+                  const linked = sc.status === "completed" && !!sc.prs_instance_id;
+                  const awaitingPatient = sc.delivery_mode === "patient_app" && !linked;
+                  return (
+                    <Card key={sc.session_scale_id}><CardContent className="flex items-center justify-between pt-4">
+                      <div>
+                        <p className="text-sm font-medium">{sc.scale_name ?? sc.scale_code ?? sc.protocol_scale_id}</p>
+                        <p className="text-xs text-neutral-400 capitalize">{sc.status.replace(/_/g, " ")}</p>
+                      </div>
+                      {linked ? (
+                        <span className="text-xs text-success-600">
+                          {sc.delivery_mode === "ca_administered" ? "Administered by CA — recorded" : "Completed by patient"}
+                        </span>
+                      ) : awaitingPatient ? (
+                        <span className="text-xs text-amber-600">Sent to patient app — awaiting submission</span>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => router.push(
+                              `/clinical-assistant/device-sessions/${appointmentId}/scales/${sc.protocol_scale_id}?scale_code=${encodeURIComponent(sc.scale_code ?? "")}`
+                            )}
+                          >
+                            Administer here
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            isLoading={sendingScaleId === sc.protocol_scale_id}
+                            onClick={() => handleSendToPatient(sc.protocol_scale_id, sc.scale_code)}
+                          >
+                            Send to patient app
+                          </Button>
+                        </div>
+                      )}
+                    </CardContent></Card>
+                  );
+                })}
+              </div>
+            )}
+
+            {activeSection === "feedback" && (
+              <Card><CardContent className="space-y-4 pt-4">
+                {session.feedback ? (
+                  <p className="text-sm text-success-600">Feedback recorded.</p>
+                ) : (
+                  <>
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-neutral-500">Comfort with today&apos;s intensity</p>
+                      <div className="flex gap-2">
+                        {(["comfortable", "tolerable", "uncomfortable"] as const).map((v) => (
+                          <button key={v} onClick={() => setFeedbackComfort(v)} className={`px-3 py-1.5 rounded-md text-xs border ${feedbackComfort === v ? "bg-primary-100 border-primary-400" : "border-neutral-200"}`}>{v}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-neutral-500">How does the patient feel after</p>
+                      <div className="flex gap-2">
+                        {(["better", "no_change", "worse"] as const).map((v) => (
+                          <button key={v} onClick={() => setFeedbackFeltAfter(v)} className={`px-3 py-1.5 rounded-md text-xs border ${feedbackFeltAfter === v ? "bg-primary-100 border-primary-400" : "border-neutral-200"}`}>{v.replace("_", " ")}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-neutral-500">Intensity preference for next session</p>
+                      <div className="flex gap-2">
+                        {(["decrease", "keep_same", "increase"] as const).map((v) => (
+                          <button key={v} onClick={() => setFeedbackNextIntensity(v)} className={`px-3 py-1.5 rounded-md text-xs border ${feedbackNextIntensity === v ? "bg-primary-100 border-primary-400" : "border-neutral-200"}`}>{v.replace("_", " ")}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <Input placeholder="Patient's own words (optional)" value={feedbackQuote} onChange={(e) => setFeedbackQuote(e.target.value)} />
+                    <Button size="sm" onClick={handleSaveFeedback} disabled={!feedbackComfort || !feedbackFeltAfter || !feedbackNextIntensity}>Save feedback</Button>
+                  </>
+                )}
+              </CardContent></Card>
+            )}
+
+            {activeSection === "media" && (
+              <Card><CardContent className="pt-4">
+                <p className="text-sm text-neutral-500">Media capture requires recording consent, then attaching via the files module. Not yet wired to a live camera/upload — placeholder pending backend media storage.</p>
+              </CardContent></Card>
+            )}
+
+            {activeSection === "next-session" && (
+              <Card><CardContent className="space-y-3 pt-4">
+                {session.next_session_confirmation ? (
+                  <p className="text-sm text-success-600">Next session {session.next_session_confirmation.patient_confirmed ? "confirmed" : "flagged for change"}.</p>
+                ) : (
+                  <>
+                    <p className="text-sm text-neutral-600">Ask the patient to confirm their next session slot.</p>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => setNextConfirmed(true)}>Patient confirmed</Button>
+                      <Button size="sm" variant="outline" onClick={() => setNextConfirmed(false)}>Needs change</Button>
+                    </div>
+                    {nextConfirmed !== null && (
+                      <Button size="sm" onClick={() => confirmNextSession({ patient_confirmed: nextConfirmed })}>Save</Button>
+                    )}
+                  </>
+                )}
+              </CardContent></Card>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <PauseStopDialog mode="pause" isOpen={pauseOpen} onClose={() => setPauseOpen(false)} onConfirm={async (r, d) => { await pause(r, d); setPauseOpen(false); }} />
+      <PauseStopDialog
+        mode="stop"
+        isOpen={stopOpen}
+        onClose={() => setStopOpen(false)}
+        onConfirm={async (r, d) => { await stop(r, d); setStopOpen(false); router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`); }}
+      />
+      <EarlyCompletionDialog
+        isOpen={earlyCompletionOpen}
+        onClose={() => setEarlyCompletionOpen(false)}
+        onConfirm={async (reason) => {
+          await complete(reason);
+          setEarlyCompletionOpen(false);
+          router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`);
+        }}
+      />
+    </div>
+  );
+}

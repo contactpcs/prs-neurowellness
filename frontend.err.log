@@ -1,0 +1,105 @@
+ ⨯ ReferenceError: useEffect is not defined
+    at ConsentModal (D:\PCS\Combo\frontend\.next\server\chunks\ssr\src_e2127f._.js:1552:5)
+digest: "2766243694"
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⨯ ReferenceError: ConsentModal is not defined
+    at RegisterPage (D:\PCS\Combo\frontend\.next\server\chunks\ssr\src_e2127f._.js:2172:275)
+digest: "3426520648"
+ ⨯ ReferenceError: ConsentModal is not defined
+    at RegisterPage (D:\PCS\Combo\frontend\.next\server\chunks\ssr\src_e2127f._.js:2172:275)
+digest: "3426520648"
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⨯ ReferenceError: ConsentModal is not defined
+    at RegisterPage (D:\PCS\Combo\frontend\.next\server\chunks\ssr\src_e2127f._.js:2164:275)
+digest: "718352975"
+ ⨯ ReferenceError: ConsentModal is not defined
+    at RegisterPage (D:\PCS\Combo\frontend\.next\server\chunks\ssr\src_e2127f._.js:2164:275)
+digest: "718352975"
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⨯ Internal error: TypeError [ERR_INVALID_STATE]: Invalid state: ReadableStream is already closed
+    at ReadableByteStreamController.enqueue (node:internal/webstreams/readablestream:1183:13)
+    at eY (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:211178)
+    at eV (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:210476)
+    at Timeout._onTimeout (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:200233)
+    at listOnTimeout (node:internal/timers:594:17)
+    at process.processTimers (node:internal/timers:529:7)
+digest: "1517617399"
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+Warning: Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for one of the following reasons:
+1. You might have mismatching versions of React and the renderer (such as React DOM)
+2. You might be breaking the Rules of Hooks
+3. You might have more than one copy of React in the same app
+See https://reactjs.org/link/invalid-hook-call for tips about how to debug and fix this problem.
+ ⨯ TypeError: Cannot read properties of null (reading 'useContext')
+    at usePathname (D:\PCS\Combo\frontend\.next\server\chunks\ssr\node_modules_next_579ee6._.js:4835:238)
+    at ErrorBoundary (D:\PCS\Combo\frontend\.next\server\chunks\ssr\node_modules_next_579ee6._.js:5145:227)
+digest: "1773688060"
+Warning: Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for one of the following reasons:
+1. You might have mismatching versions of React and the renderer (such as React DOM)
+2. You might be breaking the Rules of Hooks
+3. You might have more than one copy of React in the same app
+See https://reactjs.org/link/invalid-hook-call for tips about how to debug and fix this problem.
+TypeError: Cannot read properties of null (reading 'useContext')
+    at t.useContext (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:162364)
+    at usePathname (D:\PCS\Combo\frontend\.next\server\chunks\ssr\node_modules_next_579ee6._.js:4835:238)
+    at ErrorBoundary (D:\PCS\Combo\frontend\.next\server\chunks\ssr\node_modules_next_579ee6._.js:5145:227)
+    at au (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:10446)
+    at D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:15122
+    at aw (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16908)
+    at a_ (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:49776)
+    at ab (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:11808)
+    at D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16871
+    at aw (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16908)
+    at aw (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46505)
+    at a_ (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:49776)
+    at ab (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:11808)
+    at D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16871
+    at aw (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16908)
+    at a_ (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:49776)
+    at D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:58612
+    at D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:59270
+    at aN (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:59278)
+    at Timeout._onTimeout (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:6939)
+    at listOnTimeout (node:internal/timers:594:17)
+    at process.processTimers (node:internal/timers:529:7)
+ ⨯ TypeError: Cannot read properties of null (reading 'useContext')
+    at t.useContext (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:162364)
+    at usePathname (D:\PCS\Combo\frontend\.next\server\chunks\ssr\node_modules_next_579ee6._.js:4835:238)
+    at ErrorBoundary (D:\PCS\Combo\frontend\.next\server\chunks\ssr\node_modules_next_579ee6._.js:5145:227)
+    at au (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:10446)
+    at D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:15122
+    at aw (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16908)
+    at a_ (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:49776)
+    at ab (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:11808)
+    at D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16871
+    at aw (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16908)
+    at aw (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46505)
+    at a_ (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:49776)
+    at ab (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:11808)
+    at D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16871
+    at aw (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16908)
+    at a_ (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:49776)
+    at D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:58612
+    at D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:59270
+    at aN (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:59278)
+    at Timeout._onTimeout (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:6939)
+    at listOnTimeout (node:internal/timers:594:17)
+    at process.processTimers (node:internal/timers:529:7) {
+  page: '/consent'
+}
+ ⨯ Internal error: TypeError [ERR_INVALID_STATE]: Invalid state: ReadableStream is already closed
+    at ReadableByteStreamController.enqueue (node:internal/webstreams/readablestream:1183:13)
+    at eY (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:211178)
+    at eV (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:210476)
+    at Timeout._onTimeout (D:\PCS\Combo\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:200233)
+    at listOnTimeout (node:internal/timers:594:17)
+    at process.processTimers (node:internal/timers:529:7)
+digest: "1517617399"

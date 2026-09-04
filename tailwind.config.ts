@@ -63,12 +63,29 @@ const config: Config = {
           critical: "#991b1b",
           normal: "#22c55e",
         },
+        sidebar: {
+          bg: "#1e40af",
+          "bg-hover": "rgba(255,255,255,.1)",
+          "active-bg": "rgba(255,255,255,.15)",
+          text: "#dbeafe",
+          "text-dim": "#93c5fd",
+          "icon-dim": "#93c5fd",
+        },
+        surface: {
+          page: "#F7F9FC",
+          card: "#ffffff",
+        },
+        action: {
+          orange: "#f97316",
+          "orange-dark": "#ea580c",
+        },
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
       },
       backgroundImage: {
-        "brand-gradient": "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)",
+        "brand-gradient":   "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)",
+        "brand-gradient-v": "linear-gradient(180deg, #00A1E4 0%, #09172E 100%)",
       },
       boxShadow: {
         xs: "0 1px 2px 0 rgb(0 0 0 / 0.04)",

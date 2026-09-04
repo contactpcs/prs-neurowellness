@@ -1,13 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save } from "lucide-react";
+import { ChevronRight, ChevronLeft, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save, StickyNote, FileText } from "lucide-react";
 import { PatientDetailSkeleton, Button } from "@/components/ui";
 import { AnamnesisForm } from "@/components/assessment/AnamnesisForm";
+import { adminService } from "@/lib/api/services/admin.service";
+import { PatientJourneySections, type PatientJourneyDetail } from "@/components/admin/PatientJourneySections";
+import { PatientHistoryPanel } from "@/components/admin/PatientHistoryPanel";
 import {
   useDoctorPatient,
+  useDoctorPatients,
   usePatientPermissions,
   usePatientScoresSummary,
   usePatientAnamnesis,
@@ -17,6 +21,17 @@ import { useAppDispatch } from "@/store/hooks";
 import { invalidatePatientAnamnesis } from "@/store/slices/anamnesisSlice";
 import type { DoctorNote } from "@/lib/api/services/doctorNotes.service";
 import type { Permission, AssessmentInstance, AnamnesisRecord } from "@/types/domain.types";
+import { EEGReportList, EEGUploadForm, NEDFUploadForm } from "@/components/eeg";
+import { TreatmentProtocolPanel, DeviceSessionsPanel } from "@/components/doctor/TreatmentProtocolPanel";
+import { SessionTabsBar } from "@/components/doctor/SessionTabsBar";
+import { SessionFinalReportModal } from "@/components/doctor/SessionFinalReportModal";
+import { CompareSessionsModal } from "@/components/doctor/CompareSessionsModal";
+import { usePatientClinicalSessions } from "@/lib/hooks/usePatientClinicalSessions";
+import { usePatientVisitSummary } from "@/lib/hooks/usePatientVisitSummary";
+import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
+import type { ProtocolRead } from "@/types/treatmentProtocol.types";
+import { TreatmentPlanFull } from "@/components/doctor/TreatmentPlanFull";
+import { isFinalReportGenerated, markFinalReportGenerated } from "@/lib/utils/finalReportLock";
 
 function statusClass(status: Permission["status"]): string {
   switch (status) {
@@ -32,17 +47,32 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString("en-US", {
+    year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
+}
+
 function buildSections(
   anamnesisStatus: "in_progress" | "completed" | null,
   hasDoctorNote: boolean,
+  // Registration Record is the self-registration anamnesis + general PRS —
+  // it only ever existed once, at intake, so it has no meaning under a
+  // Follow-up / Protocol Follow-up session context.
+  isFollowUpContext: boolean,
+  treatmentPlanLocked: boolean,
 ) {
   return [
+    ...(isFollowUpContext ? [] : [{ id: "registration-record", name: "Registration Record", status: null }]),
     { id: "anamnesis", name: "Anamnesis", status: anamnesisStatus === "completed" ? "done" : anamnesisStatus === "in_progress" ? "start" : null },
     { id: "brain-mapping", name: "Brain Mapping", status: "start" },
     { id: "prs", name: "PRS", status: "start" },
     { id: "notes", name: "Doctor's Notes", status: hasDoctorNote ? "done" : null },
-    { id: "treatment-plan", name: "Treatment Plan", status: "locked" },
-    { id: "final-report", name: "Final Report", status: "locked" },
+    { id: "medical-history", name: "Medical History", status: "link" },
+    { id: "treatment-protocol", name: "Treatment Protocol", status: null },
+    { id: "sessions", name: "Sessions", status: null },
+    { id: "treatment-plan", name: "Treatment Plan", status: treatmentPlanLocked ? "locked" : null },
+    { id: "final-report", name: "Final Report", status: null },
   ];
 }
 
@@ -53,17 +83,70 @@ export default function DoctorPatientDetailPage() {
   const searchParams = useSearchParams();
 
   const dispatch = useAppDispatch();
-  const patient = useDoctorPatient(id);
+  const { patient, isLoading: patientLoading, isError: patientError, error: patientErrorMessage } = useDoctorPatient(id);
+  const { patients: patientList } = useDoctorPatients();
   const assessments = usePatientPermissions(id);
   const { instances: scoreInstances, total: totalAssessments } = usePatientScoresSummary(id);
-  const { record: anamnesisRecord, isLoading: anamnesisLoading } = usePatientAnamnesis(id);
+  const { record: anamnesisRecord, isLoading: anamnesisLoading } = usePatientAnamnesis(id, "main");
   const { note: doctorNote, isLoading: noteLoading, save: saveNote } = usePatientNote(id);
+  const [headerSearch, setHeaderSearch] = useState("");
 
-  const isLoading = !patient;
+  const isLoading = patientLoading;
 
-  const selectedSection = searchParams.get("section") ?? "anamnesis";
-  const tabParam = parseInt(searchParams.get("tab") ?? "0", 10);
-  const selectedAssessmentTab = Number.isFinite(tabParam) && tabParam >= 0 ? tabParam : 0;
+  const rawSelectedSection = searchParams.get("section") ?? "anamnesis";
+  const sessionId = searchParams.get("session");
+  // Registration Record only exists for the Consultation — never render it
+  // under a Follow-up / Protocol Follow-up session context even if the URL
+  // still carries an old ?section=registration-record.
+  const selectedSection = sessionId && rawSelectedSection === "registration-record" ? "anamnesis" : rawSelectedSection;
+  const { sessions: clinicalSessions, isLoading: sessionsLoading } = usePatientClinicalSessions(id);
+  const currentSessionIdx = sessionId
+    ? clinicalSessions.findIndex((s) => s.appointment.appointment_id === sessionId)
+    : clinicalSessions.findIndex((s) => s.appointment.appointment_type === "initial");
+  const currentSession = currentSessionIdx >= 0 ? clinicalSessions[currentSessionIdx] : null;
+  // Per-visit bundle for the currently selected toggle — anamnesis here is
+  // that visit's own (or null, "no anamnesis taken"), never the patient-wide
+  // "latest" usePatientAnamnesis returns. Refetches on toggle switch so
+  // Follow-up 1's own record can never bleed into what Initial shows.
+  const { summary: visitSummary, isLoading: visitSummaryLoading, reload: reloadVisitSummary } = usePatientVisitSummary(
+    id,
+    currentSession?.appointment.appointment_id ?? null,
+  );
+  const isLatestSession = currentSessionIdx >= 0 && currentSessionIdx === clinicalSessions.length - 1;
+  // Don't gate anything until the session list has actually loaded (avoids
+  // a flash of "locked" on first render), and don't gate at all if there's
+  // nothing to compare against yet.
+  const sessionLocked = !sessionsLoading && clinicalSessions.length > 0 && !isLatestSession;
+  const [finalReportFor, setFinalReportFor] = useState<typeof currentSession>(null);
+  const [showCompare, setShowCompare] = useState(false);
+  const [finalReportProtocol, setFinalReportProtocol] = useState<ProtocolRead | null>(null);
+  // Bumped whenever a Final Report is generated so isFinalReportGenerated()
+  // (backed by localStorage, not otherwise reactive) gets re-checked.
+  const [finalReportLockTick, setFinalReportLockTick] = useState(0);
+  const openFinalReport = useCallback((session: typeof currentSession) => {
+    if (!session) return;
+    markFinalReportGenerated(session.appointment.appointment_id);
+    setFinalReportLockTick((t) => t + 1);
+    setFinalReportFor(session);
+  }, []);
+  const treatmentPlanLocked = useMemo(
+    () => sessionLocked || (currentSession ? isFinalReportGenerated(currentSession.appointment.appointment_id) : false),
+    [sessionLocked, currentSession, finalReportLockTick],
+  );
+
+  useEffect(() => {
+    if (!finalReportFor) { setFinalReportProtocol(null); return; }
+    const cutoff = new Date(finalReportFor.appointment.appointment_date + "T23:59:59").getTime();
+    treatmentProtocolService
+      .listProtocols({ patientId: id })
+      .then((list) => {
+        const before = list
+          .filter((p) => p.created_at && new Date(p.created_at).getTime() <= cutoff)
+          .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+        setFinalReportProtocol(before[0] ?? null);
+      })
+      .catch(() => setFinalReportProtocol(null));
+  }, [finalReportFor, id]);
 
   const updateQuery = useCallback(
     (updates: Record<string, string | null>) => {
@@ -82,14 +165,36 @@ export default function DoctorPatientDetailPage() {
     (s: string) => updateQuery({ section: s === "anamnesis" ? null : s }),
     [updateQuery],
   );
-  const setSelectedAssessmentTab = useCallback(
-    (idx: number) => updateQuery({ tab: idx === 0 ? null : String(idx) }),
-    [updateQuery],
-  );
+  const [basicOpen, setBasicOpen] = useState(true);
+  const [eegRefreshKey, setEegRefreshKey] = useState(0);
+  const [showEegUpload, setShowEegUpload] = useState(false);
+  const [eegUploadTab, setEegUploadTab] = useState<"nedf" | "pdf">("nedf");
   const [noteText, setNoteText] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
   const [noteSavedAt, setNoteSavedAt] = useState<string | null>(null);
+  const [notepadEditing, setNotepadEditing] = useState(false);
+  const [registrationRecord, setRegistrationRecord] = useState<Record<string, unknown> | null>(null);
+  const [registrationRecordError, setRegistrationRecordError] = useState<string | null>(null);
+
+  // Registration Record = anamnesis + general PRS taken during self-
+  // registration (assessment_stage='general_registration',
+  // tagged separately from the "Anamnesis"/"PRS" tabs above, which are for
+  // ongoing treatment-session assessments and untouched by this).
+  useEffect(() => {
+    setRegistrationRecord(null);
+    setRegistrationRecordError(null);
+    adminService.getPatientDetail(id).then(setRegistrationRecord).catch(() => setRegistrationRecordError("Couldn't load registration record"));
+  }, [id]);
+
+  // Reset immediately on patient switch so a previous patient's note text
+  // can never linger/be saved against the wrong patient while the new
+  // patient's note is still loading.
+  useEffect(() => {
+    setNoteText("");
+    setNoteSavedAt(null);
+    setNotepadEditing(false);
+  }, [id]);
 
   useEffect(() => {
     if (doctorNote) {
@@ -97,6 +202,20 @@ export default function DoctorPatientDetailPage() {
       setNoteSavedAt(doctorNote.updated_at ?? null);
     }
   }, [doctorNote]);
+
+  // Auto-expand upload panel when user returns to brain-mapping and a job is still running
+  useEffect(() => {
+    if (selectedSection !== "brain-mapping") return;
+    const saved = localStorage.getItem(`eeg_analysis_job_${id}`);
+    if (!saved) return;
+    try {
+      const { status } = JSON.parse(saved) as { status: string };
+      if (status !== "done" && status !== "failed") {
+        setShowEegUpload(true);
+        setEegUploadTab("nedf");
+      }
+    } catch {}
+  }, [selectedSection, id]);
 
   const handleSaveNote = async () => {
     setNoteSaving(true);
@@ -106,6 +225,7 @@ export default function DoctorPatientDetailPage() {
       const saved = (result as any)?.payload?.note as DoctorNote | undefined;
       if (saved?.note_text != null) setNoteText(saved.note_text);
       setNoteSavedAt(saved?.updated_at ?? new Date().toISOString());
+      setNotepadEditing(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save note";
       setNoteError(message);
@@ -116,7 +236,26 @@ export default function DoctorPatientDetailPage() {
 
   if (isLoading) return <PatientDetailSkeleton />;
 
+  if (patientError || !patient) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 text-center px-4">
+        <p className="text-sm font-medium text-neutral-600">Couldn&apos;t load this patient.</p>
+        <p className="text-xs text-neutral-400">{patientErrorMessage || "Please try again."}</p>
+        <button
+          onClick={() => router.push("/doctor/patients")}
+          className="px-4 py-2 text-sm font-medium text-white bg-neutral-900 rounded-lg hover:bg-neutral-800 transition-colors"
+        >
+          Back to patients
+        </button>
+      </div>
+    );
+  }
+
   const fullName = patient?.full_name || "Patient";
+  const currentIdx = patientList.findIndex((p) => p.id === id);
+  const prevPatient = currentIdx > 0 ? patientList[currentIdx - 1] : null;
+  const nextPatient = currentIdx >= 0 && currentIdx < patientList.length - 1 ? patientList[currentIdx + 1] : null;
+
   const age = patient?.date_of_birth
     ? new Date().getFullYear() - new Date(patient.date_of_birth).getFullYear()
     : null;
@@ -126,83 +265,108 @@ export default function DoctorPatientDetailPage() {
   const pendingAssessments = (assessments as Permission[]).filter((a: Permission) => a.status === "granted");
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-neutral-100 to-neutral-50">
+    <div className="min-h-screen bg-gradient-to-b from-neutral-100 to-neutral-50 -mt-14 md:-mt-6 -mx-4 sm:-mx-6 -mb-4 sm:-mb-6">
       {/* Top Header with Navigation */}
-      <div className="bg-white border-b border-neutral-200 px-8 py-4">
-        <div className="flex items-center justify-between">
+      <div className="bg-white border-b border-neutral-200 px-4 sm:px-8 py-3">
+        <div className="flex items-center justify-between gap-3">
           <button
-            onClick={() => router.back()}
-            className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900 transition-colors text-sm font-medium"
+            onClick={() => router.push("/doctor/patients")}
+            className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900 transition-colors text-sm font-medium flex-shrink-0"
           >
             <ChevronRight className="w-5 h-5 -scale-x-100" />
-            back to Search
+            <span className="hidden sm:inline">Back to search</span>
           </button>
-          <div className="flex items-center gap-4">
-            <div className="relative w-96 bg-white border border-neutral-200 rounded-full flex items-center px-6 py-3 shadow-sm">
+          <div className="flex items-center gap-2 flex-1 justify-end min-w-0">
+            <div className="relative flex-1 max-w-xs bg-white border border-neutral-200 rounded-full flex items-center px-4 py-2 shadow-sm hidden sm:flex">
               <input
                 type="text"
-                placeholder="Search patients, schedule, courses, equipments, etc"
+                placeholder="Search patients..."
+                value={headerSearch}
+                onChange={(e) => setHeaderSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && headerSearch.trim()) {
+                    router.push(`/doctor/patients?q=${encodeURIComponent(headerSearch.trim())}`);
+                  }
+                }}
                 className="flex-1 bg-transparent outline-none text-sm text-neutral-600 placeholder:text-neutral-400"
               />
             </div>
-            <button className="w-12 h-12 rounded-full bg-white hover:bg-neutral-50 flex items-center justify-center transition-colors shadow-sm border border-neutral-200">
-              <HelpCircle className="w-5 h-5 text-neutral-600" />
+            <button className="w-9 h-9 rounded-full bg-white hover:bg-neutral-50 flex items-center justify-center transition-colors shadow-sm border border-neutral-200 flex-shrink-0">
+              <HelpCircle className="w-4 h-4 text-neutral-600" />
             </button>
-            <button className="relative w-12 h-12 rounded-full bg-white hover:bg-neutral-50 flex items-center justify-center transition-colors shadow-sm border border-neutral-200">
-              <Bell className="w-5 h-5 text-neutral-600" />
-              <div className="absolute -top-1 -right-1 w-6 h-6 bg-primary-500 rounded-full flex items-center justify-center">
-                <span className="text-white text-xs font-bold">3</span>
-              </div>
+            <button className="relative w-9 h-9 rounded-full bg-white hover:bg-neutral-50 flex items-center justify-center transition-colors shadow-sm border border-neutral-200 flex-shrink-0">
+              <Bell className="w-4 h-4 text-neutral-600" />
             </button>
           </div>
         </div>
       </div>
 
-      <div className="px-8 py-8 space-y-6">
+      <div className="px-4 sm:px-8 py-3 sm:py-5 space-y-3 sm:space-y-4">
         {/* Patient info + Next Activity — two side-by-side cards */}
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
           {/* Left — Patient Name Card */}
-          <div className="bg-white rounded-lg shadow-md p-7 flex items-center justify-between">
-            <div className="flex items-center gap-5">
-              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-white font-bold text-2xl border-2 border-[#f47920] flex-shrink-0">
+          <div className="bg-white rounded-lg shadow-md p-2 sm:p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-white font-bold text-xl border-2 border-[#f47920] flex-shrink-0">
                 {fullName?.[0]?.toUpperCase()}
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-neutral-900">{fullName}</h1>
+                <h1 className="text-xl font-bold text-neutral-900">{fullName}</h1>
                 {patient?.mrn && (
                   <p className="text-sm text-neutral-600">({patient.mrn})</p>
                 )}
-                <div className="flex items-center gap-2 mt-2">
-                  {age && <span className="text-base text-neutral-700">{age} Yrs · Female</span>}
-                  <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg">New</span>
-                  <span className="px-3 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-lg flex items-center gap-1">
-                    <Check className="w-3 h-3" /> Paid
-                  </span>
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  {age && (
+                    <span className="text-base text-neutral-700">
+                      {age} Yrs{patient?.gender ? ` · ${patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1)}` : ""}
+                    </span>
+                  )}
+                  {patient?.approval_status && (
+                    <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-sm font-medium rounded-lg capitalize">
+                      {patient.approval_status}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
-            <div className="flex flex-col gap-2 flex-shrink-0">
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <button
+                onClick={() => prevPatient && router.push(`/doctor/patients/${prevPatient.id}`)}
+                disabled={!prevPatient}
+                className="px-4 py-2 bg-neutral-800 text-white text-sm font-medium rounded-full hover:bg-neutral-700 transition-colors flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+                title={prevPatient?.full_name ?? ""}
+              >
+                <ChevronLeft className="w-4 h-4" /> Prev
+              </button>
+              <button
+                onClick={() => nextPatient && router.push(`/doctor/patients/${nextPatient.id}`)}
+                disabled={!nextPatient}
+                className="px-4 py-2 bg-neutral-800 text-white text-sm font-medium rounded-full hover:bg-neutral-700 transition-colors flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+                title={nextPatient?.full_name ?? ""}
+              >
+                Next <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           </div>
 
           {/* Right — Next Activity Card */}
-          <div className="bg-white rounded-lg shadow-md p-7 flex items-center justify-between">
+          <div className="bg-white rounded-lg shadow-md p-2 sm:p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             {nextAssessment ? (
               <>
                 <div>
-                  <p className="text-neutral-500 text-sm mb-1">Next Activity</p>
-                  <h3 className="text-2xl font-bold text-neutral-900">{nextAssessment.disease_name}</h3>
-                  <span className="inline-block mt-2 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg">Basic 2/7</span>
+                  <p className="text-neutral-500 text-sm mb-0.5">Next Activity</p>
+                  <h3 className="text-xl font-bold text-neutral-900">{nextAssessment.disease_name}</h3>
+                  <span className="inline-block mt-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-sm font-medium rounded-lg">Basic 2/7</span>
                 </div>
-                <button 
-                  onClick={() => router.push(`/doctor/patients/${id}/assessment/${nextAssessment.permission_id}`)}
-                  className="px-6 py-3 bg-orange-500 text-white font-medium rounded-full hover:bg-orange-600 transition-colors flex items-center gap-2 flex-shrink-0"
+                <button
+                  onClick={() => router.push(`/doctor/patients/${id}/assessment/${nextAssessment.permission_id}${sessionId ? `?session=${sessionId}` : ""}`)}
+                  className="px-6 py-3 bg-orange-500 text-white font-semibold text-base rounded-full hover:bg-orange-600 transition-colors flex items-center gap-2 flex-shrink-0"
                 >
                   ▶ Start
                 </button>
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center w-full py-4 text-center">
+              <div className="flex flex-col items-center justify-center w-full py-2 text-center">
                 <p className="text-neutral-500 text-sm">No pending activity</p>
                 <p className="text-neutral-400 text-xs mt-1">Assign an assessment to get started</p>
               </div>
@@ -210,86 +374,193 @@ export default function DoctorPatientDetailPage() {
           </div>
         </div>
 
-        {/* Assessment Tabs and Content */}
-        <div className="space-y-6">
-          {/* Tabs */}
-          <div className="flex items-center gap-4">
-            <div className="px-4 py-2 bg-neutral-900 text-white font-medium rounded-lg text-sm">
-              Today's Activity
+        {/* Consultation / Follow-up / Protocol Follow-up session switcher */}
+        <SessionTabsBar patientId={id} activeSessionId={sessionId} onCompare={clinicalSessions.length >= 2 ? () => setShowCompare(true) : undefined} />
+
+        {/* Session context banner — only for a Follow-up / Protocol Follow-up
+            session; the Consultation view (no ?session=) doesn't need one. */}
+        {currentSession && sessionId && !isLatestSession && (
+          <div className="rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap bg-neutral-100 border border-neutral-200">
+            <div className="flex items-center gap-2 flex-1 min-w-[220px]">
+              <Lock className="w-4 h-4 text-neutral-500 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-neutral-900">{currentSession.label}</p>
+                <p className="text-xs text-neutral-500">This session is frozen — a later session exists, so its data is read-only.</p>
+              </div>
             </div>
-            {assessments.slice(0, 2).map((a, idx) => (
-              <button
-                key={idx}
-                onClick={() => setSelectedAssessmentTab(idx)}
-                className={`px-4 py-2 font-medium rounded-lg text-sm flex items-center gap-2 transition-colors ${
-                  selectedAssessmentTab === idx
-                    ? "bg-neutral-900 text-white"
-                    : "bg-white text-neutral-700 border border-neutral-200 hover:border-neutral-300"
-                }`}
-              >
-                {a.disease_name}
-                {a.status === "completed" && <Check className="w-4 h-4" />}
-              </button>
-            ))}
-            <button className="px-3 py-2 border border-neutral-300 text-neutral-600 rounded-lg hover:bg-neutral-50 transition-colors">
-              <Plus className="w-5 h-5" />
+            <button
+              onClick={() => openFinalReport(currentSession)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-xs font-semibold flex-shrink-0"
+            >
+              <FileText className="w-3.5 h-3.5" /> Generate Final Report
             </button>
           </div>
+        )}
 
+        {/* Consultation itself is frozen once any Follow-up exists */}
+        {!sessionId && clinicalSessions.length > 1 && (
+          <div className="rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap bg-neutral-100 border border-neutral-200">
+            <Lock className="w-4 h-4 text-neutral-500 flex-shrink-0" />
+            <div className="flex-1 min-w-[220px]">
+              <p className="text-sm font-semibold text-neutral-900">Consultation</p>
+              <p className="text-xs text-neutral-500">This session is frozen — a Follow-up already exists, so its data is read-only.</p>
+            </div>
+            <button
+              onClick={() => clinicalSessions[0] && openFinalReport(clinicalSessions[0])}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-xs font-semibold flex-shrink-0"
+            >
+              <FileText className="w-3.5 h-3.5" /> Generate Final Report
+            </button>
+          </div>
+        )}
+
+        {/* Assessment Content */}
+        <div className="space-y-6">
           {/* Main Content Area */}
-          <div className="flex gap-6 min-h-96">
+          <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 min-h-96">
             {/* Left Sidebar - Assessment Sections */}
-            <div className="w-80 bg-white rounded-lg shadow-md overflow-hidden flex flex-col">
-              <div className="border-b border-neutral-200 p-4 flex items-center justify-between">
+            <div className="w-full lg:w-72 xl:w-80 bg-white rounded-lg shadow-md overflow-hidden flex flex-col">
+              <button
+                onClick={() => setBasicOpen((o) => !o)}
+                className="border-b border-neutral-200 p-4 flex items-center justify-between w-full text-left hover:bg-neutral-50 transition-colors"
+              >
                 <h3 className="font-semibold text-neutral-900">Basic</h3>
-                <ChevronRight className="w-5 h-5 -rotate-90 text-neutral-600" />
+                <ChevronRight className={`w-5 h-5 text-neutral-600 transition-transform duration-150 ${basicOpen ? "-rotate-90" : "rotate-0"}`} />
+              </button>
+              <div className={`overflow-y-auto space-y-0 transition-all duration-150 ${basicOpen ? "flex-1" : "hidden"}`}>
+                {buildSections(visitSummary?.anamnesis?.status ?? null, !!doctorNote?.note_text, !!sessionId, treatmentPlanLocked).map((section) => {
+                  return (
+                    <button
+                      key={section.id}
+                      onClick={() => (section.id === "final-report" ? openFinalReport(currentSession) : setSelectedSection(section.id))}
+                      className={`w-full px-4 py-4 text-left transition-colors border-l-4 flex items-center justify-between ${
+                        selectedSection === section.id
+                          ? "bg-blue-50 border-l-blue-500 text-blue-700"
+                          : "bg-white border-l-transparent text-neutral-700 hover:bg-neutral-50"
+                      }`}
+                    >
+                      <span className="font-medium">{section.name}</span>
+                      {section.status === "done" && (
+                        <span className="px-2 py-1 bg-green-50 text-green-700 text-xs font-medium rounded">Done</span>
+                      )}
+                      {section.status === "start" && (
+                        <span className="px-2 py-1 bg-orange-50 text-orange-600 text-xs font-medium rounded">Start</span>
+                      )}
+                      {section.status === "locked" && (
+                        <Lock className="w-4 h-4 text-neutral-400" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-              <div className="flex-1 overflow-y-auto space-y-0">
-                {buildSections(anamnesisRecord?.status ?? null, !!doctorNote?.note_text).map((section) => (
-                  <button
-                    key={section.id}
-                    onClick={() => setSelectedSection(section.id)}
-                    className={`w-full px-4 py-4 text-left transition-colors border-l-4 flex items-center justify-between ${
-                      selectedSection === section.id
-                        ? "bg-blue-50 border-l-blue-500 text-blue-700"
-                        : "bg-white border-l-transparent text-neutral-700 hover:bg-neutral-50"
-                    }`}
-                  >
-                    <span className="font-medium">{section.name}</span>
-                    {section.status === "done" && (
-                      <span className="px-2 py-1 bg-green-50 text-green-700 text-xs font-medium rounded">Done</span>
-                    )}
-                    {section.status === "start" && (
-                      <span className="px-2 py-1 bg-orange-50 text-orange-600 text-xs font-medium rounded">Start</span>
-                    )}
-                    {section.status === "locked" && (
-                      <Lock className="w-4 h-4 text-neutral-400" />
-                    )}
-                  </button>
-                ))}
-              </div>
-              <div className="border-t border-neutral-200 p-4">
-                <h3 className="font-semibold text-neutral-900">Treatment Sessions</h3>
-              </div>
+             
             </div>
 
             {/* Right Content - Assessment Details */}
-            <div className="flex-1 bg-white rounded-lg shadow-md p-8 overflow-y-auto">
-              {selectedSection === "anamnesis" ? (
+            <div className="flex-1 bg-white rounded-lg shadow-md p-4 sm:p-8 overflow-y-auto">
+              {selectedSection === "medical-history" ? (
+                <PatientHistoryPanel patientId={id} clinicId={patient?.clinic_id} />
+              ) : selectedSection === "registration-record" ? (
+                <div className="space-y-5">
+                  <div>
+                    <h2 className="text-2xl font-bold text-neutral-900 mb-1">Registration Record</h2>
+                    <p className="text-neutral-600 text-sm">
+                      Anamnesis and general PRS collected during this patient's registration —
+                      reference data only, separate from ongoing treatment-session Anamnesis/PRS.
+                    </p>
+                  </div>
+                  {registrationRecordError ? (
+                    <p className="text-sm text-red-600">{registrationRecordError}</p>
+                  ) : !registrationRecord ? (
+                    <p className="text-sm text-neutral-400">Loading…</p>
+                  ) : (
+                    <PatientJourneySections detail={registrationRecord as unknown as PatientJourneyDetail} />
+                  )}
+                </div>
+              ) : selectedSection === "anamnesis" ? (
                 <AnamnesisForm
                   patientId={id}
                   mode="doctor"
-                  initialRecord={anamnesisRecord}
-                  onSubmitted={() => dispatch(invalidatePatientAnamnesis(id))}
+                  assessmentStage="main"
+                  initialRecord={visitSummaryLoading ? undefined : visitSummary?.anamnesis ?? null}
+                  onSubmitted={() => {
+                    dispatch(invalidatePatientAnamnesis({ patientId: id, stage: "main" }));
+                    reloadVisitSummary();
+                  }}
+                  lockedForSession={sessionLocked}
+                  appointmentId={currentSession?.appointment.appointment_id ?? sessionId}
                 />
               ) : selectedSection === "brain-mapping" ? (
-                <div className="flex flex-col items-center justify-center py-20 text-center">
-                  <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mb-4">
-                    <span className="text-2xl">🧠</span>
+                <div className="space-y-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-2xl font-bold text-neutral-900">Brain Mapping</h2>
+                      <p className="text-sm text-neutral-500">EEG analysis and connectivity reports</p>
+                    </div>
+                    <button
+                      onClick={() => setShowEegUpload((v) => !v)}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                    >
+                      {showEegUpload ? "Cancel" : "Upload / Analyze"}
+                    </button>
                   </div>
-                  <h2 className="text-xl font-bold text-neutral-700 mb-2">Brain Mapping</h2>
-                  <p className="text-sm text-neutral-400">Yet to be implemented</p>
+
+                  {showEegUpload && (
+                    <div className="space-y-3">
+                      {/* Tab switcher */}
+                      <div className="flex gap-1 bg-neutral-100 rounded-lg p-1 w-fit">
+                        <button
+                          onClick={() => setEegUploadTab("nedf")}
+                          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                            eegUploadTab === "nedf"
+                              ? "bg-white text-neutral-900 shadow-sm"
+                              : "text-neutral-500 hover:text-neutral-700"
+                          }`}
+                        >
+                          .nedf / .edf
+                        </button>
+                        <button
+                          onClick={() => setEegUploadTab("pdf")}
+                          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                            eegUploadTab === "pdf"
+                              ? "bg-white text-neutral-900 shadow-sm"
+                              : "text-neutral-500 hover:text-neutral-700"
+                          }`}
+                        >
+                          PDF report
+                        </button>
+                      </div>
+
+                      {eegUploadTab === "nedf" ? (
+                        <NEDFUploadForm
+                          patientId={id}
+                          onComplete={() => { setEegRefreshKey((k) => k + 1); setShowEegUpload(false); }}
+                        />
+                      ) : (
+                        <EEGUploadForm
+                          patientId={id}
+                          onUploaded={() => { setEegRefreshKey((k) => k + 1); setShowEegUpload(false); }}
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  <EEGReportList patientId={id} canDelete refreshTrigger={eegRefreshKey} />
                 </div>
+              ) : selectedSection === "treatment-protocol" ? (
+                <TreatmentProtocolPanel patientId={id} />
+              ) : selectedSection === "treatment-plan" ? (
+                <TreatmentPlanFull
+                  patientId={id}
+                  patient={patient}
+                  clinicalSessions={clinicalSessions}
+                  sessionLocked={sessionLocked}
+                  doctorNoteText={doctorNote?.note_text ?? null}
+                  onNavigateSection={setSelectedSection}
+                  onGenerateFinalReport={() => openFinalReport(currentSession)}
+                />
+              ) : selectedSection === "sessions" ? (
+                <DeviceSessionsPanel patientId={id} />
               ) : selectedSection === "notes" ? (
                 <div className="space-y-4">
                   <div className="flex items-start justify-between">
@@ -358,7 +629,7 @@ export default function DoctorPatientDetailPage() {
                   </div>
 
                   {/* Summary Stats */}
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="bg-blue-50 rounded-lg p-4">
                       <p className="text-neutral-600 text-sm mb-1">Total Assessments</p>
                       <p className="text-2xl font-bold text-neutral-900">{totalAssessments || assessments.length}</p>
@@ -387,7 +658,7 @@ export default function DoctorPatientDetailPage() {
                               <div>
                                 <h4 className="font-semibold text-neutral-900">{a.disease_name}</h4>
                                 <p className="text-sm text-neutral-600 mt-1">
-                                  Completed on {formatDate(result?.completed_at ?? a.granted_at)}
+                                  Completed on {formatDateTime(result?.completed_at ?? a.granted_at)}
                                 </p>
                               </div>
                               <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-lg">
@@ -397,7 +668,7 @@ export default function DoctorPatientDetailPage() {
 
                             {/* Score results */}
                             {result && (
-                              <div className="grid grid-cols-3 gap-3">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                 {result.disease_score != null && (
                                   <div className="bg-neutral-50 rounded-lg p-3">
                                     <p className="text-xs text-neutral-500 mb-0.5">Overall Score</p>
@@ -492,13 +763,13 @@ export default function DoctorPatientDetailPage() {
                           <div className="flex items-start justify-between mb-4">
                             <div>
                               <h4 className="font-semibold text-neutral-900">{a.disease_name}</h4>
-                              <p className="text-sm text-neutral-600 mt-1">Assigned on {formatDate(a.granted_at)}</p>
+                              <p className="text-sm text-neutral-600 mt-1">Assigned on {formatDateTime(a.granted_at)}</p>
                             </div>
                             <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg">
                               Pending
                             </span>
                           </div>
-                          <Link href={`/doctor/patients/${id}/assessment/${a.permission_id}`}>
+                          <Link href={`/doctor/patients/${id}/assessment/${a.permission_id}${sessionId ? `?session=${sessionId}` : ""}`}>
                             <Button size="sm" variant="secondary">
                               <PlayCircle className="h-4 w-4" /> Start Assessment
                             </Button>
@@ -513,6 +784,84 @@ export default function DoctorPatientDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Floating Notepad — fixed to the viewport so it's always visible while
+          scrolling and stays mounted across every section tab, sharing state
+          with Doctor's Notes so both stay in sync. */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+        {notepadEditing && (
+          <div
+            className="w-80 min-w-[240px] min-h-[220px] max-w-[calc(100vw-3rem)] max-h-[calc(100vh-8rem)] resize overflow-auto bg-white rounded-xl shadow-xl border border-neutral-200 p-4 flex flex-col"
+          >
+            <div className="flex items-center justify-between mb-2 flex-shrink-0">
+              <div className="flex items-center gap-1.5">
+                <StickyNote className="w-4 h-4 text-neutral-500" />
+                <h3 className="text-sm font-semibold text-neutral-900">Notepad</h3>
+              </div>
+              <button
+                onClick={() => setNotepadEditing(false)}
+                className="text-neutral-400 hover:text-neutral-600 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <textarea
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Type your clinical notes here..."
+              autoFocus
+              className="w-full flex-1 min-h-[80px] resize-none border border-neutral-200 rounded-lg p-2.5 text-sm text-neutral-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-colors"
+            />
+
+            {noteError && <p className="text-xs text-red-600 mt-2">{noteError}</p>}
+            {noteSavedAt && (
+              <p className="text-[11px] text-neutral-400 mt-2">Last saved {formatDate(noteSavedAt)}</p>
+            )}
+
+            <div className="flex justify-end mt-3">
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={handleSaveNote}
+                disabled={noteSaving || noteText === (doctorNote?.note_text ?? "")}
+              >
+                <Save className="h-3.5 w-3.5" />
+                {noteSaving ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={() => setNotepadEditing((o) => !o)}
+          className="w-12 h-12 rounded-full bg-neutral-900 text-white shadow-lg flex items-center justify-center hover:bg-neutral-800 transition-colors flex-shrink-0"
+          title="Notepad"
+        >
+          {notepadEditing ? <span className="text-lg leading-none">✕</span> : <StickyNote className="w-5 h-5" />}
+        </button>
+      </div>
+
+      {finalReportFor && (
+        <SessionFinalReportModal
+          patientName={fullName}
+          mrn={patient?.mrn}
+          session={finalReportFor}
+          anamnesis={anamnesisRecord ?? null}
+          scoreSummary={(() => {
+            const latest = scoreInstances.slice().sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""))[0];
+            if (!latest) return null;
+            return `${latest.disease_score != null ? `Score ${latest.disease_score.toFixed(0)}/100` : ""}${latest.severity_label ? ` · ${latest.severity_label}` : ""}`.trim() || null;
+          })()}
+          doctorNoteText={doctorNote?.note_text ?? null}
+          protocol={finalReportProtocol}
+          onClose={() => setFinalReportFor(null)}
+        />
+      )}
+
+      {showCompare && (
+        <CompareSessionsModal patientId={id} sessions={clinicalSessions} onClose={() => setShowCompare(false)} />
+      )}
     </div>
   );
 }

@@ -2,14 +2,16 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import {
-  Search, CheckCircle, XCircle, Mail,
-  Phone, Calendar, Clock, ChevronRight, Loader2,
-} from "lucide-react";
-import { staffService } from "@/lib/api/services/staff.service";
+import { Search, CheckCircle, XCircle, Loader2, ClipboardList } from "lucide-react";
+import { receptionService } from "@/lib/api/services/reception.service";
 import { useAuth } from "@/lib/hooks";
-import { Input, Card, CardContent, PageLoader } from "@/components/ui";
+import { PageLoader } from "@/components/ui";
 import type { PatientListItem } from "@/types/domain.types";
+
+function fmtDate(iso?: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" });
+}
 
 export default function ReceptionistApprovalsPage() {
   const { user } = useAuth();
@@ -28,7 +30,7 @@ export default function ReceptionistApprovalsPage() {
 
   const fetchPending = useCallback(() => {
     setIsLoading(true);
-    staffService
+    receptionService
       .getPendingPatients()
       .then(({ patients: p }) => setPatients(p))
       .catch(() => {})
@@ -40,7 +42,7 @@ export default function ReceptionistApprovalsPage() {
   const handleApprove = async (patientId: string) => {
     setActionLoading(patientId);
     try {
-      await staffService.approvePatient(patientId);
+      await receptionService.approvePatient(patientId);
       setPatients((prev) => prev.filter((p) => p.id !== patientId));
       showToast("Patient approved successfully.", true);
     } catch {
@@ -53,7 +55,9 @@ export default function ReceptionistApprovalsPage() {
     if (!rejectModal) return;
     setActionLoading(rejectModal.id);
     try {
-      await staffService.rejectPatient(rejectModal.id, rejectReason || undefined);
+      // Real endpoint has no rejection-reason field — the reason text
+      // entered above isn't transmitted (see reception.service.ts).
+      await receptionService.rejectPatient(rejectModal.id);
       setPatients((prev) => prev.filter((p) => p.id !== rejectModal.id));
       setRejectModal(null);
       setRejectReason("");
@@ -71,10 +75,10 @@ export default function ReceptionistApprovalsPage() {
   if (isLoading) return <PageLoader />;
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-5">
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white ${toast.ok ? "bg-green-600" : "bg-red-600"}`}>
+        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-dropdown text-sm font-medium text-white ${toast.ok ? "bg-success-500" : "bg-danger-500"}`}>
           {toast.ok ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
           {toast.msg}
         </div>
@@ -82,116 +86,86 @@ export default function ReceptionistApprovalsPage() {
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Self Registration Approvals</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">Approvals</h1>
         {user?.clinic_name && (
-          <p className="text-xs font-medium text-blue-600 mt-0.5">{user.clinic_name}</p>
+          <p className="text-xs font-medium text-primary-600 mt-0.5">{user.clinic_name}</p>
         )}
-        <p className="text-sm text-neutral-500 mt-0.5">
-          {patients.length} pending {patients.length === 1 ? "request" : "requests"} — review and approve or reject
-        </p>
       </div>
 
       {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
-        <Input
-          placeholder="Search by name or email…"
+      <div className="relative max-w-[340px]">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-400 pointer-events-none" />
+        <input
+          placeholder="Search name, contact…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
+          className="w-full h-[38px] pl-8 pr-3 rounded-lg border border-neutral-300 bg-white text-sm outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
         />
       </div>
 
-      {/* Cards */}
-      <div className="space-y-3">
-        {filtered.map((p) => {
-          const name = p.full_name || `${p.first_name} ${p.last_name}`.trim() || "Unknown Patient";
-          const initials = (p.first_name?.[0] || p.full_name?.[0] || "?").toUpperCase() +
-                           (p.last_name?.[0] || p.full_name?.split(" ")[1]?.[0] || "").toUpperCase();
-          const isActioning = actionLoading === p.id;
-
-          return (
-            <Card key={p.id}>
-              <CardContent className="flex flex-col sm:flex-row sm:items-center gap-4">
-                {/* Avatar */}
-                <Link href={`/receptionist/patients/${p.id}`} className="flex items-center gap-3 flex-1 min-w-0 group">
-                  <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-semibold text-sm flex-shrink-0">
-                    {initials}
-                  </div>
-
-                  {/* Details */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-neutral-900 group-hover:text-blue-700 transition-colors truncate">
-                      {name}
-                    </p>
-
-                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5">
-                      <span className="flex items-center gap-1 text-xs text-neutral-500">
-                        <Mail className="h-3 w-3 text-neutral-400" />{p.email || "—"}
-                      </span>
-                      {p.phone && (
-                        <span className="flex items-center gap-1 text-xs text-neutral-500">
-                          <Phone className="h-3 w-3 text-neutral-400" />{p.phone}
-                        </span>
-                      )}
-                      {p.date_of_birth && (
-                        <span className="flex items-center gap-1 text-xs text-neutral-500">
-                          <Calendar className="h-3 w-3 text-neutral-400" />
-                          {new Date(p.date_of_birth).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                        </span>
-                      )}
+      {/* Table */}
+      <div className="bg-white rounded-xl border border-neutral-200/80 shadow-card overflow-hidden">
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center px-6">
+            <ClipboardList className="h-9 w-9 text-neutral-200 mb-3" />
+            <p className="text-sm font-medium text-neutral-600">No registrations to review</p>
+            <p className="text-xs text-neutral-400 mt-1">Self-registrations submitted by patients will appear here for approval.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <div style={{ minWidth: 820 }}>
+              <div className="grid gap-3 px-5 py-2.5 bg-neutral-50 border-b border-neutral-100" style={{ gridTemplateColumns: "1.5fr 1.6fr 1.1fr 1fr 190px" }}>
+                {["Patient", "Phone / Email", "Submitted", "Status", "Actions"].map((h) => (
+                  <span key={h} className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide">{h}</span>
+                ))}
+              </div>
+              {filtered.map((p) => {
+                const name = p.full_name || `${p.first_name} ${p.last_name}`.trim() || "Unknown Patient";
+                const initials = (p.first_name?.[0] || p.full_name?.[0] || "?").toUpperCase() +
+                                 (p.last_name?.[0] || p.full_name?.split(" ")[1]?.[0] || "").toUpperCase();
+                const isActioning = actionLoading === p.id;
+                return (
+                  <div key={p.id} className="grid gap-3 items-center px-5 py-3 border-b border-neutral-100 last:border-0" style={{ gridTemplateColumns: "1.5fr 1.6fr 1.1fr 1fr 190px" }}>
+                    <Link href={`/receptionist/patients/${p.id}`} className="flex items-center gap-2.5 min-w-0 group">
+                      <div className="w-[30px] h-[30px] rounded-full bg-primary-100 flex items-center justify-center text-[11px] font-semibold text-primary-700 flex-shrink-0">
+                        {initials}
+                      </div>
+                      <span className="text-sm font-medium text-neutral-900 group-hover:text-primary-700 truncate">{name}</span>
+                    </Link>
+                    <span className="text-xs text-neutral-600 truncate">{p.email || p.phone || "—"}</span>
+                    <span className="text-xs text-neutral-500">{fmtDate(p.registered_at ?? p.created_at)}</span>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-warning-50 text-warning-700 w-fit">
+                      Pending
+                    </span>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={() => handleApprove(p.id)}
+                        disabled={isActioning}
+                        className="h-7 px-2.5 rounded-md bg-success-500 text-white text-xs font-medium hover:bg-success-700 disabled:opacity-50 transition-colors flex items-center gap-1"
+                      >
+                        {isActioning ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => setRejectModal({ id: p.id, name })}
+                        disabled={isActioning}
+                        className="h-7 px-2.5 rounded-md border border-danger-100 bg-white text-danger-700 text-xs font-medium hover:bg-danger-50 disabled:opacity-50 transition-colors"
+                      >
+                        Reject
+                      </button>
                     </div>
-
-                    <div className="mt-1.5 flex items-center gap-1 text-xs text-amber-600">
-                      <Clock className="h-3 w-3" />
-                      <span>Awaiting approval</span>
-                    </div>
                   </div>
-
-                  <ChevronRight className="h-4 w-4 text-neutral-300 group-hover:text-blue-500 flex-shrink-0 hidden sm:block" />
-                </Link>
-
-                {/* Actions */}
-                <div className="flex gap-2 flex-shrink-0">
-                  <button
-                    onClick={() => handleApprove(p.id)}
-                    disabled={isActioning}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
-                  >
-                    {isActioning
-                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      : <CheckCircle className="h-3.5 w-3.5" />}
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => setRejectModal({ id: p.id, name })}
-                    disabled={isActioning}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-red-200 text-red-700 text-xs font-medium hover:bg-red-50 disabled:opacity-50 transition-colors"
-                  >
-                    <XCircle className="h-3.5 w-3.5" />
-                    Reject
-                  </button>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-
-        {filtered.length === 0 && (
-          <Card>
-            <div className="px-6 py-14 text-center">
-              <CheckCircle className="h-10 w-10 text-green-400 mx-auto mb-3" />
-              <p className="font-medium text-neutral-700">All caught up!</p>
-              <p className="text-neutral-400 text-sm mt-1">No pending registration requests right now.</p>
+                );
+              })}
             </div>
-          </Card>
+          </div>
         )}
       </div>
 
       {/* Reject modal */}
       {rejectModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
+          <div className="bg-white rounded-2xl shadow-dropdown max-w-md w-full p-6 space-y-4">
             <h3 className="text-lg font-semibold text-neutral-900">Reject Registration</h3>
             <p className="text-sm text-neutral-500">
               Rejecting will notify{" "}
@@ -207,7 +181,7 @@ export default function ReceptionistApprovalsPage() {
                 onChange={(e) => setRejectReason(e.target.value)}
                 placeholder="Provide a reason to help the patient understand…"
                 rows={3}
-                className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-red-300 transition"
+                className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-danger-300 transition"
               />
             </div>
             <div className="flex gap-3">
@@ -220,7 +194,7 @@ export default function ReceptionistApprovalsPage() {
               <button
                 onClick={handleReject}
                 disabled={!!actionLoading}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-danger-500 text-white text-sm font-medium hover:bg-danger-700 disabled:opacity-50 transition-colors"
               >
                 {actionLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 Confirm Reject

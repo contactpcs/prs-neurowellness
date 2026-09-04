@@ -107,7 +107,7 @@ function matchTranscript(
   return null;
 }
 
-function buildReadAloudText(question: ScaleQuestion): string {
+export function buildReadAloudText(question: ScaleQuestion): string {
   let text = question.label;
 
   if (question.options?.length) {
@@ -276,32 +276,50 @@ export function useAssessmentSTT({
       return;
     }
 
-    // Read question aloud, then start listening
-    setPhaseAll("reading");
-    const text = buildReadAloudText(question);
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "en-US";
-    utterance.rate = 0.92;
-
-    utterance.onend = () => {
-      if (!enabledRef.current || phaseRef.current !== "reading") return;
-      setPhaseAll("listening");
-      setTranscript("");
-      if (recRef.current && !recRunning.current) {
-        try { recRef.current.start(); } catch {}
-      }
-    };
-
-    utterance.onerror = () => {
-      // TTS failed — skip straight to listening
+    // Small delay so cancel() fully clears before we speak (mobile Chrome bug)
+    const speakTimer = setTimeout(() => {
       if (!enabledRef.current) return;
-      setPhaseAll("listening");
-      if (recRef.current && !recRunning.current) {
-        try { recRef.current.start(); } catch {}
-      }
-    };
 
-    window.speechSynthesis.speak(utterance);
+      setPhaseAll("reading");
+      const text = buildReadAloudText(question);
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "en-US";
+      utterance.rate = 0.92;
+
+      const startListening = () => {
+        if (!enabledRef.current || phaseRef.current !== "reading") return;
+        setPhaseAll("listening");
+        setTranscript("");
+        if (recRef.current && !recRunning.current) {
+          try { recRef.current.start(); } catch {}
+        }
+      };
+
+      utterance.onend = startListening;
+      utterance.onerror = () => {
+        if (!enabledRef.current) return;
+        startListening();
+      };
+
+      window.speechSynthesis.speak(utterance);
+
+      // Mobile workaround: speechSynthesis pauses after ~15s without user interaction.
+      // Resume every 10s while in reading phase.
+      const resumeInterval = setInterval(() => {
+        if (phaseRef.current !== "reading") {
+          clearInterval(resumeInterval);
+          return;
+        }
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+      }, 10000);
+
+      // Cleanup resume interval when effect re-runs
+      return () => clearInterval(resumeInterval);
+    }, 150);
+
+    return () => clearTimeout(speakTimer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [questionKey, enabled]);
 

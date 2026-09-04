@@ -14,6 +14,7 @@ type LoadStatus = "idle" | "loading" | "succeeded" | "failed";
 
 interface DoctorsState {
   patients: PatientListItem[];
+  patientsTotal: number;
   patientsStatus: LoadStatus;
   patientsLoadedAt: number | null;
   patientsError: string | null;
@@ -29,6 +30,7 @@ interface DoctorsState {
 
 const initialState: DoctorsState = {
   patients: [],
+  patientsTotal: 0,
   patientsStatus: "idle",
   patientsLoadedAt: null,
   patientsError: null,
@@ -46,18 +48,19 @@ function isFresh(loadedAt: number | null): boolean {
   return loadedAt !== null && Date.now() - loadedAt < DOCTORS_TTL_MS;
 }
 
+type PatientQueryParams = { page?: number; limit?: number; search?: string };
+
 export const fetchDoctorPatients = createAsyncThunk<
-  PatientListItem[],
-  void,
+  { patients: PatientListItem[]; total: number },
+  PatientQueryParams | undefined,
   { state: RootState }
 >(
   "doctors/fetchPatients",
-  async () => {
-    const { patients } = await doctorsService.getPatients();
-    return patients;
-  },
+  async (params) => doctorsService.getPatients(params),
   {
-    condition: (_, { getState }) => {
+    condition: (params, { getState }) => {
+      // Bypass TTL when explicit pagination/search params are provided
+      if (params?.page !== undefined || params?.limit !== undefined || params?.search !== undefined) return true;
       const { patientsStatus, patientsLoadedAt } = getState().doctors;
       if (patientsStatus === "loading") return false;
       if (patientsStatus === "succeeded" && isFresh(patientsLoadedAt)) return false;
@@ -95,14 +98,12 @@ const doctorsSlice = createSlice({
         state.patientsStatus = "loading";
         state.patientsError = null;
       })
-      .addCase(
-        fetchDoctorPatients.fulfilled,
-        (state, action: PayloadAction<PatientListItem[]>) => {
-          state.patientsStatus = "succeeded";
-          state.patients = action.payload;
-          state.patientsLoadedAt = Date.now();
-        }
-      )
+      .addCase(fetchDoctorPatients.fulfilled, (state, action) => {
+        state.patientsStatus = "succeeded";
+        state.patients = action.payload.patients;
+        state.patientsTotal = action.payload.total;
+        state.patientsLoadedAt = Date.now();
+      })
       .addCase(fetchDoctorPatients.rejected, (state, action) => {
         state.patientsStatus = "failed";
         state.patientsError = action.error.message ?? "Failed to load patients";
@@ -113,9 +114,9 @@ const doctorsSlice = createSlice({
       })
       .addCase(
         fetchDoctorPatient.fulfilled,
-        (state, action: PayloadAction<any>) => {
+        (state, action: PayloadAction<any, string, { arg: string }>) => {
           state.patientDetailStatus = "succeeded";
-          state.patientDetail[action.payload.id || "current"] = action.payload;
+          state.patientDetail[action.meta.arg] = action.payload;
         }
       )
       .addCase(fetchDoctorPatient.rejected, (state, action) => {
@@ -146,9 +147,12 @@ const doctorsSlice = createSlice({
 export const { invalidateDoctorPatients } = doctorsSlice.actions;
 export default doctorsSlice.reducer;
 
-export const selectDoctorPatients  = (s: RootState) => s.doctors.patients;
+export const selectDoctorPatients       = (s: RootState) => s.doctors.patients;
+export const selectDoctorPatientsTotal  = (s: RootState) => s.doctors.patientsTotal;
 export const selectDoctorPatientsStatus = (s: RootState) => s.doctors.patientsStatus;
 export const selectDoctorPatientDetail = (s: RootState) => s.doctors.patientDetail;
+export const selectDoctorPatientDetailStatus = (s: RootState) => s.doctors.patientDetailStatus;
+export const selectDoctorPatientDetailError = (s: RootState) => s.doctors.patientDetailError;
 export const selectPatientResults = (s: RootState) => s.doctors.results;
 export const selectPatientResultStatus = (instanceId: string) => (s: RootState) =>
   s.doctors.resultsStatus[instanceId] ?? "idle";

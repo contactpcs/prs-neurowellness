@@ -1,14 +1,3 @@
-import apiClient from "../client";
-import { ENDPOINTS } from "../endpoints";
-
-type ApiEnvelope<T> = { success: boolean; message: string; data: T };
-
-function unwrap<T>(payload: unknown): T {
-  const maybe = payload as Partial<ApiEnvelope<T>>;
-  if (maybe && typeof maybe === "object" && "data" in maybe) return maybe.data as T;
-  return payload as T;
-}
-
 export type DoctorNote = {
   id?: string;
   patient_id: string;
@@ -18,21 +7,19 @@ export type DoctorNote = {
   updated_at?: string;
 };
 
+// NOT AVAILABLE — real backend only has POST /doctor-session-notes (keyed to
+// a specific session/cycle, many required fields the old patient-keyed
+// upsert model never had) and GET by note_id. No list-by-patient, no update.
 export const doctorNotesService = {
-  async getForPatient(patientId: string): Promise<DoctorNote | null> {
-    const { data } = await apiClient.get(ENDPOINTS.DOCTOR_NOTES.FOR_PATIENT(patientId));
-    return unwrap<DoctorNote | null>(data);
+  async getForPatient(_patientId: string): Promise<DoctorNote | null> {
+    return null;
   },
 
-  async upsertForPatient(patientId: string, noteText: string): Promise<DoctorNote> {
-    const { data } = await apiClient.put(ENDPOINTS.DOCTOR_NOTES.FOR_PATIENT(patientId), {
-      note_text: noteText,
-    });
-    return unwrap<DoctorNote>(data);
+  async upsertForPatient(_patientId: string, _noteText: string): Promise<never> {
+    throw new Error("Doctor notes can't be saved per-patient — the real endpoint needs a session_id/cycle_id and several other required fields this form doesn't collect.");
   },
 
   async getMyNotes(): Promise<DoctorNote[]> {
-    const { data } = await apiClient.get(ENDPOINTS.DOCTOR_NOTES.ME);
-    return unwrap<DoctorNote[]>(data) ?? [];
+    return [];
   },
 };

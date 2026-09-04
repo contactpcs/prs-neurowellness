@@ -1,44 +1,87 @@
 "use client";
 
 import { useCallback } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { useSelector } from "react-redux";
 import { useRouter } from "next/navigation";
-import type { RootState, AppDispatch } from "@/store/store";
-import { login, register, logout, restoreSession, clearError } from "@/store/slices/authSlice";
+import type { RootState } from "@/store/store";
+import { useAppDispatch } from "@/store/hooks";
+import { login, register, completePatientSignup, completeNewPassword, logout, restoreSession, refreshUser, clearError, clearPasswordChallenge } from "@/store/slices/authSlice";
 import { ROUTES, USER_ROLES } from "@/lib/constants";
 import type { LoginCredentials, RegisterData } from "@/types/auth.types";
 
+// Real backend role strings, exact match — super_admin/regional_admin/
+// clinic_admin are three distinct portals, not one collapsed "admin".
+// Shared by both post-login and post-consent routing so they never drift.
+function dashboardRouteForRoles(roles: string[]): string {
+  const roleList = roles.map((r: string) => String(r).toLowerCase());
+  if (roleList.includes("super_admin")) return ROUTES.ADMIN_DASHBOARD;
+  if (roleList.includes("regional_admin")) return ROUTES.REGIONAL_ADMIN_DASHBOARD;
+  if (roleList.includes("clinic_admin")) return ROUTES.CLINIC_ADMIN_DASHBOARD;
+  if (roles.includes(USER_ROLES.PATIENT)) return ROUTES.PATIENT_DASHBOARD;
+  if (roles.includes(USER_ROLES.DOCTOR)) return ROUTES.DOCTOR_DASHBOARD;
+  if (roles.includes(USER_ROLES.RECEPTIONIST)) return ROUTES.RECEPTIONIST_DASHBOARD;
+  if (roles.includes(USER_ROLES.CLINICAL_ASSISTANT)) return ROUTES.CA_DASHBOARD;
+  return ROUTES.CA_DASHBOARD;
+}
+
+// EVERY patient — self- or staff-registered — stays inactive through the
+// same registration-test wizard (consent, anamnesis, general PRS) before
+// getting portal access; only who signs consent and whether a receptionist
+// approval gate applies afterward differ. Logging back in mid-way must
+// resume wherever they left off, not always bounce to /consent (which has
+// nothing pending to show once they're past that step). Disease selection
+// was removed from this wizard (70_remove_disease_selection.sql, 27 Aug
+// 2026) — demographics now goes straight to consent.
+function resumeRouteForPatient(registrationStatus: string | undefined): string {
+  switch (registrationStatus) {
+    case "demographics_complete": return ROUTES.CONSENT;
+    case "consent_signed": return "/patient-registration/anamnesis";
+    case "anamnesis_complete": return "/patient-registration/assessment";
+    default: return "/patient-registration/pending"; // general_prs_complete / registration_complete, awaiting approval
+  }
+}
+
 export function useAuth() {
-  const dispatch = useDispatch<AppDispatch>();
+  const dispatch = useAppDispatch();
   const router = useRouter();
-  const { user, isAuthenticated, isLoading, isRestoring, error } = useSelector((s: RootState) => s.auth);
+  const { user, isAuthenticated, isLoading, isRestoring, error, passwordChallenge } = useSelector((s: RootState) => s.auth);
 
   const handleLogin = useCallback(async (credentials: LoginCredentials) => {
     const result = await dispatch(login(credentials));
     if (login.fulfilled.match(result)) {
       const roles = result.payload?.roles || [];
 
-      // Check admin first — backend may return platform_admin, clinical_admin, or "admin"
-      const isAdmin = roles.some(
-        (r: string) =>
-          r === USER_ROLES.PLATFORM_ADMIN ||
-          r === USER_ROLES.CLINICAL_ADMIN ||
-          String(r).toLowerCase().includes("admin")
-      );
-
-      if (isAdmin) {
-        router.push(ROUTES.ADMIN_DASHBOARD);
-      } else if (roles.includes(USER_ROLES.PATIENT)) {
-        router.push(ROUTES.PATIENT_DASHBOARD);
-      } else if (roles.includes(USER_ROLES.DOCTOR)) {
-        router.push(ROUTES.DOCTOR_DASHBOARD);
-      } else if (roles.includes(USER_ROLES.RECEPTIONIST)) {
-        router.push(ROUTES.RECEPTIONIST_DASHBOARD);
-      } else if (roles.includes(USER_ROLES.CLINICAL_ASSISTANT)) {
-        router.push(ROUTES.CA_DASHBOARD);
-      } else {
-        router.push(ROUTES.CA_DASHBOARD);
+      // Consent gate — a newly-registered (or not-yet-signed) staff account
+      // is sent to the consent screen. Any inactive patient (self- OR
+      // staff-registered — both now go through the same registration-test
+      // wizard) is resumed wherever they left off instead. A staff account
+      // that already signed consent before (consent_signed=true) but is now
+      // is_active=false was deliberately deactivated by an admin, not newly
+      // created — that's a different message, not a consent form with
+      // nothing pending to sign (see account-deactivated/page.tsx).
+      if (result.payload?.is_active === false) {
+        if (roles.includes(USER_ROLES.PATIENT)) {
+          router.push(resumeRouteForPatient(result.payload?.registration_status));
+        } else if (result.payload?.consent_signed === false) {
+          router.push(ROUTES.CONSENT);
+        } else {
+          router.push(ROUTES.ACCOUNT_DEACTIVATED);
+        }
+        return result;
       }
+
+      router.push(dashboardRouteForRoles(roles));
+    }
+    return result;
+  }, [dispatch, router]);
+
+  // Called after signing onboarding consent — profiles.is_active flipped
+  // server-side already, this just re-reads /auth/me into the store so the
+  // app sees it, then routes straight into the portal. No re-login needed.
+  const completeConsent = useCallback(async () => {
+    const result = await dispatch(refreshUser());
+    if (refreshUser.fulfilled.match(result)) {
+      router.push(dashboardRouteForRoles(result.payload?.roles || []));
     }
     return result;
   }, [dispatch, router]);
@@ -46,6 +89,21 @@ export function useAuth() {
   const handleRegister = useCallback(async (data: RegisterData) => {
     return dispatch(register(data));
   }, [dispatch]);
+
+  const handleCompletePatientSignup = useCallback(
+    async (data: Parameters<typeof completePatientSignup>[0]) => dispatch(completePatientSignup(data)),
+    [dispatch],
+  );
+
+  const handleCompleteNewPassword = useCallback(async (newPassword: string) => {
+    if (!passwordChallenge) return;
+    const result = await dispatch(completeNewPassword({ username: passwordChallenge.username, newPassword, session: passwordChallenge.session }));
+    if (completeNewPassword.fulfilled.match(result)) {
+      const roles = result.payload?.roles || [];
+      router.push(dashboardRouteForRoles(roles));
+    }
+    return result;
+  }, [dispatch, router, passwordChallenge]);
 
   const handleLogout = useCallback(() => {
     dispatch(logout());
@@ -57,12 +115,16 @@ export function useAuth() {
   }, [dispatch]);
 
   return {
-    user, isAuthenticated, isLoading, isRestoring, error,
+    user, isAuthenticated, isLoading, isRestoring, error, passwordChallenge,
     login: handleLogin,
     register: handleRegister,
+    completePatientSignup: handleCompletePatientSignup,
+    completeNewPassword: handleCompleteNewPassword,
     logout: handleLogout,
     restoreSession: restore,
+    completeConsent,
     clearError: () => dispatch(clearError()),
+    clearPasswordChallenge: () => dispatch(clearPasswordChallenge()),
     hasRole: (role: string) => user?.roles?.includes(role as any) ?? false,
     isDoctor: user?.roles?.includes(USER_ROLES.DOCTOR) ?? false,
     isPatient: user?.roles?.includes(USER_ROLES.PATIENT) ?? false,

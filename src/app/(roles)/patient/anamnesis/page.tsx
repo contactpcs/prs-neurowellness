@@ -1,14 +1,25 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/hooks";
-import { AnamnesisForm } from "@/components/assessment/AnamnesisForm";
+import { PageLoader } from "@/components/ui";
+
+const AnamnesisForm = dynamic(
+  () => import("@/components/assessment/AnamnesisForm").then((m) => ({ default: m.AnamnesisForm })),
+  { loading: () => <PageLoader />, ssr: false },
+);
 
 export default function PatientAnamnesisPage() {
   const { user } = useAuth();
   const router = useRouter();
 
   if (!user) return null;
+  // AnamnesisForm's patientId prop must be patients.patient_id (the public
+  // ID the backend's anamnesis endpoints key off), not user.id (profiles.id)
+  // — passing the profile id here made every auto-start 404 ("Patient not
+  // found") for any real patient.
+  if (!user.patient_id) return <PageLoader />;
 
   return (
     <div className="max-w-3xl mx-auto py-4 space-y-2">
@@ -19,8 +30,9 @@ export default function PatientAnamnesisPage() {
         </p>
       </div>
       <AnamnesisForm
-        patientId={user.id}
+        patientId={user.patient_id}
         mode="patient"
+        assessmentStage="main"
         onSubmitted={() => router.push("/patient/dashboard")}
       />
     </div>

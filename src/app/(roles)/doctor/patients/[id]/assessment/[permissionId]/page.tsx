@@ -1,18 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { AssessmentSkeleton } from "@/components/ui";
 import { AssessmentUI } from "@/components/assessment/AssessmentUI";
 import { useAssessmentSTT } from "@/lib/hooks/useAssessmentSTT";
 import { permissionsService } from "@/lib/api/services/permissions.service";
-import { prsAssessmentService } from "@/lib/api/services/prsAssessment.service";
+import { prsAssessmentService, PRS_LANGUAGES } from "@/lib/api/services/prsAssessment.service";
 import { useAppDispatch } from "@/store/hooks";
 import { invalidatePatientPermissions, fetchPatientPermissions } from "@/store/slices/permissionsSlice";
 import { invalidatePatientScores, fetchPatientScoresSummary } from "@/store/slices/scoresSlice";
 import { invalidateDoctorPatients, fetchDoctorPatient } from "@/store/slices/doctorsSlice";
 import type { ScaleQuestion, QuestionOption } from "@/types/prs.types";
 import type { PrsAssessmentQuestion, PrsAssessmentScaleResult } from "@/lib/api/services/prsAssessment.service";
+import { computeHiddenQuestionIndices } from "@/lib/utils/prsSkipLogic";
 
 // ─── Type helpers ─────────────────────────────────────────────────────────────
 
@@ -54,13 +55,13 @@ function toLoadedScale(scale: PrsAssessmentScaleResult, instanceId: string): Loa
     scale_id: scale.scale_id,
     scale_name: scale.scale_name ?? scale.scale_code ?? scale.scale_id,
     instance_id: instanceId,
-    questions: scale.questions.map(toPrsScaleQuestion),
+    questions: scale.questions.map((q) => toPrsScaleQuestion(q, scale.questions)),
     question_ids: scale.questions.map((q) => q.question_id),
     question_required: scale.questions.map((q) => q.is_required ?? true),
   };
 }
 
-function toPrsScaleQuestion(q: PrsAssessmentQuestion): ScaleQuestion {
+function toPrsScaleQuestion(q: PrsAssessmentQuestion, allQuestions: PrsAssessmentQuestion[]): ScaleQuestion {
   const type = mapAnswerType(q.answer_type);
   const options: QuestionOption[] | undefined = q.options?.length
     ? q.options
@@ -68,6 +69,15 @@ function toPrsScaleQuestion(q: PrsAssessmentQuestion): ScaleQuestion {
         .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
         .map((o) => ({ value: Number(o.value), label: o.label, points: o.points }))
     : undefined;
+
+  // hidden_unless.question_id -> position within this scale's question list,
+  // so runtime evaluation (computeHiddenQuestionIndices) can just index into
+  // `responses` by number instead of re-resolving question_id every render.
+  const rule = q.hidden_unless;
+  const refIndex = rule ? allQuestions.findIndex((x) => x.question_id === rule.question_id) : -1;
+  const hiddenUnless = rule && refIndex !== -1
+    ? { refIndex, hiddenWhenLabel: rule.hidden_when_label, visibleOnlyWhenLabel: rule.visible_only_when_label }
+    : null;
 
   return {
     index: q.question_index,
@@ -77,6 +87,7 @@ function toPrsScaleQuestion(q: PrsAssessmentQuestion): ScaleQuestion {
     options,
     min: q.min_value ?? undefined,
     max: q.max_value ?? undefined,
+    hiddenUnless,
   };
 }
 
@@ -85,6 +96,11 @@ function toPrsScaleQuestion(q: PrsAssessmentQuestion): ScaleQuestion {
 export default function DoctorOnBehalfAssessmentPage() {
   const { id: patientId, permissionId } = useParams<{ id: string; permissionId: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Forwarded from the visit-toggle strip on the patient page (?session=)
+  // when the doctor opened this assessment from a specific visit, so the
+  // instance created below can be found again under that visit's bundle.
+  const sessionId = searchParams.get("session");
   const dispatch = useAppDispatch();
 
   const [scales, setScales] = useState<LoadedScale[]>([]);
@@ -97,6 +113,9 @@ export default function DoctorOnBehalfAssessmentPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sttEnabled, setSttEnabled] = useState(false);
   const [isResumed, setIsResumed] = useState(false);
+  const [instanceId, setInstanceId] = useState<string | null>(null);
+  const [languageCode, setLanguageCode] = useState("en");
+  const [isLanguageSwitching, setIsLanguageSwitching] = useState(false);
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -113,10 +132,12 @@ export default function DoctorOnBehalfAssessmentPage() {
           disease_id: permission.disease_id,
           taken_by: "doctor_on_behalf",
           patient_id: patientId,
+          appointment_id: sessionId ?? undefined,
         });
 
         if (result.scales.length === 0) throw new Error("No scales found for this assessment");
 
+        setInstanceId(result.instance_id);
         const loadedScales: LoadedScale[] = result.scales.map((scale) =>
           toLoadedScale(scale, result.instance_id),
         );
@@ -205,13 +226,6 @@ export default function DoctorOnBehalfAssessmentPage() {
     [currentScale],
   );
 
-  const handleAutoAdvance = useCallback(() => {
-    setCurrentQuestionIndex((prev) => {
-      if (prev < totalQuestions - 1) return prev + 1;
-      return prev;
-    });
-  }, [totalQuestions]);
-
   const handlePrev = () => {
     if (!isFirstScale) {
       setCurrentScaleIndex((i) => i - 1);
@@ -219,29 +233,43 @@ export default function DoctorOnBehalfAssessmentPage() {
     }
   };
 
-  const handleSkipSection = () => {
-    setResponses((prev) => {
-      const next = { ...prev };
-      delete next[currentScale.scale_id];
-      return next;
-    });
-    if (isLastScale) {
-      handleSubmitScale();
-    } else {
-      setCurrentScaleIndex((i) => i + 1);
-      setCurrentQuestionIndex(0);
+  const handleLanguageChange = async (code: string) => {
+    if (!instanceId || code === languageCode) return;
+    setIsLanguageSwitching(true);
+    try {
+      const result = await prsAssessmentService.setLanguage(instanceId, code);
+      // Same question order/ids as before — only wording changes, so
+      // currentScaleIndex/currentQuestionIndex/responses stay valid as-is.
+      setScales(result.scales.map((scale) => toLoadedScale(scale, instanceId)));
+      setLanguageCode(code);
+    } catch {
+      // keep previous language on failure
+    } finally {
+      setIsLanguageSwitching(false);
     }
   };
 
-  const handleSubmitScale = async () => {
+  const handleSubmitScale = useCallback(async () => {
     if (!currentScale) return;
     setIsSubmitting(true);
     try {
+      // responses state is keyed by question INDEX — remap to real
+      // question_ids before submit (backend FK rejects raw indexes).
+      // Skip-logic-hidden questions are excluded even if a stale answer is
+      // still in state (e.g. user answered, then changed an earlier answer
+      // that hid it) — submitting them would double-count in scoring.
       const scaleResponses = responses[currentScale.scale_id] ?? {};
+      const hiddenIndices = computeHiddenQuestionIndices(currentScale.questions, scaleResponses);
+      const byQuestionId: Record<string, number | string> = {};
+      for (const [idx, v] of Object.entries(scaleResponses)) {
+        if (hiddenIndices.has(Number(idx))) continue;
+        const qid = currentScale.question_ids[Number(idx)];
+        if (qid) byQuestionId[qid] = v;
+      }
       await prsAssessmentService.submitAssessment(
         currentScale.instance_id,
         currentScale.scale_id,
-        scaleResponses,
+        byQuestionId,
       );
       const newCompleted = new Set(completedScaleIds).add(currentScale.scale_id);
       setCompletedScaleIds(newCompleted);
@@ -275,7 +303,39 @@ export default function DoctorOnBehalfAssessmentPage() {
     } finally {
       setIsSubmitting(false);
     }
+  }, [currentScale, responses, completedScaleIds, isLastScale, scales, dispatch, patientId, router]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSkipSection = () => {
+    setResponses((prev) => {
+      const next = { ...prev };
+      delete next[currentScale.scale_id];
+      return next;
+    });
+    if (isLastScale) {
+      handleSubmitScale();
+    } else {
+      setCurrentScaleIndex((i) => i + 1);
+      setCurrentQuestionIndex(0);
+    }
   };
+
+  const handleAutoAdvance = useCallback(() => {
+    const scaleId = currentScale?.scale_id;
+    if (!scaleId) return;
+    setResponses((prev) => {
+      const scaleResponses = prev[scaleId] ?? {};
+      const hiddenIndices = computeHiddenQuestionIndices(questions, scaleResponses);
+      const allAnswered = questions.length > 0 && questions.every(
+        (_, idx) => hiddenIndices.has(idx) || scaleResponses[String(idx)] !== undefined,
+      );
+      if (allAnswered) {
+        setTimeout(() => handleSubmitScale(), 0);
+      } else {
+        setCurrentQuestionIndex((q) => (q < totalQuestions - 1 ? q + 1 : q));
+      }
+      return prev;
+    });
+  }, [currentScale, questions, totalQuestions, handleSubmitScale]);
 
   // ─── STT ──────────────────────────────────────────────────────────────────
   const { phase, transcript, matchedLabel, hint, isSupported } = useAssessmentSTT({
@@ -285,6 +345,16 @@ export default function DoctorOnBehalfAssessmentPage() {
     onAnswer: handleAnswer,
     onAutoAdvance: handleAutoAdvance,
   });
+
+  // Jump to first unanswered question when enabling STT mid-session
+  useEffect(() => {
+    if (!sttEnabled) return;
+    const scaleResponses = responses[currentScale?.scale_id] ?? {};
+    const firstUnanswered = questions.findIndex((_, idx) => scaleResponses[String(idx)] === undefined);
+    const target = firstUnanswered === -1 ? Math.max(0, totalQuestions - 1) : firstUnanswered;
+    setCurrentQuestionIndex(target);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sttEnabled]);
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -341,6 +411,11 @@ export default function DoctorOnBehalfAssessmentPage() {
       sttHint={hint}
       isSttsupported={isSupported}
       isSubmitting={isSubmitting}
+      languageCode={languageCode}
+      languageOptions={[...PRS_LANGUAGES]}
+      onLanguageChange={handleLanguageChange}
+      isLanguageSwitching={isLanguageSwitching}
+      backHref={`/doctor/patients/${patientId}`}
     />
   );
 }

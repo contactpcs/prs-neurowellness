@@ -46,14 +46,14 @@ export function getSeverityColor(level: string): string {
 
 export function getSeverityBgColor(level: string): string {
   const colors: Record<string, string> = {
-    minimal: "bg-green-100 text-green-800",
-    normal: "bg-green-100 text-green-800",
-    mild: "bg-lime-100 text-lime-800",
-    moderate: "bg-amber-100 text-amber-800",
-    "moderately-severe": "bg-orange-100 text-orange-800",
-    severe: "bg-red-100 text-red-800",
-    "extremely-severe": "bg-red-200 text-red-900",
-    critical: "bg-red-300 text-red-950",
+    minimal: "bg-severity-minimal/15 text-severity-minimal",
+    normal: "bg-severity-normal/15 text-severity-normal",
+    mild: "bg-severity-mild/15 text-severity-mild",
+    moderate: "bg-severity-moderate/15 text-severity-moderate",
+    "moderately-severe": "bg-severity-moderately-severe/15 text-severity-moderately-severe",
+    severe: "bg-severity-severe/15 text-severity-severe",
+    "extremely-severe": "bg-severity-extremely-severe/15 text-severity-extremely-severe",
+    critical: "bg-severity-critical/15 text-severity-critical",
   };
   return colors[level] || "bg-neutral-100 text-neutral-800";
 }
