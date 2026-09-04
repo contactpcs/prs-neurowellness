@@ -8,7 +8,7 @@ import {
   Mail, Phone, FileText, Upload, Download,
 } from "lucide-react";
 import { PageLoader } from "@/components/ui";
-import { usersService } from "@/lib/api/services/users.service";
+import { usersService, NoSupportedFieldsError } from "@/lib/api/services/users.service";
 import { authService } from "@/lib/api/services/auth.service";
 import { patientFilesService, type PatientFile } from "@/lib/api/services/patientFiles.service";
 import { extractErrorMessage } from "@/lib/api/errors";
@@ -420,15 +420,15 @@ function PatientProfile() {
           country:           (d.country        as string) ?? "",
           pincode:           (d.pincode        as string) ?? "",
           blood_group:       (d.blood_group    as string) ?? "",
-          allergies:         (d.known_allergies as string) ?? "",
-          emergency_contact: (d.emergency_contact as string) ?? "",
+          allergies:         (d.allergies      as string) ?? "",
+          emergency_contact: (d.emergency_contact_name as string) ?? "",
           occupation:        (d.occupation     as string) ?? "",
           marital_status:    (d.marital_status as string) ?? "",
           insurance_provider:(d.insurance_provider as string) ?? "",
-          insurance_policy:  (d.policy_number  as string) ?? "",
-          weight_kg:         (d.weight_kg      as string) ?? "",
-          height_ft:         (d.height_ft      as string) ?? "",
-          height_in:         (d.height_in      as string) ?? "",
+          insurance_policy:  (d.insurance_policy as string) ?? "",
+          weight_kg:         (d.weight_kg != null ? String(d.weight_kg) : ""),
+          height_ft:         (d.height_ft != null ? String(d.height_ft) : ""),
+          height_in:         (d.height_in != null ? String(d.height_in) : ""),
         };
         setForm(filled);
         originalRef.current = filled;
@@ -459,15 +459,15 @@ function PatientProfile() {
         country:           (u.country        as string) ?? "",
         pincode:           (u.pincode        as string) ?? "",
         blood_group:       (u.blood_group    as string) ?? "",
-        allergies:         (u.known_allergies as string) ?? "",
-        emergency_contact: (u.emergency_contact as string) ?? "",
+        allergies:         (u.allergies      as string) ?? "",
+        emergency_contact: (u.emergency_contact_name as string) ?? "",
         occupation:        (u.occupation     as string) ?? "",
         marital_status:    (u.marital_status as string) ?? "",
         insurance_provider:(u.insurance_provider as string) ?? "",
-        insurance_policy:  (u.policy_number  as string) ?? "",
-        weight_kg:         (u.weight_kg      as string) ?? "",
-        height_ft:         (u.height_ft      as string) ?? "",
-        height_in:         (u.height_in      as string) ?? "",
+        insurance_policy:  (u.insurance_policy as string) ?? "",
+        weight_kg:         (u.weight_kg != null ? String(u.weight_kg) : ""),
+        height_ft:         (u.height_ft != null ? String(u.height_ft) : ""),
+        height_in:         (u.height_in != null ? String(u.height_in) : ""),
       };
       setForm(freshFilled);
       originalRef.current = freshFilled;
@@ -483,6 +483,16 @@ function PatientProfile() {
       setSaveSuccess(true);
       setIsEditing(false);
     } catch (err) {
+      // NoSupportedFieldsError means the diff only touched fields with no
+      // backend column yet (weight, blood group, occupation, ...) — the
+      // PATCH never even went out, so the form the user was looking at is
+      // still accurate. Leave isEditing/form untouched instead of the
+      // catch-all path, which would otherwise read as "save failed" for a
+      // field that was never going to save in the first place.
+      if (err instanceof NoSupportedFieldsError) {
+        setSaveError(err.message);
+        return;
+      }
       setSaveError(err instanceof Error ? err.message : "Failed to save profile");
     } finally { setIsSaving(false); }
   };
@@ -619,6 +629,10 @@ function PatientProfile() {
                       </select>
                     </div>
                     <FieldInput label="Occupation"   value={form.occupation}   onChange={(v) => set("occupation", v)} />
+                    <FieldInput label="Marital Status" value={form.marital_status} onChange={(v) => set("marital_status", v)} placeholder="e.g., Single, Married" />
+                    <FieldInput label="Emergency Contact" value={form.emergency_contact} onChange={(v) => set("emergency_contact", v)} placeholder="Name" />
+                    <FieldInput label="Government ID"  value={form.government_id} onChange={(v) => set("government_id", v)} placeholder="e.g., Aadhaar, Passport number" />
+                    <FieldInput label="ID Type"        value={form.id_type}       onChange={(v) => set("id_type", v)} placeholder="e.g., aadhaar, passport" />
                     <FieldInput label="Language"     value={form.language_pref} onChange={(v) => set("language_pref", v)} />
 
                     {saveError && (
@@ -656,6 +670,9 @@ function PatientProfile() {
                     <InfoRow label="Country"      value={form.country} />
                     <InfoRow label="Pincode"      value={form.pincode} />
                     <InfoRow label="Occupation"   value={form.occupation} />
+                    <InfoRow label="Marital Status" value={form.marital_status} />
+                    <InfoRow label="Government ID"  value={form.government_id} />
+                    <InfoRow label="ID Type"        value={form.id_type} />
                     <InfoRow label="Language"     value={form.language_pref} />
                   </div>
                 )}
