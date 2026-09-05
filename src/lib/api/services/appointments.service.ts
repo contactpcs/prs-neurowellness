@@ -1,6 +1,6 @@
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
-import type { Appointment, AppointmentStatus, AppointmentType, AvailabilitySlot, DeviceSlot, DeviceDayAvailability } from "@/types/domain.types";
+import type { Appointment, AppointmentHistoryEntry, AppointmentStatus, AppointmentType, AvailabilitySlot, DeviceSlot, DeviceDayAvailability } from "@/types/domain.types";
 
 export interface AppointmentListParams {
   date_from?: string;
@@ -87,6 +87,18 @@ function extractList(data: unknown): Appointment[] {
   return Array.isArray(data) ? data.map(mapAppointment) : [];
 }
 
+function mapAppointmentHistory(a: Record<string, unknown>): AppointmentHistoryEntry {
+  return {
+    ...mapAppointment(a),
+    payment_id: a.payment_id ? String(a.payment_id) : null,
+    payment_status: (a.payment_status as AppointmentHistoryEntry["payment_status"]) ?? null,
+    payment_amount: typeof a.payment_amount === "number" ? a.payment_amount : a.payment_amount ? Number(a.payment_amount) : null,
+    payment_currency: a.payment_currency ? String(a.payment_currency) : null,
+    payment_method: a.payment_method ? String(a.payment_method) : null,
+    paid_at: a.paid_at ? String(a.paid_at) : null,
+  };
+}
+
 async function setStatus(id: string, status: AppointmentStatus, extra?: Record<string, unknown>): Promise<Appointment> {
   const { data } = await apiClient.patch(ENDPOINTS.APPOINTMENTS.CHECK_IN(id), { status, ...extra });
   return mapAppointment(data);
@@ -168,6 +180,15 @@ export const appointmentsService = {
   async myList(includePast = false): Promise<Appointment[]> {
     const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.MY_LIST, { params: { include_past: includePast } });
     return extractList(data);
+  },
+
+  // The appointment section's history feed — every appointment ever, newest
+  // first, each with its most recent payment folded in (pending hold,
+  // abandoned/failed, paid, or none). One call instead of joining myList()
+  // with a separate payments fetch client-side.
+  async myHistory(): Promise<AppointmentHistoryEntry[]> {
+    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.MY_HISTORY);
+    return Array.isArray(data) ? data.map(mapAppointmentHistory) : [];
   },
 
   async myAvailability(fromDate: string, toDate: string): Promise<AvailabilitySlot[]> {

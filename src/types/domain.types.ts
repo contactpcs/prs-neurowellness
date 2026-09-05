@@ -344,6 +344,19 @@ export interface Appointment {
   completed_at?: string | null;
 }
 
+/** GET /me/appointments/history — one row per appointment, newest first,
+ *  with its most recent payment folded in. payment_* is all null for an
+ *  appointment nothing was ever charged for (a still-'planned' protocol row,
+ *  or payment_required=False). */
+export interface AppointmentHistoryEntry extends Appointment {
+  payment_id?: string | null;
+  payment_status?: "pending" | "paid" | "failed" | "waived" | "refunded" | null;
+  payment_amount?: number | null;
+  payment_currency?: string | null;
+  payment_method?: string | null;
+  paid_at?: string | null;
+}
+
 // ─── Anamnesis ────────────────────────────────────────────────────
 
 export interface AnamnesisResponse {

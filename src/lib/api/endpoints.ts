@@ -333,6 +333,7 @@ export const ENDPOINTS = {
     // server-side from the caller's own record (scheduling/router.py's
     // "/me/appointments/*" block), so these never take an id in the path.
     MY_LIST: "/me/appointments",
+    MY_HISTORY: "/me/appointments/history", // GET — full history, newest first, most recent payment folded in
     MY_AVAILABILITY: "/me/appointments/availability", // GET ?from_date&to_date
     MY_BOOK_INITIAL: "/me/appointments/initial",       // POST {appointment_date, start_time, reason?, patient_complaint?}
     MY_BOOK_FOLLOWUP: "/me/appointments/follow-up",    // POST — same body shape
