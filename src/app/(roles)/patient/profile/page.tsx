@@ -14,7 +14,7 @@ import { patientFilesService, type PatientFile } from "@/lib/api/services/patien
 import { extractErrorMessage } from "@/lib/api/errors";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
-import { fetchMyDoctor, selectMyDoctor } from "@/store/slices/patientsSlice";
+import { fetchMyDoctor, selectMyDoctor, invalidateDashboard } from "@/store/slices/patientsSlice";
 import { useAuth } from "@/lib/hooks";
 import { computeProfileCompletion } from "@/lib/profileCompletion";
 import { dialCodeForCountry } from "@/lib/countries";
@@ -480,6 +480,10 @@ function PatientProfile() {
         gender:        u.gender,
         date_of_birth: u.date_of_birth,
       }));
+      // Dashboard's own profile-completion card reads a separately-cached
+      // (5-min TTL) copy of this same data — without this it keeps showing
+      // whatever it loaded before this save until that TTL expires.
+      dispatch(invalidateDashboard());
       setSaveSuccess(true);
       setIsEditing(false);
     } catch (err) {

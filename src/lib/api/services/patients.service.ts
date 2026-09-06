@@ -28,6 +28,22 @@ export const patientsService = {
         state: own?.state as string | undefined,
         country: own?.country as string | undefined,
         pincode: own?.pincode as string | undefined,
+        // Same "Medical Information" fields the profile page's own GET
+        // /patients/{id} carries — without these the dashboard's completion
+        // card can never reflect them, no matter what's filled in on the
+        // profile page (see profileCompletion.ts's item list).
+        emergency_contact_name: own?.emergency_contact_name as string | undefined,
+        blood_group: own?.blood_group as string | undefined,
+        allergies: own?.allergies as string | undefined,
+        occupation: own?.occupation as string | undefined,
+        marital_status: own?.marital_status as string | undefined,
+        insurance_provider: own?.insurance_provider as string | undefined,
+        insurance_policy: own?.insurance_policy as string | undefined,
+        weight_kg: own?.weight_kg as number | undefined,
+        height_ft: own?.height_ft as number | undefined,
+        height_in: own?.height_in as number | undefined,
+        government_id: own?.government_id as string | undefined,
+        id_type: own?.id_type as string | undefined,
       },
       assigned_doctor: own?.primary_doctor_id ? {
         id: own.primary_doctor_id as string,

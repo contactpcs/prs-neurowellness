@@ -81,6 +81,18 @@ export interface PatientDashboard {
     state?: string;
     country?: string;
     pincode?: string;
+    emergency_contact_name?: string;
+    blood_group?: string;
+    allergies?: string;
+    occupation?: string;
+    marital_status?: string;
+    insurance_provider?: string;
+    insurance_policy?: string;
+    weight_kg?: number;
+    height_ft?: number;
+    height_in?: number;
+    government_id?: string;
+    id_type?: string;
   };
   assigned_doctor?: {
     id: string;

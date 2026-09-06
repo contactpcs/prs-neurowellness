@@ -13,6 +13,7 @@ import {
   useMyAnamnesis,
   useMyScoresSummary,
   useMyDoctorNotes,
+  useAuth,
 } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
@@ -63,6 +64,7 @@ export default function PatientDashboardPage() {
 
 function PatientDashboard() {
   const { dashboard, isLoading: dashLoading } = usePatientDashboard();
+  const { user } = useAuth();
   const { assessments, isLoading: assessLoading } = useMyAssessments();
   const { record: anamnesisRecord } = useMyAnamnesis("registration");
   const { summary } = useMyScoresSummary();
@@ -105,7 +107,9 @@ function PatientDashboard() {
   const completedAppts = appointments.filter((a) => a.status === "completed").length;
   const totalPlannedAppts = appointments.length;
 
-  const { percent: profilePct, items: profileItems } = computeProfileCompletion(profile);
+  const { percent: profilePct, items: profileItems } = computeProfileCompletion(profile, {
+    email_verified: user?.email_verified, phone_verified: user?.phone_verified,
+  });
   const remainingFields = profileItems.filter((i) => !i.done).length;
 
   const prsProgress =
