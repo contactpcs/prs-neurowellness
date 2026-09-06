@@ -347,7 +347,7 @@ function PatientDashboard() {
             </div>
             <h3 className="text-sm font-semibold text-gray-900">Request an appointment</h3>
             <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-              Book your next session or consultation{doctor ? ` with Dr. ${doctor.last_name}` : ""} using our AI-powered smart scheduler.
+              Book your next session or consultation{doctor ? ` with Dr. ${doctor.last_name}` : ""} using our smart scheduler.
             </p>
             <div className="mt-2 flex items-center gap-1 text-[10px] text-gray-500">
               <Zap className="w-3 h-3 text-orange-400" />
@@ -496,13 +496,6 @@ function PatientDashboard() {
               <button className="text-xs text-blue-600 hover:underline">Details →</button>
             </div>
             <div className="px-4 py-3 space-y-3">
-              <ProgressBar
-                label="tDCS sessions"
-                value={completedAppts}
-                max={Math.max(totalPlannedAppts, 10)}
-                showCount
-                maxDisplay={Math.max(totalPlannedAppts, 10)}
-              />
               <ProgressBar
                 label="EEG brain mapping"
                 value={completedAssessments.filter((a) => a.disease_name?.toLowerCase().includes("eeg")).length}
