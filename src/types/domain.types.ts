@@ -338,6 +338,19 @@ export interface Appointment {
   booked_by_role: string;
   created_at: string;
   updated_at: string;
+  /** Set on the appointment that REPLACED an earlier one (this row is the
+   *  result of a reschedule) — the superseded appointment's own id. Null
+   *  for a normally-booked appointment. */
+  rescheduled_from?: string | null;
+  /** Set on the OLD appointment once superseded — points at its
+   *  replacement. Its own status becomes 'rescheduled' at the same time. */
+  rescheduled_to?: string | null;
+  /** Previous slot's own date/time (backend joins these in whenever
+   *  rescheduled_from is set) — lets a list/detail view show "moved from
+   *  <date> <time>" without a second per-appointment fetch. */
+  rescheduled_from_date?: string | null;
+  rescheduled_from_start_time?: string | null;
+  rescheduled_from_end_time?: string | null;
   /** Set only for appointment_type = device_session | protocol_followup —
    *  the protocol course this appointment was generated from (30/32/41).
    *  NULL for a manually-booked consultation. */

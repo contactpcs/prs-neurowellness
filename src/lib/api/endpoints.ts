@@ -338,6 +338,7 @@ export const ENDPOINTS = {
     MY_BOOK_INITIAL: "/me/appointments/initial",       // POST {appointment_date, start_time, reason?, patient_complaint?}
     MY_BOOK_FOLLOWUP: "/me/appointments/follow-up",    // POST — same body shape
     MY_CANCEL: (id: string) => `/me/appointments/${id}/cancel`, // PATCH {reason}
+    MY_RESCHEDULE: (id: string) => `/me/appointments/${id}/reschedule`, // PATCH {appointment_date, start_time, reason?} — selected/paid/no_show only (initial/follow_up; not protocol-born — use CLAIM_SLOT for those)
     CLAIM_SLOT: (id: string) => `/me/appointments/${id}/claim-slot`, // PATCH {start_time, appointment_date?} — planned -> selected
     MY_DEVICE_AVAILABILITY: (id: string) => `/me/appointments/${id}/device-availability`, // GET ?from_date&to_date
     DEVICE_DAY_AVAILABILITY: (id: string) => `/me/appointments/${id}/device-day-availability`, // GET — continuous timeline, no params, always the appointment's own planned date

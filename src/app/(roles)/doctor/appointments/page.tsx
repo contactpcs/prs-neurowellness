@@ -194,7 +194,14 @@ export default function DoctorAppointmentsPage() {
             <h3 className="text-[13px] font-semibold text-neutral-900">
               Appointment Details · {sel.appointment_id.slice(0, 8)}
             </h3>
-            <StatusPill status={sel.status} />
+            <div className="flex items-center gap-1.5">
+              {sel.rescheduled_from && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap bg-purple-100 text-purple-700">
+                  Rescheduled
+                </span>
+              )}
+              <StatusPill status={sel.status} />
+            </div>
           </div>
           <div className="p-5 flex flex-col gap-4">
             <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -228,6 +235,12 @@ export default function DoctorAppointmentsPage() {
               <Field label="Booked By" value={humanize(sel.booked_by_role || "—")} />
               <Field label="Created" value={sel.created_at ? new Date(sel.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"} />
               <Field label="Notes" value={sel.notes || "—"} />
+              {sel.rescheduled_from && (
+                <Field
+                  label="Originally Booked For"
+                  value={sel.rescheduled_from_date ? `${fmtDate(sel.rescheduled_from_date)} · ${fmt12(sel.rescheduled_from_start_time || "")}` : "—"}
+                />
+              )}
             </div>
           </div>
         </div>
@@ -268,7 +281,20 @@ export default function DoctorAppointmentsPage() {
                   </div>
                   <p className="text-xs text-neutral-700 capitalize truncate">{(a.appointment_type ?? "").replace(/_/g, " ")}</p>
                   <p className="text-xs text-neutral-600 truncate">{a.reason ?? "—"}</p>
-                  <StatusPill status={a.status} />
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <StatusPill status={a.status} />
+                    {/* rescheduled_from: this row replaced an earlier
+                        appointment — distinct from status==='rescheduled',
+                        which is the OLD superseded row instead. */}
+                    {a.rescheduled_from && (
+                      <span
+                        title={a.rescheduled_from_date ? `Originally booked for ${fmtDate(a.rescheduled_from_date)} · ${fmt12(a.rescheduled_from_start_time || "")}` : undefined}
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap bg-purple-100 text-purple-700"
+                      >
+                        Rescheduled
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

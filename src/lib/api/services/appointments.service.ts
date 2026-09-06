@@ -80,6 +80,11 @@ function mapAppointment(a: Record<string, unknown>): Appointment {
     checked_in_at: a.checked_in_at ? String(a.checked_in_at) : null,
     started_at: a.started_at ? String(a.started_at) : null,
     completed_at: a.completed_at ? String(a.completed_at) : null,
+    rescheduled_from: a.rescheduled_from ? String(a.rescheduled_from) : null,
+    rescheduled_to: a.rescheduled_to ? String(a.rescheduled_to) : null,
+    rescheduled_from_date: a.rescheduled_from_date ? String(a.rescheduled_from_date) : null,
+    rescheduled_from_start_time: a.rescheduled_from_start_time ? String(a.rescheduled_from_start_time) : null,
+    rescheduled_from_end_time: a.rescheduled_from_end_time ? String(a.rescheduled_from_end_time) : null,
   };
 }
 
@@ -210,6 +215,22 @@ export const appointmentsService = {
 
   async myCancel(id: string, reason: string): Promise<Appointment> {
     const { data } = await apiClient.patch(ENDPOINTS.APPOINTMENTS.MY_CANCEL(id), { reason });
+    return mapAppointment(data);
+  },
+
+  // Patient self-service reschedule — distinct from reschedule() above
+  // (that one hits the staff-only PATCH /appointments/{id}/reschedule and
+  // 403s for a patient caller). Backend accepts this only when status is
+  // 'selected', 'paid', or 'no_show' (scheduling/service.py's
+  // PATIENT_RESCHEDULE_FROM_STATUSES) — a protocol-born appointment
+  // (device_session/protocol_followup) is rejected with
+  // USE_CLAIM_SLOT_INSTEAD; use claimSlot() for those instead.
+  async myReschedule(id: string, payload: AppointmentReschedulePayload): Promise<Appointment> {
+    const { data } = await apiClient.patch(ENDPOINTS.APPOINTMENTS.MY_RESCHEDULE(id), {
+      appointment_date: payload.appointment_date,
+      start_time: payload.start_time,
+      change_reason: payload.reason,
+    });
     return mapAppointment(data);
   },
 

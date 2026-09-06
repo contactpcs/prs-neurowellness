@@ -356,7 +356,20 @@ export default function AppointmentDetailPage() {
                   {(appointment.appointment_type ?? "follow_up").replace(/_/g, " ")}
                 </p>
               </div>
-              <StatusBadge status={status} />
+              <div className="flex items-center gap-1.5">
+                {/* appointment.rescheduled_from set means THIS row replaced
+                    an earlier one — distinct from status==='rescheduled',
+                    which is the OLD superseded row instead. */}
+                {appointment.rescheduled_from && (
+                  <span
+                    title={appointment.rescheduled_from_date ? `Originally booked for ${fmtDate(appointment.rescheduled_from_date)} · ${fmt12(appointment.rescheduled_from_start_time || "")}` : undefined}
+                    className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-purple-100 text-purple-700"
+                  >
+                    Rescheduled
+                  </span>
+                )}
+                <StatusBadge status={status} />
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -597,6 +610,12 @@ export default function AppointmentDetailPage() {
             <dl className="space-y-2 text-xs">
               <MetaRow label="ID" value={appointment.appointment_id.slice(0, 8) + "…"} />
               <MetaRow label="Status" value={STATUS_CONFIG[status].label} />
+              {appointment.rescheduled_from && (
+                <MetaRow
+                  label="Originally Booked For"
+                  value={appointment.rescheduled_from_date ? `${fmtDate(appointment.rescheduled_from_date)} · ${fmt12(appointment.rescheduled_from_start_time || "")}` : "—"}
+                />
+              )}
               <MetaRow
                 label="Type"
                 value={(appointment.appointment_type ?? "follow_up").replace(/_/g, " ")}

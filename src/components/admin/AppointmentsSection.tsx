@@ -203,6 +203,15 @@ export function AppointmentsSection({ clinicId }: { clinicId: string }) {
                   </button>
                   <p className="text-xs text-neutral-400 mt-0.5">{a.appointment_date} · {a.start_time && a.end_time ? `${timeLabel(a.start_time)}–${timeLabel(a.end_time)}` : "No time booked yet"} · Dr. {a.doctor_name ?? "Unknown"}</p>
                   <p className="text-xs text-neutral-400 capitalize">{a.appointment_type.replace(/_/g, " ")}</p>
+                  {/* a.rescheduled_from: this row replaced an earlier
+                      appointment — distinct from status==='rescheduled',
+                      which is the OLD superseded row instead. */}
+                  {a.rescheduled_from && (
+                    <p className="text-xs text-purple-600 mt-0.5">
+                      ↻ Originally booked for {a.rescheduled_from_date ?? "—"}
+                      {a.rescheduled_from_start_time ? ` · ${timeLabel(a.rescheduled_from_start_time)}` : ""}
+                    </p>
+                  )}
                 </div>
                 <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize flex-shrink-0 ${APPT_STATUS_STYLES[a.status] ?? "bg-neutral-100 text-neutral-600"}`}>
                   {a.status.replace(/_/g, " ")}

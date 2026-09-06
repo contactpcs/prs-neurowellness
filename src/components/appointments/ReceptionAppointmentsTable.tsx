@@ -206,7 +206,20 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
                       <p className="text-[11px] text-neutral-400">{fmt12(a.start_time)}</p>
                     </div>
                     <p className="text-xs text-neutral-600 capitalize truncate">{(a.appointment_type ?? "").replace(/_/g, " ")}</p>
-                    <StatusChip status={a.status} />
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <StatusChip status={a.status} />
+                      {/* rescheduled_from: this row replaced an earlier
+                          appointment — distinct from status==='rescheduled',
+                          which is the OLD superseded row instead. */}
+                      {a.rescheduled_from && (
+                        <span
+                          title={a.rescheduled_from_date ? `Originally booked for ${fmtDate(a.rescheduled_from_date)} · ${fmt12(a.rescheduled_from_start_time || "")}` : undefined}
+                          className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap bg-purple-100 text-purple-700"
+                        >
+                          Rescheduled
+                        </span>
+                      )}
+                    </div>
                     <div className="flex gap-1.5">
                       {hasPayment && (
                         <button
