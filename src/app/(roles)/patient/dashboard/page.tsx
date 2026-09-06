@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Bell, Search, Calendar, CheckCircle, Clock, ChevronRight,
   User, PlayCircle, ClipboardList,
@@ -12,14 +13,15 @@ import {
   useMyAssessments,
   useMyAnamnesis,
   useMyScoresSummary,
-  useMyDoctorNotes,
   useAuth,
 } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
+import { useSidebarBadges } from "@/lib/hooks/useSidebarBadges";
 import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
 import { PatientDashboardSkeleton } from "@/components/ui";
 import { VerifyChannelBanner } from "@/components/auth/VerifyChannelBanner";
 import { computeProfileCompletion } from "@/lib/profileCompletion";
+import { isSupersededCancellation } from "@/lib/appointmentStatus";
 import type {
   AssessmentPermission,
   AssessmentInstance,
@@ -63,24 +65,34 @@ export default function PatientDashboardPage() {
 }
 
 function PatientDashboard() {
+  const router = useRouter();
+  const { patientUnreadNotifications: unreadNotifications = 0 } = useSidebarBadges(["patientUnreadNotifications"]);
   const { dashboard, isLoading: dashLoading } = usePatientDashboard();
   const { user } = useAuth();
   const { assessments, isLoading: assessLoading } = useMyAssessments();
   const { record: anamnesisRecord } = useMyAnamnesis("registration");
   const { summary } = useMyScoresSummary();
-  const { notes: doctorNotes } = useMyDoctorNotes();
 
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [deviceSessions, setDeviceSessions] = useState<Appointment[]>([]);
   const [payingId, setPayingId] = useState<string | null>(null);
 
   const reloadAppointments = () => appointmentsService.getUpcoming().then(setAppointments).catch(() => {});
+  // getUpcoming() only ever returns future/active rows, so a completed count
+  // off it is always 0 — the doctor card's "Sessions done" needs the full
+  // (past-inclusive) device-session history instead.
+  const reloadDeviceSessions = () =>
+    appointmentsService.myList(true)
+      .then((all) => setDeviceSessions(all.filter((a) => a.appointment_type === "device_session" && !isSupersededCancellation(a))))
+      .catch(() => {});
 
-  useEffect(() => { reloadAppointments(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { reloadAppointments(); reloadDeviceSessions(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Live update — a request approval pushes here via SSE.
   useEffect(() => {
-    window.addEventListener("sse:appointment", reloadAppointments);
-    return () => window.removeEventListener("sse:appointment", reloadAppointments);
+    const onAppointmentEvent = () => { reloadAppointments(); reloadDeviceSessions(); };
+    window.addEventListener("sse:appointment", onAppointmentEvent);
+    return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (dashLoading || assessLoading) return <PatientDashboardSkeleton />;
@@ -106,6 +118,8 @@ function PatientDashboard() {
 
   const completedAppts = appointments.filter((a) => a.status === "completed").length;
   const totalPlannedAppts = appointments.length;
+  const completedDeviceSessions = deviceSessions.filter((a) => a.status === "completed").length;
+  const totalDeviceSessions = deviceSessions.length;
 
   const { percent: profilePct, items: profileItems } = computeProfileCompletion(profile, {
     email_verified: user?.email_verified, phone_verified: user?.phone_verified,
@@ -140,12 +154,15 @@ function PatientDashboard() {
             })}
           </button>
           <div className="relative">
-            <button className="p-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50">
+            <button
+              onClick={() => router.push("/patient/notifications")}
+              className="p-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+            >
               <Bell className="w-4 h-4 text-gray-600" />
             </button>
-            {doctorNotes.length > 0 && (
+            {unreadNotifications > 0 && (
               <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full text-white text-[10px] flex items-center justify-center">
-                {doctorNotes.length}
+                {unreadNotifications}
               </span>
             )}
           </div>
@@ -387,7 +404,10 @@ function PatientDashboard() {
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">Upcoming appointments</h3>
-              <button className="text-xs text-blue-600 flex items-center gap-0.5 hover:underline">
+              <button
+                onClick={() => router.push("/patient/appointments")}
+                className="text-xs text-blue-600 flex items-center gap-0.5 hover:underline"
+              >
                 View all <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -457,11 +477,11 @@ function PatientDashboard() {
                 </div>
                 <div className="grid grid-cols-3 gap-1 mt-3 text-center">
                   <div>
-                    <p className="text-base font-bold text-gray-900">{completedAppts}</p>
+                    <p className="text-base font-bold text-gray-900">{completedDeviceSessions}</p>
                     <p className="text-[10px] text-gray-500">Sessions done</p>
                   </div>
                   <div>
-                    <p className="text-base font-bold text-gray-900">{totalPlannedAppts}</p>
+                    <p className="text-base font-bold text-gray-900">{totalDeviceSessions}</p>
                     <p className="text-[10px] text-gray-500">Total planned</p>
                   </div>
                   <div>
@@ -491,9 +511,8 @@ function PatientDashboard() {
 
           {/* Treatment Progress */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <div className="px-4 py-3 border-b border-gray-100">
               <h3 className="text-sm font-semibold text-gray-900">Treatment progress</h3>
-              <button className="text-xs text-blue-600 hover:underline">Details →</button>
             </div>
             <div className="px-4 py-3 space-y-3">
               <ProgressBar
@@ -504,7 +523,6 @@ function PatientDashboard() {
                 maxDisplay={2}
               />
               <ProgressBar label="PRS assessment" value={prsProgress} max={100} unit="%" />
-              <ProgressBar label="Profile setup" value={profilePct} max={100} unit="%" />
             </div>
             {completedAppts > 0 && !hasUnpaidAppt && (
               <div className="mx-4 mb-3 bg-green-50 border border-green-100 rounded-lg px-3 py-2 flex items-center gap-2">

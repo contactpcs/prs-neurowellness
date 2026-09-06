@@ -6,7 +6,7 @@ import { Printer, CalendarPlus, X, CalendarDays, Download } from "lucide-react";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { paymentsService, saveBlobAsFile } from "@/lib/api/services/payments.service";
-import { STATUS_LABEL, STATUS_TONE } from "@/lib/appointmentStatus";
+import { STATUS_LABEL, STATUS_TONE, isSupersededCancellation } from "@/lib/appointmentStatus";
 import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
 import { AppointmentDetailModal } from "@/components/appointments/AppointmentDetailModal";
 import type { Appointment, AppointmentStatus, DoctorListItem } from "@/types/domain.types";
@@ -73,6 +73,7 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
   const filtered = useMemo(() => {
     const query = q.toLowerCase();
     return [...appointments]
+      .filter((a) => !isSupersededCancellation(a))
       .filter((a) => !doctorFilter || a.doctor_name === doctorFilter)
       .filter((a) => !statusFilter || a.status === statusFilter)
       .filter((a) => !query || `${a.appointment_id} ${a.patient_name ?? ""} ${a.doctor_name ?? ""}`.toLowerCase().includes(query))
@@ -113,9 +114,6 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
     <div className="flex flex-col gap-5">
       {/* breadcrumb + title */}
       <div>
-        <nav className="flex items-center gap-1.5 mb-1.5 text-xs">
-          <span className="text-neutral-700 font-medium">Appointments</span>
-        </nav>
         <h1 className="text-2xl font-bold text-neutral-900">Appointments</h1>
       </div>
 

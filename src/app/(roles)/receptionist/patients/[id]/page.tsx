@@ -13,6 +13,7 @@ import { receptionService } from "@/lib/api/services/reception.service";
 import { adminService } from "@/lib/api/services/admin.service";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { useReceptionPatient, useClinics } from "@/lib/hooks";
+import { isSupersededCancellation } from "@/lib/appointmentStatus";
 import { Card, CardHeader, CardContent, PageLoader } from "@/components/ui";
 import { PatientJourneySections, type PatientJourneyDetail } from "@/components/admin/PatientJourneySections";
 import type { DoctorListItem, Appointment } from "@/types/domain.types";
@@ -490,7 +491,8 @@ export default function PatientDetailPage() {
                     <span key={h} className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide">{h}</span>
                   ))}
                 </div>
-                {[...appointments]
+                {appointments
+                  .filter((a) => !isSupersededCancellation(a))
                   .sort((a, b) => b.appointment_date.localeCompare(a.appointment_date))
                   .map((a) => (
                     <div key={a.appointment_id} className="grid gap-3 items-center px-5 py-3 border-b border-neutral-100 last:border-0" style={{ gridTemplateColumns: "1.2fr 1.2fr 1fr 1fr" }}>
