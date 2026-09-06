@@ -103,12 +103,13 @@ export default function DoctorPatientsPage() {
   const { patients, isLoading } = useDoctorPatients();
   const searchParams = useSearchParams();
   const [search, setSearch] = useState(searchParams.get("q") ?? "");
+  const [visitDate, setVisitDate] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const router = useRouter();
 
-  const filtered = patients.filter((p) =>
-    `${p.first_name} ${p.last_name} ${p.email} ${p.mrn || ""}`.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = patients
+    .filter((p) => `${p.first_name} ${p.last_name} ${p.email} ${p.mrn || ""}`.toLowerCase().includes(search.toLowerCase()))
+    .filter((p) => !visitDate || (p.last_visit_date ?? "").slice(0, 10) === visitDate);
 
   if (isLoading) return <PatientListSkeleton />;
 
@@ -120,14 +121,32 @@ export default function DoctorPatientsPage() {
           <h1 className="text-2xl font-bold text-neutral-900">My Patients</h1>
           <p className="text-sm text-neutral-500 mt-0.5">Search by name or MRN</p>
         </div>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
-          <Input
-            placeholder="e.g., Alice or MRN..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 w-full sm:w-64"
-          />
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+            <Input
+              placeholder="e.g., Alice or MRN..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <div className="w-36">
+            <Input
+              type="date"
+              value={visitDate}
+              onChange={(e) => setVisitDate(e.target.value)}
+              title="Filter by last visit date"
+            />
+          </div>
+          {visitDate && (
+            <button
+              onClick={() => setVisitDate("")}
+              className="text-xs font-medium text-neutral-500 hover:text-neutral-700 whitespace-nowrap"
+            >
+              Clear date
+            </button>
+          )}
         </div>
       </div>
 
@@ -148,7 +167,7 @@ export default function DoctorPatientsPage() {
           <tbody className="divide-y divide-neutral-100">
             {filtered.map((p) => {
               const age = calcAge(p.date_of_birth);
-              const lastVisit = p.last_prs?.completed_at ?? p.assigned_at ?? null;
+              const lastVisit = p.last_visit_date ?? p.last_prs?.completed_at ?? null;
               const clinicLabel = p.clinic_name ?? p.clinic_city ?? "Kharadi, Pune";
               const isExpanded = expandedId === p.id;
               return (

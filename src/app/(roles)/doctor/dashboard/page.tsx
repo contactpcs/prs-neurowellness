@@ -232,8 +232,7 @@ export default function DoctorDashboard() {
       .sort((a, b) => {
         const dc = (a.appointment_date || "").localeCompare(b.appointment_date || "");
         return dc !== 0 ? dc : (a.start_time || "").localeCompare(b.start_time || "");
-      })
-      .slice(0, 1);
+      });
   }, [appointments, todayStr, searchQuery]);
 
   // ── booking helpers ───────────────────────────────────────────────
@@ -383,12 +382,12 @@ export default function DoctorDashboard() {
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-[1fr_300px] mb-5">
         <div className="bg-white rounded-2xl border border-neutral-200 shadow-card overflow-hidden">
           <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100">
-            <h2 className="text-base font-semibold text-neutral-900">Next Appointment</h2>
+            <h2 className="text-base font-semibold text-neutral-900">Upcoming Appointments</h2>
             <Link href="/doctor/appointments" className="text-sm font-medium text-accent hover:underline">
               All appointments →
             </Link>
           </div>
-          <div className="divide-y divide-neutral-100">
+          <div className="divide-y divide-neutral-100 max-h-[200px] overflow-y-auto">
             {upcoming.length === 0 ? (
               <p className="px-6 py-10 text-center text-sm text-neutral-400">No upcoming appointments</p>
             ) : upcoming.map((appt) => (

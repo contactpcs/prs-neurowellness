@@ -108,7 +108,7 @@ export default function DoctorAppointmentsPage() {
         if (status === "protocol_followup") return a.appointment_type === "protocol_followup";
         return a.appointment_type !== "device_session" && (status === "all" || a.status === status);
       })
-      .filter((a) => !query || `${a.appointment_id} ${a.patient_name ?? ""} ${a.appointment_type ?? ""}`.toLowerCase().includes(query))
+      .filter((a) => !query || `${a.appointment_id} ${a.patient_name ?? ""} ${a.patient_mrn ?? ""} ${a.appointment_type ?? ""}`.toLowerCase().includes(query))
       // appointment_date is already a plain "YYYY-MM-DD" string (see
       // fmtDate above) — lexicographic comparison sorts/bounds it correctly
       // without parsing into a Date, and sidesteps timezone drift entirely.
@@ -143,7 +143,7 @@ export default function DoctorAppointmentsPage() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search patient, appointment ID…"
+            placeholder="Search patient, MRN, appointment ID…"
             className="w-full h-[38px] pl-8 pr-3 rounded-lg border border-neutral-300 bg-white text-sm outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
           />
         </div>
@@ -212,7 +212,10 @@ export default function DoctorAppointmentsPage() {
                     <Eye className="w-3.5 h-3.5 text-neutral-400 hover:text-neutral-600 transition-colors" />
                   </Link>
                 </div>
-                <p className="text-xs text-neutral-500 mt-1 capitalize">{(sel.appointment_type ?? "").replace(/_/g, " ")}</p>
+                <p className="text-xs text-neutral-500 mt-1 capitalize">
+                  {(sel.appointment_type ?? "").replace(/_/g, " ")}
+                  {sel.patient_mrn ? ` · ${sel.patient_mrn}` : ""}
+                </p>
                 <p className="text-sm font-semibold text-neutral-700 mt-2">{fmtDate(sel.appointment_date)} · {fmt12(sel.start_time)}</p>
               </div>
               <div className="flex gap-2 flex-wrap">

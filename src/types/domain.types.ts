@@ -30,6 +30,7 @@ export interface PatientListItem {
     disease_name?: string;
     completed_at?: string;
   } | null;
+  last_visit_date?: string;
 }
 
 export interface PatientDetail extends PatientListItem {
@@ -323,6 +324,7 @@ export interface Appointment {
   /** patients.patient_id — GET /doctor/patients/{id} and other patient-scoped
    *  routes expect this, not patient_id above (which is profiles.id). */
   patient_public_id?: string | null;
+  patient_mrn?: string | null;
   appointment_date: string;
   start_time: string;
   end_time: string;

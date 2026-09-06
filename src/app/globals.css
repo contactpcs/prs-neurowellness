@@ -4,6 +4,12 @@
 
 @layer base {
   html {
+    /* Bumped from the browser default (16px) — the stock Tailwind text-xs/
+       text-sm scale was reading small and flat across every page ("AI slop"
+       feedback), and since every text-* utility here is rem-based, raising
+       the root size scales the whole app's type proportionally from one
+       place instead of hand-editing every text-* class. */
+    font-size: 17.5px;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;

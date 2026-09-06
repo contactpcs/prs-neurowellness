@@ -57,6 +57,7 @@ function mapPatient(p: Record<string, unknown>): PatientListItem {
     weight_kg: (p.weight_kg as number) ?? undefined,
     blood_group: (p.blood_group as string) ?? undefined,
     last_prs: null,
+    last_visit_date: (p.last_visit_date as string) ?? undefined,
   };
 }
 
