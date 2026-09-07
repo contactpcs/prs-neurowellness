@@ -27,7 +27,19 @@ export const usersService = {
         continue;
       }
       const mappedKey = FIELD_MAP[key] ?? key;
-      if (SUPPORTED_UPDATE_FIELDS.has(mappedKey)) mapped[mappedKey] = value;
+      if (!SUPPORTED_UPDATE_FIELDS.has(mappedKey)) continue;
+      // weight_kg/height_ft/height_in are float/int on PatientSelfUpdate —
+      // the form carries every field as a plain string, so clearing one of
+      // these sent a literal "" for a numeric field and the backend 422'd
+      // trying to parse it as a number (found live). null is what the
+      // schema actually accepts for "no value" — every other field here is
+      // a string, where "" already means the same thing as null, so this
+      // only needs to apply to the numeric three.
+      if (NUMERIC_UPDATE_FIELDS.has(mappedKey) && value === "") {
+        mapped[mappedKey] = null;
+      } else {
+        mapped[mappedKey] = value;
+      }
     }
     // Every changed field the caller sent has no backing DB column (e.g.
     // only weight_kg/blood_group/occupation were edited) — there is nothing
@@ -76,3 +88,8 @@ const SUPPORTED_UPDATE_FIELDS = new Set([
   "insurance_provider", "insurance_policy", "weight_kg", "height_ft", "height_in",
   "government_id", "id_type",
 ]);
+
+// PatientSelfUpdate types these as float/int, not str like every other
+// field here — an empty string is not a valid number, so clearing one of
+// these needs to send null instead of "".
+const NUMERIC_UPDATE_FIELDS = new Set(["weight_kg", "height_ft", "height_in"]);
