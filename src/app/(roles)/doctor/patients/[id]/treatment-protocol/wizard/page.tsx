@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   Check, ChevronRight, ChevronDown, ChevronUp, Loader2, Plus, X, AlertTriangle, ShieldCheck,
@@ -60,6 +60,21 @@ interface WizardState {
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+/** min/max on a native number Input only affects the spinner arrows and
+ * native form-submit validation — it does nothing to stop free typing (a
+ * doctor could still type -2 or 1000). Clamped on blur rather than on every
+ * keystroke so a value being typed isn't fought mid-edit (e.g. clamping "1"
+ * to "10" the instant a doctor types the first digit of "15" would make it
+ * impossible to enter). Empty string passes through untouched — a blank
+ * field is a valid "not filled in yet" state, not something to coerce to
+ * the minimum. */
+function clampNumericField(raw: string, min: number, max: number): string {
+  if (raw.trim() === "") return raw;
+  const n = Number(raw);
+  if (Number.isNaN(n)) return raw;
+  return String(Math.min(max, Math.max(min, n)));
+}
+
 function emptyState(): WizardState {
   return {
     deviceId: null, deviceUnitId: null, conditionIds: [], diagnosisIds: [],
@@ -94,8 +109,38 @@ export default function TreatmentProtocolWizardPage() {
   const mode = searchParams.get("mode") === "modify" ? "modify" : "new";
   const priorProtocolId = searchParams.get("protocolId");
 
-  const [step, setStep] = useState(0);
-  const [state, setState] = useState<WizardState>(emptyState());
+  // Persisted to sessionStorage so a browser refresh/back-forward (a real
+  // page reload, which remounts this whole component with no memory of
+  // anything) resumes where the doctor left off instead of silently
+  // starting over from Step 1 with every field blank. Scoped per
+  // patient+mode+priorProtocolId so switching to a different patient's
+  // wizard (or from "new" to "modify") never resumes someone else's
+  // half-filled draft.
+  const storageKey = `treatment-protocol-wizard:${patientId}:${mode}:${priorProtocolId ?? ""}`;
+  const [step, setStep] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    try {
+      const raw = sessionStorage.getItem(storageKey);
+      return raw ? (JSON.parse(raw).step ?? 0) : 0;
+    } catch { return 0; }
+  });
+  const [state, setState] = useState<WizardState>(() => {
+    if (typeof window === "undefined") return emptyState();
+    try {
+      const raw = sessionStorage.getItem(storageKey);
+      return raw ? { ...emptyState(), ...JSON.parse(raw).state } : emptyState();
+    } catch { return emptyState(); }
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(storageKey, JSON.stringify({ step, state }));
+    } catch {
+      // Storage full/unavailable (private browsing, quota) — the wizard
+      // still works for the current session, it just won't survive a
+      // reload. Not worth surfacing to the doctor mid-form.
+    }
+  }, [storageKey, step, state]);
   const [reasonGateOpen, setReasonGateOpen] = useState(mode === "modify");
   const [reasonLabel, setReasonLabel] = useState("");
   const [reasonNote, setReasonNote] = useState("");
@@ -106,15 +151,34 @@ export default function TreatmentProtocolWizardPage() {
   const set = <K extends keyof WizardState>(k: K, v: WizardState[K]) => setState((s) => ({ ...s, [k]: v }));
 
   // ─── Catalogue caches ───
+  // Each list below is cached by the key it was fetched for (a JSON-stable
+  // string of the params that produced it), not just "did the effect fire."
+  // Revisiting a step whose underlying selection hasn't changed reuses the
+  // cached rows instead of round-tripping the network again — previously
+  // every step re-fetched on every visit with no loading indicator, so a
+  // slow request (or one that happened to resolve to a temporarily empty
+  // array before a second in-flight one landed) rendered as "my selections
+  // disappeared," even though the doctor's actual choices in `state` were
+  // untouched the whole time.
   const [devices, setDevices] = useState<DeviceRead[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(true);
   const [conditions, setConditions] = useState<ConditionRead[]>([]);
+  const [conditionsLoading, setConditionsLoading] = useState(false);
+  const conditionsCacheKey = useRef<string | null>(null);
   const [diagnoses, setDiagnoses] = useState<DiagnosisRead[]>([]);
+  const [diagnosesLoading, setDiagnosesLoading] = useState(false);
+  const diagnosesCache = useRef<Map<string, DiagnosisRead[]>>(new Map());
   const [dxQuery, setDxQuery] = useState("");
   const [resolution, setResolution] = useState<DiagnosisResolution | null>(null);
   const [placements, setPlacements] = useState<PlacementRead[]>([]);
+  const [placementsLoading, setPlacementsLoading] = useState(false);
+  const placementsCacheKey = useRef<string | null>(null);
   const [dosingRows, setDosingRows] = useState<DosingRead[]>([]);
+  const [dosingLoading, setDosingLoading] = useState(false);
+  const dosingCacheKey = useRef<string | null>(null);
   const [scaleCatalogue, setScaleCatalogue] = useState<ScaleRead[]>([]);
+  const [scalesLoading, setScalesLoading] = useState(false);
+  const scalesCacheKey = useRef<string | null>(null);
   const [preview, setPreview] = useState<SchedulePreview | null>(null);
   const [clinicDeviceId, setClinicDeviceId] = useState<string | null>(null);
   const [deviceSchedules, setDeviceSchedules] = useState<DeviceScheduleRead[]>([]);
@@ -188,41 +252,102 @@ export default function TreatmentProtocolWizardPage() {
   // ─── Step 2: Condition ───
   useEffect(() => {
     if (!state.deviceId) return;
-    treatmentProtocolService.listConditions(state.deviceId).then(setConditions).catch(() => {});
+    if (conditionsCacheKey.current === state.deviceId) return;
+    let cancelled = false;
+    setConditionsLoading(true);
+    treatmentProtocolService.listConditions(state.deviceId)
+      .then((rows) => {
+        if (cancelled) return;
+        setConditions(rows);
+        conditionsCacheKey.current = state.deviceId;
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setConditionsLoading(false); });
+    return () => { cancelled = true; };
   }, [state.deviceId]);
 
   // ─── Step 3: Diagnosis ───
+  // Selected diagnoses (state.diagnosisIds) are never touched here — only
+  // the visible catalogue list is. Cached by (deviceId, conditionIds, query)
+  // so revisiting this step with the same condition selection re-renders the
+  // already-fetched list instantly instead of re-querying and briefly
+  // showing nothing — which used to read as "my selections disappeared"
+  // even though state.diagnosisIds was fine the whole time, it just had
+  // nothing matching to render against while empty. The `cancelled` guard
+  // still matters for the un-cached (first-time) fetch: without it, a
+  // slower in-flight request from before a rapid step change could land
+  // after a newer one and overwrite it.
   useEffect(() => {
     if (!state.deviceId || state.conditionIds.length === 0) { setDiagnoses([]); return; }
+    const cacheKey = JSON.stringify([state.deviceId, [...state.conditionIds].sort(), dxQuery || ""]);
+    const cached = diagnosesCache.current.get(cacheKey);
+    if (cached) { setDiagnoses(cached); return; }
+    let cancelled = false;
+    setDiagnosesLoading(true);
     const t = setTimeout(() => {
       treatmentProtocolService.listDiagnoses({ conditionIds: state.conditionIds, deviceId: state.deviceId!, q: dxQuery || undefined })
-        .then(setDiagnoses).catch(() => {});
+        .then((rows) => {
+          if (cancelled) return;
+          diagnosesCache.current.set(cacheKey, rows);
+          setDiagnoses(rows);
+        })
+        .catch(() => {})
+        .finally(() => { if (!cancelled) setDiagnosesLoading(false); });
     }, 250);
-    return () => clearTimeout(t);
+    return () => { cancelled = true; clearTimeout(t); };
   }, [state.deviceId, state.conditionIds, dxQuery]);
 
+  const resolutionCacheKey = useRef<string | null>(null);
   useEffect(() => {
     if (!state.deviceId || state.diagnosisIds.length === 0) { setResolution(null); return; }
+    const cacheKey = JSON.stringify([state.deviceId, [...state.diagnosisIds].sort()]);
+    if (resolutionCacheKey.current === cacheKey) return;
+    let cancelled = false;
     treatmentProtocolService.resolveDiagnoses(state.deviceId, state.diagnosisIds).then((r) => {
+      if (cancelled) return;
+      resolutionCacheKey.current = cacheKey;
       setResolution(r);
       // Auto-apply the driving suggestion the first time a placement/dosing hasn't been chosen yet.
       setState((s) => (s.placementId ? s : { ...s, placementId: r.placement_id || s.placementId, dosingId: r.dosing_id || s.dosingId }));
-    }).catch(() => setResolution(null));
+    }).catch(() => { if (!cancelled) setResolution(null); });
+    return () => { cancelled = true; };
   }, [state.deviceId, state.diagnosisIds]);
 
   // ─── Step 4: Placement ───
   useEffect(() => {
     if (!state.deviceId) return;
-    treatmentProtocolService.listPlacements(state.deviceId, primaryConditionId).then(setPlacements).catch(() => {});
+    const cacheKey = JSON.stringify([state.deviceId, primaryConditionId ?? null]);
+    if (placementsCacheKey.current === cacheKey) return;
+    let cancelled = false;
+    setPlacementsLoading(true);
+    treatmentProtocolService.listPlacements(state.deviceId, primaryConditionId)
+      .then((rows) => {
+        if (cancelled) return;
+        setPlacements(rows);
+        placementsCacheKey.current = cacheKey;
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setPlacementsLoading(false); });
+    return () => { cancelled = true; };
   }, [state.deviceId, primaryConditionId]);
 
   // ─── Step 5: Dosing ───
   useEffect(() => {
     if (!state.deviceId) return;
-    treatmentProtocolService.listDosing(state.deviceId, primaryConditionId, state.placementId || undefined).then((rows) => {
-      setDosingRows(rows);
-      if (rows.length === 1) setState((s) => ({ ...s, dosingId: rows[0].dosing_id }));
-    }).catch(() => {});
+    const cacheKey = JSON.stringify([state.deviceId, primaryConditionId ?? null, state.placementId ?? null]);
+    if (dosingCacheKey.current === cacheKey) return;
+    let cancelled = false;
+    setDosingLoading(true);
+    treatmentProtocolService.listDosing(state.deviceId, primaryConditionId, state.placementId || undefined)
+      .then((rows) => {
+        if (cancelled) return;
+        setDosingRows(rows);
+        dosingCacheKey.current = cacheKey;
+        if (rows.length === 1) setState((s) => ({ ...s, dosingId: rows[0].dosing_id }));
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setDosingLoading(false); });
+    return () => { cancelled = true; };
   }, [state.deviceId, primaryConditionId, state.placementId]);
 
   useEffect(() => {
@@ -239,7 +364,19 @@ export default function TreatmentProtocolWizardPage() {
   // ─── Step 6: Scales ───
   useEffect(() => {
     if (state.conditionIds.length === 0) return;
-    treatmentProtocolService.listScales(state.conditionIds).then(setScaleCatalogue).catch(() => {});
+    const cacheKey = JSON.stringify([...state.conditionIds].sort());
+    if (scalesCacheKey.current === cacheKey) return;
+    let cancelled = false;
+    setScalesLoading(true);
+    treatmentProtocolService.listScales(state.conditionIds)
+      .then((rows) => {
+        if (cancelled) return;
+        setScaleCatalogue(rows);
+        scalesCacheKey.current = cacheKey;
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setScalesLoading(false); });
+    return () => { cancelled = true; };
   }, [state.conditionIds]);
 
   // ─── Step 7: Schedule preview ───
@@ -249,7 +386,7 @@ export default function TreatmentProtocolWizardPage() {
     const t = setTimeout(() => {
       treatmentProtocolService.previewSchedule({
         start_date: state.startDate,
-        session_count: Math.max(1, Math.min(90, parseInt(state.sessionCount) || 20)),
+        session_count: Math.max(10, Math.min(30, parseInt(state.sessionCount) || 20)),
         sessions_per_week: state.sessionsPerWeek,
         follow_up_every_n: state.followUpEveryN ? parseInt(state.followUpEveryN) : undefined,
         skip_dates: state.skipDates,
@@ -417,7 +554,7 @@ export default function TreatmentProtocolWizardPage() {
         ...(state.montageMode === "custom"
           ? { custom_montage_id: state.customMontageId }
           : { placement_id: state.placementId, dosing_id: state.dosingId }),
-        session_count: Math.max(1, Math.min(90, parseInt(state.sessionCount) || 20)),
+        session_count: Math.max(10, Math.min(30, parseInt(state.sessionCount) || 20)),
         follow_up_every_n: state.followUpEveryN ? parseInt(state.followUpEveryN) : undefined,
         start_date: state.startDate,
         sessions_per_week: state.sessionsPerWeek,
@@ -453,6 +590,7 @@ export default function TreatmentProtocolWizardPage() {
       const created = await treatmentProtocolService.createProtocol(payload);
       await treatmentProtocolService.activateProtocol(created.protocol_id);
       setPushed(created);
+      try { sessionStorage.removeItem(storageKey); } catch { /* best-effort cleanup */ }
     } catch (e: any) {
       setErr(describePushError(e));
     } finally {
@@ -558,11 +696,19 @@ export default function TreatmentProtocolWizardPage() {
       {/* Stepper */}
       <div className="flex items-stretch overflow-hidden rounded-xl border border-neutral-200 bg-white overflow-x-auto">
         {STEP_LABELS.map((label, i) => {
-          const active = i === step, done = i < step;
+          // "Done" (blue check) reflects whether the step's own required
+          // fields are actually filled (canContinue), not just "have I
+          // clicked Continue past it in this session." Using i < step alone
+          // meant every already-filled step visually reverted to
+          // not-done the instant the doctor navigated backward past it —
+          // the data was never lost, but it read as if it had been, since
+          // going back knocked every later step back to an unchecked
+          // white pill regardless of what was actually filled in.
+          const active = i === step, done = i < step || (i !== step && (canContinue[i] ?? false));
           return (
             <button
               key={label}
-              onClick={() => i < step && setStep(i)}
+              onClick={() => (i < step || done) && setStep(i)}
               className="flex-1 min-w-[110px] flex items-center gap-2 px-3 py-3 text-left"
               style={{ background: active ? "#eff6ff" : "#fff", boxShadow: active ? "inset 0 -2px 0 #2563eb" : "none", borderRight: i < 7 ? "1px solid #f1f1f1" : "none" }}
             >
@@ -590,7 +736,7 @@ export default function TreatmentProtocolWizardPage() {
                     devices={devices}
                     loading={devicesLoading}
                     selected={state.deviceId}
-                    onSelect={(id) => setState((s) => ({ ...s, deviceId: id, deviceUnitId: null }))}
+                    onSelect={(id) => setState((s) => (s.deviceId === id ? s : { ...s, deviceId: id, deviceUnitId: null }))}
                   />
                   {state.deviceId && deviceUnits.length > 0 && (
                     <div className="mt-4">
@@ -609,14 +755,14 @@ export default function TreatmentProtocolWizardPage() {
                 </>
               )}
               {step === 1 && (
-                <ConditionStep conditions={conditions} selected={state.conditionIds} onToggle={(id) => {
+                <ConditionStep conditions={conditions} loading={conditionsLoading} selected={state.conditionIds} onToggle={(id) => {
                   const has = state.conditionIds.includes(id);
                   set("conditionIds", has ? state.conditionIds.filter((c) => c !== id) : [...state.conditionIds, id]);
                 }} />
               )}
               {step === 2 && (
                 <DiagnosisStep
-                  diagnoses={diagnoses} selected={state.diagnosisIds} query={dxQuery} onQuery={setDxQuery}
+                  diagnoses={diagnoses} loading={diagnosesLoading} selected={state.diagnosisIds} query={dxQuery} onQuery={setDxQuery}
                   resolution={resolution}
                   onToggle={(id) => {
                     const has = state.diagnosisIds.includes(id);
@@ -626,7 +772,7 @@ export default function TreatmentProtocolWizardPage() {
               )}
               {step === 3 && (
                 <PlacementStep
-                  placements={placements} state={state} validation={validation}
+                  placements={placements} loading={placementsLoading} state={state} validation={validation}
                   onApply={applyPlacement}
                   onSaveCustomMontage={saveCustomMontage}
                   savingMontage={savingMontage}
@@ -635,7 +781,7 @@ export default function TreatmentProtocolWizardPage() {
               )}
               {step === 4 && (
                 <DosingStep
-                  dosingRows={dosingRows} state={state}
+                  dosingRows={dosingRows} loading={dosingLoading} state={state}
                   onSelectDosing={(id) => set("dosingId", id)}
                   onField={(k, v) => set(k, v)}
                   onReset={() => {
@@ -651,7 +797,7 @@ export default function TreatmentProtocolWizardPage() {
               )}
               {step === 5 && (
                 <ScalesStep
-                  catalogue={scaleCatalogue} assigned={state.scales}
+                  catalogue={scaleCatalogue} loading={scalesLoading} assigned={state.scales}
                   onAdd={(a) => set("scales", [...state.scales, a])}
                   onRemove={(i) => set("scales", state.scales.filter((_, j) => j !== i))}
                   onCadence={(i, cadence) => set("scales", state.scales.map((s, j) => (j === i ? { ...s, cadence } : s)))}
@@ -835,7 +981,9 @@ function DeviceStep({
 // ─────────────────────────────────────────────────────────────────────────
 // Step 2 — Condition
 // ─────────────────────────────────────────────────────────────────────────
-function ConditionStep({ conditions, selected, onToggle }: { conditions: ConditionRead[]; selected: string[]; onToggle: (id: string) => void }) {
+function ConditionStep({
+  conditions, loading, selected, onToggle,
+}: { conditions: ConditionRead[]; loading: boolean; selected: string[]; onToggle: (id: string) => void }) {
   return (
     <div className="space-y-4">
       <div>
@@ -861,7 +1009,8 @@ function ConditionStep({ conditions, selected, onToggle }: { conditions: Conditi
             </button>
           );
         })}
-        {conditions.length === 0 && <p className="text-sm text-neutral-400">Select a device first.</p>}
+        {loading && <p className="text-sm text-neutral-400">Loading conditions…</p>}
+        {!loading && conditions.length === 0 && <p className="text-sm text-neutral-400">Select a device first.</p>}
       </div>
     </div>
   );
@@ -871,9 +1020,9 @@ function ConditionStep({ conditions, selected, onToggle }: { conditions: Conditi
 // Step 3 — Diagnosis
 // ─────────────────────────────────────────────────────────────────────────
 function DiagnosisStep({
-  diagnoses, selected, query, onQuery, onToggle, resolution,
+  diagnoses, loading, selected, query, onQuery, onToggle, resolution,
 }: {
-  diagnoses: DiagnosisRead[]; selected: string[]; query: string; onQuery: (v: string) => void;
+  diagnoses: DiagnosisRead[]; loading: boolean; selected: string[]; query: string; onQuery: (v: string) => void;
   onToggle: (id: string) => void; resolution: DiagnosisResolution | null;
 }) {
   return (
@@ -909,7 +1058,8 @@ function DiagnosisStep({
               </button>
             );
           })}
-          {diagnoses.length === 0 && <p className="text-sm text-neutral-400 px-3 py-6 text-center">No matching codes — try a different search or select a condition first.</p>}
+          {loading && <p className="text-sm text-neutral-400 px-3 py-6 text-center">Loading diagnosis codes…</p>}
+          {!loading && diagnoses.length === 0 && <p className="text-sm text-neutral-400 px-3 py-6 text-center">No matching codes — try a different search or select a condition first.</p>}
         </div>
       </div>
 
@@ -931,9 +1081,9 @@ function DiagnosisStep({
 // Step 4 — Placement
 // ─────────────────────────────────────────────────────────────────────────
 function PlacementStep({
-  placements, state, validation, onApply, onSaveCustomMontage, savingMontage, montageErr,
+  placements, loading, state, validation, onApply, onSaveCustomMontage, savingMontage, montageErr,
 }: {
-  placements: PlacementRead[]; state: WizardState;
+  placements: PlacementRead[]; loading: boolean; state: WizardState;
   validation: { valid: boolean; errors: string[]; warnings: string[]; maxCathodes: number } | null;
   onApply: (p: PlacementRead) => void;
   onSaveCustomMontage: (name: string, clinicalReasoning: string, description: string) => Promise<void>;
@@ -975,7 +1125,8 @@ function PlacementStep({
             </button>
           );
         })}
-        {placements.length === 0 && <p className="text-sm text-neutral-400">No catalogued montages for this device/condition yet.</p>}
+        {loading && <p className="text-sm text-neutral-400">Loading placements…</p>}
+        {!loading && placements.length === 0 && <p className="text-sm text-neutral-400">No catalogued montages for this device/condition yet.</p>}
       </div>
 
       {isCustomSaved && (
@@ -1029,9 +1180,9 @@ function PlacementStep({
 // Step 5 — Dosing
 // ─────────────────────────────────────────────────────────────────────────
 function DosingStep({
-  dosingRows, state, onSelectDosing, onField, onReset,
+  dosingRows, loading, state, onSelectDosing, onField, onReset,
 }: {
-  dosingRows: DosingRead[]; state: WizardState;
+  dosingRows: DosingRead[]; loading: boolean; state: WizardState;
   onSelectDosing: (id: string) => void;
   onField: <K extends keyof WizardState>(k: K, v: WizardState[K]) => void;
   onReset: () => void;
@@ -1053,6 +1204,8 @@ function DosingStep({
           <Button variant="outline" size="sm" onClick={onReset} className="flex-shrink-0">Reset to suggested</Button>
         )}
       </div>
+
+      {!isCustom && loading && <p className="text-sm text-neutral-400">Loading dosing options…</p>}
 
       {!isCustom && dosingRows.length > 1 && (
         <div className="flex flex-wrap gap-2">
@@ -1077,10 +1230,26 @@ function DosingStep({
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Input label="Current intensity (mA)" value={state.currentMa} onChange={(e) => onField("currentMa", e.target.value)} />
-        <Input label="Session duration (min)" value={state.sessionDurationMin} onChange={(e) => onField("sessionDurationMin", e.target.value)} />
-        <Input label="Ramp up/down (sec)" value={state.rampSeconds} onChange={(e) => onField("rampSeconds", e.target.value)} />
-        <Input label="Total sessions" value={state.sessionCount} onChange={(e) => onField("sessionCount", e.target.value)} />
+        <Input
+          label="Current intensity (mA)" type="number" min={0} max={2} step={0.1}
+          value={state.currentMa} onChange={(e) => onField("currentMa", e.target.value)}
+          onBlur={(e) => onField("currentMa", clampNumericField(e.target.value, 0, 2))}
+        />
+        <Input
+          label="Session duration (min)" type="number" min={10} max={45}
+          value={state.sessionDurationMin} onChange={(e) => onField("sessionDurationMin", e.target.value)}
+          onBlur={(e) => onField("sessionDurationMin", clampNumericField(e.target.value, 10, 45))}
+        />
+        <Input
+          label="Ramp up/down (sec)" type="number" min={0} max={120}
+          value={state.rampSeconds} onChange={(e) => onField("rampSeconds", e.target.value)}
+          onBlur={(e) => onField("rampSeconds", clampNumericField(e.target.value, 0, 120))}
+        />
+        <Input
+          label="Total sessions" type="number" min={10} max={30}
+          value={state.sessionCount} onChange={(e) => onField("sessionCount", e.target.value)}
+          onBlur={(e) => onField("sessionCount", clampNumericField(e.target.value, 10, 30))}
+        />
       </div>
 
       <div>
@@ -1107,9 +1276,9 @@ function DosingStep({
 // Step 6 — Scales
 // ─────────────────────────────────────────────────────────────────────────
 function ScalesStep({
-  catalogue, assigned, onAdd, onRemove, onCadence,
+  catalogue, loading, assigned, onAdd, onRemove, onCadence,
 }: {
-  catalogue: ScaleRead[]; assigned: AssignedScale[];
+  catalogue: ScaleRead[]; loading: boolean; assigned: AssignedScale[];
   onAdd: (a: AssignedScale) => void; onRemove: (i: number) => void; onCadence: (i: number, c: string) => void;
 }) {
   const usedIds = assigned.map((a) => a.scale_id).filter(Boolean);
@@ -1148,6 +1317,7 @@ function ScalesStep({
               <Plus className="h-3 w-3" />{s.scale_code}
             </button>
           ))}
+          {loading && <p className="text-sm text-neutral-400">Loading scales…</p>}
         </div>
         {/* The free-text "type a scale not listed" box is gone deliberately.
             Scales come from the PRS catalogue (reference.prs_scales) and
