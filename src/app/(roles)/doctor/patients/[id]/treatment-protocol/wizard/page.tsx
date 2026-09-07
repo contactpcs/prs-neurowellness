@@ -362,22 +362,27 @@ export default function TreatmentProtocolWizardPage() {
   }, [state.dosingId]);
 
   // ─── Step 6: Scales ───
+  // Deliberately the FULL PRS catalogue, not narrowed to the selected
+  // conditions — a doctor may want to prescribe a scale outside the
+  // condition-suggested set, and the backend already supports this: calling
+  // listScales() with no condition_ids returns every reference.prs_scales
+  // row unfiltered (treatment_protocols/repository.py's list_scales, the
+  // `else` branch). Fetched once per wizard session, not per condition
+  // selection, since the full catalogue doesn't change based on that.
   useEffect(() => {
-    if (state.conditionIds.length === 0) return;
-    const cacheKey = JSON.stringify([...state.conditionIds].sort());
-    if (scalesCacheKey.current === cacheKey) return;
+    if (scalesCacheKey.current === "all") return;
     let cancelled = false;
     setScalesLoading(true);
-    treatmentProtocolService.listScales(state.conditionIds)
+    treatmentProtocolService.listScales()
       .then((rows) => {
         if (cancelled) return;
         setScaleCatalogue(rows);
-        scalesCacheKey.current = cacheKey;
+        scalesCacheKey.current = "all";
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setScalesLoading(false); });
     return () => { cancelled = true; };
-  }, [state.conditionIds]);
+  }, []);
 
   // ─── Step 7: Schedule preview ───
   useEffect(() => {
@@ -1039,7 +1044,15 @@ function DiagnosisStep({
 
       <div className="border border-neutral-200 rounded-lg overflow-hidden">
         <div className="max-h-80 overflow-y-auto divide-y divide-neutral-100">
-          {diagnoses.map((d) => {
+          {[...diagnoses].sort((a, b) => {
+            // Evidence level A first, then B, C, ... — unrated codes last.
+            // All codes still show, just reordered by confidence so the
+            // doctor sees the strongest-evidence options without scrolling.
+            if (!a.evidence_level && !b.evidence_level) return 0;
+            if (!a.evidence_level) return 1;
+            if (!b.evidence_level) return -1;
+            return a.evidence_level.localeCompare(b.evidence_level);
+          }).map((d) => {
             const on = selected.includes(d.diagnosis_id);
             return (
               <button
@@ -1287,7 +1300,7 @@ function ScalesStep({
     <div className="space-y-4">
       <div>
         <h2 className="text-base font-bold text-neutral-900">6 · Assessment Scales &amp; Cadence</h2>
-        <p className="text-sm text-neutral-500 mt-1">Suggested from the selected conditions. These become patient PRS tasks.</p>
+        <p className="text-sm text-neutral-500 mt-1">Full PRS scale catalogue. These become patient PRS tasks.</p>
       </div>
 
       <div className="border border-neutral-200 rounded-lg divide-y divide-neutral-100">
