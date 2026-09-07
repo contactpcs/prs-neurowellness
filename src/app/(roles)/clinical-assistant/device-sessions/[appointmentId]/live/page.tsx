@@ -13,6 +13,7 @@ import { appointmentsService } from "@/lib/api/services";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { prsAssessmentService } from "@/lib/api/services/prsAssessment.service";
 import { permissionsService } from "@/lib/api/services/permissions.service";
+import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
 import { Button, Card, CardContent, Input, PageLoader } from "@/components/ui";
 import { CountdownTimer } from "@/components/deviceSession/CountdownTimer";
 import { SymptomChipSelector } from "@/components/deviceSession/SymptomChipSelector";
@@ -21,7 +22,7 @@ import { PauseStopDialog } from "@/components/deviceSession/PauseStopDialog";
 import { EarlyCompletionDialog } from "@/components/deviceSession/EarlyCompletionDialog";
 import type { Appointment } from "@/types/domain.types";
 import type { ProtocolDetail } from "@/types/treatmentProtocol.types";
-import type { CognitiveActivity, ScaleDeliveryMode } from "@/types/deviceSession.types";
+import type { CognitiveActivity, ScaleDeliveryMode, DeviceInfo } from "@/types/deviceSession.types";
 
 const ACTIVITY_OPTIONS: { value: CognitiveActivity; label: string }[] = [
   { value: "sudoku", label: "Sudoku" },
@@ -55,6 +56,7 @@ export default function DeviceSessionLivePage() {
 
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [protocol, setProtocol] = useState<ProtocolDetail | null>(null);
+  const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [activeSection, setActiveSection] = useState<SectionKey>("device-fit");
   const [pauseOpen, setPauseOpen] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
@@ -82,6 +84,12 @@ export default function DeviceSessionLivePage() {
       const protocolId = appt.protocol_id;
       if (protocolId) setProtocol(await treatmentProtocolService.getProtocolDetail(protocolId));
     });
+    // Independent of session/checklist state — GET /device-sessions/{id}
+    // 404s until the first checklist write lazily creates the header, so
+    // the device name/serial has to come from this separate endpoint to
+    // show up on page load instead of only after the CA has already typed
+    // something into the checklist.
+    deviceSessionService.getDeviceInfo(appointmentId).then(setDeviceInfo).catch(() => setDeviceInfo(null));
   }, [appointmentId]);
 
   useEffect(() => {
@@ -303,6 +311,21 @@ export default function DeviceSessionLivePage() {
           <div className="max-w-2xl mx-auto">
             {activeSection === "device-fit" && (
               <Card><CardContent className="space-y-4 pt-4">
+                <div>
+                  <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2.5">Device</p>
+                  {deviceInfo ? (
+                    <div className="flex items-center justify-between gap-3 bg-neutral-50 border border-neutral-200 rounded-lg px-3.5 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-neutral-900 truncate">{deviceInfo.device_name}</p>
+                        <p className="text-xs text-neutral-500 mt-0.5">
+                          {deviceInfo.device_unit_serial_number ? `Serial ${deviceInfo.device_unit_serial_number}` : "No specific unit pinned to this protocol"}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-neutral-400">Loading device details…</p>
+                  )}
+                </div>
                 <div>
                   <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2.5">Electrode impedance check</p>
                   <div className="flex items-end gap-3">

@@ -14,7 +14,7 @@ import { PlacementMap } from "@/app/(roles)/doctor/patients/[id]/treatment-proto
 import { SignatureCapture } from "@/components/deviceSession/SignatureCapture";
 import type { Appointment, PatientDetail } from "@/types/domain.types";
 import type { ProtocolDetail } from "@/types/treatmentProtocol.types";
-import type { ConsentBlock, DeviceSessionChecklistUpdate, DeviceSessionDetail } from "@/types/deviceSession.types";
+import type { ConsentBlock, DeviceInfo, DeviceSessionChecklistUpdate, DeviceSessionDetail } from "@/types/deviceSession.types";
 
 /** Mirrors TreatmentProtocolPanel's convention: the wizard writes
  * "Reason: <label> — <note>" into the one free-text notes field the real
@@ -71,6 +71,7 @@ export default function DeviceSessionChecklistPage() {
 
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [protocol, setProtocol] = useState<ProtocolDetail | null>(null);
+  const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [patientDetail, setPatientDetail] = useState<PatientDetail | null>(null);
   const [prevSession, setPrevSession] = useState<DeviceSessionDetail | null>(null);
@@ -113,6 +114,12 @@ export default function DeviceSessionChecklistPage() {
         }
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load appointment"));
+    // Independent of session/checklist state (GET /device-sessions/{id}
+    // 404s until the first checklist write lazily creates the header) —
+    // fetches the actual device name + pinned unit serial from the
+    // protocol so this checklist can auto-fill them instead of the CA
+    // picking from a hardcoded brand list and typing a serial by hand.
+    deviceSessionService.getDeviceInfo(appointmentId).then(setDeviceInfo).catch(() => setDeviceInfo(null));
   }, [appointmentId]);
 
   useEffect(() => {
@@ -132,10 +139,20 @@ export default function DeviceSessionChecklistPage() {
     deviceSessionService.get(prev.appointment_id).then(setPrevSession).catch(() => setPrevSession(null));
   }, [protocol, appointment]);
 
+  // Auto-fill from the protocol's actual device once fetched — only when
+  // the checklist hasn't already saved something for this session (the
+  // effect below, keyed on `session`, always wins on reload since a
+  // previously-saved real value must never be overwritten by the default).
+  useEffect(() => {
+    if (!deviceInfo || session) return;
+    setDeviceBrand(deviceInfo.device_name);
+    if (deviceInfo.device_unit_serial_number) setDeviceSerial(deviceInfo.device_unit_serial_number);
+  }, [deviceInfo, session]);
+
   useEffect(() => {
     if (!session) return;
-    setDeviceBrand(session.device_brand ?? "");
-    setDeviceSerial(session.device_serial_number ?? "");
+    setDeviceBrand(session.device_brand ?? deviceInfo?.device_name ?? "");
+    setDeviceSerial(session.device_serial_number ?? deviceInfo?.device_unit_serial_number ?? "");
     setProceedWithoutPayment(session.payment_verified === false && !!session.payment_override_reason);
     setPaymentOverrideReason(session.payment_override_reason ?? "");
     if (session.actual_intensity_ma != null) setIntensity(String(session.actual_intensity_ma));
@@ -401,20 +418,29 @@ export default function DeviceSessionChecklistPage() {
           <Card>
             <CardHeader><h3 className="text-sm font-semibold text-neutral-900">2. Device & Brand for This Session</h3></CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex flex-wrap gap-2">
-                {["Sooma", "Marbles", "Biothm", "Other"].map((brand) => (
-                  <button
-                    key={brand}
-                    onClick={() => setDeviceBrand(brand)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                      deviceBrand === brand ? "bg-primary-100 border-primary-400 text-primary-800" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"
-                    }`}
-                  >
-                    {brand}
-                  </button>
-                ))}
-              </div>
-              <Input label="Device unit / serial no." value={deviceSerial} onChange={(e) => setDeviceSerial(e.target.value)} />
+              {deviceInfo ? (
+                <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-3.5 py-2.5">
+                  <p className="text-sm font-medium text-neutral-900">{deviceInfo.device_name}</p>
+                  <p className="text-xs text-neutral-500 mt-0.5">From this patient's prescribed protocol</p>
+                </div>
+              ) : (
+                <p className="text-xs text-neutral-400">Loading device details…</p>
+              )}
+              {deviceInfo?.device_unit_serial_number ? (
+                <div>
+                  <p className="text-xs font-medium text-neutral-500 mb-1">Device unit / serial no.</p>
+                  <p className="text-sm text-neutral-900 bg-neutral-50 border border-neutral-200 rounded-lg px-3.5 py-2.5">
+                    {deviceInfo.device_unit_serial_number}
+                  </p>
+                </div>
+              ) : (
+                <Input
+                  label="Device unit / serial no."
+                  value={deviceSerial}
+                  onChange={(e) => setDeviceSerial(e.target.value)}
+                  hint="No specific unit pinned to this protocol — enter which physical unit this session ran on."
+                />
+              )}
             </CardContent>
           </Card>
 

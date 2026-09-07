@@ -351,6 +351,7 @@ export const ENDPOINTS = {
   // separate device-session id in the URL space. ───
   DEVICE_SESSIONS: {
     DETAIL: (appointmentId: string) => `/device-sessions/${appointmentId}`,
+    DEVICE_INFO: (appointmentId: string) => `/device-sessions/${appointmentId}/device-info`,
     CHECKLIST: (appointmentId: string) => `/device-sessions/${appointmentId}/checklist`,
     START: (appointmentId: string) => `/device-sessions/${appointmentId}/start`,
     PAUSE: (appointmentId: string) => `/device-sessions/${appointmentId}/pause`,

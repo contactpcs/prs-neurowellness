@@ -61,6 +61,15 @@ export interface DeviceSessionChecklistUpdate {
   ca_declaration?: ConsentBlock;
 }
 
+/** GET /device-sessions/{id}/device-info — device name (always) + pinned
+ * unit id/serial (only if the protocol pinned one). Resolvable before any
+ * device_sessions header row exists. */
+export interface DeviceInfo {
+  device_name: string;
+  device_unit_id: string | null;
+  device_unit_serial_number: string | null;
+}
+
 export interface DeviceSessionRead {
   device_session_record_id: string;
   appointment_id: string;

@@ -1,7 +1,7 @@
 import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type {
-  DeviceSessionRead, DeviceSessionDetail, DeviceSessionChecklistUpdate,
+  DeviceSessionRead, DeviceSessionDetail, DeviceSessionChecklistUpdate, DeviceInfo,
   SymptomRecord, Symptom, Severity,
   AdverseEventRecord, AdverseEventType,
   NoteRecord, ActivityRecord, CognitiveActivity,
@@ -16,6 +16,14 @@ import type {
 export const deviceSessionService = {
   async get(appointmentId: string): Promise<DeviceSessionDetail> {
     const { data } = await apiClient.get(ENDPOINTS.DEVICE_SESSIONS.DETAIL(appointmentId));
+    return data;
+  },
+
+  /** Device name + pinned unit serial, resolvable before any device_sessions
+   * header row exists (get() 404s until the first checklist write) — see
+   * backend router.py's docstring on this endpoint. */
+  async getDeviceInfo(appointmentId: string): Promise<DeviceInfo> {
+    const { data } = await apiClient.get(ENDPOINTS.DEVICE_SESSIONS.DEVICE_INFO(appointmentId));
     return data;
   },
 
