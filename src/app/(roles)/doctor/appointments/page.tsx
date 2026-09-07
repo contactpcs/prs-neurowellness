@@ -51,6 +51,11 @@ function fmt12(t: string): string {
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function fmtDate(d?: string | null): string {
   if (!d) return "—";
   return new Date(d + "T00:00:00").toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" });
@@ -74,14 +79,21 @@ export default function DoctorAppointmentsPage() {
   const [loading,      setLoading]      = useState(true);
   const [status,       setStatus]       = useState<FilterValue>("all");
   const [q,            setQ]            = useState("");
-  const [dateFrom,     setDateFrom]     = useState("");
+  // Defaults to today onward — the 200-row cap was previously being spent on
+  // whatever 200 rows the backend happened to return with no date bound at
+  // all, which on a clinic with real history meant the list was dominated by
+  // past appointments instead of what the doctor actually needs to act on.
+  // Still a plain editable filter — a doctor can clear/widen it to look back.
+  const [dateFrom,     setDateFrom]     = useState(todayStr);
   const [dateTo,       setDateTo]       = useState("");
   const [selId,        setSelId]        = useState<string | null>(null);
 
-  const fetchAppointments = useCallback(async () => {
+  const fetchAppointments = useCallback(async (from: string) => {
     setLoading(true);
     try {
-      const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, { params: { limit: 200 } });
+      const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, {
+        params: { date_from: from || undefined, limit: 200 },
+      });
       setAppointments(Array.isArray(data) ? data : []);
     } catch {
       setAppointments([]);
@@ -90,13 +102,13 @@ export default function DoctorAppointmentsPage() {
     }
   }, []);
 
-  useEffect(() => { fetchAppointments(); }, [fetchAppointments]);
+  useEffect(() => { fetchAppointments(dateFrom); }, [dateFrom, fetchAppointments]);
 
   useEffect(() => {
-    const onAppointmentEvent = () => fetchAppointments();
+    const onAppointmentEvent = () => fetchAppointments(dateFrom);
     window.addEventListener("sse:appointment", onAppointmentEvent);
     return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
-  }, [fetchAppointments]);
+  }, [fetchAppointments, dateFrom]);
 
   const filtered = useMemo(() => {
     const query = q.toLowerCase();
