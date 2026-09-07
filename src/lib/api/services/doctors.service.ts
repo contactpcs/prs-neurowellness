@@ -132,10 +132,11 @@ export const doctorsService = {
   },
 
   // doctor/profile/page.tsx's form field names -> DoctorUpdate's column
-  // names. government_id/id_type/years_of_experience have no backing
-  // column on doctors and are dropped rather than silently no-op'd
-  // server-side (the frontend already sends "" for them unconditionally,
-  // never in the diff — see that page's fetch mapping).
+  // names. government_id/id_type still have no backing column on doctors
+  // and are dropped rather than silently no-op'd server-side (the frontend
+  // already sends "" for them unconditionally, never in the diff — see
+  // that page's fetch mapping). years_of_experience used to be dropped
+  // here too — SQL/v1/77_doctor_years_of_experience.sql added the column.
   async updateMyProfile(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
     const FIELD_MAP: Record<string, string> = {
       date_of_birth: "dob",
@@ -146,7 +147,7 @@ export const doctorsService = {
     const SUPPORTED = new Set([
       "first_name", "last_name", "email", "phone", "gender", "dob", "address",
       "city", "state", "country", "pincode", "language_pref",
-      "specialization", "hospital_affiliation", "license_number",
+      "specialization", "hospital_affiliation", "license_number", "years_of_experience",
     ]);
     const mapped: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(payload)) {

@@ -135,7 +135,7 @@ export default function DoctorProfilePage() {
           pincode:             (data.pincode           as string) ?? "",
           specialisation:      (data.specialization    as string) ?? "",
           hospital:            (data.hospital_affiliation as string) ?? "",
-          years_of_experience: "", // no backing column on doctors — not sent, not saved
+          years_of_experience: data.years_of_experience != null ? String(data.years_of_experience) : "",
         };
         setForm(filled);
         originalRef.current = filled;
@@ -167,7 +167,7 @@ export default function DoctorProfilePage() {
         pincode:             (updated.pincode           as string) ?? "",
         specialisation:      (updated.specialization    as string) ?? "",
         hospital:            (updated.hospital_affiliation as string) ?? "",
-        years_of_experience: "",
+        years_of_experience: updated.years_of_experience != null ? String(updated.years_of_experience) : "",
       };
       setForm(freshFilled); originalRef.current = freshFilled;
       setProfileRaw(updated as unknown as Record<string, unknown>);
