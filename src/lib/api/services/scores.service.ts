@@ -96,12 +96,18 @@ export async function fetchInstanceScoreDetail(instanceId: string): Promise<Inst
       completed_at: inst.completed_at as string | undefined,
       initiated_by: inst.initiated_by as string | undefined,
     },
+    // composite_score/composite_severity_* (SQL/v1/81_disease_composite_
+    // weights.sql) is the real weighted disease composite (Sigma(scale % x
+    // weight%)) — final.percentage is a stale, never-populated flat-sum
+    // ratio (always null), and overall_severity/_label is the worst SINGLE
+    // scale's severity, not the disease-level one. Both looked plausible
+    // but were the wrong fields, which is why this card always rendered "—".
     disease_result: final
       ? {
-          disease_score: final.percentage != null ? Number(final.percentage) : undefined,
-          percentage: final.percentage != null ? Number(final.percentage) : undefined,
-          severity_level: (final.overall_severity as string | null) ?? undefined,
-          severity_label: (final.overall_severity_label as string | null) ?? undefined,
+          disease_score: final.composite_score != null ? Number(final.composite_score) : undefined,
+          percentage: final.composite_score != null ? Number(final.composite_score) : undefined,
+          severity_level: (final.composite_severity_level as string | null) ?? undefined,
+          severity_label: (final.composite_severity_label as string | null) ?? undefined,
         }
       : undefined,
     scale_results,
