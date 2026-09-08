@@ -179,17 +179,12 @@ export default function SessionCompletePage() {
                       {sr.subscale_scores && Object.keys(sr.subscale_scores).length > 0 && (
                         <div className="border-t pt-3 space-y-2">
                           <p className="text-xs font-semibold text-neutral-500 uppercase">Subscales</p>
-                          {Object.entries(sr.subscale_scores).map(([key, sub]: [string, unknown]) => {
-                            const s = sub as Record<string, unknown>;
-                            return (
-                              <div key={key} className="flex justify-between text-xs bg-neutral-50 px-2 py-1.5 rounded">
-                                <span className="text-neutral-600">{(s.name as string) || key}</span>
-                                <span className="font-semibold text-neutral-700">
-                                  {s.score as number}/{s.max_score as number}
-                                </span>
-                              </div>
-                            );
-                          })}
+                          {Object.entries(sr.subscale_scores).map(([key, sub]: [string, unknown]) => (
+                            <div key={key} className="flex justify-between text-xs bg-neutral-50 px-2 py-1.5 rounded">
+                              <span className="text-neutral-600">{key}</span>
+                              <span className="font-semibold text-neutral-700">{typeof sub === "number" ? sub : "—"}</span>
+                            </div>
+                          ))}
                         </div>
                       )}
 
