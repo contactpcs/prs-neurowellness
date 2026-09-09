@@ -83,16 +83,16 @@ export default function RegionalAdminClinicAdminsPage() {
         </div>
       )}
 
-      <Card>
+      <Card className="overflow-hidden">
         {admins.length === 0 ? (
           <CardContent className="py-16 text-center">
             <ShieldCheck className="h-10 w-10 text-neutral-300 mx-auto mb-3" />
             <p className="text-sm font-medium text-neutral-600">No clinic admins found</p>
           </CardContent>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[calc(100vh-190px)]">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-white">
                 <tr className="border-b border-neutral-100">
                   <th className="text-left px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">Admin</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">Clinic</th>

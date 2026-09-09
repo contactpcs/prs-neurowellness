@@ -102,9 +102,8 @@ function PatientDashboard() {
   const fullName = profile?.full_name ?? "";
   const firstName = fullName ? fullName.split(" ")[0] : "User";
 
-  const pendingAssessments   = assessments.filter((a) => a.status === "granted");
-  const completedAssessments = assessments.filter((a) => a.status === "completed");
-  const hasAnyAssessments    = assessments.length > 0;
+  const pendingAssessments = assessments.filter((a) => a.status === "granted");
+  const hasAnyAssessments  = assessments.length > 0;
   const scoreInstances = summary?.instances ?? [];
 
   const upcomingAppts = appointments
@@ -475,7 +474,7 @@ function PatientDashboard() {
                     {doctor.phone && <p className="text-[10px] text-gray-400">{doctor.phone}</p>}
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-1 mt-3 text-center">
+                <div className="grid grid-cols-2 gap-1 mt-3 text-center">
                   <div>
                     <p className="text-base font-bold text-gray-900">{completedDeviceSessions}</p>
                     <p className="text-[10px] text-gray-500">Sessions done</p>
@@ -483,10 +482,6 @@ function PatientDashboard() {
                   <div>
                     <p className="text-base font-bold text-gray-900">{totalDeviceSessions}</p>
                     <p className="text-[10px] text-gray-500">Total planned</p>
-                  </div>
-                  <div>
-                    <p className="text-base font-bold text-gray-900">{daysToNext ?? "—"}</p>
-                    <p className="text-[10px] text-gray-500">Days to next</p>
                   </div>
                 </div>
               </div>
@@ -515,13 +510,6 @@ function PatientDashboard() {
               <h3 className="text-sm font-semibold text-gray-900">Treatment progress</h3>
             </div>
             <div className="px-4 py-3 space-y-3">
-              <ProgressBar
-                label="EEG brain mapping"
-                value={completedAssessments.filter((a) => a.disease_name?.toLowerCase().includes("eeg")).length}
-                max={2}
-                showCount
-                maxDisplay={2}
-              />
               <ProgressBar label="PRS assessment" value={prsProgress} max={100} unit="%" />
             </div>
             {completedAppts > 0 && !hasUnpaidAppt && (

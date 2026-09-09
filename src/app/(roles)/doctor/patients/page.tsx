@@ -151,12 +151,13 @@ export default function DoctorPatientsPage() {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden overflow-x-auto">
+      <div className="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
+        <div className="overflow-auto max-h-[calc(100vh-150px)]">
         <table className="w-full text-base min-w-[600px]">
-          <thead>
+          <thead className="sticky top-0 z-10 bg-neutral-50">
             <tr className="border-b border-neutral-100 bg-neutral-50">
               <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Patient Name</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Diagnosis</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">MRN</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Clinic Name</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Last Visit</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Status</th>
@@ -189,8 +190,8 @@ export default function DoctorPatientsPage() {
                         </div>
                       </div>
                     </td>
-                    {/* Diagnosis */}
-                    <td className="px-6 py-4 text-neutral-600">{p.condition || "—"}</td>
+                    {/* MRN */}
+                    <td className="px-6 py-4 text-neutral-600">{p.mrn || "—"}</td>
                     {/* Clinic Name */}
                     <td className="px-6 py-4 text-neutral-600">{clinicLabel}</td>
                     {/* Last Visit */}
@@ -240,6 +241,7 @@ export default function DoctorPatientsPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

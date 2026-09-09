@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ChevronRight, Plus } from "lucide-react";
+import { ArrowLeft, ChevronRight, ChevronDown, Plus } from "lucide-react";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { Card, CardContent, Badge, PageLoader, Button, DetailFieldList } from "@/components/ui";
 import { deviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
@@ -24,6 +24,28 @@ function splitReason(notes?: string | null): { reason: string; note: string } {
   const m = notes.match(/^Reason:\s*([^—]+)—\s*([\s\S]*)$/);
   if (m) return { reason: m[1].trim(), note: m[2].trim() };
   return { reason: "Initial protocol", note: notes };
+}
+
+const RESOLVED_STATUSES = new Set(["completed", "cancelled", "no_show", "rescheduled"]);
+
+/** Mirrors the backend's own gate on POST .../complete (ProtocolService.complete,
+ * treatment_protocols/service.py) — a protocol can only be marked complete once
+ * every device_session/follow_up appointment tied to it is resolved one way or
+ * another. 'rescheduled' counts as resolved: it's a superseded pointer, not
+ * live work — its replacement is a separate row this same check independently
+ * sees via detail.sessions/follow_ups. */
+function hasPendingSessions(detail: ProtocolDetail): boolean {
+  return [...detail.sessions, ...detail.follow_ups].some((s) => !RESOLVED_STATUSES.has(s.status));
+}
+
+/** The real protocol version, from the backend's own version_major/minor —
+ * not this array's position. An amendment always inherits its parent's
+ * version_major and bumps version_minor (service.py's create()), so a
+ * patient's 2nd protocol overall can legitimately be v1.1 while their 3rd
+ * is a fresh v2 — array index would silently disagree with what the doctor
+ * who authored it actually sees. */
+function versionLabel(p: ProtocolRead): string {
+  return p.version_minor ? `v${p.version_major}.${p.version_minor}` : `v${p.version_major}`;
 }
 
 function statusTone(status: string): string {
@@ -210,23 +232,65 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
 
   const [protocols, setProtocols] = useState<ProtocolRead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [tab, setTab] = useState<"active" | "sessions" | "history">("active");
+  const [tab, setTab] = useState<"sessions" | "history">("sessions");
   const [historyDetailId, setHistoryDetailId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ProtocolDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [openSessionId, setOpenSessionId] = useState<string | null>(null);
+  const [completing, setCompleting] = useState(false);
+  const [completeError, setCompleteError] = useState<string | null>(null);
+  // Collapsed by default once the course is done — a doctor landing on this
+  // page after starting a new protocol shouldn't have to scroll past the
+  // old, no-longer-actionable course to get to what matters now.
+  const [historyCardOpen, setHistoryCardOpen] = useState(false);
 
-  useEffect(() => {
+  const loadProtocols = () => {
     setIsLoading(true);
-    treatmentProtocolService.listProtocols({ patientId })
+    return treatmentProtocolService.listProtocols({ patientId })
       .then((list) => setProtocols(list.slice().sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""))))
       .catch(() => setProtocols([]))
       .finally(() => setIsLoading(false));
-  }, [patientId]);
+  };
+
+  useEffect(() => { loadProtocols(); }, [patientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const active = protocols.find((p) => p.status === "active") ?? protocols[protocols.length - 1] ?? null;
+  // "Modify" amends the CURRENT course (protocol_instances row) — once that
+  // instance is completed/cancelled/superseded, the backend refuses the
+  // amendment outright (INSTANCE_NOT_OPEN) regardless of what the last
+  // protocol row's own status says. A protocol row can still read "active"
+  // after its instance closed out (nothing cascades protocol status down
+  // when an instance completes), so checking only active.status let the
+  // doctor walk the entire wizard only to be rejected at the final submit.
+  // Only offer Modify when the instance itself is still open.
+  const instanceOpen = active?.instance_status ? ["draft", "active"].includes(active.instance_status) : true;
+  const canModify = active?.status === "active" && instanceOpen;
   const shownId = tab === "history" && historyDetailId ? historyDetailId : active?.protocol_id;
+  // detail can be showing a HISTORICAL protocol's rows (tab === "history"
+  // viewing an old version) — only trust its session/follow-up statuses for
+  // the completion gate when it's actually detail for the active protocol.
+  const activeDetail = detail && active && detail.protocol_id === active.protocol_id ? detail : null;
+  const canComplete = canModify && activeDetail != null && !hasPendingSessions(activeDetail);
+
+  const onMarkComplete = async () => {
+    if (!active) return;
+    setCompleteError(null);
+    setCompleting(true);
+    try {
+      await treatmentProtocolService.completeProtocol(active.protocol_id);
+      await loadProtocols();
+    } catch (e: any) {
+      const code = e?.response?.data?.error?.code;
+      setCompleteError(
+        code === "PROTOCOL_HAS_PENDING_SESSIONS"
+          ? "This protocol still has sessions or follow-ups that aren't resolved yet."
+          : e?.response?.data?.error?.message || "Could not mark this protocol complete."
+      );
+    } finally {
+      setCompleting(false);
+    }
+  };
 
   useEffect(() => {
     if (!shownId) { setDetail(null); setDetailError(null); return; }
@@ -250,7 +314,6 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
 
   if (isLoading) return <PageLoader />;
 
-  const versionNumber = (p: ProtocolRead) => protocols.findIndex((x) => x.protocol_id === p.protocol_id) + 1;
 
   return (
     <div className="space-y-5">
@@ -282,53 +345,118 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
         </Card>
       ) : (
         <>
-          {active && (
-            <Card className="border-blue-100 bg-blue-50/40">
-              <CardContent className="flex flex-col sm:flex-row sm:items-center gap-4">
-                <div className="flex-1">
-                  <p className="text-xs font-semibold text-blue-600 tracking-wide uppercase">
-                    {active.status === "active" ? "Active Treatment Protocol" : "Most Recent Protocol"}
+          {/* This patient's current course is fully wrapped up (completed/
+              cancelled) — nothing left to modify, so the very first thing on
+              the page is a plain, unmissable "start the next one" action,
+              not buried inside the old course's own card. */}
+          {active && !canModify && (
+            <Card className="border-orange-200 bg-orange-50/60">
+              <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-bold text-neutral-900">Ready to start the next treatment protocol</p>
+                  <p className="text-xs text-neutral-500 mt-0.5">
+                    The previous course is finished and kept below as history — starting a new one begins a fresh course.
                   </p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <h2 className="text-xl font-bold text-neutral-900">{active.device_name || active.modality || "Protocol"}</h2>
-                    <Badge className="bg-blue-600 text-white">Version {versionNumber(active)}</Badge>
-                  </div>
-                  <div className="flex items-center gap-6 mt-2 text-xs">
-                    <div>
-                      <p className="text-neutral-400 uppercase tracking-wide">Effective From</p>
-                      <p className="font-medium text-neutral-800">{fmtDate(active.created_at)}</p>
-                    </div>
-                    <div>
-                      <p className="text-neutral-400 uppercase tracking-wide">Reason For Change</p>
-                      <p className="font-medium text-neutral-800">{splitReason(active.notes).reason}</p>
-                    </div>
-                  </div>
                 </div>
-                <div className="flex gap-2 flex-shrink-0">
-                  <Button variant="outline" onClick={() => { setTab("history"); setHistoryDetailId(null); }}>
-                    View Protocol History
-                  </Button>
-                  {active.status === "active" && (
-                    <Button
-                      className="bg-orange-500 hover:bg-orange-600"
-                      onClick={() => router.push(`/doctor/patients/${patientId}/treatment-protocol/wizard?mode=modify&protocolId=${active.protocol_id}`)}
-                    >
-                      Modify Protocol
-                    </Button>
-                  )}
-                </div>
+                <Button
+                  className="bg-orange-500 hover:bg-orange-600 flex-shrink-0"
+                  onClick={() => router.push(`/doctor/patients/${patientId}/treatment-protocol/wizard?mode=new`)}
+                >
+                  <Plus className="h-4 w-4" />Start New Treatment Protocol
+                </Button>
               </CardContent>
+            </Card>
+          )}
+
+          {active && (
+            <Card className={canModify ? "border-blue-100 bg-blue-50/40" : "border-neutral-200"}>
+              <button
+                type="button"
+                onClick={() => !canModify && setHistoryCardOpen((o) => !o)}
+                className={`w-full text-left ${canModify ? "cursor-default" : "cursor-pointer"}`}
+                aria-expanded={canModify ? undefined : historyCardOpen}
+              >
+                <CardContent className="flex items-center gap-3 py-4">
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs font-semibold tracking-wide uppercase ${canModify ? "text-blue-600" : "text-neutral-500"}`}>
+                      {active.status === "active" ? "Active Treatment Protocol"
+                        : active.status === "completed" ? "Completed Treatment Protocol · History"
+                        : "Most Recent Protocol"}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <h2 className="text-xl font-bold text-neutral-900">{active.device_name || active.modality || "Protocol"}</h2>
+                      <Badge className="bg-blue-600 text-white">{versionLabel(active)}</Badge>
+                      {active.status === "completed" && <Badge className={statusTone("completed")}>Completed</Badge>}
+                    </div>
+                  </div>
+                  {!canModify && (
+                    <ChevronDown className={`h-4 w-4 text-neutral-400 flex-shrink-0 transition-transform ${historyCardOpen ? "rotate-180" : ""}`} />
+                  )}
+                </CardContent>
+              </button>
+
+              {(canModify || historyCardOpen) && (
+                <>
+                  <CardContent className="pt-0 flex flex-col sm:flex-row sm:items-center gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-6 text-xs">
+                        <div>
+                          <p className="text-neutral-400 uppercase tracking-wide">Effective From</p>
+                          <p className="font-medium text-neutral-800">{fmtDate(active.created_at)}</p>
+                        </div>
+                        <div>
+                          <p className="text-neutral-400 uppercase tracking-wide">Reason For Change</p>
+                          <p className="font-medium text-neutral-800">{splitReason(active.notes).reason}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <Button variant="outline" onClick={() => { setTab("history"); setHistoryDetailId(null); }}>
+                        View Protocol History
+                      </Button>
+                      {canModify && canComplete && (
+                        <Button variant="outline" isLoading={completing} onClick={onMarkComplete}>
+                          Mark Protocol Complete
+                        </Button>
+                      )}
+                      {canModify && (
+                        <Button
+                          className="bg-orange-500 hover:bg-orange-600"
+                          onClick={() => router.push(`/doctor/patients/${patientId}/treatment-protocol/wizard?mode=modify&protocolId=${active.protocol_id}`)}
+                        >
+                          Modify Protocol
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                  {completeError && (
+                    <CardContent className="pt-0">
+                      <p className="text-xs text-danger-600">{completeError}</p>
+                    </CardContent>
+                  )}
+                  {/* Full prescription detail — folded into this same card
+                      instead of a separately-labeled "Active Protocol" tab,
+                      which kept showing (and reading as still-active) even
+                      once the course was completed. */}
+                  {shownId === active.protocol_id && (
+                    <CardContent className="pt-0">
+                      {!detail ? (
+                        <DetailPending />
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <ProtocolFacts detail={detail} title={`Protocol ${versionLabel(active)}`} />
+                          <ElectrodeChips detail={detail} />
+                        </div>
+                      )}
+                    </CardContent>
+                  )}
+                </>
+              )}
             </Card>
           )}
 
           {/* Tabs */}
           <div className="flex gap-2 bg-neutral-100 rounded-lg p-1 w-fit">
-            <button
-              onClick={() => setTab("active")}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === "active" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"}`}
-            >
-              Active Protocol
-            </button>
             <button
               onClick={() => setTab("sessions")}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === "sessions" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"}`}
@@ -343,17 +471,6 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
             </button>
           </div>
 
-          {tab === "active" && (
-            !detail ? (
-              <DetailPending />
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <ProtocolFacts detail={detail} title={`Protocol v${versionNumber(active!)}`} />
-                <ElectrodeChips detail={detail} />
-              </div>
-            )
-          )}
-
           {tab === "sessions" && (
             !detail ? (
               <DetailPending />
@@ -366,7 +483,7 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
                 sessions={detail.sessions}
                 onBack={() => setOpenSessionId(null)}
                 onSelectSession={setOpenSessionId}
-                onOpenProtocol={() => { setOpenSessionId(null); setTab("active"); }}
+                onOpenProtocol={() => setOpenSessionId(null)}
               />
             ) : (
               <SessionsList detail={detail} onOpenSession={setOpenSessionId} />
@@ -376,7 +493,6 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
           {tab === "history" && !historyDetailId && (
             <div className="space-y-2">
               {protocols.slice().reverse().map((p) => {
-                const v = versionNumber(p);
                 return (
                   <button
                     key={p.protocol_id}
@@ -387,7 +503,7 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
                       <CardContent className="flex items-center gap-4 py-3">
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-neutral-900">v{v}</span>
+                            <span className="font-bold text-neutral-900">{versionLabel(p)}</span>
                             <Badge className={statusTone(p.status)}>{p.status}</Badge>
                           </div>
                           <p className="text-xs text-neutral-400 mt-1">
@@ -419,7 +535,7 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
                   <ArrowLeft className="h-3.5 w-3.5" /> Back to history
                 </button>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-bold text-neutral-900">Protocol v{versionNumber(protocols.find((p) => p.protocol_id === historyDetailId)!)}</h2>
+                  <h2 className="text-lg font-bold text-neutral-900">Protocol {versionLabel(protocols.find((p) => p.protocol_id === historyDetailId)!)}</h2>
                   <Badge className={statusTone(detail.status)}>{detail.status}</Badge>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -470,11 +586,11 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
 
 /** Standalone "Sessions" journey section — sits between Treatment Protocol
  * and Treatment Plan in the patient workspace. Two levels: a parent list of
- * "Treatment Session N" rows (one per treatment protocol, oldest first —
- * same numbering as the Treatment Protocol panel's version list), and, once
- * a parent is clicked, the child Device Sessions / follow-up list for that
- * protocol. SessionsList is reused so the child table stays identical to the
- * one embedded in the Treatment Protocol panel's own Sessions tab. */
+ * protocol-version rows (one per treatment protocol, latest first, labeled
+ * by versionLabel — the same real version_major/minor the Treatment Protocol
+ * panel uses, not array position), and, once a parent is clicked, the child
+ * Device Sessions / follow-up list for that protocol. SessionsList is reused
+ * so the child table stays identical to the Treatment Protocol panel's own. */
 export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
   const router = useRouter();
   const [protocols, setProtocols] = useState<ProtocolRead[]>([]);
@@ -495,7 +611,6 @@ export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
 
   const patientName = protocols[0]?.patient_name ?? null;
   const openProtocol = protocols.find((p) => p.protocol_id === openProtocolId) ?? null;
-  const treatmentSessionNumber = openProtocol ? protocols.findIndex((p) => p.protocol_id === openProtocol.protocol_id) + 1 : null;
 
   useEffect(() => {
     if (!openProtocolId) { setDetail(null); setDetailError(null); setOpenSessionId(null); return; }
@@ -523,7 +638,7 @@ export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
     );
   }
 
-  // ─── Child level — device sessions for the picked Treatment Session ───
+  // ─── Child level — device sessions for the picked protocol version ───
   if (openProtocolId) {
     return (
       <div className="space-y-5">
@@ -531,10 +646,10 @@ export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
           onClick={() => setOpenProtocolId(null)}
           className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800"
         >
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to treatment sessions
+          <ArrowLeft className="h-3.5 w-3.5" /> Back to protocol versions
         </button>
         <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-bold text-neutral-900">Treatment Session {treatmentSessionNumber}</h1>
+          <h1 className="text-2xl font-bold text-neutral-900">{openProtocol ? `Protocol ${versionLabel(openProtocol)}` : "Protocol"}</h1>
           {openProtocol && <Badge className={statusTone(openProtocol.status)}>{openProtocol.status}</Badge>}
         </div>
         {detailLoading ? (
@@ -550,13 +665,13 @@ export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
     );
   }
 
-  // ─── Parent level — one row per Treatment Session ───
+  // ─── Parent level — one row per protocol version ───
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-neutral-900">Sessions</h1>
         <p className="text-sm text-neutral-500 mt-0.5">
-          {patientName ? `${patientName}'s` : "This patient's"} treatment sessions. Open one to see its device sessions and follow-up appointments.
+          {patientName ? `${patientName}'s` : "This patient's"} protocol versions. Open one to see its device sessions and follow-up appointments.
         </p>
       </div>
 
@@ -579,17 +694,16 @@ export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
         </Card>
       ) : (
         <div className="space-y-2">
-          {/* protocols stays ascending (index i = chronological "Treatment
-              Session N" numbering, relied on above for treatmentSessionNumber
-              too) — only the RENDER order is reversed so the latest session
-              shows first, same trick as the History tab's protocols.slice().reverse(). */}
-          {protocols.map((p, i) => [p, i] as const).slice().reverse().map(([p, i]) => (
+          {/* Latest protocol version first — real version label (versionLabel),
+              not array position, same convention as the Treatment Protocol
+              panel and the patient-facing device-sessions page. */}
+          {protocols.slice().reverse().map((p) => (
             <button key={p.protocol_id} onClick={() => setOpenProtocolId(p.protocol_id)} className="w-full text-left">
               <Card className={p.status === "active" ? "border-blue-200" : ""}>
                 <CardContent className="flex items-center gap-4 py-3">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-neutral-900">Treatment Session {i + 1}</span>
+                      <span className="font-bold text-neutral-900">{versionLabel(p)}</span>
                       <Badge className={statusTone(p.status)}>{p.status}</Badge>
                     </div>
                     <p className="text-xs text-neutral-400 mt-1">

@@ -263,9 +263,9 @@ export function PatientHistoryPanel({ patientId, clinicId }: { patientId: string
             {apptLoading ? <SectionSkeleton /> : apptErr ? <SectionError msg={apptErr} /> : filteredAppts.length === 0 ? (
               <div className="px-6 py-12 text-center text-sm text-neutral-400">No appointments found</div>
             ) : (
-              <div className="overflow-x-auto bg-white">
+              <div className="overflow-auto max-h-[calc(100vh-380px)] bg-white">
                 <table className="w-full">
-                  <thead>
+                  <thead className="sticky top-0 z-10 bg-white">
                     <tr className="border-b border-neutral-100">
                       {["Date", "Time", "Type", "Reason"].map((h) => (
                         <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">{h}</th>

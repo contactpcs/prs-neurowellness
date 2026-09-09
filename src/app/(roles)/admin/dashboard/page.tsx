@@ -191,16 +191,16 @@ export default function AdminDashboard() {
               Manage <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
-          <Card>
+          <Card className="overflow-hidden">
             {clinicBreakdown.length === 0 ? (
               <CardContent className="py-10 text-center">
                 <Building2 className="h-8 w-8 text-neutral-300 mx-auto mb-2" />
                 <p className="text-sm text-neutral-500">No clinic data available</p>
               </CardContent>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-auto max-h-[calc(100vh-260px)]">
                 <table className="w-full text-sm">
-                  <thead>
+                  <thead className="sticky top-0 z-10 bg-white">
                     <tr className="border-b border-neutral-100">
                       <th className="text-left px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">Clinic</th>
                       <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">Staff</th>

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Receipt as ReceiptIcon, Download } from "lucide-react";
-import { PageLoader, Card, CardContent, Button } from "@/components/ui";
+import { useEffect, useMemo, useState } from "react";
+import { Receipt as ReceiptIcon, Download, Search } from "lucide-react";
+import { PageLoader, Card, CardContent, Button, Input } from "@/components/ui";
 import { paymentsService, saveBlobAsFile, type PaymentHistory } from "@/lib/api/services/payments.service";
 
 const STATUS_STYLES: Record<PaymentHistory["status"], string> = {
@@ -22,10 +22,21 @@ export default function PatientPaymentsPage() {
   const [payments, setPayments] = useState<PaymentHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState("");
 
   useEffect(() => {
     paymentsService.myList().then(setPayments).finally(() => setIsLoading(false));
   }, []);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return payments.filter((p) => {
+      const matchesQuery = !q || `${p.appointment_type ?? ""} ${p.status} ${p.payment_id}`.toLowerCase().includes(q);
+      const matchesDate = !dateFilter || p.appointment_date === dateFilter;
+      return matchesQuery && matchesDate;
+    });
+  }, [payments, search, dateFilter]);
 
   async function handleDownload(p: PaymentHistory) {
     if (!p.appointment_id) return;
@@ -42,13 +53,41 @@ export default function PatientPaymentsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-neutral-900">Payments &amp; Bills</h1>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <h1 className="text-2xl font-bold text-neutral-900">Payments &amp; Bills</h1>
+        {payments.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+              <Input
+                placeholder="Search type or status…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <div className="w-36">
+              <Input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} title="Filter by appointment date" />
+            </div>
+            {dateFilter && (
+              <button
+                onClick={() => setDateFilter("")}
+                className="text-xs font-medium text-neutral-500 hover:text-neutral-700 whitespace-nowrap"
+              >
+                Clear date
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       {payments.length === 0 ? (
         <p className="text-neutral-500 text-center py-12">No payments yet.</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-neutral-500 text-center py-12">No payments match your search.</p>
       ) : (
         <div className="space-y-3">
-          {payments.map((p) => {
+          {filtered.map((p) => {
             const canDownload = p.status === "paid" || p.status === "waived" || p.status === "refunded";
             return (
               <Card key={p.payment_id}>

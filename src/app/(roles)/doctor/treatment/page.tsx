@@ -75,9 +75,9 @@ export default function DoctorTreatmentPage() {
             <p className="text-sm text-neutral-400">No patients found.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[calc(100vh-180px)]">
             <table className="w-full text-sm min-w-[900px]">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-neutral-50">
                 <tr className="border-b border-neutral-100 bg-neutral-50">
                   {["Patient", "Protocol", "Status", "Device", "Placement", "Current", "Sessions", ""].map((h) => (
                     <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">{h}</th>

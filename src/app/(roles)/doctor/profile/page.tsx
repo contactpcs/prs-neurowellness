@@ -2,9 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  User, DollarSign, Settings, Handshake,
+  User,
   Edit2, Check, X, AlertCircle, CalendarDays, Users, Clock,
-  Shield, KeyRound, Monitor, ClipboardCheck, TrendingUp,
 } from "lucide-react";
 import { PageLoader } from "@/components/ui";
 import { doctorsService } from "@/lib/api/services/doctors.service";
@@ -23,7 +22,7 @@ interface KpiStats {
   pendingToday: number;
 }
 
-type TabId = "overview" | "finance" | "settings" | "partnership";
+type TabId = "overview";
 
 // ─── constants ────────────────────────────────────────────────────
 
@@ -32,10 +31,7 @@ const BRAND    = "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)";
 const BRAND_PX = "#00A1E4";
 
 const TABS: { id: TabId; label: string; Icon: React.ElementType }[] = [
-  { id: "overview",     label: "Overview",    Icon: User       },
-  { id: "finance",      label: "Finance",     Icon: DollarSign },
-  { id: "settings",     label: "Settings",    Icon: Settings   },
-  { id: "partnership",  label: "Partnership", Icon: Handshake  },
+  { id: "overview", label: "Overview", Icon: User },
 ];
 
 // ─── helpers ──────────────────────────────────────────────────────
@@ -84,7 +80,6 @@ export default function DoctorProfilePage() {
   const [saveSuccess,setSaveSuccess]= useState(false);
   const [kpiStats,   setKpiStats]   = useState<KpiStats | null>(null);
   const [activeTab,  setActiveTab]  = useState<TabId>("overview");
-  const [notifPrefs, setNotifPrefs] = useState({ newAppts: true, revenueUpdates: true, platformUpdates: false });
 
   const [form, setForm]   = useState<FormState>(EMPTY_FORM);
   const originalRef       = useRef<FormState>(EMPTY_FORM);
@@ -396,115 +391,6 @@ export default function DoctorProfilePage() {
           </div>
         )}
 
-        {/* ── Finance ── */}
-        {activeTab === "finance" && (
-          <div className="p-6">
-            <h2 className="text-base font-bold text-neutral-900 mb-5">Revenue &amp; Earnings</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
-              {[
-                { label: "Total Patients",  value: kpiStats?.totalPatients ?? "—", Icon: Users,         color: BRAND_PX },
-                { label: "Today's Appts",   value: kpiStats?.todayAppts    ?? "—", Icon: CalendarDays,  color: BRAND_PX },
-                { label: "New (30d)",       value: kpiStats?.newPatients30d ?? "—", Icon: TrendingUp,    color: BRAND_PX },
-              ].map(({ label, value, Icon, color }) => (
-                <div key={label} className="rounded-xl border border-neutral-200 p-4">
-                  <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-2">{label}</p>
-                  <p className="text-2xl font-bold" style={{ color }}>{value}</p>
-                  <Icon className="w-4 h-4 mt-2 text-neutral-300" />
-                </div>
-              ))}
-            </div>
-
-            <div className="rounded-xl border border-neutral-200 overflow-hidden mb-6">
-              <div className="flex items-center justify-between px-5 py-4 bg-neutral-800">
-                <h3 className="text-sm font-semibold text-white">Recent Transactions</h3>
-                <span className="text-xs text-neutral-400">No records yet</span>
-              </div>
-              <div className="grid grid-cols-4 px-5 py-3 bg-neutral-50 border-b border-neutral-100 text-[11px] font-semibold text-neutral-400 uppercase tracking-wide">
-                <span>Date</span><span>Patient</span><span>Service</span><span>Status</span>
-              </div>
-              <div className="py-10 text-center text-sm text-neutral-400">No transaction records</div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Settings ── */}
-        {activeTab === "settings" && (
-          <div className="p-6">
-            <h2 className="text-base font-bold text-neutral-900 mb-5">Account Settings</h2>
-
-            <div className="space-y-5">
-              {/* Notification Preferences */}
-              <div className="rounded-xl border border-neutral-200 overflow-hidden">
-                <div className="px-5 py-3 bg-neutral-50 border-b border-neutral-100">
-                  <p className="text-sm font-semibold text-neutral-700">Notification Preferences</p>
-                </div>
-                <div className="divide-y divide-neutral-100">
-                  {([
-                    { key: "newAppts",        label: "New Patient Appointments", desc: "Email notification for new bookings"     },
-                    { key: "revenueUpdates",  label: "Revenue Updates",          desc: "Weekly revenue summaries"               },
-                    { key: "platformUpdates", label: "Platform Updates",         desc: "New features and announcements"         },
-                  ] as const).map(({ key, label, desc }) => (
-                    <div key={key} className="flex items-center justify-between px-5 py-4">
-                      <div>
-                        <p className="text-sm font-semibold text-neutral-900">{label}</p>
-                        <p className="text-xs text-neutral-400 mt-0.5">{desc}</p>
-                      </div>
-                      <button
-                        onClick={() => setNotifPrefs((p) => ({ ...p, [key]: !p[key] }))}
-                        className="w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors"
-                        style={notifPrefs[key]
-                          ? { background: BRAND_PX, borderColor: BRAND_PX }
-                          : { background: "#fff", borderColor: "#d1d5db" }}
-                      >
-                        {notifPrefs[key] && <Check className="w-3 h-3 text-white" />}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Security Settings */}
-              <div className="rounded-xl border border-neutral-200 overflow-hidden">
-                <div className="px-5 py-3 bg-neutral-50 border-b border-neutral-100">
-                  <p className="text-sm font-semibold text-neutral-700">Security Settings</p>
-                </div>
-                <div className="divide-y divide-neutral-100">
-                  {[
-                    { Icon: KeyRound, label: "Change Password",           sub: "Last changed: —"         },
-                    { Icon: Shield,   label: "Two-Factor Authentication", sub: "Manage 2FA settings"     },
-                    { Icon: Monitor,  label: "Active Sessions",           sub: "Manage logged-in devices" },
-                  ].map(({ Icon, label, sub }) => (
-                    <button key={label} className="w-full flex items-center gap-4 px-5 py-4 hover:bg-neutral-50 transition-colors text-left">
-                      <Icon className="w-4 h-4 text-neutral-400 flex-shrink-0" />
-                      <div>
-                        <p className="text-sm font-semibold text-neutral-900">{label}</p>
-                        <p className="text-xs text-neutral-400 mt-0.5">{sub}</p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <button
-              className="mt-5 w-full py-3 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition-opacity"
-              style={{ background: BRAND }}
-            >
-              Save Settings
-            </button>
-          </div>
-        )}
-
-        {/* ── Partnership ── */}
-        {activeTab === "partnership" && (
-          <div className="p-6">
-            <h2 className="text-base font-bold text-neutral-900 mb-3">Partnership</h2>
-            <div className="rounded-xl border border-dashed border-neutral-200 py-16 flex flex-col items-center gap-2">
-              <ClipboardCheck className="w-8 h-8 text-neutral-300" />
-              <p className="text-sm text-neutral-400">Partnership details coming soon</p>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

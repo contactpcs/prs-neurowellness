@@ -104,16 +104,16 @@ export default function DoctorAnalyticsPage() {
         ))}
       </div>
 
-      <Card>
+      <Card className="overflow-hidden">
         <CardContent>
           {isLoadingOverview ? (
             <div className="py-10 flex justify-center"><PageLoader /></div>
           ) : !overview || overview.patients.length === 0 ? (
             <p className="py-10 text-center text-sm text-neutral-400">No patients tracked for this condition yet.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[calc(100vh-260px)]">
               <table className="w-full text-sm">
-                <thead>
+                <thead className="sticky top-0 z-10 bg-white">
                   <tr className="text-left text-xs font-semibold text-neutral-500 uppercase border-b border-neutral-100">
                     <th className="py-2 pr-4">Patient</th>
                     <th className="py-2 pr-4">First Assessment</th>

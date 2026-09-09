@@ -65,7 +65,9 @@ function buildSections(
   return [
     ...(isFollowUpContext ? [] : [{ id: "registration-record", name: "Registration Record", status: null }]),
     { id: "anamnesis", name: "Anamnesis", status: anamnesisStatus === "completed" ? "done" : anamnesisStatus === "in_progress" ? "start" : null },
-    { id: "brain-mapping", name: "Brain Mapping", status: "start" },
+    // "brain-mapping" hidden for now — kept as a valid selectedSection id
+    // below so a stale ?section=brain-mapping deep link or the treatment
+    // plan checklist's old go: "brain-mapping" doesn't render a blank pane.
     { id: "prs", name: "PRS", status: "start" },
     { id: "notes", name: "Doctor's Notes", status: hasDoctorNote ? "done" : null },
     { id: "medical-history", name: "Medical History", status: "link" },

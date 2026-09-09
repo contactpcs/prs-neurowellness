@@ -6,7 +6,6 @@ import {
 } from "lucide-react";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { doctorsService } from "@/lib/api/services/doctors.service";
-import { eegService } from "@/lib/api/services/eeg.service";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
 import type { ClinicalSessionTab } from "@/lib/hooks/usePatientClinicalSessions";
@@ -169,7 +168,6 @@ export function TreatmentPlanFull({
   const [activeDetail, setActiveDetail] = useState<ProtocolDetail | null>(null);
   const [anamnesis, setAnamnesis] = useState<AnamnesisRecord | null>(null);
   const [prsByVisit, setPrsByVisit] = useState<Record<string, AssessmentInstance[]>>({});
-  const [eegReports, setEegReports] = useState<{ id: string; report_name: string; created_at: string }[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [deviceSessionsById, setDeviceSessionsById] = useState<Record<string, DeviceSessionDetail>>({});
   const [edit, setEdit] = useState(false);
@@ -188,16 +186,14 @@ export function TreatmentPlanFull({
       setProtocols(list.slice().sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? "")));
       const act = list.find((p) => p.status === "active") ?? list[list.length - 1] ?? null;
 
-      const [detail, latestAnamnesis, eeg, apptRes] = await Promise.all([
+      const [detail, latestAnamnesis, apptRes] = await Promise.all([
         act ? treatmentProtocolService.getProtocolDetail(act.protocol_id).catch(() => null) : Promise.resolve(null),
         doctorsService.getVisitSummary(patientId, clinicalSessions[clinicalSessions.length - 1]?.appointment.appointment_id ?? "").then((s) => s.anamnesis).catch(() => null),
-        eegService.getPatientReports(patientId).catch(() => ({ data: [] as { id: string; report_name: string; created_at: string }[] })),
         appointmentsService.list({ limit: 200 }).catch(() => ({ appointments: [] as Appointment[], total: 0 })),
       ]);
       if (cancelled) return;
       setActiveDetail(detail);
       setAnamnesis(latestAnamnesis ?? null);
-      setEegReports(eeg.data ?? []);
       setAppointments(apptRes.appointments.filter((a) => (a.patient_public_id ?? a.patient_id) === patientId));
       setPlan(act ? loadTreatmentPlan(act.protocol_id, defaultPlan(act)) : defaultPlan(null));
 
@@ -280,9 +276,9 @@ export function TreatmentPlanFull({
   const checks = useMemo(() => ([
     { key: "Anamnesis recorded", ok: !!anamnesis, detail: anamnesis ? `Recorded ${fmtDate(anamnesis.completed_at)}` : "Not recorded", go: "anamnesis" },
     { key: "Baseline PRS on file", ok: scaleGrid.some((s) => s.first), detail: scaleGrid.length ? scaleGrid.map((s) => s.first ? `${s.name} ${s.first.value}/${s.first.max}` : null).filter(Boolean).join(" · ") || "No baseline scores" : "No baseline scores", go: "prs" },
-    { key: "Brain mapping reviewed", ok: eegReports.length > 0, detail: eegReports.length ? `${eegReports.length} report${eegReports.length === 1 ? "" : "s"} on file` : "No EEG report", go: "brain-mapping" },
+    // Brain mapping / EEG review hidden for now — not a gating check while hidden.
     { key: "Active protocol assigned", ok: !!active, detail: active ? `${active.device_name || active.modality || "Protocol"} v${versionNumber(active)}` : "No protocol assigned", go: "treatment-protocol" },
-  ]), [anamnesis, scaleGrid, eegReports, active]); // eslint-disable-line react-hooks/exhaustive-deps
+  ]), [anamnesis, scaleGrid, active]); // eslint-disable-line react-hooks/exhaustive-deps
   const blocking = checks.filter((c) => !c.ok);
   const isSet = plan.status === "set";
 
@@ -557,10 +553,6 @@ export function TreatmentPlanFull({
 
           <Fold title="Medication" summary="No medication-tracking module in this system yet">
             <p className="text-[12.5px] text-neutral-400">Structured medication history isn&apos;t tracked by this system — see the free-text Medication Plan above.</p>
-          </Fold>
-
-          <Fold title="Brain mapping &amp; EEG" summary={eegReports.length ? `${eegReports.length} report${eegReports.length === 1 ? "" : "s"} on file` : "No reports on file"}>
-            <Table cols={["Report", "Date"]} rows={eegReports.map((r) => [r.report_name, fmtDate(r.created_at)])} empty="No EEG or connectivity reports on file." />
           </Fold>
 
           <Fold title="Protocols undergone" summary={protocols.length === 1 ? "1 version" : `${protocols.length} versions · ${protocols.length - 1} change${protocols.length - 1 === 1 ? "" : "s"}`}>

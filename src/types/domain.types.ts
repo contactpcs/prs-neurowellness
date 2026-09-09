@@ -325,6 +325,11 @@ export interface Appointment {
    *  routes expect this, not patient_id above (which is profiles.id). */
   patient_public_id?: string | null;
   patient_mrn?: string | null;
+  /** Which protocol_plan version this session belongs to. Display as
+   *  `v${protocol_version_major}` when minor is 0, else
+   *  `v${protocol_version_major}.${protocol_version_minor}`. */
+  protocol_version_major?: number | null;
+  protocol_version_minor?: number | null;
   appointment_date: string;
   start_time: string;
   end_time: string;

@@ -3,11 +3,11 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
-  User, ShoppingBag, CreditCard, Bell, Settings,
+  User,
   Check, X, AlertCircle, Plus, Stethoscope, Edit2,
   Mail, Phone, FileText, Upload, Download,
 } from "lucide-react";
-import { PageLoader } from "@/components/ui";
+import { PageLoader, Modal } from "@/components/ui";
 import { usersService, NoSupportedFieldsError } from "@/lib/api/services/users.service";
 import { authService } from "@/lib/api/services/auth.service";
 import { patientFilesService, type PatientFile } from "@/lib/api/services/patientFiles.service";
@@ -56,7 +56,7 @@ const EMPTY_FORM = {
 };
 
 type FormState = typeof EMPTY_FORM;
-type TabId = "overview" | "files" | "purchases" | "payments" | "notifications" | "settings";
+type TabId = "overview" | "files";
 
 // ─── styles ───────────────────────────────────────────────────────
 
@@ -98,29 +98,37 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
 }
 
 const TABS: { id: TabId; label: string; Icon: React.ElementType }[] = [
-  { id: "overview",      label: "Overview",      Icon: User        },
-  { id: "files",         label: "Files",         Icon: FileText    },
-  { id: "purchases",     label: "Purchases",     Icon: ShoppingBag },
-  { id: "payments",      label: "Payments",      Icon: CreditCard  },
-  { id: "notifications", label: "Notifications", Icon: Bell        },
-  { id: "settings",      label: "Settings",      Icon: Settings    },
+  { id: "overview", label: "Overview", Icon: User     },
+  { id: "files",    label: "Files",    Icon: FileText },
 ];
 
 // ─── inline channel verification (Overview tab — Cognito mode only) ─
 // Same two calls the old dedicated /patient/verify-channel screen used;
 // consolidated here per explicit request — no separate page.
-function ChannelVerification({ emailVerified, phoneVerified, country }: { emailVerified?: boolean; phoneVerified?: boolean; country?: string }) {
+function ChannelVerification({
+  emailVerified, phoneVerified, hasEmail, hasPhone, country,
+}: { emailVerified?: boolean; phoneVerified?: boolean; hasEmail: boolean; hasPhone: boolean; country?: string }) {
   const dispatch = useAppDispatch();
-  const missingEmail = emailVerified === false;
-  const missingPhone = phoneVerified === false;
+  // phone_verified/email_verified default to `true` in the auth store when
+  // the backend sends nothing for them (staff accounts never go through
+  // OTP, so "unset" reading as "verified" is the right default there) — but
+  // for a patient with literally no phone/email on file yet, that same
+  // default means "verified" when there is nothing to have verified. Only
+  // treat a channel as missing when it's both present and explicitly
+  // unverified, or entirely absent (needs adding + verifying from scratch).
+  const missingEmail = emailVerified === false || !hasEmail;
+  const missingPhone = phoneVerified === false || !hasPhone;
   const [target, setTarget] = useState<"email" | "phone_number" | null>(
     missingEmail ? "email" : missingPhone ? "phone_number" : null,
   );
-  const [step, setStep] = useState<"value" | "otp">("value");
   const [value, setValue] = useState("");
+  const [otpOpen, setOtpOpen] = useState(false);
   const [otp, setOtp] = useState("");
   const [busy, setBusy] = useState(false);
+  const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resendMessage, setResendMessage] = useState<string | null>(null);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
 
   if (!missingEmail && !missingPhone) return null;
   if (!target) return null;
@@ -133,15 +141,53 @@ function ChannelVerification({ emailVerified, phoneVerified, country }: { emailV
   // no separate "type your country code" step.
   const fullValue = target === "phone_number" ? `${dialCode}${value.replace(/\D/g, "")}` : value.trim();
 
+  const closeModal = () => { setOtpOpen(false); setOtp(""); setError(null); setResendMessage(null); };
+
   const onSendCode = async () => {
     if (!value.trim()) { setError(`Enter your ${label}`); return; }
+    if (target === "phone_number") {
+      const digits = value.replace(/\D/g, "");
+      // E.164's own national-number bound (7-15 digits) — not a per-country
+      // exact length, since dialCode already varies by the patient's own
+      // country. Catches the actual bug: a 1-2 digit typo or a pasted
+      // non-numeric string was passing straight through to Cognito before,
+      // since the only prior check was "is the field non-empty."
+      if (digits.length < 7 || digits.length > 15) {
+        setError("Enter a valid mobile number");
+        return;
+      }
+    } else if (!/^\S+@\S+\.\S+$/.test(value.trim())) {
+      setError("Enter a valid email address");
+      return;
+    }
     setError(null); setBusy(true);
     try {
       await authService.verifyChannelStart(target, fullValue);
-      setStep("otp");
+      setOtpOpen(true);
     } catch (e: any) {
-      setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Could not send verification code");
+      // Backend already checks profiles for this value up front (before
+      // ever calling Cognito) and raises PHONE_ALREADY_EXISTS/
+      // EMAIL_ALREADY_EXISTS specifically — surfaced as its own popup
+      // instead of folding into the generic inline error line, since "this
+      // number belongs to another account" is a distinct, actionable case
+      // (try a different number) rather than a transient send failure.
+      const code = e?.response?.data?.error?.code;
+      if (code === "PHONE_ALREADY_EXISTS" || code === "EMAIL_ALREADY_EXISTS") {
+        setDuplicateOpen(true);
+      } else {
+        setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Could not send verification code");
+      }
     } finally { setBusy(false); }
+  };
+
+  const onResend = async () => {
+    setError(null); setResendMessage(null); setResending(true);
+    try {
+      await authService.verifyChannelStart(target, fullValue);
+      setResendMessage("Code resent.");
+    } catch (e: any) {
+      setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Could not resend code");
+    } finally { setResending(false); }
   };
 
   const onConfirmWith = async (code: string) => {
@@ -150,8 +196,9 @@ function ChannelVerification({ emailVerified, phoneVerified, country }: { emailV
     try {
       await authService.verifyChannelConfirm(target, code, fullValue);
       dispatch(updateUserInStore(target === "email" ? { email_verified: true } : { phone_verified: true }));
+      closeModal();
       const otherStillMissing = target === "email" ? missingPhone : missingEmail;
-      if (otherStillMissing) { setTarget(target === "email" ? "phone_number" : "email"); setStep("value"); setValue(""); setOtp(""); }
+      if (otherStillMissing) { setTarget(target === "email" ? "phone_number" : "email"); setValue(""); }
       else { setTarget(null); }
     } catch (e: any) {
       setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Incorrect or expired code");
@@ -159,16 +206,16 @@ function ChannelVerification({ emailVerified, phoneVerified, country }: { emailV
   };
 
   return (
-    <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3.5">
-      <div className="flex items-start gap-2.5">
-        {target === "email" ? <Mail className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" /> : <Phone className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-amber-800">Verify your {label}</p>
-          <p className="text-xs text-amber-700 mt-0.5">
-            You signed up with your {otherLabel} — add and verify your {label} too, so you can sign in with either.
-          </p>
+    <>
+      <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3.5">
+        <div className="flex items-start gap-2.5">
+          {target === "email" ? <Mail className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" /> : <Phone className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />}
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-amber-800">Verify your {label}</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              You signed up with your {otherLabel} — add and verify your {label} too, so you can sign in with either.
+            </p>
 
-          {step === "value" && (
             <div className="mt-2 flex items-center gap-2">
               {target === "email" ? (
                 <input
@@ -193,30 +240,66 @@ function ChannelVerification({ emailVerified, phoneVerified, country }: { emailV
                 </div>
               )}
               <button onClick={onSendCode} disabled={busy} className="px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50 flex-shrink-0">
-                {busy ? "Sending…" : "Send code"}
+                {busy ? "Sending…" : "Verify"}
               </button>
             </div>
-          )}
 
-          {step === "otp" && (
-            <div className="mt-2 flex items-center gap-2">
-              <input
-                inputMode="numeric" maxLength={6} placeholder="123456" value={otp}
-                onChange={(e) => {
-                  const v = e.target.value.replace(/\D/g, "").slice(0, 6);
-                  setOtp(v);
-                  if (v.length === 6 && !busy) onConfirmWith(v);
-                }}
-                className="flex-1 max-w-[140px] px-2.5 py-1.5 text-xs border border-amber-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
-              />
-              {busy && <span className="text-xs text-amber-700">Confirming…</span>}
-            </div>
-          )}
-
-          {error && <p className="mt-1.5 text-xs text-red-600">{error}</p>}
+            {error && !otpOpen && <p className="mt-1.5 text-xs text-red-600">{error}</p>}
+          </div>
         </div>
       </div>
-    </div>
+
+      <Modal isOpen={otpOpen} onClose={closeModal} title={`Verify your ${label}`}>
+        <div className="space-y-3">
+          <p className="text-sm text-neutral-600">
+            Enter the 6-digit code sent to <span className="font-semibold text-neutral-900">{fullValue}</span>.
+          </p>
+          <input
+            inputMode="numeric" maxLength={6} placeholder="123456" value={otp} autoFocus
+            onChange={(e) => {
+              const v = e.target.value.replace(/\D/g, "").slice(0, 6);
+              setOtp(v);
+              if (v.length === 6 && !busy) onConfirmWith(v);
+            }}
+            className="w-full text-center tracking-[0.5em] text-lg font-semibold px-3 py-2.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-300"
+          />
+          {busy && <p className="text-xs text-neutral-500">Confirming…</p>}
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          {resendMessage && !error && <p className="text-xs text-success-600">{resendMessage}</p>}
+          <div className="flex items-center justify-between pt-1">
+            <button
+              onClick={onResend}
+              disabled={resending || busy}
+              className="text-xs font-semibold text-primary-600 hover:text-primary-700 disabled:opacity-50"
+            >
+              {resending ? "Resending…" : "Resend code"}
+            </button>
+            <button
+              onClick={() => onConfirmWith(otp)}
+              disabled={otp.length !== 6 || busy}
+              className="px-4 py-2 text-xs font-semibold text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50"
+            >
+              Verify
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={duplicateOpen} onClose={() => setDuplicateOpen(false)} title={`${target === "email" ? "Email" : "Phone number"} already in use`}>
+        <div className="space-y-3">
+          <p className="text-sm text-neutral-600">
+            <span className="font-semibold text-neutral-900">{fullValue}</span> is already registered to another account.
+            Enter a different {label} to continue.
+          </p>
+          <button
+            onClick={() => { setDuplicateOpen(false); setValue(""); }}
+            className="px-4 py-2 text-xs font-semibold text-white bg-primary-600 rounded-lg hover:bg-primary-700"
+          >
+            Try a different {label}
+          </button>
+        </div>
+      </Modal>
+    </>
   );
 }
 
@@ -393,9 +476,6 @@ function PatientProfile() {
     const t = searchParams.get("tab");
     if (t && TABS.some((tab) => tab.id === t)) setActiveTab(t as TabId);
   }, [searchParams]);
-  const [settings,    setSettings]    = useState({
-    emailReminders: true, weeklyReport: true, shareData: true, darkMode: false,
-  });
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const originalRef     = useRef<FormState>(EMPTY_FORM);
@@ -593,7 +673,13 @@ function PatientProfile() {
               </div>
             )}
 
-            <ChannelVerification emailVerified={user?.email_verified} phoneVerified={user?.phone_verified} country={form.country} />
+            <ChannelVerification
+              emailVerified={user?.email_verified}
+              phoneVerified={user?.phone_verified}
+              hasEmail={!!email.trim()}
+              hasPhone={!!phone.trim()}
+              country={form.country}
+            />
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {/* Left — Personal Information */}
@@ -762,87 +848,6 @@ function PatientProfile() {
           </div>
         )}
 
-        {/* ── Purchases ── */}
-        {activeTab === "purchases" && (
-          <div className="p-6">
-            <h2 className="text-base font-bold text-neutral-900 mb-5">Purchase History</h2>
-            <div className="rounded-xl border border-dashed border-neutral-200 py-14 text-center text-sm text-neutral-400">
-              No purchase history available
-            </div>
-          </div>
-        )}
-
-        {/* ── Payments ── */}
-        {activeTab === "payments" && (
-          <div className="p-6">
-            <h2 className="text-base font-bold text-neutral-900 mb-5">Payment & Billing</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-              <div className="rounded-xl border-l-4 border border-neutral-200 p-4" style={{ borderLeftColor: BRAND_PRIMARY }}>
-                <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-1">Current Plan</p>
-                <p className="text-lg font-bold text-neutral-900">Standard</p>
-                <p className="text-xs text-neutral-500 mt-0.5">Clinical Assessment Platform</p>
-              </div>
-              <div className="rounded-xl border-l-4 border border-neutral-200 p-4" style={{ borderLeftColor: BRAND_PRIMARY }}>
-                <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-1">Balance</p>
-                <p className="text-lg font-bold" style={{ color: BRAND_PRIMARY }}>—</p>
-                <p className="text-xs text-neutral-500 mt-0.5">Contact your clinic for billing</p>
-              </div>
-            </div>
-            <div className="rounded-xl border border-neutral-200 overflow-hidden">
-              <div className="grid grid-cols-4 px-4 py-3 bg-neutral-50 border-b border-neutral-100 text-[11px] font-semibold text-neutral-400 uppercase tracking-wide">
-                <span>Date</span><span>Description</span><span>Amount</span><span>Status</span>
-              </div>
-              <div className="py-10 text-center text-sm text-neutral-400">No payment records</div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Notifications ── */}
-        {activeTab === "notifications" && (
-          <div className="p-6">
-            <h2 className="text-base font-bold text-neutral-900 mb-5">Notification History</h2>
-            <div className="rounded-xl border border-dashed border-neutral-200 py-14 text-center text-sm text-neutral-400">
-              No notifications
-            </div>
-          </div>
-        )}
-
-        {/* ── Settings ── */}
-        {activeTab === "settings" && (
-          <div className="p-6">
-            <h2 className="text-base font-bold text-neutral-900 mb-5">Preferences & Settings</h2>
-            <div className="space-y-3">
-              {([
-                { key: "emailReminders", label: "Email Reminders",         desc: "Get appointment and health notifications" },
-                { key: "weeklyReport",   label: "Weekly Report",           desc: "Receive health summaries every Monday"    },
-                { key: "shareData",      label: "Share Data with Provider", desc: "Allow care team to access your metrics"  },
-                { key: "darkMode",       label: "Dark Mode",               desc: "Enable dark theme (beta)"                },
-              ] as const).map(({ key, label, desc }) => (
-                <div key={key} className="flex items-center justify-between p-4 rounded-xl border border-neutral-200 hover:border-neutral-300 transition-colors">
-                  <div>
-                    <p className="text-sm font-semibold text-neutral-900">{label}</p>
-                    <p className="text-xs text-neutral-400 mt-0.5">{desc}</p>
-                  </div>
-                  <button
-                    onClick={() => setSettings((prev) => ({ ...prev, [key]: !prev[key] }))}
-                    className="w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors"
-                    style={settings[key]
-                      ? { background: BRAND_PRIMARY, borderColor: BRAND_PRIMARY }
-                      : { background: "#fff", borderColor: "#d1d5db" }}
-                  >
-                    {settings[key] && <Check className="w-3 h-3 text-white" />}
-                  </button>
-                </div>
-              ))}
-            </div>
-            <button
-              className="mt-5 w-full py-3 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition-opacity"
-              style={{ background: BRAND }}
-            >
-              Save Settings
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

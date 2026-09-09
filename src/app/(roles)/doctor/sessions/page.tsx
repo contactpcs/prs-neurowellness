@@ -82,9 +82,9 @@ export default function DoctorSessionsPage() {
             <p className="text-sm text-neutral-400">No matching sessions.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[calc(100vh-220px)]">
             <table className="w-full text-sm min-w-[820px]">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-neutral-50">
                 <tr className="border-b border-neutral-100 bg-neutral-50">
                   {["Patient", "Session", "Date", "Time", "Status", ""].map((h) => (
                     <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">{h}</th>
