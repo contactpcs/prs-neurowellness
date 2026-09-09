@@ -12,6 +12,7 @@ import {
   UserCircle, LogOut, Brain, ChevronLeft, Menu, Calendar, CalendarDays,
   ClipboardCheck, MapPin, Building2, UserCog, Settings, ShieldCheck,
   ShoppingBag, Receipt, Bell, DollarSign, Activity, Syringe, BarChart2, Percent,
+  TrendingUp,
 } from "lucide-react";
 
 interface NavItem {
@@ -40,6 +41,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { label: "Treatment",    href: "/doctor/treatment",    icon: Syringe },
     { label: "Notifications",href: "/doctor/notifications",icon: Bell, badge: "doctorUnreadNotifications" },
     { label: "Reports",      href: "/doctor/reports",      icon: BarChart2 },
+    { label: "Analytics",    href: "/doctor/analytics",    icon: TrendingUp },
     { label: "Settings",     href: "/doctor/settings",     icon: Settings },
     { label: "Profile",      href: "/doctor/profile",      icon: UserCircle },
   ],

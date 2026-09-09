@@ -69,6 +69,10 @@ export const ENDPOINTS = {
     // learn it — PATCH is now self-scoped server-side (assert_staff_self)
     // so this only ever succeeds for the caller's own row.
     ME: (doctorId: string) => `/doctors/${doctorId}`,
+    // real — app/modules/reports/router.py. Query param, not path, since
+    // disease_id contains "/" (e.g. "CHRONICPAIN/2026") — pass via axios's
+    // `params` option so it gets encoded correctly.
+    PATIENTS_OVERVIEW: "/reports/doctor/patients-overview",
   },
 
   // ─── Patients (patient-role self views) ───
