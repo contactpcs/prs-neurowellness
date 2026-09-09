@@ -61,12 +61,21 @@ export const staffService = {
     return { patients, total: patients.length };
   },
 
-  /** Real: GET /patients?approval_status=pending (clinic-scoped automatically
-   * for receptionist). Only self-registered patients who've finished the
-   * whole 6-step wizard show up here — matches the actual approval gate
-   * (see SQL/24_patient_self_registration.sql), not a heuristic. */
+  /** Real: GET /patients?approval_status=pending&registration_status=
+   * registration_complete (clinic-scoped automatically for receptionist/CA).
+   * The registration_status filter is load-bearing, not decorative: PATCH
+   * /patients/{id}/approval (approve AND reject) 400s with
+   * REGISTRATION_INCOMPLETE for anyone not yet at registration_complete
+   * (patients/service.py's decide_approval — "receptionist only sees the
+   * request after registration_complete, not partway through"). Without
+   * this filter a mid-wizard patient (e.g. only consent_signed) still shows
+   * up here with nothing the CA can actually do about it — every
+   * approve/reject click 400s with no visible reason until this filter
+   * keeps them off the list in the first place. */
   async getPendingPatients(_params?: { page?: number; limit?: number }): Promise<{ patients: PatientListItem[]; total: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.STAFF.PATIENTS, { params: { approval_status: "pending" } });
+    const { data } = await apiClient.get(ENDPOINTS.STAFF.PATIENTS, {
+      params: { approval_status: "pending", registration_status: "registration_complete" },
+    });
     const raw: Record<string, unknown>[] = Array.isArray(data) ? data : [];
     const patients = raw.map(normalizePatient);
     return { patients, total: patients.length };

@@ -37,14 +37,30 @@ export default function ClinicalAssistantApprovalsPage() {
 
   useEffect(() => { fetchPending(); }, [fetchPending]);
 
+  // BusinessRuleError responses (400) carry a specific code/message — e.g.
+  // REGISTRATION_INCOMPLETE (patient hasn't finished their own registration
+  // wizard yet) or APPROVAL_ALREADY_DECIDED (someone else already approved/
+  // rejected this same row since this list was fetched — a real race
+  // between two clinical assistants, or a stale pending list). Previously
+  // both handlers swallowed the response entirely and always showed the
+  // same generic "failed" toast, which made every distinct failure reason
+  // look identical and impossible to act on.
+  const describeApprovalError = (e: any): string => {
+    const code = e?.response?.data?.error?.code;
+    const message = e?.response?.data?.error?.message;
+    if (code === "REGISTRATION_INCOMPLETE") return "This patient hasn't finished their own registration yet.";
+    if (code === "APPROVAL_ALREADY_DECIDED") return "This registration was already decided — refresh the list.";
+    return message || "Something went wrong. Please try again.";
+  };
+
   const handleApprove = async (patientId: string) => {
     setActionLoading(patientId);
     try {
       await staffService.approvePatient(patientId);
       setPatients((prev) => prev.filter((p) => p.id !== patientId));
       showToast("Patient approved successfully.", true);
-    } catch {
-      showToast("Failed to approve. Please try again.", false);
+    } catch (e) {
+      showToast(describeApprovalError(e), false);
     }
     setActionLoading(null);
   };
@@ -58,8 +74,8 @@ export default function ClinicalAssistantApprovalsPage() {
       setRejectModal(null);
       setRejectReason("");
       showToast("Registration rejected.", true);
-    } catch {
-      showToast("Failed to reject. Please try again.", false);
+    } catch (e) {
+      showToast(describeApprovalError(e), false);
     }
     setActionLoading(null);
   };

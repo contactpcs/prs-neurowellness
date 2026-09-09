@@ -60,21 +60,6 @@ interface WizardState {
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
-/** min/max on a native number Input only affects the spinner arrows and
- * native form-submit validation — it does nothing to stop free typing (a
- * doctor could still type -2 or 1000). Clamped on blur rather than on every
- * keystroke so a value being typed isn't fought mid-edit (e.g. clamping "1"
- * to "10" the instant a doctor types the first digit of "15" would make it
- * impossible to enter). Empty string passes through untouched — a blank
- * field is a valid "not filled in yet" state, not something to coerce to
- * the minimum. */
-function clampNumericField(raw: string, min: number, max: number): string {
-  if (raw.trim() === "") return raw;
-  const n = Number(raw);
-  if (Number.isNaN(n)) return raw;
-  return String(Math.min(max, Math.max(min, n)));
-}
-
 function emptyState(): WizardState {
   return {
     deviceId: null, deviceUnitId: null, conditionIds: [], diagnosisIds: [],
@@ -680,7 +665,7 @@ export default function TreatmentProtocolWizardPage() {
                 </div>
               ))}
             </div>
-            <Button className="mt-2" onClick={() => router.push(`/doctor/patients/${patientId}/treatment-protocol`)}>
+            <Button className="mt-2" onClick={() => router.push(`/doctor/patients/${patientId}?section=treatment-protocol`)}>
               View Treatment Protocol
             </Button>
           </CardContent>
@@ -1202,6 +1187,23 @@ function DosingStep({
 }) {
   const isCustom = state.montageMode === "custom";
   const selected = isCustom ? null : dosingRows.find((d) => d.dosing_id === state.dosingId) || null;
+  // Out-of-range values are flagged, not silently rewritten — snapping "1"
+  // to "10" the moment a doctor blurs a half-typed "15" reads as the form
+  // eating their input, and a rewritten number the doctor never chose is
+  // easy to miss and submit trusting it's still what they entered.
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<"currentMa" | "sessionDurationMin" | "rampSeconds" | "sessionCount", string>>>({});
+  const validateRange = (
+    field: "currentMa" | "sessionDurationMin" | "rampSeconds" | "sessionCount",
+    raw: string, min: number, max: number, unit: string,
+  ) => {
+    if (raw.trim() === "") { setFieldErrors((e) => ({ ...e, [field]: undefined })); return; }
+    const n = Number(raw);
+    const outOfRange = Number.isNaN(n) || n < min || n > max;
+    setFieldErrors((e) => ({
+      ...e,
+      [field]: outOfRange ? `Must be between ${min} and ${max} ${unit}` : undefined,
+    }));
+  };
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -1245,23 +1247,31 @@ function DosingStep({
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Input
           label="Current intensity (mA)" type="number" min={0} max={2} step={0.1}
-          value={state.currentMa} onChange={(e) => onField("currentMa", e.target.value)}
-          onBlur={(e) => onField("currentMa", clampNumericField(e.target.value, 0, 2))}
+          value={state.currentMa}
+          error={fieldErrors.currentMa}
+          onChange={(e) => { onField("currentMa", e.target.value); validateRange("currentMa", e.target.value, 0, 2, "mA"); }}
+          onBlur={(e) => validateRange("currentMa", e.target.value, 0, 2, "mA")}
         />
         <Input
           label="Session duration (min)" type="number" min={10} max={45}
-          value={state.sessionDurationMin} onChange={(e) => onField("sessionDurationMin", e.target.value)}
-          onBlur={(e) => onField("sessionDurationMin", clampNumericField(e.target.value, 10, 45))}
+          value={state.sessionDurationMin}
+          error={fieldErrors.sessionDurationMin}
+          onChange={(e) => { onField("sessionDurationMin", e.target.value); validateRange("sessionDurationMin", e.target.value, 10, 45, "min"); }}
+          onBlur={(e) => validateRange("sessionDurationMin", e.target.value, 10, 45, "min")}
         />
         <Input
           label="Ramp up/down (sec)" type="number" min={0} max={120}
-          value={state.rampSeconds} onChange={(e) => onField("rampSeconds", e.target.value)}
-          onBlur={(e) => onField("rampSeconds", clampNumericField(e.target.value, 0, 120))}
+          value={state.rampSeconds}
+          error={fieldErrors.rampSeconds}
+          onChange={(e) => { onField("rampSeconds", e.target.value); validateRange("rampSeconds", e.target.value, 0, 120, "sec"); }}
+          onBlur={(e) => validateRange("rampSeconds", e.target.value, 0, 120, "sec")}
         />
         <Input
           label="Total sessions" type="number" min={10} max={30}
-          value={state.sessionCount} onChange={(e) => onField("sessionCount", e.target.value)}
-          onBlur={(e) => onField("sessionCount", clampNumericField(e.target.value, 10, 30))}
+          value={state.sessionCount}
+          error={fieldErrors.sessionCount}
+          onChange={(e) => { onField("sessionCount", e.target.value); validateRange("sessionCount", e.target.value, 10, 30, "sessions"); }}
+          onBlur={(e) => validateRange("sessionCount", e.target.value, 10, 30, "sessions")}
         />
       </div>
 
