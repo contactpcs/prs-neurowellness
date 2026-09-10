@@ -15,12 +15,14 @@ export interface ClinicalSessionTab {
   index: number;
 }
 
-// A Follow-up / Protocol Follow-up only earns a tab once the patient has
-// actually checked in for it — a booked-but-not-yet-arrived follow-up isn't
-// a session the doctor can do anything with yet, and showing it early just
-// invites clicking into an empty screen. Initial Consultation is exempt: it
-// is the base workspace itself, reachable regardless of check-in status.
-const VISIBLE_AFTER_CHECKIN = new Set(["checked_in", "in_progress", "completed"]);
+// A Consultation / Follow-up / Protocol Follow-up only earns a tab once the
+// doctor has clicked "Start Consultation" for it (status -> in_progress),
+// or it is already completed. Check-in / No-Show / Reschedule / any other
+// appointment-status flow does NOT create or activate a tab — the ONLY
+// trigger is the doctor's "Start Consultation" action. Before that the tab
+// does not exist and nothing on it is editable. No type is exempt: even the
+// Initial Consultation tab stays inert until its consultation is started.
+const VISIBLE_AFTER_START = new Set(["in_progress", "completed"]);
 
 /** The patient's clinical review sessions — Initial Consultation, Follow-up,
  * Protocol Follow-up — in booking order. Device Sessions are excluded; they
@@ -29,6 +31,10 @@ const VISIBLE_AFTER_CHECKIN = new Set(["checked_in", "in_progress", "completed"]
  * numbering and ordering. */
 export function usePatientClinicalSessions(patientId: string) {
   const [sessions, setSessions] = useState<ClinicalSessionTab[]>([]);
+  // True once the doctor has clicked "Start Consultation" on the Initial
+  // Consultation (its appointment reached in_progress / completed). Until
+  // then the whole clinical workspace is inert — no tab, nothing editable.
+  const [hasStartedConsultation, setHasStartedConsultation] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const load = useCallback(() => {
@@ -50,7 +56,7 @@ export function usePatientClinicalSessions(patientId: string) {
               // a frozen, no-longer-live row, which is why Anamnesis was
               // locked and unwritable even though a real open session existed.
               a.status !== "rescheduled" &&
-              (a.appointment_type === "initial" || VISIBLE_AFTER_CHECKIN.has(a.status))
+              VISIBLE_AFTER_START.has(a.status)
           )
           .sort((a, b) => (a.appointment_date + a.start_time).localeCompare(b.appointment_date + b.start_time));
 
@@ -66,12 +72,13 @@ export function usePatientClinicalSessions(patientId: string) {
           return { appointment, label: `Follow-up ${followUpN}`, index };
         });
         setSessions(tabs);
+        setHasStartedConsultation(mine.some((a) => a.appointment_type === "initial"));
       })
-      .catch(() => setSessions([]))
+      .catch(() => { setSessions([]); setHasStartedConsultation(false); })
       .finally(() => setIsLoading(false));
   }, [patientId]);
 
   useEffect(load, [load]);
 
-  return { sessions, isLoading, reload: load };
+  return { sessions, isLoading, hasStartedConsultation, reload: load };
 }
