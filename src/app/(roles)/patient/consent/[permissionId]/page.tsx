@@ -7,6 +7,7 @@ import {
   FileText, Lock, ClipboardList,
 } from "lucide-react";
 import Link from "next/link";
+import { useGoBack } from "@/lib/hooks";
 
 const CONSENT_SECTIONS = [
   {
@@ -38,6 +39,7 @@ const CONSENT_SECTIONS = [
 export default function PatientConsentPage() {
   const { permissionId } = useParams<{ permissionId: string }>();
   const router = useRouter();
+  const goBack = useGoBack("/patient/dashboard");
   const [agreed, setAgreed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -55,12 +57,12 @@ export default function PatientConsentPage() {
     <div className="min-h-screen bg-gray-50 dark:bg-neutral-900">
       <div className="max-w-2xl mx-auto px-4 py-6">
         {/* Back nav */}
-        <Link
-          href="/patient/dashboard"
+        <button
+          onClick={goBack}
           className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 mb-5"
         >
-          <ChevronLeft className="w-3.5 h-3.5" /> Back to dashboard
-        </Link>
+          <ChevronLeft className="w-3.5 h-3.5" /> Back
+        </button>
 
         {/* Header */}
         <div className="text-center mb-6">

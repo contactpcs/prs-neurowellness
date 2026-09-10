@@ -9,6 +9,7 @@ import {
   XCircle, RotateCcw, AlertOctagon, Pencil, Save, X,
 } from "lucide-react";
 import { useAppointmentDetail } from "@/lib/hooks/useAppointments";
+import { useGoBack } from "@/lib/hooks/useGoBack";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
 import { SESSION_TYPE_LABEL } from "@/lib/utils/sessionType";
@@ -245,6 +246,7 @@ function RescheduleModal({
 export default function AppointmentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const goBack = useGoBack("/doctor/appointments");
   const { appointment, checkIn, start, complete, noShow, cancel, reschedule, refresh } = useAppointmentDetail(id);
 
   const [busy,            setBusy]            = useState(false);
@@ -338,14 +340,15 @@ export default function AppointmentDetailPage() {
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900">
-      {/* Back nav */}
-      <Link
-        href="/doctor/appointments"
+      {/* Back nav — real navigation history (wherever this was opened from),
+          not always the appointments list */}
+      <button
+        onClick={goBack}
         className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 mb-5 transition-colors"
       >
         <ChevronLeft className="w-4 h-4" />
-        Back to Appointments
-      </Link>
+        Back
+      </button>
 
       <div className="grid gap-5 xl:grid-cols-[1fr_320px]">
         {/* ── Main card ── */}

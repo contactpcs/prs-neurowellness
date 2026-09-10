@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { ChevronRight, AlertTriangle } from "lucide-react";
-import { useInstanceScore } from "@/lib/hooks";
+import { useInstanceScore, useGoBack } from "@/lib/hooks";
 import { PageLoader, Card, CardContent } from "@/components/ui";
 
 function severityColor(level?: string) {
@@ -19,6 +19,7 @@ function severityColor(level?: string) {
 export default function PatientResultDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const goBack = useGoBack("/patient/dashboard");
   const { detail, isLoading } = useInstanceScore(id);
 
   if (isLoading) return <PageLoader />;
@@ -38,11 +39,11 @@ export default function PatientResultDetailPage() {
     <div className="space-y-6">
       {/* Back */}
       <button
-        onClick={() => router.back()}
+        onClick={goBack}
         className="flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-800"
       >
         <ChevronRight className="h-4 w-4 rotate-180" />
-        Back to Results
+        Back
       </button>
 
       {/* Header */}

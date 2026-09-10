@@ -136,7 +136,13 @@ export default function DoctorDashboard() {
       const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, {
         params: { date_from: toDateStr(from), date_to: toDateStr(to), limit: 100 },
       });
-      setAppointments(Array.isArray(data) ? data : []);
+      const list: Appointment[] = Array.isArray(data) ? data : [];
+      // doctor_id on a device_session row records the prescribing doctor
+      // (scheduling/service.py::_generate_appointments) so the wider
+      // /appointments query correctly returns it, but a clinical assistant
+      // runs the session, not the doctor — nothing here is theirs to open,
+      // so it doesn't belong on this dashboard's calendar or upcoming list.
+      setAppointments(list.filter((a) => a.appointment_type !== "device_session"));
     } catch { setAppointments([]); }
   }, []);
 

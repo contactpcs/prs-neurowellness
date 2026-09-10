@@ -9,6 +9,7 @@ import { ClaimSlotModal } from "@/components/appointments/ClaimSlotModal";
 import { RescheduleModal } from "@/components/appointments/RescheduleModal";
 import { STATUS_LABEL, STATUS_TONE } from "@/lib/appointmentStatus";
 import { PageLoader, Button } from "@/components/ui";
+import { useGoBack } from "@/lib/hooks";
 import type { Appointment } from "@/types/domain.types";
 
 function fmtDate(d?: string | null) {
@@ -25,6 +26,7 @@ function fmtTime(t?: string | null) {
 export default function AppointmentDetailPage() {
   const { appointmentId } = useParams<{ appointmentId: string }>();
   const router = useRouter();
+  const goBack = useGoBack("/patient/appointments");
   const [appt, setAppt] = useState<Appointment | null>(null);
   const [loading, setLoading] = useState(true);
   const [showClaim, setShowClaim] = useState(false);
@@ -81,11 +83,11 @@ export default function AppointmentDetailPage() {
   return (
     <div className="max-w-lg mx-auto space-y-5">
       <button
-        onClick={() => router.push("/patient/appointments")}
+        onClick={goBack}
         className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700"
       >
         <ChevronLeft className="h-4 w-4" />
-        Back to Appointments
+        Back
       </button>
 
       <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4">

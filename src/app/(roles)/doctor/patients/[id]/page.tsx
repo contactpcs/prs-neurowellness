@@ -27,6 +27,7 @@ import { SessionTabsBar } from "@/components/doctor/SessionTabsBar";
 import { SessionFinalReportModal } from "@/components/doctor/SessionFinalReportModal";
 import { CompareSessionsModal } from "@/components/doctor/CompareSessionsModal";
 import { usePatientClinicalSessions } from "@/lib/hooks/usePatientClinicalSessions";
+import { useGoBack } from "@/lib/hooks/useGoBack";
 import { usePatientVisitSummary } from "@/lib/hooks/usePatientVisitSummary";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import type { ProtocolRead } from "@/types/treatmentProtocol.types";
@@ -81,6 +82,7 @@ function buildSections(
 export default function DoctorPatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const goBack = useGoBack("/doctor/patients");
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -272,11 +274,11 @@ export default function DoctorPatientDetailPage() {
       <div className="bg-white border-b border-neutral-200 px-4 sm:px-8 py-3">
         <div className="flex items-center justify-between gap-3">
           <button
-            onClick={() => router.push("/doctor/patients")}
+            onClick={goBack}
             className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900 transition-colors text-sm font-medium flex-shrink-0"
           >
             <ChevronRight className="w-5 h-5 -scale-x-100" />
-            <span className="hidden sm:inline">Back to search</span>
+            <span className="hidden sm:inline">Back</span>
           </button>
           <div className="flex items-center gap-2 flex-1 justify-end min-w-0">
             <div className="relative flex-1 max-w-xs bg-white border border-neutral-200 rounded-full flex items-center px-4 py-2 shadow-sm hidden sm:flex">
