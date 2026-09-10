@@ -36,6 +36,15 @@ interface SessionRow {
   patient_name: string | null;
   clinic_device_id: string | null;
   protocol_id: string | null;
+  protocol_version_major: number | null;
+  protocol_version_minor: number | null;
+}
+
+// "vN" when minor is 0/absent, else "vN.M" — same convention as the doctor
+// and patient sides (ProtocolRead / patient device-sessions page).
+function versionLabel(major: number | null, minor: number | null): string | null {
+  if (major == null) return null;
+  return minor ? `v${major}.${minor}` : `v${major}`;
 }
 
 const STATUS_TONE: Record<string, string> = {
@@ -119,10 +128,10 @@ export default function ClinicalAssistantAppointmentsPage() {
     return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [filtered]);
 
-  const statuses = useMemo(
-    () => ["all", ...Array.from(new Set(rows.map((r) => r.status)))],
-    [rows],
-  );
+  // Fixed list (not derived from `rows`) so a CA can filter to e.g. "Confirmed"
+  // (paid) even on a day with no paid sessions loaded yet, instead of the pill
+  // only appearing once a matching row happens to already be in view.
+  const statuses = ["all", "planned", "selected", "paid", "checked_in", "in_progress", "completed", "cancelled", "no_show"];
 
   if (loading) return <PageLoader />;
 
@@ -234,6 +243,11 @@ export default function ClinicalAssistantAppointmentsPage() {
                     </span>
                     {r.session_number != null && (
                       <span className="text-xs text-neutral-500 shrink-0">Session {r.session_number}</span>
+                    )}
+                    {versionLabel(r.protocol_version_major, r.protocol_version_minor) && (
+                      <span className="text-[11px] font-semibold text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded shrink-0">
+                        Protocol {versionLabel(r.protocol_version_major, r.protocol_version_minor)}
+                      </span>
                     )}
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 text-xs text-neutral-500">

@@ -294,6 +294,11 @@ export default function DeviceSessionChecklistPage() {
             Session {appointment.session_number} of {protocol?.session_count ?? "—"}
           </span>
         )}
+        {protocol && (
+          <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-600">
+            Protocol {protocol.version_minor ? `v${protocol.version_major}.${protocol.version_minor}` : `v${protocol.version_major}`}
+          </span>
+        )}
         <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${appointment.status === "paid" ? "bg-green-50 text-green-700" : "bg-neutral-100 text-neutral-600"}`}>
           {appointment.status === "paid" ? "Paid" : appointment.status.replace(/_/g, " ")}
         </span>
@@ -418,14 +423,20 @@ export default function DeviceSessionChecklistPage() {
           <Card>
             <CardHeader><h3 className="text-sm font-semibold text-neutral-900">2. Device & Brand for This Session</h3></CardHeader>
             <CardContent className="space-y-3">
-              {deviceInfo ? (
-                <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-3.5 py-2.5">
-                  <p className="text-sm font-medium text-neutral-900">{deviceInfo.device_name}</p>
-                  <p className="text-xs text-neutral-500 mt-0.5">From this patient's prescribed protocol</p>
-                </div>
-              ) : (
-                <p className="text-xs text-neutral-400">Loading device details…</p>
-              )}
+              {/* Editable, bound to the same `deviceBrand` state that's
+                  actually persisted to the checklist (currentChecklistFields)
+                  below — the read-only display this replaced showed
+                  deviceInfo.device_name but never let the CA see or correct
+                  what would really get logged, and left "Device brand" stuck
+                  as permanently missing whenever getDeviceInfo 404s (no unit
+                  pinned to the protocol). */}
+              <Input
+                label="Device brand"
+                value={deviceBrand}
+                onChange={(e) => setDeviceBrand(e.target.value)}
+                placeholder={deviceInfo ? undefined : "Enter the device brand used for this session"}
+                hint={deviceInfo ? "From this patient's prescribed protocol — edit if a different unit was used." : "No device on file for this protocol — enter which one this session ran on."}
+              />
               {deviceInfo?.device_unit_serial_number ? (
                 <div>
                   <p className="text-xs font-medium text-neutral-500 mb-1">Device unit / serial no.</p>

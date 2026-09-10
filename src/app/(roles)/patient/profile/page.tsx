@@ -4,13 +4,14 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   User,
-  Check, X, AlertCircle, Plus, Stethoscope, Edit2,
-  Mail, Phone, FileText, Upload, Download,
+  Check, X, AlertCircle, Stethoscope, Edit2,
+  Mail, Phone, FileText, Upload, Download, ShieldCheck, FileSignature,
 } from "lucide-react";
 import { PageLoader, Modal } from "@/components/ui";
 import { usersService, NoSupportedFieldsError } from "@/lib/api/services/users.service";
 import { authService } from "@/lib/api/services/auth.service";
 import { patientFilesService, type PatientFile } from "@/lib/api/services/patientFiles.service";
+import { consentService, type ConsentRecord } from "@/lib/api/services/consent.service";
 import { extractErrorMessage } from "@/lib/api/errors";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
@@ -56,7 +57,7 @@ const EMPTY_FORM = {
 };
 
 type FormState = typeof EMPTY_FORM;
-type TabId = "overview" | "files";
+type TabId = "personal" | "medical" | "verification" | "consents";
 
 // ─── styles ───────────────────────────────────────────────────────
 
@@ -97,9 +98,13 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
+const BLOOD_GROUP_OPTIONS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+
 const TABS: { id: TabId; label: string; Icon: React.ElementType }[] = [
-  { id: "overview", label: "Overview", Icon: User     },
-  { id: "files",    label: "Files",    Icon: FileText },
+  { id: "personal",     label: "Personal Information",   Icon: User        },
+  { id: "medical",      label: "Medical History/Files",  Icon: FileText    },
+  { id: "verification", label: "Verification",           Icon: ShieldCheck },
+  { id: "consents",     label: "Consents",                Icon: FileSignature },
 ];
 
 // ─── inline channel verification (Overview tab — Cognito mode only) ─
@@ -447,6 +452,59 @@ function MedicalFilesSection({ patientId, clinicId }: { patientId?: string; clin
   );
 }
 
+// ─── Consents tab — medical treatment + data-use consent records ───
+function ConsentsSection({ patientProfileId }: { patientProfileId?: string }) {
+  const [consents, setConsents] = useState<ConsentRecord[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!patientProfileId) return;
+    consentService.listForSubject({ patient_id: patientProfileId })
+      .then(setConsents)
+      .catch(() => setError("Failed to load consent records"));
+  }, [patientProfileId]);
+
+  return (
+    <div>
+      <h2 className="text-base font-bold text-neutral-900 mb-1">Consents</h2>
+      <p className="text-xs text-neutral-400 mb-4">Medical treatment and data-use consents signed with the clinic.</p>
+
+      {error && (
+        <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg text-sm mb-4">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+        </div>
+      )}
+
+      {!patientProfileId || consents === null ? (
+        <p className="text-sm text-neutral-400">Loading…</p>
+      ) : consents.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-neutral-200 py-14 text-center text-sm text-neutral-400">
+          No consent records found
+        </div>
+      ) : (
+        <div className="divide-y divide-neutral-100 border border-neutral-200 rounded-xl overflow-hidden">
+          {consents.map((c) => (
+            <div key={c.consent_id} className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="flex items-center gap-2.5 text-sm font-semibold text-neutral-900 capitalize">
+                <FileSignature className="w-4 h-4 flex-shrink-0" style={{ color: BRAND_PRIMARY }} />
+                {c.consent_type.replace(/_/g, " ")}
+              </span>
+              <span className="flex items-center gap-2 flex-shrink-0">
+                {c.signed_at && <span className="text-xs text-neutral-400">{new Date(c.signed_at).toLocaleDateString()}</span>}
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                  c.status === "signed" ? "bg-green-100 text-green-700" : c.status === "revoked" ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-700"
+                }`}>
+                  {c.status}
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── component ────────────────────────────────────────────────────
 
 export default function PatientProfilePage() {
@@ -469,11 +527,13 @@ function PatientProfile() {
   const [saveError,   setSaveError]   = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const searchParams = useSearchParams();
-  const [activeTab,   setActiveTab]   = useState<TabId>("overview");
+  const [activeTab,   setActiveTab]   = useState<TabId>("personal");
 
-  // Deep-link support: /patient/profile?tab=files opens the Medical History tab.
+  // Deep-link support: /patient/profile?tab=medical opens the Medical History tab.
+  // "files" kept as an alias for pre-existing links built before the tab rename.
   useEffect(() => {
     const t = searchParams.get("tab");
+    if (t === "files") { setActiveTab("medical"); return; }
     if (t && TABS.some((tab) => tab.id === t)) setActiveTab(t as TabId);
   }, [searchParams]);
 
@@ -605,7 +665,7 @@ function PatientProfile() {
             <User className="w-8 h-8 text-white" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold text-neutral-900 leading-tight truncate">{form.full_name || "—"}</h1>
+            <h1 className="text-2xl font-bold text-neutral-900 leading-tight truncate">Welcome, {form.full_name || "—"}</h1>
 
           </div>
         </div>
@@ -664,22 +724,14 @@ function PatientProfile() {
           })}
         </div>
 
-        {/* ── Overview ── */}
-        {activeTab === "overview" && (
+        {/* ── Personal Information ── */}
+        {activeTab === "personal" && (
           <div className="p-6">
             {fetchError && (
               <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg text-sm mb-5">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" /> {fetchError}
               </div>
             )}
-
-            <ChannelVerification
-              emailVerified={user?.email_verified}
-              phoneVerified={user?.phone_verified}
-              hasEmail={!!email.trim()}
-              hasPhone={!!phone.trim()}
-              country={form.country}
-            />
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {/* Left — Personal Information */}
@@ -785,7 +837,13 @@ function PatientProfile() {
                           <input className={inputCls} value={form.height_in} placeholder="Inches (e.g., 10)" onChange={(e) => set("height_in", e.target.value)} />
                         </div>
                       </div>
-                      <FieldInput label="Blood Group"        value={form.blood_group}        onChange={(v) => set("blood_group", v)}        placeholder="e.g., O+" />
+                      <div>
+                        <label className={labelCls}>Blood Group</label>
+                        <select className={inputCls} value={form.blood_group} onChange={(e) => set("blood_group", e.target.value)}>
+                          <option value="">Select</option>
+                          {BLOOD_GROUP_OPTIONS.map((bg) => <option key={bg} value={bg}>{bg}</option>)}
+                        </select>
+                      </div>
                       <FieldInput label="Allergies"          value={form.allergies}          onChange={(v) => set("allergies", v)}          placeholder="e.g., Penicillin" />
                       <FieldInput label="Emergency Contact"  value={form.emergency_contact}  onChange={(v) => set("emergency_contact", v)}  placeholder="Name — Phone" />
                       <FieldInput label="Insurance Provider" value={form.insurance_provider} onChange={(v) => set("insurance_provider", v)} />
@@ -832,19 +890,43 @@ function PatientProfile() {
                       No doctor assigned yet
                     </div>
                   )}
-                  <button className="mt-2 text-sm font-medium flex items-center gap-1" style={{ color: BRAND_PRIMARY }}>
-                    <Plus className="w-3.5 h-3.5" /> Add Provider
-                  </button>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* ── Files ── */}
-        {activeTab === "files" && (
+        {/* ── Medical History/Files ── */}
+        {activeTab === "medical" && (
           <div className="p-6">
             <MedicalFilesSection patientId={user?.patient_id} clinicId={user?.clinic_id} />
+          </div>
+        )}
+
+        {/* ── Verification ── */}
+        {activeTab === "verification" && (
+          <div className="p-6">
+            <h2 className="text-base font-bold text-neutral-900 mb-4">Verification</h2>
+            <ChannelVerification
+              emailVerified={user?.email_verified}
+              phoneVerified={user?.phone_verified}
+              hasEmail={!!email.trim()}
+              hasPhone={!!phone.trim()}
+              country={form.country}
+            />
+            <div>
+              <InfoRow label="Email"       value={email} />
+              <InfoRow label="Email verified" value={user?.email_verified ? "Yes" : "No"} />
+              <InfoRow label="Phone"       value={phone} />
+              <InfoRow label="Phone verified" value={user?.phone_verified ? "Yes" : "No"} />
+            </div>
+          </div>
+        )}
+
+        {/* ── Consents ── */}
+        {activeTab === "consents" && (
+          <div className="p-6">
+            <ConsentsSection patientProfileId={user?.id} />
           </div>
         )}
 

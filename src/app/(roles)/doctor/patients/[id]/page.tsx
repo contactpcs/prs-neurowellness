@@ -399,12 +399,14 @@ export default function DoctorPatientDetailPage() {
           </div>
         )}
 
-        {/* Consultation itself is frozen once any Follow-up exists */}
+        {/* Consultation itself is frozen once any Follow-up exists. No
+            heading here — the SessionTabsBar above already shows
+            "Consultation" as the active tab, so repeating it here just
+            duplicates the same label right underneath it. */}
         {!sessionId && clinicalSessions.length > 1 && (
           <div className="rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap bg-neutral-100 border border-neutral-200">
             <Lock className="w-4 h-4 text-neutral-500 flex-shrink-0" />
             <div className="flex-1 min-w-[220px]">
-              <p className="text-sm font-semibold text-neutral-900">Consultation</p>
               <p className="text-xs text-neutral-500">This session is frozen — a Follow-up already exists, so its data is read-only.</p>
             </div>
             <button

@@ -169,20 +169,18 @@ export default function CADashboard() {
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <span className="text-sm font-medium text-neutral-900">
+                    <p className="text-sm font-semibold text-neutral-900 truncate">{s.patient_name || "—"}</p>
+                    <p className="text-xs text-neutral-500 mt-0.5">
                       {s.appointment_type === "device_session"
                         ? `Device Session${s.session_number ? ` ${s.session_number}` : ""}`
                         : "Protocol Follow-up"}
-                    </span>
-                    {s.patient_name && (
-                      <span className="text-xs text-neutral-500 ml-2">{s.patient_name}</span>
-                    )}
+                    </p>
                   </div>
                   <span className={`text-xs font-medium px-2 py-1 rounded-full flex-shrink-0 ${STATUS_TONE[s.status] ?? "bg-neutral-100 text-neutral-600"}`}>
                     {s.status.replace(/_/g, " ")}
                   </span>
                 </div>
-                <p className="text-xs text-neutral-400 mt-0.5">{fmtDate(s.appointment_date)}</p>
+                <p className="text-xs text-neutral-400 mt-1">{fmtDate(s.appointment_date)}</p>
               </Link>
             ))}
             {upcoming.length === 0 && (

@@ -220,9 +220,15 @@ export default function DoctorAppointmentsPage() {
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-bold text-neutral-900">{sel.patient_name ?? "Patient"}</h2>
-                  <Link href={`/doctor/patients/${sel.patient_public_id ?? sel.patient_id}`}>
-                    <Eye className="w-3.5 h-3.5 text-neutral-400 hover:text-neutral-600 transition-colors" />
-                  </Link>
+                  {/* Direct jump into the clinical workspace — only once
+                      checked-in and started (or already completed); before
+                      that, "Start Visit" below routes through the
+                      appointment detail page's own status actions instead. */}
+                  {sel.appointment_type !== "device_session" && ["in_progress", "completed"].includes(sel.status) && (
+                    <Link href={`/doctor/patients/${sel.patient_public_id ?? sel.patient_id}`}>
+                      <Eye className="w-3.5 h-3.5 text-neutral-400 hover:text-neutral-600 transition-colors" />
+                    </Link>
+                  )}
                 </div>
                 <p className="text-xs text-neutral-500 mt-1 capitalize">
                   {(sel.appointment_type ?? "").replace(/_/g, " ")}

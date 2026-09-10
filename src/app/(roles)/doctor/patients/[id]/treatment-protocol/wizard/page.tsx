@@ -44,6 +44,7 @@ interface WizardState {
    *  duration/ramp are the sole prescription (54). */
   montageMode: "catalogue" | "custom";
   customMontageId: string | null;
+  customMontageName: string | null;
   dosingId: string | null;
   currentMa: string;
   sessionDurationMin: string;
@@ -64,7 +65,7 @@ function emptyState(): WizardState {
   return {
     deviceId: null, deviceUnitId: null, conditionIds: [], diagnosisIds: [],
     placementId: null, anodeSite: null, cathodeSites: [],
-    montageMode: "catalogue", customMontageId: null,
+    montageMode: "catalogue", customMontageId: null, customMontageName: null,
     dosingId: null, currentMa: "", sessionDurationMin: "", rampSeconds: "30",
     sessionCount: "20", sessionsPerWeek: 5, followUpEveryN: "",
     startDate: todayIso(), skipDates: [], extraDates: [],
@@ -431,7 +432,7 @@ export default function TreatmentProtocolWizardPage() {
     // saved custom montage is a snapshot of one specific combination, and
     // this new combination (matched or not) supersedes it until the doctor
     // explicitly saves a new one via the "Save as Custom Montage" panel.
-    setState((s) => ({ ...s, anodeSite, cathodeSites, placementId: matched ? matched.placement_id : null, montageMode: "catalogue", customMontageId: null }));
+    setState((s) => ({ ...s, anodeSite, cathodeSites, placementId: matched ? matched.placement_id : null, montageMode: "catalogue", customMontageId: null, customMontageName: null }));
 
     if (state.deviceId && anodeSite) {
       try {
@@ -447,7 +448,7 @@ export default function TreatmentProtocolWizardPage() {
     setState((s) => ({
       ...s, placementId: p.placement_id, anodeSite: p.anode_site || null,
       cathodeSites: p.cathode_site ? [p.cathode_site] : (p.return_sites || []),
-      montageMode: "catalogue", customMontageId: null,
+      montageMode: "catalogue", customMontageId: null, customMontageName: null,
     }));
     setValidation(null);
   };
@@ -470,7 +471,7 @@ export default function TreatmentProtocolWizardPage() {
         clinical_reasoning: clinicalReasoning,
       };
       const created = await treatmentProtocolService.createCustomMontage(body);
-      setState((s) => ({ ...s, placementId: null, customMontageId: created.custom_montage_id, montageMode: "custom" }));
+      setState((s) => ({ ...s, placementId: null, customMontageId: created.custom_montage_id, customMontageName: created.montage_name, montageMode: "custom" }));
     } catch (e: any) {
       setMontageErr(e?.response?.data?.detail?.message || e?.response?.data?.message || "Couldn't save this montage — try a different name.");
     } finally {
@@ -892,7 +893,9 @@ function LiveSummary({
     ["Device", device ? `${device.device_name} (${device.modality})` : "—"],
     ["Condition", conditionNames.length ? conditionNames.join(", ") : "—"],
     ["Dx codes", diagnosisCount ? `${diagnosisCount} selected` : "—"],
-    ["Montage", state.anodeSite ? `${state.anodeSite} → ${state.cathodeSites.join(", ") || "—"}` : "—"],
+    ["Montage", state.montageMode === "custom" && state.customMontageName
+      ? `${state.customMontageName} (custom)`
+      : state.anodeSite ? `${state.anodeSite} → ${state.cathodeSites.join(", ") || "—"}` : "—"],
     ["Dose", state.currentMa || state.sessionDurationMin ? `${state.currentMa || "—"} mA · ${state.sessionDurationMin || "—"} min` : "—"],
     ["Frequency", `${state.sessionsPerWeek === 7 ? "Daily" : `${state.sessionsPerWeek}×/week`} × ${state.sessionCount || "—"} sessions`],
     ["Scales", state.scales.length ? state.scales.map((s) => s.displayName).join(", ") : "—"],
@@ -1130,7 +1133,13 @@ function PlacementStep({
       {isCustomSaved && (
         <div className="flex items-start gap-2.5 border border-blue-100 bg-blue-50 rounded-lg px-3.5 py-2.5">
           <ShieldCheck className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-blue-800 leading-relaxed">Custom montage saved — this protocol will use it instead of a catalogue placement. Redraw the map to change it.</p>
+          <p className="text-xs text-blue-800 leading-relaxed">
+            {state.customMontageName ? (
+              <>Custom montage <span className="font-semibold">"{state.customMontageName}"</span> saved — this protocol will use it instead of a catalogue placement. Redraw the map to change it.</>
+            ) : (
+              "Custom montage saved — this protocol will use it instead of a catalogue placement. Redraw the map to change it."
+            )}
+          </p>
         </div>
       )}
 
@@ -1426,7 +1435,7 @@ function ScheduleStep({
         <div className="flex items-center gap-4 text-xs text-neutral-500 flex-wrap">
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-blue-600 inline-block" />Session</span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block" />Follow-up</span>
-          <span>Click a scheduled day to skip it · click an empty weekday to add an extra session</span>
+          <span>Click a scheduled day to skip it · click an empty weekday to move a session onto that day</span>
         </div>
 
         {loading && <p className="text-xs text-neutral-400">Refreshing preview…</p>}
@@ -1559,6 +1568,9 @@ function ReviewStep({
         ? `${state.anodeSite} → ${state.cathodeSites.join(", ") || "—"}${state.montageMode === "custom" ? " (custom)" : ""}`
         : "—",
       rows: [
+        ...(state.montageMode === "custom" && state.customMontageName
+          ? ([["Montage name", state.customMontageName]] as [string, string][])
+          : []),
         ["Anode", state.anodeSite || "—"],
         ["Cathode", state.cathodeSites.join(", ") || "—"],
         [

@@ -242,8 +242,16 @@ export function SessionReviewPanel({
               items={[
                 ["Device", protocol.device_name || "—"],
                 ["Montage", protocol.placement_summary || protocol.custom_montage?.montage_name || "—"],
-                ["Anode (+)", protocol.placement?.anode_site || "—"],
-                ["Cathode (–)", protocol.placement?.cathode_site || (protocol.placement?.return_sites?.join(", ") ?? "—")],
+                // A protocol uses either a catalogue placement (singular
+                // anode_site/cathode_site/return_sites) or a custom montage
+                // (plural anode_sites/cathode_sites) — never both. Without
+                // this fallback, a custom-montage protocol showed its name
+                // correctly above but blank Anode/Cathode rows here.
+                ["Anode (+)", protocol.placement?.anode_site || protocol.custom_montage?.anode_sites?.[0] || "—"],
+                ["Cathode (–)", protocol.placement?.cathode_site
+                  || (protocol.placement?.return_sites?.join(", ") ?? "")
+                  || protocol.custom_montage?.cathode_sites?.join(", ")
+                  || "—"],
                 ["Prescribed Current", protocol.prescribed_current_ma != null ? `${protocol.prescribed_current_ma} mA` : "—"],
                 ["Actual Current", detail.actual_intensity_ma != null ? `${detail.actual_intensity_ma} mA${detail.intensity_deviates ? " (deviated)" : ""}` : "—"],
                 ["Prescribed Duration", plannedMin != null ? `${plannedMin} min` : "—"],
