@@ -38,7 +38,7 @@ export default function LoginPage() {
   return (
     <div>
       <div className="mb-7">
-        <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">Welcome Back</h2>
+        <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">Welcome </h2>
         <p className="text-sm text-neutral-500 mt-1.5">Sign in to your Anava account</p>
       </div>
 
