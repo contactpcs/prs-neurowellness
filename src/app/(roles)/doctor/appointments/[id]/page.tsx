@@ -330,10 +330,11 @@ export default function AppointmentDetailPage() {
   const canNoShow     = ["selected", "paid", "checked_in"].includes(status);
   const canCancel     = ["planned", "selected", "paid", "checked_in", "in_progress"].includes(status);
   const canReschedule = ["selected", "paid", "checked_in", "in_progress"].includes(status);
-  // Consultation/Follow-up workspace only opens once checked-in AND started
-  // (status has reached in_progress) or the session is already completed —
-  // device sessions are exempt, that link is a read-only review, not the
-  // live workspace.
+  // Consultation / Follow-up / Protocol Follow-up workspace opens ONLY once
+  // the doctor has clicked "Start Consultation" (status -> in_progress), or
+  // the session is already completed. Check-in / No-Show / Reschedule do NOT
+  // open it. Device sessions are exempt — that link is a read-only review,
+  // not the live workspace.
   const workspaceLocked = appointment.appointment_type !== "device_session" && !["in_progress", "completed"].includes(status);
 
   const cfg = STATUS_CONFIG[status];
@@ -432,18 +433,17 @@ export default function AppointmentDetailPage() {
                 ? "The treatment delivered, device readings, patient response, and safety checks for this device session are recorded read-only by the clinical assistant."
                 : "Anamnesis, Medical History, PRS, Brain Mapping, Doctor Notes, Diagnosis, and Treatment Protocol are recorded in the patient's clinical workspace."}
               {status === "completed" && appointment.appointment_type !== "device_session" && " This session is complete — its data is frozen; open the workspace to view it or add a new Follow-up for further changes."}
-              {/* workspaceLocked: gates entry until the patient has actually
-                  been checked in and the doctor has clicked "Start
-                  Consultation" (status -> in_progress) — before that there's
-                  nothing to work on yet, so the workspace stayed reachable
-                  from here regardless of status. Device sessions are exempt:
+              {/* workspaceLocked: gates entry until the doctor clicks "Start
+                  Consultation" (status -> in_progress). That action is the
+                  ONLY trigger — check-in / no-show / reschedule leave the
+                  workspace and its tabs inert. Device sessions are exempt:
                   that link opens a read-only review, not the live workspace. */}
-              {workspaceLocked && " Check in the patient and start the consultation to open the clinical workspace."}
+              {workspaceLocked && " Click “Start Consultation” to open the clinical workspace."}
             </p>
             {workspaceLocked ? (
               <span
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-neutral-100 text-neutral-400 text-xs font-semibold cursor-not-allowed"
-                title="Available once the patient is checked in and the consultation has started"
+                title="Available once the doctor clicks Start Consultation"
               >
                 Open Clinical Workspace
               </span>

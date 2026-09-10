@@ -103,7 +103,7 @@ export default function DoctorPatientDetailPage() {
   // under a Follow-up / Protocol Follow-up session context even if the URL
   // still carries an old ?section=registration-record.
   const selectedSection = sessionId && rawSelectedSection === "registration-record" ? "anamnesis" : rawSelectedSection;
-  const { sessions: clinicalSessions, isLoading: sessionsLoading } = usePatientClinicalSessions(id);
+  const { sessions: clinicalSessions, isLoading: sessionsLoading, hasStartedConsultation } = usePatientClinicalSessions(id);
   const currentSessionIdx = sessionId
     ? clinicalSessions.findIndex((s) => s.appointment.appointment_id === sessionId)
     : clinicalSessions.findIndex((s) => s.appointment.appointment_type === "initial");
@@ -117,10 +117,17 @@ export default function DoctorPatientDetailPage() {
     currentSession?.appointment.appointment_id ?? null,
   );
   const isLatestSession = currentSessionIdx >= 0 && currentSessionIdx === clinicalSessions.length - 1;
-  // Don't gate anything until the session list has actually loaded (avoids
-  // a flash of "locked" on first render), and don't gate at all if there's
-  // nothing to compare against yet.
-  const sessionLocked = !sessionsLoading && clinicalSessions.length > 0 && !isLatestSession;
+  // The workspace is editable ONLY while the session being viewed is the
+  // newest one the doctor has clicked "Start Consultation" on. Two read-only
+  // cases, both driven purely by that action (never by check-in / no-show /
+  // reschedule):
+  //   1. currentSessionIdx < 0 — this session has no tab yet, i.e. its
+  //      consultation was never started. Nothing on it may be edited.
+  //   2. !isLatestSession — a newer Consultation/Follow-up has since been
+  //      started, so this record is frozen historical data.
+  // Guarded by !sessionsLoading to avoid a "locked" flash on first render.
+  const consultationNotStarted = !sessionsLoading && currentSessionIdx < 0;
+  const sessionLocked = !sessionsLoading && (currentSessionIdx < 0 || !isLatestSession);
   const [finalReportFor, setFinalReportFor] = useState<typeof currentSession>(null);
   const [showCompare, setShowCompare] = useState(false);
   const [finalReportProtocol, setFinalReportProtocol] = useState<ProtocolRead | null>(null);
@@ -380,6 +387,24 @@ export default function DoctorPatientDetailPage() {
 
         {/* Consultation / Follow-up / Protocol Follow-up session switcher */}
         <SessionTabsBar patientId={id} activeSessionId={sessionId} onCompare={clinicalSessions.length >= 2 ? () => setShowCompare(true) : undefined} />
+
+        {/* Not started yet — no tab has been created for this session because
+            the doctor hasn't clicked "Start Consultation". The workspace is
+            visible for context but every action on it is read-only until then.
+            Check-in / No-Show / Reschedule never unlock it. */}
+        {consultationNotStarted && (
+          <div className="rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap bg-amber-50 border border-amber-200">
+            <Lock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            <div className="flex-1 min-w-[220px]">
+              <p className="text-sm font-semibold text-amber-900">
+                {sessionId ? "Session not started" : "Consultation not started"}
+              </p>
+              <p className="text-xs text-amber-700">
+                This workspace is read-only until the doctor clicks “Start Consultation” on the appointment.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Session context banner — only for a Follow-up / Protocol Follow-up
             session; the Consultation view (no ?session=) doesn't need one. */}
