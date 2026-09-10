@@ -73,6 +73,15 @@ export const ENDPOINTS = {
     // disease_id contains "/" (e.g. "CHRONICPAIN/2026") — pass via axios's
     // `params` option so it gets encoded correctly.
     PATIENTS_OVERVIEW: "/reports/doctor/patients-overview",
+    // real — all-diseases cohort landing view, no query param (scoped to
+    // the calling doctor server-side, same as PATIENTS_OVERVIEW).
+    DISEASES_OVERVIEW: "/reports/doctor/diseases-overview",
+    // real — per-scale history for one patient, ?disease_id= query param.
+    SCALE_TRAJECTORIES: (patientId: string) => `/reports/doctor/patients/${patientId}/scale-trajectories`,
+    // real — weekly composite trend table, ?disease_id=&weeks= query params.
+    WEEKLY_TREND: "/reports/doctor/weekly-trend",
+    // real — treatment protocol outcomes + protocol-vs-scale heatmap, ?disease_id=.
+    PROTOCOL_OUTCOMES: "/reports/doctor/protocol-outcomes",
   },
 
   // ─── Patients (patient-role self views) ───
