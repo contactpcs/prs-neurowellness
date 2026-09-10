@@ -75,6 +75,11 @@ function fmtDate(s: string) {
   });
 }
 
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export default function ClinicalAssistantAppointmentsPage() {
   const { user } = useAuth();
   const router = useRouter();
@@ -83,7 +88,14 @@ export default function ClinicalAssistantAppointmentsPage() {
   const [err, setErr]           = useState<string | null>(null);
   const [status, setStatus]     = useState<string>("all");
   const [q, setQ]               = useState("");
-  const [dateFrom, setDateFrom] = useState("");
+  // Defaults to today onward, not unbounded — with no lower bound, the
+  // backend's ORDER BY appointment_date ASC + LIMIT 200 (repository.py's
+  // AppointmentRepository.list) returns the 200 OLDEST rows across this
+  // clinic's whole history once that many have accumulated, silently
+  // starving out today's and future sessions from ever appearing. Doesn't
+  // collapse to a single day (unlike the CA dashboard's date pill) so the
+  // existing date-range picker below still lets a CA look further ahead.
+  const [dateFrom, setDateFrom] = useState(todayStr);
   const [dateTo, setDateTo]     = useState("");
 
   const fetchRows = useCallback(() => {
@@ -176,9 +188,9 @@ export default function ClinicalAssistantAppointmentsPage() {
             min={dateFrom || undefined}
             className="h-[38px] px-2.5 rounded-lg border border-neutral-300 bg-white text-sm text-neutral-700 outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
           />
-          {(dateFrom || dateTo) && (
+          {(dateFrom !== todayStr() || dateTo) && (
             <button
-              onClick={() => { setDateFrom(""); setDateTo(""); }}
+              onClick={() => { setDateFrom(todayStr()); setDateTo(""); }}
               className="h-[38px] px-2.5 rounded-lg text-xs font-medium text-neutral-500 hover:text-neutral-700 hover:bg-neutral-100 transition-colors"
             >
               Clear

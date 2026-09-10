@@ -60,6 +60,16 @@ function statusTone(status: string): string {
 
 function ElectrodeChips({ detail }: { detail: ProtocolDetail }) {
   const p = detail.placement;
+  // A protocol uses either a catalogue placement (p, singular anode_site/
+  // cathode_site/return_sites) or a custom montage (custom_montage, plural
+  // anode_sites/cathode_sites) — never both (chk_protocol_plan_one_placement).
+  // Without this fallback, a custom-montage protocol showed blank ANODE/
+  // CATHODE chips here even though the sites were saved and available.
+  const anodeSite = p?.anode_site || detail.custom_montage?.anode_sites?.[0] || "—";
+  const cathodeSite = p?.cathode_site
+    || (p?.return_sites?.join(", ") || "")
+    || detail.custom_montage?.cathode_sites?.join(", ")
+    || "—";
   return (
     <Card>
       <CardContent className="space-y-4">
@@ -67,11 +77,11 @@ function ElectrodeChips({ detail }: { detail: ProtocolDetail }) {
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-center">
             <p className="text-xs font-semibold text-red-600 tracking-wide">ANODE (+)</p>
-            <p className="text-2xl font-bold text-red-700 mt-1">{p?.anode_site || "—"}</p>
+            <p className="text-2xl font-bold text-red-700 mt-1">{anodeSite}</p>
           </div>
           <div className="rounded-xl bg-blue-50 border border-blue-100 px-4 py-3 text-center">
             <p className="text-xs font-semibold text-blue-600 tracking-wide">CATHODE (–)</p>
-            <p className="text-2xl font-bold text-blue-700 mt-1">{p?.cathode_site || (p?.return_sites?.join(", ") || "—")}</p>
+            <p className="text-2xl font-bold text-blue-700 mt-1">{cathodeSite}</p>
           </div>
         </div>
         <div className="space-y-2 text-sm pt-1">
@@ -512,7 +522,13 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
                           </p>
                         </div>
                         <div className="text-xs text-neutral-500 hidden sm:block">
-                          {p.placement_summary || "—"}
+                          {/* placement_summary is null for a custom montage
+                              (backend only derives it from a catalogue
+                              placement) — this list row doesn't carry the
+                              hydrated custom_montage object with its name
+                              (only the full detail fetch below does), so
+                              fall back to a generic label rather than "—". */}
+                          {p.placement_summary || (p.custom_montage_id ? "Custom montage" : "—")}
                         </div>
                         <ChevronRight className="h-4 w-4 text-neutral-300" />
                       </CardContent>
@@ -545,7 +561,7 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
                         ["Used for", `Sessions 1–${detail.session_count}`],
                         ["Created", fmtDate(detail.created_at)],
                         ["Device / Modality", detail.device_name ? `${detail.device_name} · ${detail.modality}` : detail.modality || "—"],
-                        ["Placement", detail.placement_summary || "—"],
+                        ["Placement", detail.placement_summary || detail.custom_montage?.montage_name || "—"],
                         ["Current", detail.dosing?.current_ma_min != null ? `${detail.dosing.current_ma_min} mA` : detail.dosing?.total_current_ma != null ? `${detail.dosing.total_current_ma} mA` : "—"],
                         ["Duration", detail.dosing?.session_duration_min != null ? `${detail.dosing.session_duration_min} min` : "—"],
                       ] as [string, string][]).map(([k, v]) => (

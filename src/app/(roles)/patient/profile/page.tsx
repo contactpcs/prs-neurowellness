@@ -814,7 +814,15 @@ function PatientProfile() {
                       </select>
                     </div>
                     <FieldInput label="Occupation"   value={form.occupation}   onChange={(v) => set("occupation", v)} />
-                    <FieldInput label="Marital Status" value={form.marital_status} onChange={(v) => set("marital_status", v)} placeholder="e.g., Single, Married" />
+                    <div>
+                      <label className={labelCls}>Marital Status</label>
+                      <select className={inputCls} value={form.marital_status} onChange={(e) => set("marital_status", e.target.value)}>
+                        <option value="">Select</option>
+                        <option value="single">Single</option>
+                        <option value="married">Married</option>
+                        <option value="undisclosed">Undisclosed</option>
+                      </select>
+                    </div>
                     <FieldInput
                       label="Emergency Contact Name"
                       value={form.emergency_contact}
@@ -858,7 +866,7 @@ function PatientProfile() {
                     {form.id_type === "aadhaar" && form.government_id.length > 0 && form.government_id.length !== 12 && (
                       <p className="text-xs text-red-600">Aadhaar number must be exactly 12 digits.</p>
                     )}
-                    <FieldInput label="Language"     value={form.language_pref} onChange={(v) => set("language_pref", v)} />
+                    <FieldInput label="Mother Tongue" value={form.language_pref} onChange={(v) => set("language_pref", v)} />
 
                     {saveError && (
                       <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
@@ -898,7 +906,7 @@ function PatientProfile() {
                     <InfoRow label="Marital Status" value={form.marital_status} />
                     <InfoRow label="Government ID"  value={form.government_id} />
                     <InfoRow label="ID Type"        value={form.id_type} />
-                    <InfoRow label="Language"     value={form.language_pref} />
+                    <InfoRow label="Mother Tongue" value={form.language_pref} />
                   </div>
                 )}
               </div>

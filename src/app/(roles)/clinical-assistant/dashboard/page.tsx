@@ -72,11 +72,18 @@ export default function CADashboard() {
 
     Promise.all([
       staffService.getDashboard().catch(() => ({ patient_count: 0, pending_count: 0 })),
+      // getDashboard()'s own pending_count counts anyone still mid-registration
+      // wizard (registration_status !== "registration_complete") — a much
+      // broader, wrong-for-this-card definition than an actual pending
+      // approval. getPendingPatients() is the same approval_status=pending
+      // AND registration_status=registration_complete query the /approvals
+      // page itself uses, so the two numbers can no longer disagree.
+      staffService.getPendingPatients().catch(() => ({ patients: [], total: 0 })),
       apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, { params: { ...params, appointment_type: "device_session" } }).catch(() => ({ data: [] })),
       apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, { params: { ...params, appointment_type: "protocol_followup" } }).catch(() => ({ data: [] })),
-    ]).then(([dash, deviceRes, followUpRes]) => {
+    ]).then(([dash, pending, deviceRes, followUpRes]) => {
       setPatientCount(dash.patient_count ?? 0);
-      setPendingCount(dash.pending_count ?? 0);
+      setPendingCount(pending.total ?? 0);
       const device: UpcomingRow[] = Array.isArray(deviceRes.data) ? deviceRes.data : [];
       const followUps: UpcomingRow[] = Array.isArray(followUpRes.data) ? followUpRes.data : [];
       setSessions([...device, ...followUps]);

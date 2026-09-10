@@ -106,11 +106,17 @@ function PatientDashboard() {
   const scoreInstances = summary?.instances ?? [];
 
   const upcomingAppts = appointments
-    .filter((a) => ["selected", "paid", "checked_in", "in_progress"].includes(a.status))
-    .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+    // "planned" included: a device_session/protocol_followup born from a
+    // treatment protocol starts here with a date but no claimed time slot
+    // (scheduling/service.py — "doctor set a DATE at protocol setup. No
+    // slot yet, no hold"). Excluding it meant these sessions were invisible
+    // on the dashboard until the patient already knew to go claim a slot
+    // from somewhere else — nothing here ever prompted them to.
+    .filter((a) => ["planned", "selected", "paid", "checked_in", "in_progress"].includes(a.status))
+    .sort((a, b) => new Date(a.start_at || `${a.appointment_date}T00:00:00`).getTime() - new Date(b.start_at || `${b.appointment_date}T00:00:00`).getTime());
 
   const nextAppt = upcomingAppts[0];
-  const daysToNext = nextAppt ? daysUntil(nextAppt.start_at) : null;
+  const daysToNext = nextAppt ? daysUntil(nextAppt.start_at || nextAppt.appointment_date) : null;
   const unpaidAppts = upcomingAppts.filter((a) => a.status === "selected");
   const hasUnpaidAppt = unpaidAppts.length > 0;
 
@@ -208,12 +214,12 @@ function PatientDashboard() {
                       Next
                     </p>
                     <p className="text-base font-bold leading-tight">
-                      {new Date(nextAppt.start_at).toLocaleDateString("en-US", {
+                      {new Date(nextAppt.start_at || `${nextAppt.appointment_date}T00:00:00`).toLocaleDateString("en-US", {
                         month: "short", day: "numeric",
                       })}
                     </p>
                     <p className="text-[10px] text-blue-100 mt-0.5">
-                      {formatTime(nextAppt.start_time)}
+                      {nextAppt.status === "planned" ? "No time booked yet" : formatTime(nextAppt.start_time)}
                     </p>
                   </div>
                 )}
@@ -223,6 +229,14 @@ function PatientDashboard() {
                     className="bg-white text-[#09172E] rounded-lg px-3.5 py-2 text-xs font-semibold hover:bg-blue-50 transition-colors"
                   >
                     Pay Now
+                  </button>
+                )}
+                {nextAppt?.status === "planned" && (nextAppt.appointment_type === "device_session" || nextAppt.appointment_type === "protocol_followup") && (
+                  <button
+                    onClick={() => router.push(`/patient/appointments/${nextAppt.appointment_id}`)}
+                    className="bg-white text-[#09172E] rounded-lg px-3.5 py-2 text-xs font-semibold hover:bg-blue-50 transition-colors"
+                  >
+                    Select Slot
                   </button>
                 )}
                 {doctor && (
@@ -378,10 +392,10 @@ function PatientDashboard() {
                   <div key={appt.appointment_id} className="px-4 py-2.5 flex items-center gap-3">
                     <div className="text-center w-8 flex-shrink-0">
                       <p className="text-sm font-bold text-gray-900 leading-none">
-                        {getDayOfMonth(appt.start_at)}
+                        {getDayOfMonth(appt.start_at || appt.appointment_date)}
                       </p>
                       <p className="text-[10px] font-medium text-gray-400">
-                        {getMonthAbbr(appt.start_at)}
+                        {getMonthAbbr(appt.start_at || appt.appointment_date)}
                       </p>
                     </div>
                     <div className="flex-1 min-w-0">
@@ -389,7 +403,10 @@ function PatientDashboard() {
                         {appt.reason ?? appt.appointment_type?.replace(/_/g, " ")}
                       </p>
                       <p className="text-[10px] text-gray-500 mt-0.5">
-                        {formatTime(appt.start_time)}
+                        {/* "planned" (protocol-born device_session/follow-up)
+                            carries a date and no time yet — the patient picks
+                            the slot; saying so beats a blank time column. */}
+                        {appt.status === "planned" ? "No time booked yet" : formatTime(appt.start_time)}
                         {appt.doctor_name ? ` · Dr. ${appt.doctor_name.split(" ").pop()}` : ""}
                         {" · In-person"}
                       </p>
@@ -403,6 +420,15 @@ function PatientDashboard() {
                           style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
                         >
                           <CreditCard className="w-3 h-3" /> Pay now
+                        </button>
+                      )}
+                      {appt.status === "planned" && (appt.appointment_type === "device_session" || appt.appointment_type === "protocol_followup") && (
+                        <button
+                          onClick={() => router.push(`/patient/appointments/${appt.appointment_id}`)}
+                          className="flex items-center gap-1 text-[10px] font-semibold text-white px-2 py-1 rounded-md hover:opacity-90"
+                          style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
+                        >
+                          <Calendar className="w-3 h-3" /> Select slot
                         </button>
                       )}
                     </div>

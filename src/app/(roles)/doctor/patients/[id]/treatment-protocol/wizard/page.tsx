@@ -103,24 +103,34 @@ export default function TreatmentProtocolWizardPage() {
   // wizard (or from "new" to "modify") never resumes someone else's
   // half-filled draft.
   const storageKey = `treatment-protocol-wizard:${patientId}:${mode}:${priorProtocolId ?? ""}`;
-  const [step, setStep] = useState<number>(() => {
-    if (typeof window === "undefined") return 0;
+  // A draft older than this reads as abandoned, not "the doctor stepped
+  // away for a moment" — silently resuming straight onto whatever step a
+  // days-old (or even a same-day, long-forgotten) session left off at was
+  // the actual bug reported here: a brand-new "New Treatment Protocol"
+  // landed directly on Scales because a stale draft's step/state was still
+  // sitting in sessionStorage from an earlier, abandoned attempt for the
+  // same patient. Only a genuine refresh/back-forward within this window
+  // still resumes; anything past it starts clean from step 0.
+  const DRAFT_TTL_MS = 30 * 60 * 1000;
+  const readDraft = (): { step: number; state: WizardState } | null => {
+    if (typeof window === "undefined") return null;
     try {
       const raw = sessionStorage.getItem(storageKey);
-      return raw ? (JSON.parse(raw).step ?? 0) : 0;
-    } catch { return 0; }
-  });
-  const [state, setState] = useState<WizardState>(() => {
-    if (typeof window === "undefined") return emptyState();
-    try {
-      const raw = sessionStorage.getItem(storageKey);
-      return raw ? { ...emptyState(), ...JSON.parse(raw).state } : emptyState();
-    } catch { return emptyState(); }
-  });
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.savedAt !== "number" || Date.now() - parsed.savedAt > DRAFT_TTL_MS) {
+        sessionStorage.removeItem(storageKey);
+        return null;
+      }
+      return { step: parsed.step ?? 0, state: { ...emptyState(), ...parsed.state } };
+    } catch { return null; }
+  };
+  const [step, setStep] = useState<number>(() => readDraft()?.step ?? 0);
+  const [state, setState] = useState<WizardState>(() => readDraft()?.state ?? emptyState());
 
   useEffect(() => {
     try {
-      sessionStorage.setItem(storageKey, JSON.stringify({ step, state }));
+      sessionStorage.setItem(storageKey, JSON.stringify({ step, state, savedAt: Date.now() }));
     } catch {
       // Storage full/unavailable (private browsing, quota) — the wizard
       // still works for the current session, it just won't survive a

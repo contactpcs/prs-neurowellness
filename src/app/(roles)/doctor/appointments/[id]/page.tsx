@@ -632,7 +632,7 @@ export default function AppointmentDetailPage() {
           <div className="bg-white rounded-2xl border border-neutral-200 p-5">
             <h2 className="text-sm font-semibold text-neutral-900 mb-3">Details</h2>
             <dl className="space-y-2 text-xs">
-              <MetaRow label="ID" value={appointment.appointment_id.slice(0, 8) + "…"} />
+              <MetaRow label="MRN" value={appointment.patient_mrn || "—"} />
               <MetaRow label="Status" value={STATUS_CONFIG[status].label} />
               {appointment.rescheduled_from && (
                 <MetaRow
