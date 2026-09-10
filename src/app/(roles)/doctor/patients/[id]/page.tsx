@@ -486,7 +486,13 @@ export default function DoctorPatientDetailPage() {
                   patientId={id}
                   mode="doctor"
                   assessmentStage="main"
-                  initialRecord={visitSummaryLoading ? undefined : visitSummary?.anamnesis ?? null}
+                  initialRecord={
+                    sessionLocked
+                      ? undefined // frozen: let the form self-fetch the patient-wide latest (matches its own banner text) instead of this older visit's own (often-null) get_by_appointment record
+                      : visitSummaryLoading
+                        ? undefined
+                        : (visitSummary?.anamnesis ?? null)
+                  }
                   onSubmitted={() => {
                     dispatch(invalidatePatientAnamnesis({ patientId: id, stage: "main" }));
                     reloadVisitSummary();
