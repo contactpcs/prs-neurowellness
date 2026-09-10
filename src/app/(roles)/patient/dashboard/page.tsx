@@ -103,7 +103,6 @@ function PatientDashboard() {
   const firstName = fullName ? fullName.split(" ")[0] : "User";
 
   const pendingAssessments = assessments.filter((a) => a.status === "granted");
-  const hasAnyAssessments  = assessments.length > 0;
   const scoreInstances = summary?.instances ?? [];
 
   const upcomingAppts = appointments
@@ -134,7 +133,7 @@ function PatientDashboard() {
       {/* Header */}
       <div className="pb-3 flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <h1 className="text-lg font-bold text-gray-900 truncate">Welcome back, {firstName}!</h1>
+          <h1 className="text-lg font-bold text-gray-900 truncate">Welcome , {firstName}!</h1>
           <p className="text-xs text-gray-500 mt-0.5 hidden sm:block">Here's your wellness summary for today.</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -242,8 +241,9 @@ function PatientDashboard() {
           </div>
         )}
 
-        {/* Action Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Action Cards — auto-fit so the row always fills the width whether
+            the optional "Pay for upcoming sessions" card is present or not. */}
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
           {/* Profile completion */}
           <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex flex-col">
             <div className="flex items-center justify-between mb-2">
@@ -278,50 +278,7 @@ function PatientDashboard() {
             )}
           </div>
 
-          {/* Consent / pending assessment */}
-          <div className={`bg-white rounded-xl p-4 border shadow-sm flex flex-col ${
-            pendingAssessments.length > 0 ? "border-blue-200" : "border-gray-100"
-          }`}>
-            <div className="flex items-center justify-between mb-2">
-              <FileText className="w-4 h-4 text-blue-500" />
-              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                pendingAssessments.length > 0
-                  ? "text-red-600 bg-red-50"
-                  : hasAnyAssessments
-                    ? "text-green-700 bg-green-50"
-                    : "text-neutral-500 bg-neutral-100"
-              }`}>
-                {pendingAssessments.length > 0
-                  ? "Action needed"
-                  : hasAnyAssessments
-                    ? "Up to date"
-                    : "Not assigned"}
-              </span>
-            </div>
-            <h3 className="text-sm font-semibold text-gray-900">Sign medical consent form</h3>
-            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-              {pendingAssessments.length > 0
-                ? "Required before your next assessment session. Review the treatment consent document and sign digitally."
-                : hasAnyAssessments
-                  ? "All consent forms are up to date."
-                  : "No assessments assigned yet. Your doctor will assign one when ready."}
-            </p>
-            {pendingAssessments.length > 0 && nextAppt && (
-              <div className="mt-2 flex items-center gap-1.5 text-[10px] text-orange-600 bg-orange-50 rounded-lg px-2.5 py-1.5">
-                <Clock className="w-3 h-3 flex-shrink-0" />
-                <span>Due before {formatShortDate(nextAppt.start_at)} — your session cannot proceed without this.</span>
-              </div>
-            )}
-            {pendingAssessments.length > 0 && (
-              <Link
-                href={`/patient/consent/${pendingAssessments[0].permission_id}`}
-                className="mt-auto w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium"
-                style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
-              >
-                Review &amp; sign <ChevronRight className="w-3.5 h-3.5" />
-              </Link>
-            )}
-          </div>
+          {/* Consent signing lives in Profile → Consents now — no dashboard card. */}
 
           {/* Pay for upcoming sessions */}
           {hasUnpaidAppt && (

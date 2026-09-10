@@ -7,6 +7,7 @@ import { Card, CardHeader, CardContent, Select, PageLoader } from "@/components/
 import { SeverityBadge } from "@/components/assessment/SeverityBadge";
 import { reportsService } from "@/lib/api/services";
 import type {
+  CohortSummary,
   DiseaseOverviewRow,
   PatientOverviewRow,
   PatientsOverviewResponse,
@@ -316,6 +317,7 @@ export default function DoctorAnalyticsPage() {
   const [diseaseId, setDiseaseId] = useState(ALL_DISEASES);
   const [patientId, setPatientId] = useState("");
   const [diseases, setDiseases] = useState<DiseaseOverviewRow[]>([]);
+  const [cohortSummary, setCohortSummary] = useState<CohortSummary | null>(null);
   const [overview, setOverview] = useState<PatientsOverviewResponse | null>(null);
   const [isLoadingDiseases, setIsLoadingDiseases] = useState(true);
   const [isLoadingOverview, setIsLoadingOverview] = useState(false);
@@ -330,7 +332,7 @@ export default function DoctorAnalyticsPage() {
     (async () => {
       try {
         const data = await reportsService.getDoctorDiseasesOverview();
-        if (!cancelled) setDiseases(data.diseases);
+        if (!cancelled) { setDiseases(data.diseases); setCohortSummary(data.summary); }
       } finally {
         if (!cancelled) setIsLoadingDiseases(false);
       }
@@ -467,6 +469,51 @@ export default function DoctorAnalyticsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {isOverview && cohortSummary && (
+        <div className="grid gap-3.5 grid-cols-[repeat(auto-fit,minmax(220px,1fr))]">
+          <Card>
+            <CardContent className="flex items-center justify-between">
+              <div className="flex flex-col gap-1">
+                <span className="text-2xl font-bold text-neutral-900">{cohortSummary.total_patients.toLocaleString()}</span>
+                <span className="text-xs text-neutral-500">Patients under review</span>
+                <span className="text-[11px] text-neutral-400">across {cohortSummary.disease_cohorts} disease cohorts</span>
+              </div>
+              <Users className="w-4 h-4 text-neutral-300" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="flex items-center justify-between">
+              <div className="flex flex-col gap-1">
+                <span className="text-2xl font-bold" style={{ color: GREEN }}>{cohortSummary.improving_pct}%</span>
+                <span className="text-xs text-neutral-500">Improving</span>
+                <span className="text-[11px] text-neutral-400">{cohortSummary.improving_patients.toLocaleString()} patients</span>
+              </div>
+              <TrendingDown className="w-4 h-4 text-neutral-300" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="flex items-center justify-between">
+              <div className="flex flex-col gap-1">
+                <span className="text-2xl font-bold" style={{ color: RED }}>{cohortSummary.worsening_pct}%</span>
+                <span className="text-xs text-neutral-500">Worsening</span>
+                <span className="text-[11px] text-neutral-400">{cohortSummary.worsening_patients.toLocaleString()} patients flagged for review</span>
+              </div>
+              <TrendingUp className="w-4 h-4 text-neutral-300" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="flex items-center justify-between">
+              <div className="flex flex-col gap-1">
+                <span className="text-2xl font-bold text-neutral-900">{cohortSummary.assessments_in_window.toLocaleString()}</span>
+                <span className="text-xs text-neutral-500">Assessments in window</span>
+                <span className="text-[11px] text-neutral-400">{cohortSummary.provisional_pending.toLocaleString()} provisional scores pending</span>
+              </div>
+              <ClipboardList className="w-4 h-4 text-neutral-300" />
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {isOverview && (
         <Card>

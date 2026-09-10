@@ -66,7 +66,7 @@ export default function ReceptionistDashboard() {
     <div className="space-y-5">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Welcome back, {user?.first_name}</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">Welcome , {user?.first_name}</h1>
         {user?.clinic_name && (
           <p className="text-xs font-medium text-primary-600 mt-0.5">{user.clinic_name}</p>
         )}

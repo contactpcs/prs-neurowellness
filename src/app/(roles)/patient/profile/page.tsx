@@ -1,10 +1,11 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   User,
-  Check, X, AlertCircle, Stethoscope, Edit2,
+  Check, X, AlertCircle, Stethoscope, Edit2, ChevronRight,
   Mail, Phone, FileText, Upload, Download, ShieldCheck, FileSignature,
 } from "lucide-react";
 import { PageLoader, Modal } from "@/components/ui";
@@ -16,7 +17,7 @@ import { extractErrorMessage } from "@/lib/api/errors";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
 import { fetchMyDoctor, selectMyDoctor, invalidateDashboard } from "@/store/slices/patientsSlice";
-import { useAuth } from "@/lib/hooks";
+import { useAuth, useMyAssessments } from "@/lib/hooks";
 import { computeProfileCompletion } from "@/lib/profileCompletion";
 import { dialCodeForCountry } from "@/lib/countries";
 
@@ -50,7 +51,7 @@ const EMPTY_FORM = {
   date_of_birth: "", gender: "",
   government_id: "", id_type: "", language_pref: "",
   address_line1: "", city: "", state: "", country: "", pincode: "",
-  blood_group: "", allergies: "", emergency_contact: "",
+  blood_group: "", allergies: "", emergency_contact: "", emergency_contact_phone: "",
   occupation: "", marital_status: "",
   insurance_provider: "", insurance_policy: "",
   weight_kg: "", height_ft: "", height_in: "",
@@ -99,6 +100,11 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
 }
 
 const BLOOD_GROUP_OPTIONS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+
+const ID_TYPE_OPTIONS = [
+  { value: "aadhaar",  label: "Aadhaar" },
+  { value: "passport", label: "Passport" },
+];
 
 const TABS: { id: TabId; label: string; Icon: React.ElementType }[] = [
   { id: "personal",     label: "Personal Information",   Icon: User        },
@@ -456,6 +462,10 @@ function MedicalFilesSection({ patientId, clinicId }: { patientId?: string; clin
 function ConsentsSection({ patientProfileId }: { patientProfileId?: string }) {
   const [consents, setConsents] = useState<ConsentRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Assessment consent forms the patient still has to review & sign — this is
+  // where that action lives now (the patient-dashboard card was removed).
+  const { assessments } = useMyAssessments();
+  const pendingToSign = assessments.filter((a) => a.status === "granted");
 
   useEffect(() => {
     if (!patientProfileId) return;
@@ -472,6 +482,29 @@ function ConsentsSection({ patientProfileId }: { patientProfileId?: string }) {
       {error && (
         <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg text-sm mb-4">
           <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+        </div>
+      )}
+
+      {pendingToSign.length > 0 && (
+        <div className="mb-4 space-y-2">
+          <p className="text-xs font-semibold text-amber-700 uppercase tracking-widest">Awaiting your signature</p>
+          {pendingToSign.map((a) => (
+            <div key={a.permission_id} className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-amber-900 truncate">
+                  {a.disease_name ? `${a.disease_name} assessment consent` : "Medical consent form"}
+                </p>
+                <p className="text-xs text-amber-700 mt-0.5">Review the treatment consent document and sign digitally.</p>
+              </div>
+              <Link
+                href={`/patient/consent/${a.permission_id}`}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white text-xs font-semibold flex-shrink-0 hover:opacity-90 transition-opacity"
+                style={{ background: BRAND }}
+              >
+                Review &amp; sign <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          ))}
         </div>
       )}
 
@@ -562,6 +595,7 @@ function PatientProfile() {
           blood_group:       (d.blood_group    as string) ?? "",
           allergies:         (d.allergies      as string) ?? "",
           emergency_contact: (d.emergency_contact_name as string) ?? "",
+          emergency_contact_phone: (d.emergency_contact_phone as string) ?? "",
           occupation:        (d.occupation     as string) ?? "",
           marital_status:    (d.marital_status as string) ?? "",
           insurance_provider:(d.insurance_provider as string) ?? "",
@@ -580,6 +614,14 @@ function PatientProfile() {
     setForm((prev) => ({ ...prev, [field]: value }));
 
   const handleSave = async () => {
+    if (form.id_type === "aadhaar" && form.government_id.length !== 12) {
+      setSaveError("Aadhaar number must be exactly 12 digits.");
+      return;
+    }
+    if (form.emergency_contact_phone.length > 0 && form.emergency_contact_phone.length !== 10) {
+      setSaveError("Emergency contact number must be exactly 10 digits.");
+      return;
+    }
     const diff = buildDiff(form, originalRef.current);
     if (!Object.keys(diff).length) { setIsEditing(false); return; }
     setIsSaving(true); setSaveError(null); setSaveSuccess(false);
@@ -601,6 +643,7 @@ function PatientProfile() {
         blood_group:       (u.blood_group    as string) ?? "",
         allergies:         (u.allergies      as string) ?? "",
         emergency_contact: (u.emergency_contact_name as string) ?? "",
+        emergency_contact_phone: (u.emergency_contact_phone as string) ?? "",
         occupation:        (u.occupation     as string) ?? "",
         marital_status:    (u.marital_status as string) ?? "",
         insurance_provider:(u.insurance_provider as string) ?? "",
@@ -772,9 +815,49 @@ function PatientProfile() {
                     </div>
                     <FieldInput label="Occupation"   value={form.occupation}   onChange={(v) => set("occupation", v)} />
                     <FieldInput label="Marital Status" value={form.marital_status} onChange={(v) => set("marital_status", v)} placeholder="e.g., Single, Married" />
-                    <FieldInput label="Emergency Contact" value={form.emergency_contact} onChange={(v) => set("emergency_contact", v)} placeholder="Name" />
-                    <FieldInput label="Government ID"  value={form.government_id} onChange={(v) => set("government_id", v)} placeholder="e.g., Aadhaar, Passport number" />
-                    <FieldInput label="ID Type"        value={form.id_type}       onChange={(v) => set("id_type", v)} placeholder="e.g., aadhaar, passport" />
+                    <FieldInput
+                      label="Emergency Contact Name"
+                      value={form.emergency_contact}
+                      onChange={(v) => set("emergency_contact", v)}
+                      placeholder="Full name"
+                    />
+                    <FieldInput
+                      label="Emergency Contact Number"
+                      value={form.emergency_contact_phone}
+                      onChange={(v) => set("emergency_contact_phone", v.replace(/\D/g, "").slice(0, 10))}
+                      type="tel"
+                      placeholder="10-digit phone number"
+                    />
+                    {form.emergency_contact_phone.length > 0 && form.emergency_contact_phone.length !== 10 && (
+                      <p className="text-xs text-red-600">Emergency contact number must be exactly 10 digits.</p>
+                    )}
+                    <div>
+                      <label className={labelCls}>ID Type</label>
+                      <select
+                        className={inputCls}
+                        value={form.id_type}
+                        onChange={(e) => {
+                          const t = e.target.value;
+                          set("id_type", t);
+                          // Aadhaar is digits-only, exactly 12 — re-sanitize any
+                          // value already typed under a different ID type.
+                          if (t === "aadhaar") set("government_id", form.government_id.replace(/\D/g, "").slice(0, 12));
+                        }}
+                      >
+                        <option value="">Select</option>
+                        {ID_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                    </div>
+                    <FieldInput
+                      label={form.id_type === "aadhaar" ? "Aadhaar Number" : "Government ID"}
+                      value={form.government_id}
+                      onChange={(v) => set("government_id", form.id_type === "aadhaar" ? v.replace(/\D/g, "").slice(0, 12) : v)}
+                      type={form.id_type === "aadhaar" ? "tel" : "text"}
+                      placeholder={form.id_type === "aadhaar" ? "12-digit Aadhaar number" : "e.g., Aadhaar, Passport number"}
+                    />
+                    {form.id_type === "aadhaar" && form.government_id.length > 0 && form.government_id.length !== 12 && (
+                      <p className="text-xs text-red-600">Aadhaar number must be exactly 12 digits.</p>
+                    )}
                     <FieldInput label="Language"     value={form.language_pref} onChange={(v) => set("language_pref", v)} />
 
                     {saveError && (
@@ -845,7 +928,6 @@ function PatientProfile() {
                         </select>
                       </div>
                       <FieldInput label="Allergies"          value={form.allergies}          onChange={(v) => set("allergies", v)}          placeholder="e.g., Penicillin" />
-                      <FieldInput label="Emergency Contact"  value={form.emergency_contact}  onChange={(v) => set("emergency_contact", v)}  placeholder="Name — Phone" />
                       <FieldInput label="Insurance Provider" value={form.insurance_provider} onChange={(v) => set("insurance_provider", v)} />
                       <FieldInput label="Policy Number"      value={form.insurance_policy}   onChange={(v) => set("insurance_policy", v)} />
                     </div>
@@ -855,7 +937,8 @@ function PatientProfile() {
                       <InfoRow label="Height"             value={form.height_ft ? `${form.height_ft}′ ${form.height_in || "0"}″` : null} />
                       <InfoRow label="Blood Group"        value={form.blood_group} />
                       <InfoRow label="Allergies"          value={form.allergies} />
-                      <InfoRow label="Emergency Contact"  value={form.emergency_contact} />
+                      <InfoRow label="Emergency Contact Name"   value={form.emergency_contact} />
+                      <InfoRow label="Emergency Contact Number" value={form.emergency_contact_phone} />
                       <InfoRow label="Insurance Provider" value={form.insurance_provider} />
                       <InfoRow label="Policy Number"      value={form.insurance_policy} />
                     </div>

@@ -363,7 +363,7 @@ export default function DoctorDashboard() {
       {/* header */}
       <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Welcome back, Dr. {doctorName}!</h1>
+          <h1 className="text-2xl font-bold text-neutral-900">Welcome , Dr. {doctorName}!</h1>
           <p className="text-sm text-neutral-500 mt-0.5">Here&apos;s what&apos;s happening in your practice today.</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">

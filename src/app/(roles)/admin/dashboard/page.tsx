@@ -107,7 +107,7 @@ export default function AdminDashboard() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">
-            Welcome back, {user?.first_name}
+            Welcome , {user?.first_name}
           </h1>
           <p className="text-sm text-neutral-500 mt-0.5">
             Platform overview — all clinics and operations at a glance.

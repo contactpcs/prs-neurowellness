@@ -133,6 +133,10 @@ export default function ClinicalAssistantAppointmentsPage() {
   // only appearing once a matching row happens to already be in view.
   const statuses = ["all", "planned", "selected", "paid", "checked_in", "in_progress", "completed", "cancelled", "no_show"];
 
+  // Filter pills say "Paid" for the paid status — CAs and reception talk about
+  // it as "paid", not the row-badge wording ("Confirmed").
+  const FILTER_LABEL: Record<string, string> = { ...STATUS_LABEL, paid: "Paid" };
+
   if (loading) return <PageLoader />;
 
   return (
@@ -192,7 +196,7 @@ export default function ClinicalAssistantAppointmentsPage() {
               status === s ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
             }`}
           >
-            {s === "all" ? "All" : STATUS_LABEL[s] ?? s}
+            {s === "all" ? "All" : FILTER_LABEL[s] ?? s}
           </button>
         ))}
       </div>

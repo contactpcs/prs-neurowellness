@@ -51,7 +51,19 @@ export interface DiseaseOverviewRow {
   insufficient_data: number;
 }
 
+export interface CohortSummary {
+  total_patients: number;
+  disease_cohorts: number;
+  improving_pct: number;
+  improving_patients: number;
+  worsening_pct: number;
+  worsening_patients: number;
+  assessments_in_window: number;
+  provisional_pending: number;
+}
+
 export interface DiseasesOverviewResponse {
+  summary: CohortSummary;
   diseases: DiseaseOverviewRow[];
 }
 
