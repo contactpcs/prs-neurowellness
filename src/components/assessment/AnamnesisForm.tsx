@@ -221,6 +221,12 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
   const [versionLoading,    setVersionLoading]     = useState(false);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The debounced autosave's own in-flight PATCH, so handleSubmit can wait
+  // for it instead of marking the record completed while the last edited
+  // answer is still (or never) making it to the server. Without this, a
+  // submit that races the 600ms debounce — or a save that silently fails —
+  // looks fine on screen (built from local state) and is gone on reload.
+  const pendingSave = useRef<Promise<boolean> | null>(null);
 
   // ── fetch questions + record ───────────────────────────────────────────────
   useEffect(() => {
@@ -338,6 +344,37 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
   }, [recordState, mode, questions.length, patientId, assessmentStage]);
 
   // ── per-question auto-save (600 ms debounce) ──────────────────────────────
+  // latestEdit + runSave are outside the debounce timer so handleSubmit can
+  // flush an edit that hasn't fired yet instead of racing it.
+  const latestEdit = useRef<{ questionId: string; value: string | null; values: string[] | null } | null>(null);
+
+  const runSave = useCallback((): Promise<boolean> => {
+    const edit = latestEdit.current;
+    if (!edit || !anamnesisId) return Promise.resolve(true);
+    latestEdit.current = null;
+    setSaving(true);
+    const p = anamnesisService
+      .saveResponse({
+        anamnesis_id:    anamnesisId,
+        question_id:     edit.questionId,
+        response_value:  edit.value  ?? null,
+        response_values: edit.values ?? null,
+      })
+      .then(() => {
+        setError("");
+        return true;
+      })
+      .catch(() => {
+        // No longer silent: surfaced so a failed save is visible immediately
+        // rather than discovered on the next reload.
+        setError("A response failed to save. Check your connection and try again before submitting.");
+        return false;
+      })
+      .finally(() => setSaving(false));
+    pendingSave.current = p;
+    return p;
+  }, [anamnesisId]);
+
   const handleChange = useCallback((questionId: string, value: string | null, values: string[] | null) => {
     if (recordState === "completed") return;
 
@@ -346,21 +383,24 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
       [questionId]: { value: value ?? "", values: values ?? [] },
     }));
 
+    latestEdit.current = { questionId, value, values };
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
-      if (!anamnesisId) return;
-      setSaving(true);
-      try {
-        await anamnesisService.saveResponse({
-          anamnesis_id:    anamnesisId,
-          question_id:     questionId,
-          response_value:  value   ?? null,
-          response_values: values  ?? null,
-        });
-      } catch { /* silent — will be caught on submit if needed */ }
-      finally { setSaving(false); }
-    }, 600);
-  }, [anamnesisId, recordState]);
+    saveTimer.current = setTimeout(runSave, 600);
+  }, [recordState, runSave]);
+
+  // Waits out whatever autosave is already in flight, then — if a newer
+  // edit is still sitting in the debounce window — fires and awaits that
+  // one too. Called before submit so the record is never marked completed
+  // while its last edited answer hasn't reached the server yet.
+  const flushPendingSave = useCallback(async (): Promise<boolean> => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    const priorOk = (await pendingSave.current) ?? true;
+    const latestOk = await runSave();
+    return priorOk && latestOk;
+  }, [runSave]);
 
   // ── submit ────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
@@ -386,6 +426,15 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
     if (!anamnesisId) return;
     setSubmitting(true);
     try {
+      // Must land before marking the record completed — otherwise a submit
+      // that races the autosave debounce (or one whose PATCH failed) leaves
+      // the record "completed" with the last answer never actually saved,
+      // which only shows up as missing data on the next reload.
+      const saved = await flushPendingSave();
+      if (!saved) {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
       await anamnesisService.submit({ anamnesis_id: anamnesisId });
       const completedAt = new Date().toISOString();
       setMeta((prev) => ({ ...(prev ?? { taken_by: mode === "doctor" ? "doctor_on_behalf" : "patient" }), completed_at: completedAt }));
