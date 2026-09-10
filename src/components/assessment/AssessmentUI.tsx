@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { useGoBack } from "@/lib/hooks";
 import {
   RotateCcw,
   Info,
@@ -110,6 +110,9 @@ export function AssessmentUI({
   backHref,
   backLabel = "Back to patient details",
 }: AssessmentUIProps) {
+  // Hooks can't be conditional — always call it, but only render the button
+  // (and thus only ever navigate) when a caller actually passed backHref.
+  const goBack = useGoBack(backHref ?? "/");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const currentScale = scales[currentScaleIndex];
@@ -193,13 +196,13 @@ export function AssessmentUI({
         {/* Back link */}
         {backHref && (
           <div className="border-b border-neutral-100 px-4 py-2 flex-shrink-0">
-            <Link
-              href={backHref}
+            <button
+              onClick={goBack}
               className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-500 hover:text-neutral-800 transition-colors"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
               {backLabel}
-            </Link>
+            </button>
           </div>
         )}
 

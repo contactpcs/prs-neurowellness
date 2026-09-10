@@ -220,7 +220,18 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
   const [viewedVersion,     setViewedVersion]      = useState<AnamnesisRecord | null>(null);
   const [versionLoading,    setVersionLoading]     = useState(false);
 
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // One timer per question — a single shared timer meant typing into
+  // question B within 600ms of question A cancelled A's pending save via
+  // clearTimeout, so only the last-edited field of a fast multi-field fill
+  // ever actually reached the server (found live: doctor's form showed every
+  // answer typed, submit's own required-question check read that same
+  // in-memory state and passed, but several answers were never persisted —
+  // status ended up "completed" with responses missing).
+  const saveTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // question_id -> true once its autosave has failed and not yet retried
+  // successfully. Surfaced in the UI and blocks submit — silently completing
+  // over an unsaved answer is exactly how a "Done" record ends up empty.
+  const [failedSaves, setFailedSaves] = useState<Set<string>>(new Set());
 
   // ── fetch questions + record ───────────────────────────────────────────────
   useEffect(() => {
@@ -346,8 +357,10 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
       [questionId]: { value: value ?? "", values: values ?? [] },
     }));
 
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
+    const existingTimer = saveTimers.current.get(questionId);
+    if (existingTimer) clearTimeout(existingTimer);
+    saveTimers.current.set(questionId, setTimeout(async () => {
+      saveTimers.current.delete(questionId);
       if (!anamnesisId) return;
       setSaving(true);
       try {
@@ -357,14 +370,35 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
           response_value:  value   ?? null,
           response_values: values  ?? null,
         });
-      } catch { /* silent — will be caught on submit if needed */ }
+        setFailedSaves((prev) => {
+          if (!prev.has(questionId)) return prev;
+          const next = new Set(prev);
+          next.delete(questionId);
+          return next;
+        });
+      } catch {
+        setFailedSaves((prev) => new Set(prev).add(questionId));
+      }
       finally { setSaving(false); }
-    }, 600);
+    }, 600));
   }, [anamnesisId, recordState]);
 
   // ── submit ────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     setError("");
+
+    // Answers still mid-debounce or that failed to save haven't reached the
+    // server yet — submitting now would mark the record "completed" while
+    // those responses are silently missing (the exact "Done, but empty"
+    // state this was found from). Block until they're actually persisted.
+    if (saveTimers.current.size > 0) {
+      setError("Still saving your answers — please wait a moment and try again.");
+      return;
+    }
+    if (failedSaves.size > 0) {
+      setError(`${failedSaves.size} answer${failedSaves.size === 1 ? "" : "s"} failed to save. Re-enter ${failedSaves.size === 1 ? "it" : "them"} before submitting.`);
+      return;
+    }
 
     const missing = questions.filter(
       (q) =>
@@ -605,6 +639,9 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
                 <label className="block text-sm font-semibold text-neutral-700 mb-1.5">
                   {q.question_text}
                   {q.is_required && !readOnly && <span className="text-red-500 ml-1">*</span>}
+                  {failedSaves.has(q.question_id) && (
+                    <span className="ml-2 text-xs font-medium text-red-600">Failed to save — re-enter this answer</span>
+                  )}
                 </label>
                 <QuestionField
                   q={q}

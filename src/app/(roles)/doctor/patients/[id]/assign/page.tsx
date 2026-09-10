@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useSessions } from "@/lib/hooks";
+import { useSessions, useGoBack } from "@/lib/hooks";
 import { doctorsService } from "@/lib/api/services";
 import { Button, Input, Card, CardContent, PageLoader } from "@/components/ui";
 import { ConditionSelector } from "@/components/assessment";
@@ -14,6 +14,7 @@ import { invalidateDoctorPatients, fetchDoctorPatients, fetchDoctorPatient } fro
 export default function AssignAssessmentPage() {
   const { id: patientId } = useParams<{ id: string }>();
   const router = useRouter();
+  const goBack = useGoBack(`/doctor/patients/${patientId}?section=prs`);
   const dispatch = useAppDispatch();
   const { conditions, currentCondition, loadConditions, loadConditionDetail, resetConditionDetail } = useSessions();
   const [selectedCondition, setSelectedCondition] = useState<string | null>(null);
@@ -74,11 +75,11 @@ export default function AssignAssessmentPage() {
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
         <button
-          onClick={() => router.push(`/doctor/patients/${patientId}?section=prs`)}
+          onClick={goBack}
           className="flex items-center gap-1.5 text-sm font-medium text-neutral-600 hover:text-neutral-900 transition-colors"
         >
           <ChevronLeft className="w-4 h-4" />
-          Back to Patient
+          Back
         </button>
       </div>
 

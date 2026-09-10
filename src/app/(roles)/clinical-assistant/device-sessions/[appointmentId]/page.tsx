@@ -7,7 +7,7 @@ import { appointmentsService } from "@/lib/api/services";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { doctorsService } from "@/lib/api/services/doctors.service";
 import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
-import { useDeviceSession, usePatientScoresSummary, useAuth } from "@/lib/hooks";
+import { useDeviceSession, usePatientScoresSummary, useAuth, useGoBack } from "@/lib/hooks";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { Button, Card, CardHeader, CardContent, PageLoader, DetailFieldList, Input } from "@/components/ui";
 import { PlacementMap } from "@/app/(roles)/doctor/patients/[id]/treatment-protocol/wizard/PlacementMap";
@@ -68,6 +68,7 @@ const CA_DECLARATION_STATEMENTS = [
 export default function DeviceSessionChecklistPage() {
   const { appointmentId } = useParams<{ appointmentId: string }>();
   const router = useRouter();
+  const goBack = useGoBack("/clinical-assistant/appointments");
 
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [protocol, setProtocol] = useState<ProtocolDetail | null>(null);
@@ -282,7 +283,7 @@ export default function DeviceSessionChecklistPage() {
     <div className="space-y-5 max-w-6xl pb-24">
       <div className="flex items-center gap-3 flex-wrap">
         <button
-          onClick={() => router.push("/clinical-assistant/appointments")}
+          onClick={goBack}
           className="flex items-center gap-1.5 text-sm text-primary-700 hover:text-primary-900 transition-colors flex-shrink-0"
         >
           <ArrowLeft className="h-4 w-4" /> Back to Queue
@@ -594,7 +595,7 @@ export default function DeviceSessionChecklistPage() {
           {!canStart && <p className="text-xs text-neutral-400">Missing: {missing.join(", ")}</p>}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => router.push("/clinical-assistant/appointments")}>Back to Queue</Button>
+          <Button variant="outline" onClick={goBack}>Back to Queue</Button>
           <Button onClick={handleStart} isLoading={isStarting} disabled={!canStart}>Start Session</Button>
         </div>
       </div>

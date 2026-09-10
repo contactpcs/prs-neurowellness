@@ -41,6 +41,15 @@ export function usePatientClinicalSessions(patientId: string) {
             (a) =>
               (a.patient_public_id ?? a.patient_id) === patientId &&
               a.appointment_type !== "device_session" &&
+              // status === "rescheduled" marks the OLD row a reschedule
+              // replaced — it's superseded, not a session in its own right.
+              // Without this, rescheduling twice left 3 "Consultation" tabs
+              // (the original initial row plus both superseded reschedules)
+              // all pointing at dead appointment_ids, and the doctor landed
+              // on whichever one the tab bar happened to pick first — often
+              // a frozen, no-longer-live row, which is why Anamnesis was
+              // locked and unwritable even though a real open session existed.
+              a.status !== "rescheduled" &&
               (a.appointment_type === "initial" || VISIBLE_AFTER_CHECKIN.has(a.status))
           )
           .sort((a, b) => (a.appointment_date + a.start_time).localeCompare(b.appointment_date + b.start_time));
