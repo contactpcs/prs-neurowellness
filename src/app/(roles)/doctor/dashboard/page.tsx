@@ -228,13 +228,22 @@ export default function DoctorDashboard() {
 
   // Scoped to today, not every future date — a doctor works through today's
   // list, not a mixed-date feed of everything still ahead; "All appointments"
-  // (the link next to this widget) is where the rest already lives.
+  // (the link next to this widget) is where the rest already lives. A slot
+  // whose start_time has already passed drops off too (found live: a 9:30am
+  // follow-up was still showing at 2pm with nothing done about it) — unless
+  // it's in_progress, which legitimately starts in the past and is still
+  // exactly what the doctor is doing right now.
   const upcoming = useMemo(() => {
     const q = searchQuery.toLowerCase();
+    const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
     return [...appointments]
       .filter((a) => {
         if ((a.appointment_date || "") !== todayStr) return false;
         if (a.status === "cancelled" || a.status === "completed") return false;
+        if (a.status !== "in_progress" && a.start_time) {
+          const [h, m] = a.start_time.split(":").map(Number);
+          if (h * 60 + m < nowMins) return false;
+        }
         if (q) return (a.patient_name || "").toLowerCase().includes(q) || (a.reason || "").toLowerCase().includes(q);
         return true;
       })
