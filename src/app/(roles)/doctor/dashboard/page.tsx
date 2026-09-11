@@ -226,19 +226,19 @@ export default function DoctorDashboard() {
     return map;
   }, [slots]);
 
+  // Scoped to today, not every future date — a doctor works through today's
+  // list, not a mixed-date feed of everything still ahead; "All appointments"
+  // (the link next to this widget) is where the rest already lives.
   const upcoming = useMemo(() => {
     const q = searchQuery.toLowerCase();
     return [...appointments]
       .filter((a) => {
-        if ((a.appointment_date || "") < todayStr) return false;
+        if ((a.appointment_date || "") !== todayStr) return false;
         if (a.status === "cancelled" || a.status === "completed") return false;
         if (q) return (a.patient_name || "").toLowerCase().includes(q) || (a.reason || "").toLowerCase().includes(q);
         return true;
       })
-      .sort((a, b) => {
-        const dc = (a.appointment_date || "").localeCompare(b.appointment_date || "");
-        return dc !== 0 ? dc : (a.start_time || "").localeCompare(b.start_time || "");
-      });
+      .sort((a, b) => (a.start_time || "").localeCompare(b.start_time || ""));
   }, [appointments, todayStr, searchQuery]);
 
   // ── booking helpers ───────────────────────────────────────────────

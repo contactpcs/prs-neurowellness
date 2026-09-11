@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CalendarDays, Clock, Plus,
-  ChevronRight, Loader2, RefreshCw, Syringe, ClipboardList, Lock, History,
+  ChevronRight, Loader2, RefreshCw, Lock, History,
 } from "lucide-react";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { BookAppointmentModal } from "@/components/appointments/BookAppointmentModal";
@@ -15,19 +15,6 @@ import type { Appointment, AppointmentHistoryEntry, AppointmentType } from "@/ty
 function todayStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function KpiCard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub?: string }) {
-  return (
-    <div className="bg-white rounded-xl p-4 border border-neutral-100 shadow-sm">
-      <div className="flex items-center gap-1.5 mb-1.5">
-        {icon}
-        <p className="text-sm text-neutral-500">{label}</p>
-      </div>
-      <p className="text-xl font-bold text-neutral-800">{value}</p>
-      {sub && <p className="text-xs text-neutral-400 mt-0.5">{sub}</p>}
-    </div>
-  );
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -61,6 +48,16 @@ function fmtTime(t?: string | null) {
 function fmtMoney(n?: number | null, currency?: string | null) {
   if (n == null) return null;
   return `${currency === "INR" || !currency ? "₹" : currency + " "}${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+}
+
+// Backend returns doctor_name as first_name || ' ' || last_name, unmassaged —
+// title-cased and "Dr."-prefixed here so display never depends on how the
+// name was originally typed in.
+function titleCase(s: string): string {
+  return s.replace(/\S+/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
+}
+function doctorLabel(name?: string | null): string {
+  return name ? `Dr. ${titleCase(name)}` : "Your Doctor";
 }
 
 export default function PatientAppointmentsPage() {
@@ -111,6 +108,12 @@ export default function PatientAppointmentsPage() {
 
   const now = new Date();
   const upcoming = visibleAppts.filter((a) => {
+    // "planned" (a protocol-born device_session/follow-up with a date but no
+    // claimed time slot yet) has no start_time to compare against `now` —
+    // treat it as upcoming regardless, same reasoning as the dashboard/CA
+    // appointments list: excluding it hid a session the patient still needs
+    // to act on (pick a slot) until its date arrived.
+    if (a.status === "planned") return !["cancelled", "no_show", "completed"].includes(a.status);
     const d = new Date(`${a.appointment_date}T${a.start_time || "00:00"}`);
     return d >= now && !["cancelled", "no_show", "completed"].includes(a.status);
   });
@@ -123,20 +126,16 @@ export default function PatientAppointmentsPage() {
   );
   const bookableType: AppointmentType | null = hasActiveInitial ? null : hasCompletedInitial ? "follow_up" : "initial";
 
-  // KPIs: soonest upcoming visit the protocol plan calls for, and the
-  // doctor-planned device sessions still ahead.
-  const nextProtocolVisit = useMemo(
+  // Single next-up card (replaces the old two-KPI row): soonest upcoming
+  // appointment of any type. "planned" rows (no start_time) sort by date
+  // alone, at the start of their day, since there's no time to compare yet.
+  const nextAppointment = useMemo(
     () =>
-      upcoming
-        .filter((a) => a.appointment_type === "protocol_followup")
-        .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())[0] ?? null,
-    [upcoming],
-  );
-  const upcomingDeviceSessions = useMemo(
-    () =>
-      upcoming
-        .filter((a) => a.appointment_type === "device_session")
-        .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()),
+      [...upcoming].sort((a, b) => {
+        const at = a.status === "planned" ? `${a.appointment_date}T00:00:00` : a.start_at;
+        const bt = b.status === "planned" ? `${b.appointment_date}T00:00:00` : b.start_at;
+        return new Date(at).getTime() - new Date(bt).getTime();
+      })[0] ?? null,
     [upcoming],
   );
 
@@ -175,21 +174,39 @@ export default function PatientAppointmentsPage() {
         )}
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <KpiCard
-          icon={<ClipboardList className="h-4 w-4 text-purple-500" />}
-          label="Next Protocol Visit"
-          value={nextProtocolVisit ? fmtDate(nextProtocolVisit.appointment_date) : "None scheduled"}
-          sub={nextProtocolVisit ? fmtTime(nextProtocolVisit.start_time) : "Your doctor sets this as your protocol progresses."}
-        />
-        <KpiCard
-          icon={<Syringe className="h-4 w-4 text-orange-500" />}
-          label="Device Sessions Planned"
-          value={String(upcomingDeviceSessions.length)}
-          sub={upcomingDeviceSessions[0] ? `Next: ${fmtDate(upcomingDeviceSessions[0].appointment_date)}` : "None planned by your doctor yet."}
-        />
-      </div>
+      {/* Next appointment — replaces the old two-KPI row with one card
+          showing whatever's actually soonest, any appointment type. */}
+      {nextAppointment ? (
+        <button
+          onClick={() => router.push(`/patient/appointments/${nextAppointment.appointment_id}`)}
+          className="w-full text-left bg-brand-gradient rounded-xl p-4 flex items-center gap-4 hover:opacity-95 transition-opacity"
+        >
+          <div className="bg-white/20 rounded-xl p-2.5 flex-shrink-0">
+            <CalendarDays className="h-5 w-5 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-white/80">Your Next Session</p>
+            <p className="text-lg font-bold text-white mt-0.5">
+              {fmtDate(nextAppointment.appointment_date)}
+              {nextAppointment.status !== "planned" && nextAppointment.start_time ? ` · ${fmtTime(nextAppointment.start_time)}` : ""}
+            </p>
+            <p className="text-sm text-white/90 capitalize mt-0.5">
+              {(nextAppointment.appointment_type ?? "").replace(/_/g, " ")}
+            </p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-white/70 flex-shrink-0" />
+        </button>
+      ) : (
+        <div className="bg-white rounded-xl p-4 border border-neutral-100 shadow-sm flex items-center gap-4">
+          <div className="bg-neutral-100 rounded-xl p-2.5 flex-shrink-0">
+            <CalendarDays className="h-5 w-5 text-neutral-400" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-neutral-700">No upcoming sessions</p>
+            <p className="text-xs text-neutral-400 mt-0.5">Your doctor sets these as your protocol progresses.</p>
+          </div>
+        </div>
+      )}
 
       {/* Calendar + day detail */}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4">
@@ -294,15 +311,15 @@ function AppointmentRow({ appt, onClick }: { appt: Appointment; onClick: () => v
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <p className="text-sm font-semibold text-neutral-900">
-            {appt.doctor_name ?? "Your Doctor"}
+            {doctorLabel(appt.doctor_name)}
           </p>
           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[appt.status] ?? "bg-neutral-100 text-neutral-500"}`}>
             {STATUS_LABEL[appt.status] ?? appt.status.replace(/_/g, " ")}
           </span>
         </div>
         <div className="flex items-center gap-3 mt-1 text-xs text-neutral-500">
-          <span className="flex items-center gap-1">
-            <CalendarDays className="h-3 w-3" />
+          <span className={`flex items-center gap-1 ${appt.appointment_type === "device_session" ? "font-semibold text-orange-600" : ""}`}>
+            <CalendarDays className={`h-3 w-3 ${appt.appointment_type === "device_session" ? "text-orange-500" : ""}`} />
             {fmtDate(appt.appointment_date)}
           </span>
           {appt.start_time && (
@@ -343,7 +360,7 @@ function HistoryRow({ appt, onClick }: { appt: AppointmentHistoryEntry; onClick:
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <p className="text-sm font-semibold text-neutral-900">
-            {appt.doctor_name ?? "Your Doctor"}
+            {doctorLabel(appt.doctor_name)}
           </p>
           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[appt.status] ?? "bg-neutral-100 text-neutral-500"}`}>
             {STATUS_LABEL[appt.status] ?? appt.status.replace(/_/g, " ")}

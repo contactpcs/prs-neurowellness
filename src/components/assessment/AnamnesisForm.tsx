@@ -465,11 +465,7 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
     }
   };
 
-  // ── doctor: start on behalf ───────────────────────────────────────────────
-  // Always creates a BRAND NEW anamnesis_id (a new version) — never reopens
-  // an existing completed record for editing. Completed anamnesis rows are
-  // frozen; new clinical information from a later session becomes a new
-  // version instead, so `60 -> 45 -> 35`-style history is never lost.
+  // ── doctor: start on behalf (no record exists yet) ────────────────────────
   const handleStartOnBehalf = async () => {
     setError("");
     try {
@@ -496,6 +492,19 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(detail ?? "Failed to start anamnesis on behalf of patient.");
     }
+  };
+
+  // ── doctor: edit an EXISTING anamnesis in place ───────────────────────────
+  // Reopens the SAME anamnesis_id for editing — no new version, no new row.
+  // Per-question autosave (handleChange below) and submit() both operate on
+  // whatever anamnesis_id is already in state, so flipping back to
+  // "in_progress" with the current record's own id and its already-loaded
+  // responses is all that's needed; there's no separate "reopen" call.
+  const handleEdit = () => {
+    setError("");
+    if (!record) return;
+    setResponses(hydrateResponses(record));
+    setRecordState("in_progress");
   };
 
   // ── render: early states ─────────────────────────────────────────────────
@@ -579,7 +588,7 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
           record={shown}
           questions={questions}
           takenBy={shown.taken_by}
-          onEdit={mode === "doctor" && !lockedForSession && viewingLatest ? handleStartOnBehalf : undefined}
+          onEdit={mode === "doctor" && !lockedForSession && viewingLatest ? handleEdit : undefined}
           editLabel="Edit"
         />
       </>

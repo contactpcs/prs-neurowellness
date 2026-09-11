@@ -43,12 +43,6 @@ function getMonthAbbr(iso?: string | null): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short" }).toUpperCase();
 }
 
-function daysUntil(iso?: string | null): number | null {
-  if (!iso) return null;
-  const diff = new Date(iso).getTime() - Date.now();
-  return Math.ceil(diff / (1000 * 60 * 60 * 24));
-}
-
 function formatTime(time?: string | null): string {
   if (!time) return "";
   const [h, m] = time.split(":").map(Number);
@@ -116,7 +110,6 @@ function PatientDashboard() {
     .sort((a, b) => new Date(a.start_at || `${a.appointment_date}T00:00:00`).getTime() - new Date(b.start_at || `${b.appointment_date}T00:00:00`).getTime());
 
   const nextAppt = upcomingAppts[0];
-  const daysToNext = nextAppt ? daysUntil(nextAppt.start_at || nextAppt.appointment_date) : null;
   const unpaidAppts = upcomingAppts.filter((a) => a.status === "selected");
   const hasUnpaidAppt = unpaidAppts.length > 0;
 
@@ -189,7 +182,7 @@ function PatientDashboard() {
                   {nextAppt ? (
                     <>
                       <h2 className="text-base font-bold leading-tight">
-                        Your next session is in {daysToNext} day{daysToNext !== 1 ? "s" : ""}
+                        Here is your next session
                       </h2>
                       <p className="text-blue-100 mt-0.5 text-xs">
                         {nextAppt.appointment_type?.replace(/_/g, " ")} · Anava Clinic
