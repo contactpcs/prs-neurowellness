@@ -56,7 +56,16 @@ function parseJsonField<T>(v: unknown, fallback: T): T {
  * InstanceScoreDetail the results pages render: instance fetched
  * separately (disease_name resolved from the catalog), final_result mapped
  * to disease_result, scale names matched from final_result.scale_summaries. */
-export async function fetchInstanceScoreDetail(instanceId: string): Promise<InstanceScoreDetail> {
+/** patientId (optional): the public patients.patient_id (the role-table id
+ * used everywhere as GET /patients/{id}), needed ONLY for the disease-
+ * composite fetch below — /patients/{patient_id}/disease-composite resolves
+ * it to a profile id server-side the same way every sibling /patients/{id}/
+ * ... route in prs/router.py does. Pass it whenever the caller already has
+ * it (the doctor results page gets it from the URL). When omitted (the
+ * patient's own "my scores" flow has no patient_id in scope), this resolves
+ * the caller's own patient_id from GET /patients first — the same fallback
+ * anamnesisService.getMyAnamnesis() uses. */
+export async function fetchInstanceScoreDetail(instanceId: string, patientId?: string): Promise<InstanceScoreDetail> {
   const [resultsRes, instanceRes, diseasesRes] = await Promise.all([
     apiClient.get(ENDPOINTS.PRS.INSTANCE_SCORE(instanceId)),
     apiClient.get(ENDPOINTS.PRS.ASSESSMENT_INSTANCE(instanceId)).catch(() => ({ data: null })),
@@ -70,6 +79,34 @@ export async function fetchInstanceScoreDetail(instanceId: string): Promise<Inst
   const final = raw.final_result ?? null;
   const summaries = parseJsonField<{ scale_code?: string; scale_name?: string }[]>(final?.scale_summaries, []);
   const nameByCode = new Map(summaries.map((s) => [s.scale_code, s.scale_name]));
+
+  // NOTE: inst.patient_id here is a PROFILE id (prs_assessment_instances.
+  // patient_id references profiles(id) directly, per this codebase's own
+  // convention) — NOT the patients.patient_id role-table id the /patients/
+  // {patient_id}/... routes expect. Passing it straight through 404s with
+  // "Patient not found" (caught below, this was verified against the real
+  // backend). Resolve the real patients.patient_id instead of guessing.
+  const instDiseaseId = inst.disease_id != null ? String(inst.disease_id) : undefined;
+  const resolvedPatientId =
+    patientId ??
+    (await apiClient
+      .get(ENDPOINTS.PATIENTS.DASHBOARD)
+      .then((r) => (Array.isArray(r.data) ? r.data[0]?.patient_id : undefined))
+      .catch(() => undefined));
+
+  // final_result.composite_score (prs_final_results) stopped being written
+  // once the as-of-latest-per-scale composite model landed — it's a disease-
+  // level, not per-instance, number now, computed across whichever scales
+  // are most recently completed (possibly from other instances too). Fetch
+  // it separately from core.disease_composite_scores instead of reading the
+  // now-permanently-null old column.
+  const composite =
+    resolvedPatientId && instDiseaseId
+      ? await apiClient
+          .get(ENDPOINTS.PRS.DISEASE_COMPOSITE(resolvedPatientId), { params: { disease_id: instDiseaseId } })
+          .then((r) => r.data as { calculated_value?: number | null; severity_level?: string | null; severity_label?: string | null })
+          .catch(() => null)
+      : null;
 
   const scale_results: ScaleResultDetail[] = (Array.isArray(raw.scale_results) ? raw.scale_results : []).map((sr) => {
     const scaleId = String(sr.scale_id ?? "");
@@ -85,31 +122,34 @@ export async function fetchInstanceScoreDetail(instanceId: string): Promise<Inst
     } as ScaleResultDetail;
   });
 
-  const diseaseId = inst.disease_id != null ? String(inst.disease_id) : undefined;
   return {
     instance: {
       instance_id: instanceId,
-      disease_id: diseaseId,
-      disease_name: diseases.find((d) => d.disease_id === diseaseId)?.disease_name ?? diseaseId,
+      disease_id: instDiseaseId,
+      disease_name: diseases.find((d) => d.disease_id === instDiseaseId)?.disease_name ?? instDiseaseId,
       status: inst.status as string | undefined,
       started_at: inst.started_at as string | undefined,
       completed_at: inst.completed_at as string | undefined,
       initiated_by: inst.initiated_by as string | undefined,
     },
-    // composite_score/composite_severity_* (SQL/v1/81_disease_composite_
-    // weights.sql) is the real weighted disease composite (Sigma(scale % x
-    // weight%)) — final.percentage is a stale, never-populated flat-sum
-    // ratio (always null), and overall_severity/_label is the worst SINGLE
-    // scale's severity, not the disease-level one. Both looked plausible
-    // but were the wrong fields, which is why this card always rendered "—".
-    disease_result: final
-      ? {
-          disease_score: final.composite_score != null ? Number(final.composite_score) : undefined,
-          percentage: final.composite_score != null ? Number(final.composite_score) : undefined,
-          severity_level: (final.composite_severity_level as string | null) ?? undefined,
-          severity_label: (final.composite_severity_label as string | null) ?? undefined,
-        }
-      : undefined,
+    // The current as-of disease composite (core.disease_composite_scores),
+    // fetched separately above — final.composite_score (prs_final_results)
+    // is a retired per-instance column, permanently null since the as-of-
+    // latest-per-scale model landed. final.percentage is a stale,
+    // never-populated flat-sum ratio, and overall_severity/_label is the
+    // worst SINGLE scale's severity, not the disease-level one — neither is
+    // a substitute.
+    //
+    // Always an object, never undefined: the card renders on `disease_result`
+    // being truthy and falls back to "—" internally when disease_score is
+    // null — an undefined disease_result hides the whole card instead,
+    // which reads as "no results at all" rather than "no composite yet".
+    disease_result: {
+      disease_score: composite?.calculated_value != null ? Number(composite.calculated_value) : undefined,
+      percentage: composite?.calculated_value != null ? Number(composite.calculated_value) : undefined,
+      severity_level: composite?.severity_level ?? undefined,
+      severity_label: composite?.severity_label ?? undefined,
+    },
     scale_results,
   };
 }

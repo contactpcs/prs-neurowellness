@@ -81,8 +81,8 @@ export const doctorsService = {
     return mapPatient(data) as PatientDetail;
   },
 
-  async getPatientResult(_patientId: string, instanceId: string): Promise<InstanceScoreDetail> {
-    return fetchInstanceScoreDetail(instanceId);
+  async getPatientResult(patientId: string, instanceId: string): Promise<InstanceScoreDetail> {
+    return fetchInstanceScoreDetail(instanceId, patientId);
   },
 
   async getVisitSummary(patientId: string, appointmentId: string): Promise<VisitSummary> {

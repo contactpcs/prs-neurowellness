@@ -209,6 +209,9 @@ export const ENDPOINTS = {
     MY_SCORES: "/prs/scores/me",                                    // NOT AVAILABLE
     MY_SCORES_SUMMARY: "/prs/scores/me/summary",                    // NOT AVAILABLE
     INSTANCE_SCORE: (instanceId: string) => `/prs-assessment-instances/${instanceId}/results`, // real
+    // real — the current as-of disease composite for one patient+disease
+    // (core.disease_composite_scores), not tied to any single instance.
+    DISEASE_COMPOSITE: (patientId: string) => `/patients/${patientId}/disease-composite`,
     PATIENT_SCORES: (patientId: string) => `/prs/scores/patient/${patientId}`,         // NOT AVAILABLE
     PATIENT_SCORES_SUMMARY: (patientId: string) => `/prs/scores/patient/${patientId}/summary`, // NOT AVAILABLE
     SESSIONS: "/prs/sessions/",                                     // NOT AVAILABLE
