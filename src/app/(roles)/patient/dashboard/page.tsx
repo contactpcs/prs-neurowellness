@@ -123,8 +123,13 @@ function PatientDashboard() {
   });
   const remainingFields = profileItems.filter((i) => !i.done).length;
 
-  const prsProgress =
-    scoreInstances.length > 0 ? Math.round(scoreInstances[0].percentage ?? 0) : 0;
+  // Whole-PRS completion, not question-level: of every PRS the doctor has
+  // ever assigned (one AssessmentPermission row per disease), what fraction
+  // is "completed". 2 assigned, 1 done -> 50%, regardless of how far along
+  // the still-pending one's questions are.
+  const totalAssignedPrs = assessments.length;
+  const completedPrs = assessments.filter((a) => a.status === "completed").length;
+  const prsProgress = totalAssignedPrs > 0 ? Math.round((completedPrs / totalAssignedPrs) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-neutral-900">
