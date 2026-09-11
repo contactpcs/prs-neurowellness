@@ -69,24 +69,39 @@ const inputCls =
 const labelCls = "text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-1.5 block";
 
 function FieldInput({
-  label, value, onChange, type = "text", placeholder, readOnly,
+  label, value, onChange, type = "text", placeholder, readOnly, numeric,
 }: {
   label: string; value: string; onChange: (v: string) => void;
   type?: string; placeholder?: string; readOnly?: boolean;
+  /** Digits only, one optional decimal point (weight, dimensions) — strips
+   * anything else as it's typed rather than validating after the fact, so
+   * a letter or symbol never lands in the field at all. */
+  numeric?: boolean;
 }) {
   return (
     <div>
       <label className={labelCls}>{label}</label>
       <input
         type={type}
+        inputMode={numeric ? "decimal" : undefined}
         className={readOnly ? `${inputCls} bg-neutral-50 cursor-default` : inputCls}
         value={value}
         placeholder={placeholder}
         readOnly={readOnly}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => onChange(numeric ? sanitizeNumeric(e.target.value) : e.target.value)}
       />
     </div>
   );
+}
+
+// Keeps digits and at most one decimal point — matches how a weight/height
+// field is actually typed, rather than a strict number parse that would
+// reject a bare "72." while the patient is still mid-keystroke on "72.5".
+function sanitizeNumeric(raw: string): string {
+  const cleaned = raw.replace(/[^\d.]/g, "");
+  const firstDot = cleaned.indexOf(".");
+  if (firstDot === -1) return cleaned;
+  return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, "");
 }
 
 // read-only display row (label → value table style)
@@ -802,7 +817,7 @@ function PatientProfile() {
                       <FieldInput label="City"    value={form.city}    onChange={(v) => set("city", v)} />
                       <FieldInput label="State"   value={form.state}   onChange={(v) => set("state", v)} />
                     </div>
-                    <FieldInput label="Pincode"   value={form.pincode}  onChange={(v) => set("pincode", v)} />
+                    <FieldInput label="Pincode"   value={form.pincode}  onChange={(v) => set("pincode", v)} numeric />
                     <div>
                       <label className={labelCls}>Gender</label>
                       <select className={inputCls} value={form.gender} onChange={(e) => set("gender", e.target.value)}>
@@ -920,12 +935,12 @@ function PatientProfile() {
 
                   {isEditing ? (
                     <div className="space-y-3">
-                      <FieldInput label="Weight (KG)"        value={form.weight_kg}         onChange={(v) => set("weight_kg", v)}         placeholder="e.g., 72" />
+                      <FieldInput label="Weight (KG)"        value={form.weight_kg}         onChange={(v) => set("weight_kg", v)}         placeholder="e.g., 72" numeric />
                       <div>
                         <label className={labelCls}>Height</label>
                         <div className="grid grid-cols-2 gap-3">
-                          <input className={inputCls} value={form.height_ft} placeholder="Feet (e.g., 5)"   onChange={(e) => set("height_ft", e.target.value)} />
-                          <input className={inputCls} value={form.height_in} placeholder="Inches (e.g., 10)" onChange={(e) => set("height_in", e.target.value)} />
+                          <input className={inputCls} inputMode="decimal" value={form.height_ft} placeholder="Feet (e.g., 5)"   onChange={(e) => set("height_ft", sanitizeNumeric(e.target.value))} />
+                          <input className={inputCls} inputMode="decimal" value={form.height_in} placeholder="Inches (e.g., 10)" onChange={(e) => set("height_in", sanitizeNumeric(e.target.value))} />
                         </div>
                       </div>
                       <div>
