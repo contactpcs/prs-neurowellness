@@ -534,7 +534,7 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
         {error && <p className="text-sm text-red-600 max-w-xs">{error}</p>}
         {!lockedForSession && (
           <Button onClick={handleStartOnBehalf}>
-            <Stethoscope className="w-4 h-4" /> Start on Patient's Behalf
+            <Stethoscope className="w-4 h-4" /> Start Anamneis
           </Button>
         )}
       </div>
