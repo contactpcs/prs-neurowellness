@@ -110,10 +110,14 @@ export default function PatientAppointmentsPage() {
   const upcoming = visibleAppts.filter((a) => {
     // "planned" (a protocol-born device_session/follow-up with a date but no
     // claimed time slot yet) has no start_time to compare against `now` —
-    // treat it as upcoming regardless, same reasoning as the dashboard/CA
-    // appointments list: excluding it hid a session the patient still needs
-    // to act on (pick a slot) until its date arrived.
-    if (a.status === "planned") return !["cancelled", "no_show", "completed"].includes(a.status);
+    // compare against the date alone (end of that day), same reasoning as
+    // the dashboard/CA appointments list: excluding it hid a session the
+    // patient still needs to act on (pick a slot) until its date arrived.
+    // Once the date itself is past, it's overdue rather than upcoming.
+    if (a.status === "planned") {
+      const dayEnd = new Date(`${a.appointment_date}T23:59:59`);
+      return dayEnd >= now && !["cancelled", "no_show", "completed"].includes(a.status);
+    }
     const d = new Date(`${a.appointment_date}T${a.start_time || "00:00"}`);
     return d >= now && !["cancelled", "no_show", "completed"].includes(a.status);
   });

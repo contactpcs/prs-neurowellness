@@ -50,8 +50,8 @@ export default function PatientResultsPage() {
   if (isLoading) return <PageLoader />;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
+    <div className="flex flex-col space-y-6">
+      <div className="flex items-start justify-between gap-4 flex-wrap flex-shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">My Results</h1>
           <p className="text-sm text-neutral-500 mt-0.5">Your completed assessment scores, most recent first.</p>
@@ -108,7 +108,7 @@ export default function PatientResultsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-3 overflow-y-auto max-h-[calc(100vh-14rem)]">
           {filtered.map((inst) => {
             const isOpen = openIds.has(inst.instance_id);
             const hasScales = !!inst.scale_summaries && inst.scale_summaries.length > 0;

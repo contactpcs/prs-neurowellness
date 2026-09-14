@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Activity, CalendarDays, ClipboardList, Lock, ChevronRight, ChevronLeft, CheckCircle2 } from "lucide-react";
+import { Activity, CalendarDays, ClipboardList, Lock, ChevronRight, ChevronLeft, CheckCircle2, BadgeCheck } from "lucide-react";
 import { appointmentsService } from "@/lib/api/services";
 import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
 import { Card, CardContent, PageLoader } from "@/components/ui";
 import { deviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
+import { isSupersededCancellation } from "@/lib/appointmentStatus";
 import type { Appointment } from "@/types/domain.types";
 import type { DeviceSessionScale } from "@/types/deviceSession.types";
 
@@ -128,6 +129,16 @@ export default function PatientDeviceSessionsPage() {
       .sort((g1, g2) => scheduledAt(g2.items[0]) - scheduledAt(g1.items[0]));
   }, [sessions]);
 
+  // The active protocol version: the most recent group that still has at
+  // least one item not auto-cancelled by a later amendment. An amended
+  // group's rows are all superseded-cancellations (see
+  // isSupersededCancellation), so it never qualifies — only the version
+  // currently in force does.
+  const activeGroupKey = useMemo(
+    () => groups.find((g) => g.items.some((a) => !isSupersededCancellation(a)))?.key ?? null,
+    [groups]
+  );
+
   // "Protocol Version vN" / "vN.M" per group, from the protocol's own
   // version_major/version_minor (same convention as the doctor-side
   // ProtocolRead) rather than the group's position in this list — a
@@ -220,7 +231,17 @@ export default function PatientDeviceSessionsPage() {
           <ChevronLeft className="h-4 w-4" /> Back to protocol versions
         </button>
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">{versionLabel(openGroup.items)}</h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-2xl font-bold text-neutral-900">{versionLabel(openGroup.items)}</h1>
+            {openGroup.key === activeGroupKey && (
+              <span
+                title="Active protocol"
+                className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-success-50 text-success-700"
+              >
+                <BadgeCheck className="h-3 w-3" /> Active
+              </span>
+            )}
+          </div>
           <p className="text-sm text-neutral-500 mt-0.5">
             {openGroup.items.length} device session{openGroup.items.length === 1 ? "" : "s"}
             {" · "}{fmtDay(first)}{openGroup.items.length > 1 ? ` – ${fmtDay(last)}` : ""}
@@ -270,6 +291,14 @@ export default function PatientDeviceSessionsPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-semibold text-neutral-900">{versionLabel(g.items)}</span>
+                      {g.key === activeGroupKey && (
+                        <span
+                          title="Active protocol"
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-success-50 text-success-700"
+                        >
+                          <BadgeCheck className="h-3 w-3" /> Active
+                        </span>
+                      )}
                       {actionable && (
                         <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-warning-50 text-warning-700">
                           Assessment ready

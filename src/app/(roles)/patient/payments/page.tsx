@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Receipt as ReceiptIcon, Download, Search } from "lucide-react";
-import { PageLoader, Card, CardContent, Button, Input } from "@/components/ui";
+import { PageLoader, Card, Button, Input } from "@/components/ui";
 import { paymentsService, saveBlobAsFile, type PaymentHistory } from "@/lib/api/services/payments.service";
 
 const STATUS_STYLES: Record<PaymentHistory["status"], string> = {
@@ -52,8 +52,8 @@ export default function PatientPaymentsPage() {
   if (isLoading) return <PageLoader />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
+    <div className="flex flex-col space-y-6">
+      <div className="flex items-start justify-between gap-4 flex-wrap flex-shrink-0">
         <h1 className="text-2xl font-bold text-neutral-900">Payments &amp; Bills</h1>
         {payments.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -86,58 +86,73 @@ export default function PatientPaymentsPage() {
       ) : filtered.length === 0 ? (
         <p className="text-neutral-500 text-center py-12">No payments match your search.</p>
       ) : (
-        <div className="space-y-3">
-          {filtered.map((p) => {
-            const canDownload = p.status === "paid" || p.status === "waived" || p.status === "refunded";
-            return (
-              <Card key={p.payment_id}>
-                <CardContent className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0">
-                      <ReceiptIcon className="h-5 w-5 text-indigo-600" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-neutral-900 truncate">
-                        {p.appointment_type ? p.appointment_type.replace("_", " ") : "Payment"}
-                      </p>
-                      <p className="text-xs text-neutral-400">{fmtDate(p.appointment_date)}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <div className="text-right">
-                      <p className="text-sm font-semibold text-neutral-900">
-                        {p.currency} {p.amount.toLocaleString("en-IN")}
-                      </p>
-                      {p.base_fee_amount != null && p.platform_fee_amount != null && p.platform_fee_amount > 0 && (
-                        <p className="text-xs text-neutral-400">
-                          {p.currency} {p.base_fee_amount.toLocaleString("en-IN")} + {p.currency} {p.platform_fee_amount.toLocaleString("en-IN")} fee
+        <Card className="flex flex-col overflow-hidden">
+          <div className="overflow-y-auto max-h-[calc(100vh-14rem)]">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white border-b border-neutral-200 z-10">
+                <tr className="text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                  <th className="px-4 py-3 font-semibold">Type</th>
+                  <th className="px-4 py-3 font-semibold">Date</th>
+                  <th className="px-4 py-3 font-semibold text-right">Amount</th>
+                  <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 font-semibold text-right">Receipt</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((p) => {
+                  const canDownload = p.status === "paid" || p.status === "waived" || p.status === "refunded";
+                  return (
+                    <tr key={p.payment_id} className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0">
+                            <ReceiptIcon className="h-4.5 w-4.5 text-indigo-600" />
+                          </div>
+                          <span className="font-semibold text-neutral-900 truncate capitalize">
+                            {p.appointment_type ? p.appointment_type.replace("_", " ") : "Payment"}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-neutral-500 whitespace-nowrap">{fmtDate(p.appointment_date)}</td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <p className="font-semibold text-neutral-900">
+                          {p.currency} {p.amount.toLocaleString("en-IN")}
                         </p>
-                      )}
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${STATUS_STYLES[p.status]}`}>
-                        {p.status}
-                      </span>
-                      {p.cancellation_refund_amount != null && (
-                        <p className="text-xs text-neutral-500 mt-0.5">
-                          Refund due: {p.currency} {p.cancellation_refund_amount.toLocaleString("en-IN")} ({p.cancellation_refund_percent}%)
-                        </p>
-                      )}
-                    </div>
-                    {canDownload && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        isLoading={downloadingId === p.payment_id}
-                        onClick={() => handleDownload(p)}
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                        {p.base_fee_amount != null && p.platform_fee_amount != null && p.platform_fee_amount > 0 && (
+                          <p className="text-xs text-neutral-400">
+                            {p.currency} {p.base_fee_amount.toLocaleString("en-IN")} + {p.currency} {p.platform_fee_amount.toLocaleString("en-IN")} fee
+                          </p>
+                        )}
+                        {p.cancellation_refund_amount != null && (
+                          <p className="text-xs text-neutral-500 mt-0.5">
+                            Refund due: {p.currency} {p.cancellation_refund_amount.toLocaleString("en-IN")} ({p.cancellation_refund_percent}%)
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize whitespace-nowrap ${STATUS_STYLES[p.status]}`}>
+                          {p.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {canDownload && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            isLoading={downloadingId === p.payment_id}
+                            onClick={() => handleDownload(p)}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </div>
   );
