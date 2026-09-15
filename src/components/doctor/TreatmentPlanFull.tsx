@@ -515,7 +515,7 @@ export function TreatmentPlanFull({
           <p className="text-[12.5px] text-neutral-400 mb-5">No PRS scale scores recorded yet — scores appear here once an assessment records them.</p>
         )}
 
-        <GroupLabel>Tolerance across delivered device sessions</GroupLabel>
+        <GroupLabel>Tolerance across delivered {active?.modality || "device"} sessions</GroupLabel>
         <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
           <Row label="Sessions delivered" value={completed} />
           <Row label="Reported well tolerated" value={deviceRecords.length ? `${tolerated} of ${deviceRecords.length}` : "Not recorded"} />
@@ -564,7 +564,7 @@ export function TreatmentPlanFull({
             <p className="text-[11.5px] text-neutral-400 mt-3 leading-relaxed">Completed sessions keep the parameters delivered at the time — a newer version never rewrites them.</p>
           </Fold>
 
-          <Fold title="Device session history" summary={`${completed} delivered · ${missedSessions.length} missed · ${remaining} upcoming`}>
+          <Fold title={`${active?.modality || "Device"} session history`} summary={`${completed} delivered · ${missedSessions.length} missed · ${remaining} upcoming`}>
             <Table
               cols={["#", "Date", "Status"]}
               rows={protocolSessions.map((s) => [s.session_number != null ? `#${s.session_number}` : "—", fmtDate(s.appointment_date), deviceSessionLabel(s.status)])}

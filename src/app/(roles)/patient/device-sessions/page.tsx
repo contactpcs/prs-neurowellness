@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Activity, CalendarDays, ClipboardList, Lock, ChevronRight, ChevronLeft, CheckCircle2, BadgeCheck } from "lucide-react";
 import { appointmentsService } from "@/lib/api/services";
 import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
+import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { Card, CardContent, PageLoader } from "@/components/ui";
 import { deviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
 import { isSupersededCancellation } from "@/lib/appointmentStatus";
@@ -59,6 +60,7 @@ export default function PatientDeviceSessionsPage() {
   const router = useRouter();
   const [sessions, setSessions] = useState<Appointment[] | null>(null);
   const [summaries, setSummaries] = useState<Record<string, ScaleSummary>>({});
+  const [modalityByProtocol, setModalityByProtocol] = useState<Record<string, string | null>>({});
   const [error, setError] = useState<string | null>(null);
   // Which protocol-version parent group is open. null = parent list.
   const [openGroupKey, setOpenGroupKey] = useState<string | null>(null);
@@ -74,6 +76,21 @@ export default function PatientDeviceSessionsPage() {
             return sn !== 0 ? sn : scheduledAt(a) - scheduledAt(b);
           });
         setSessions(ds);
+
+        // One modality lookup per distinct protocol, not per session — a
+        // course of 20-50 device sessions typically belongs to 1-3 protocol
+        // versions.
+        const protocolIds = [...new Set(ds.map((a) => a.protocol_id).filter((id): id is string => !!id))];
+        await Promise.all(
+          protocolIds.map(async (pid) => {
+            try {
+              const p = await treatmentProtocolService.getProtocolDetail(pid);
+              setModalityByProtocol((prev) => ({ ...prev, [pid]: p.modality ?? null }));
+            } catch {
+              setModalityByProtocol((prev) => ({ ...prev, [pid]: null }));
+            }
+          })
+        );
 
         // Per-session assessment status — only for sessions that could
         // plausibly need it (see isOpenable). A locked/closed session's
@@ -243,7 +260,7 @@ export default function PatientDeviceSessionsPage() {
             )}
           </div>
           <p className="text-sm text-neutral-500 mt-0.5">
-            {openGroup.items.length} device session{openGroup.items.length === 1 ? "" : "s"}
+            {openGroup.items.length} {modalityByProtocol[openGroup.key] || "device"} session{openGroup.items.length === 1 ? "" : "s"}
             {" · "}{fmtDay(first)}{openGroup.items.length > 1 ? ` – ${fmtDay(last)}` : ""}
           </p>
         </div>

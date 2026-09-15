@@ -2,11 +2,11 @@
 
 import { Fragment, useEffect, useState } from "react";
 import {
-  X, Check, Smartphone, Mail, ShieldCheck, Lock, Loader2,
+  X, Check, Smartphone, Mail, ShieldCheck, Lock, Loader2, MapPin,
 } from "lucide-react";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { consentService } from "@/lib/api/services/consent.service";
-import { useClinics } from "@/lib/hooks";
+import { useClinics, usePincodeLookup, useGeolocationAddress } from "@/lib/hooks";
 import { Input } from "@/components/ui";
 import type { PatientListItem } from "@/types/domain.types";
 
@@ -147,6 +147,24 @@ export default function RegisterPatientModal({
 
   const set = <K extends keyof FormState>(field: K, val: FormState[K]) =>
     setForm((f) => ({ ...f, [field]: val }));
+
+  const { location: pincodeLocation, loading: pincodeLoading } = usePincodeLookup(form.pincode);
+  useEffect(() => {
+    if (!pincodeLocation) return;
+    setForm((f) => ({ ...f, city: pincodeLocation.city, state: pincodeLocation.state, country: pincodeLocation.country }));
+  }, [pincodeLocation]);
+
+  const { locate, address: geoAddress, status: geoStatus } = useGeolocationAddress();
+  useEffect(() => {
+    if (!geoAddress) return;
+    setForm((f) => ({
+      ...f,
+      pincode: geoAddress.pincode || f.pincode,
+      city: geoAddress.city,
+      state: geoAddress.state,
+      country: geoAddress.country,
+    }));
+  }, [geoAddress]);
 
   const contact = form.channel === "phone" ? `${form.countryCode}${form.mobile.replace(/\D/g, "")}` : form.email.trim();
   const clinicName = clinics.find((c) => c.clinic_id === clinicId)?.clinic_name
@@ -398,6 +416,26 @@ export default function RegisterPatientModal({
                 <Input placeholder="Street address" value={form.street} onChange={(e) => set("street", e.target.value)} />
               </div>
 
+              <button
+                type="button"
+                onClick={locate}
+                disabled={geoStatus === "requesting" || geoStatus === "loading"}
+                className="flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+              >
+                {geoStatus === "requesting" || geoStatus === "loading" ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <MapPin className="w-3.5 h-3.5" />
+                )}
+                Use my location
+              </button>
+              {geoStatus === "denied" && (
+                <p className="text-xs text-red-600">Location permission denied — enter address manually.</p>
+              )}
+              {geoStatus === "error" && (
+                <p className="text-xs text-red-600">Couldn&apos;t determine address — enter it manually.</p>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-neutral-700 mb-1.5">City <span className="text-red-500">*</span></label>
@@ -416,7 +454,8 @@ export default function RegisterPatientModal({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-neutral-700 mb-1.5">Pincode (optional)</label>
-                  <Input placeholder="400001" value={form.pincode} onChange={(e) => set("pincode", e.target.value)} />
+                  <Input placeholder="400001" maxLength={6} value={form.pincode} onChange={(e) => set("pincode", e.target.value)} />
+                  {pincodeLoading && <p className="text-xs text-neutral-400 mt-1">Looking up city/state…</p>}
                 </div>
               </div>
 

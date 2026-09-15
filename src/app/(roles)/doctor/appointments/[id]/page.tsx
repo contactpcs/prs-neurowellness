@@ -11,8 +11,9 @@ import {
 import { useAppointmentDetail } from "@/lib/hooks/useAppointments";
 import { useGoBack } from "@/lib/hooks/useGoBack";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
+import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
-import { SESSION_TYPE_LABEL } from "@/lib/utils/sessionType";
+import { SESSION_TYPE_LABEL, getDeviceSessionLabel } from "@/lib/utils/sessionType";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
 import type { AppointmentStatus, AppointmentType } from "@/types/domain.types";
@@ -64,12 +65,12 @@ function StatusBadge({ status }: { status: AppointmentStatus }) {
 
 // ─── Device session notice ────────────────────────────────────────────────────
 
-function DeviceSessionNotice({ onClose }: { onClose: () => void }) {
+function DeviceSessionNotice({ onClose, modality }: { onClose: () => void; modality?: string | null }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
         <div className="flex items-start justify-between px-5 py-4 border-b border-neutral-100">
-          <h3 className="text-base font-semibold text-neutral-900">Device Session</h3>
+          <h3 className="text-base font-semibold text-neutral-900">{getDeviceSessionLabel(modality)}</h3>
           <button onClick={onClose} className="p-1 text-neutral-400 hover:text-neutral-600 rounded-lg hover:bg-neutral-100">
             <X className="w-4 h-4" />
           </button>
@@ -259,10 +260,20 @@ export default function AppointmentDetailPage() {
   const [notesVal,        setNotesVal]        = useState("");
   const [history,         setHistory]         = useState<any[]>([]);
   const [historyLoading,  setHistoryLoading]  = useState(false);
+  const [modality,        setModality]        = useState<string | null>(null);
 
   useEffect(() => {
     if (appointment) setNotesVal(appointment.notes ?? "");
   }, [appointment?.appointment_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!appointment?.protocol_id) { setModality(null); return; }
+    let cancelled = false;
+    treatmentProtocolService.getProtocolDetail(appointment.protocol_id)
+      .then((p) => { if (!cancelled) setModality(p.modality ?? null); })
+      .catch(() => { if (!cancelled) setModality(null); });
+    return () => { cancelled = true; };
+  }, [appointment?.protocol_id]);
 
   const fetchHistory = useCallback(async () => {
     if (!id) return;
@@ -427,7 +438,9 @@ export default function AppointmentDetailPage() {
               to this appointment via ?session=. Device Sessions are the one
               exception — those open the read-only session review instead. */}
           <div className="bg-white rounded-2xl border border-neutral-200 p-5">
-            <h2 className="text-sm font-semibold text-neutral-900 mb-1">Clinical Session — {SESSION_TYPE_LABEL[appointment.appointment_type]}</h2>
+            <h2 className="text-sm font-semibold text-neutral-900 mb-1">
+              Clinical Session — {isDeviceSession ? getDeviceSessionLabel(modality) : SESSION_TYPE_LABEL[appointment.appointment_type]}
+            </h2>
             <p className="text-sm text-neutral-500 mb-4">
               {appointment.appointment_type === "device_session"
                 ? "The treatment delivered, device readings, patient response, and safety checks for this device session are recorded read-only by the clinical assistant."
@@ -662,7 +675,7 @@ export default function AppointmentDetailPage() {
       </div>
 
       {/* Modals */}
-      {showDeviceNotice && <DeviceSessionNotice onClose={() => setShowDeviceNotice(false)} />}
+      {showDeviceNotice && <DeviceSessionNotice onClose={() => setShowDeviceNotice(false)} modality={modality} />}
       {showCancel && (
         <CancelDialog
           busy={busy}

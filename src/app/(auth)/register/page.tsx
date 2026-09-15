@@ -6,9 +6,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
-import { Loader2, Building2, ChevronDown, Shield } from "lucide-react";
+import { Loader2, Building2, ChevronDown, Shield, MapPin } from "lucide-react";
 import { Button } from "@/components/ui";
-import { useAuth, useClinics } from "@/lib/hooks";
+import { useAuth, useClinics, usePincodeLookup, useGeolocationAddress } from "@/lib/hooks";
 import { register as registerThunk } from "@/store/slices/authSlice";
 import { authService } from "@/lib/api/services/auth.service";
 import { COUNTRY_OPTIONS } from "@/lib/countries";
@@ -102,7 +102,7 @@ function LocalRegisterForm() {
   const { clinics, isLoading: clinicsLoading } = useClinics();
   const router = useRouter();
 
-  const { register: field, handleSubmit, watch, formState: { errors } } = useForm<RegisterFormData>({
+  const { register: field, handleSubmit, watch, setValue, formState: { errors } } = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema),
     defaultValues: { gender: "" },
   });
@@ -110,8 +110,26 @@ function LocalRegisterForm() {
   const selectedClinicId = watch("clinic_id");
   const userCity = watch("city");
   const userState = watch("state");
+  const userPincode = watch("pincode");
   const selectedClinic = clinics.find((c) => c.clinic_id === selectedClinicId);
   const filteredClinics = getFilteredClinics(clinics, userCity, userState);
+
+  const { location: pincodeLocation, loading: pincodeLoading } = usePincodeLookup(userPincode);
+  useEffect(() => {
+    if (!pincodeLocation) return;
+    setValue("city", pincodeLocation.city, { shouldValidate: true });
+    setValue("state", pincodeLocation.state, { shouldValidate: true });
+    setValue("country", pincodeLocation.country);
+  }, [pincodeLocation, setValue]);
+
+  const { locate, address: geoAddress, status: geoStatus } = useGeolocationAddress();
+  useEffect(() => {
+    if (!geoAddress) return;
+    if (geoAddress.pincode) setValue("pincode", geoAddress.pincode);
+    setValue("city", geoAddress.city, { shouldValidate: true });
+    setValue("state", geoAddress.state, { shouldValidate: true });
+    setValue("country", geoAddress.country);
+  }, [geoAddress, setValue]);
 
   const onSubmit = async (data: RegisterFormData) => {
     clearError();
@@ -185,6 +203,29 @@ function LocalRegisterForm() {
           <input id="address" placeholder="Street address" {...field("address")} className={inputCls} />
         </div>
 
+        <button
+          type="button"
+          onClick={locate}
+          disabled={geoStatus === "requesting" || geoStatus === "loading"}
+          className="flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50"
+        >
+          {geoStatus === "requesting" || geoStatus === "loading" ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <MapPin className="w-3.5 h-3.5" />
+          )}
+          Use my location
+        </button>
+        {geoStatus === "denied" && (
+          <p className="text-xs text-danger-600 -mt-2">Location permission denied — enter your address manually.</p>
+        )}
+        {geoStatus === "error" && (
+          <p className="text-xs text-danger-600 -mt-2">Couldn&apos;t determine your address — enter it manually.</p>
+        )}
+        {geoStatus === "unsupported" && (
+          <p className="text-xs text-neutral-400 -mt-2">Location isn&apos;t supported on this browser — enter your address manually.</p>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <FieldLabel htmlFor="city" text="City" required />
@@ -205,7 +246,8 @@ function LocalRegisterForm() {
           </div>
           <div>
             <FieldLabel htmlFor="pincode" text="Pincode" optional />
-            <input id="pincode" placeholder="400001" {...field("pincode")} className={inputCls} />
+            <input id="pincode" placeholder="400001" maxLength={6} {...field("pincode")} className={inputCls} />
+            {pincodeLoading && <p className="text-xs text-neutral-400 mt-1">Looking up city/state…</p>}
           </div>
         </div>
 
@@ -275,16 +317,38 @@ function OtpSignupWizard() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { register: field, handleSubmit, watch, formState: { errors } } = useForm<DemographicsData>({
+  const { register: field, handleSubmit, watch, setValue, formState: { errors } } = useForm<DemographicsData>({
     resolver: zodResolver(demographicsSchema),
     defaultValues: { gender: "", country: "India" },
   });
   const userCity = watch("city");
   const userState = watch("state");
+  const userPincode = watch("pincode");
   const selectedClinicId = watch("clinic_id");
   const selectedClinic = clinics.find((c) => c.clinic_id === selectedClinicId);
   const filteredClinics = getFilteredClinics(clinics, userCity, userState);
   const dialCode = COUNTRY_OPTIONS.find((c) => c.name === watch("country"))?.dialCode ?? "+91";
+
+  const { location: pincodeLocation, loading: pincodeLoading } = usePincodeLookup(userPincode);
+  useEffect(() => {
+    if (!pincodeLocation) return;
+    setValue("city", pincodeLocation.city, { shouldValidate: true });
+    setValue("state", pincodeLocation.state, { shouldValidate: true });
+    if (COUNTRY_OPTIONS.some((c) => c.name === pincodeLocation.country)) {
+      setValue("country", pincodeLocation.country, { shouldValidate: true });
+    }
+  }, [pincodeLocation, setValue]);
+
+  const { locate, address: geoAddress, status: geoStatus } = useGeolocationAddress();
+  useEffect(() => {
+    if (!geoAddress) return;
+    if (geoAddress.pincode) setValue("pincode", geoAddress.pincode);
+    setValue("city", geoAddress.city, { shouldValidate: true });
+    setValue("state", geoAddress.state, { shouldValidate: true });
+    if (COUNTRY_OPTIONS.some((c) => c.name === geoAddress.country)) {
+      setValue("country", geoAddress.country, { shouldValidate: true });
+    }
+  }, [geoAddress, setValue]);
   // Full E.164 number for mobile (country code + digits only); the raw
   // email string as typed for email — this is what Cognito/our backend
   // actually needs, while `contact` state holds just what's in the input.
@@ -428,6 +492,29 @@ function OtpSignupWizard() {
             <input id="address" placeholder="Street address" {...field("address")} className={inputCls} />
           </div>
 
+          <button
+            type="button"
+            onClick={locate}
+            disabled={geoStatus === "requesting" || geoStatus === "loading"}
+            className="flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50"
+          >
+            {geoStatus === "requesting" || geoStatus === "loading" ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <MapPin className="w-3.5 h-3.5" />
+            )}
+            Use my location
+          </button>
+          {geoStatus === "denied" && (
+            <p className="text-xs text-danger-600">Location permission denied — enter your address manually.</p>
+          )}
+          {geoStatus === "error" && (
+            <p className="text-xs text-danger-600">Couldn&apos;t determine your address — enter it manually.</p>
+          )}
+          {geoStatus === "unsupported" && (
+            <p className="text-xs text-neutral-400">Location isn&apos;t supported on this browser — enter your address manually.</p>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <FieldLabel htmlFor="city" text="City" required />
@@ -443,7 +530,8 @@ function OtpSignupWizard() {
 
           <div>
             <FieldLabel htmlFor="pincode" text="Pincode" optional />
-            <input id="pincode" placeholder="400001" {...field("pincode")} className={inputCls} />
+            <input id="pincode" placeholder="400001" maxLength={6} {...field("pincode")} className={inputCls} />
+            {pincodeLoading && <p className="text-xs text-neutral-400 mt-1">Looking up city/state…</p>}
           </div>
 
           <div>

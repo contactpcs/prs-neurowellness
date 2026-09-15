@@ -15,6 +15,7 @@ import { SignatureCapture } from "@/components/deviceSession/SignatureCapture";
 import type { Appointment, PatientDetail } from "@/types/domain.types";
 import type { ProtocolDetail } from "@/types/treatmentProtocol.types";
 import type { ConsentBlock, DeviceInfo, DeviceSessionChecklistUpdate, DeviceSessionDetail } from "@/types/deviceSession.types";
+import { getDeviceSessionLabel } from "@/lib/utils/sessionType";
 
 /** Mirrors TreatmentProtocolPanel's convention: the wizard writes
  * "Reason: <label> — <note>" into the one free-text notes field the real
@@ -289,7 +290,7 @@ export default function DeviceSessionChecklistPage() {
           <ArrowLeft className="h-4 w-4" /> Back to Queue
         </button>
         <span className="text-neutral-300">|</span>
-        <h1 className="text-lg font-bold text-neutral-900">Device Session · {appointment.patient_name}</h1>
+        <h1 className="text-lg font-bold text-neutral-900">{getDeviceSessionLabel(protocol?.modality)} · {appointment.patient_name}</h1>
         {appointment.session_number != null && (
           <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-primary-50 text-primary-700">
             Session {appointment.session_number} of {protocol?.session_count ?? "—"}

@@ -164,11 +164,15 @@ function SessionsList({ detail, onOpenSession }: { detail: ProtocolDetail; onOpe
       <Card>
         <CardContent className="p-0">
           <div className="px-4 py-3 border-b border-neutral-100">
-            <h3 className="text-sm font-semibold text-neutral-900">Device Sessions ({sessions.length})</h3>
+            <h3 className="text-sm font-semibold text-neutral-900">
+              {detail.modality ? `${detail.modality} Sessions` : "Device Sessions"} ({sessions.length})
+            </h3>
             <p className="text-xs text-neutral-400 mt-0.5">Generated from this protocol. Click a row for details.</p>
           </div>
           {sessions.length === 0 ? (
-            <p className="text-sm text-neutral-400 px-4 py-8 text-center">No device sessions scheduled yet.</p>
+            <p className="text-sm text-neutral-400 px-4 py-8 text-center">
+              No {detail.modality || "device"} sessions scheduled yet.
+            </p>
           ) : (
             <>
               <div className="grid grid-cols-[70px_1fr_1fr_1fr_140px] gap-3 px-4 py-2 bg-neutral-50 text-[10px] font-semibold text-neutral-500 uppercase tracking-wide">

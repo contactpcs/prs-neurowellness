@@ -31,3 +31,11 @@ export const SESSION_TYPE_TONE: Record<AppointmentType, string> = {
 export function isProtocolGenerated(type: AppointmentType): boolean {
   return type === "device_session" || type === "protocol_followup";
 }
+
+/** "tDCS Session" / "taVNS Session" for a single session whose protocol
+ * modality is known; falls back to the generic label when modality hasn't
+ * loaded yet or the session isn't tied to a protocol. Modality strings
+ * (MODALITIES in treatmentProtocol.types.ts) are already the display form. */
+export function getDeviceSessionLabel(modality?: string | null): string {
+  return modality ? `${modality} Session` : SESSION_TYPE_LABEL.device_session;
+}
