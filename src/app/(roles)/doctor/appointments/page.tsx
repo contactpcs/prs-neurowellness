@@ -6,6 +6,8 @@ import { Search, Eye } from "lucide-react";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
 import { STATUS_LABEL, STATUS_TONE, isSupersededCancellation } from "@/lib/appointmentStatus";
+import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
+import { getDeviceSessionLabel } from "@/lib/utils/sessionType";
 import type { Appointment, AppointmentStatus } from "@/types/domain.types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -142,6 +144,30 @@ export default function DoctorAppointmentsPage() {
   const sel = filtered.find((a) => a.appointment_id === selId) ?? filtered[0] ?? null;
   const locked = sel ? ["completed", "cancelled"].includes(sel.status) : false;
 
+  const [modalityByProtocol, setModalityByProtocol] = useState<Record<string, string | null>>({});
+
+  useEffect(() => {
+    const ids = [...new Set(
+      appointments
+        .filter((a) => a.appointment_type === "device_session" && a.protocol_id)
+        .map((a) => a.protocol_id as string)
+    )].filter((id) => !(id in modalityByProtocol));
+    if (ids.length === 0) return;
+    ids.forEach((pid) => {
+      treatmentProtocolService.getProtocolDetail(pid)
+        .then((p) => setModalityByProtocol((prev) => ({ ...prev, [pid]: p.modality ?? null })))
+        .catch(() => setModalityByProtocol((prev) => ({ ...prev, [pid]: null })));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointments]);
+
+  const apptTypeLabel = useCallback((appt: Appointment): string =>
+    appt.appointment_type === "device_session"
+      ? getDeviceSessionLabel(appt.protocol_id ? modalityByProtocol[appt.protocol_id] : null)
+      : (appt.appointment_type ?? "").replace(/_/g, " "),
+    [modalityByProtocol],
+  );
+
   return (
     <div className="flex flex-col gap-5">
       <div>
@@ -230,14 +256,20 @@ export default function DoctorAppointmentsPage() {
                     </Link>
                   )}
                 </div>
-                <p className="text-xs text-neutral-500 mt-1 capitalize">
-                  {(sel.appointment_type ?? "").replace(/_/g, " ")}
+                <p className="text-xs text-neutral-500 mt-1">
+                  {apptTypeLabel(sel)}
                   {sel.patient_mrn ? ` · ${sel.patient_mrn}` : ""}
                 </p>
                 <p className="text-sm font-semibold text-neutral-700 mt-2">{fmtDate(sel.appointment_date)} · {fmt12(sel.start_time)}</p>
               </div>
               <div className="flex gap-2 flex-wrap">
-                <Link href={`/doctor/appointments/${sel.appointment_id}`}>
+                <Link
+                  href={
+                    sel.status === "checked_in"
+                      ? `/doctor/appointments/${sel.appointment_id}`
+                      : `/doctor/patients/${sel.patient_public_id ?? sel.patient_id}`
+                  }
+                >
                   <button className="h-9 px-4 rounded-lg bg-action-orange text-white text-xs font-semibold hover:bg-action-orange-dark transition-colors">
                     {sel.status === "checked_in" ? "Start Visit" : "View Patient"}
                   </button>
@@ -300,7 +332,7 @@ export default function DoctorAppointmentsPage() {
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-neutral-900 truncate">{a.patient_name ?? "Patient"}</p>
                   </div>
-                  <p className="text-xs text-neutral-700 capitalize truncate">{(a.appointment_type ?? "").replace(/_/g, " ")}</p>
+                  <p className="text-xs text-neutral-700 truncate">{apptTypeLabel(a)}</p>
                   <p className="text-xs text-neutral-600 truncate">{a.reason ?? "—"}</p>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <StatusPill status={a.status} />

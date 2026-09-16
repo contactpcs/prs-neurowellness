@@ -22,6 +22,9 @@ import { PatientDashboardSkeleton } from "@/components/ui";
 import { VerifyChannelBanner } from "@/components/auth/VerifyChannelBanner";
 import { computeProfileCompletion } from "@/lib/profileCompletion";
 import { isSupersededCancellation } from "@/lib/appointmentStatus";
+import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
+import { getDeviceSessionLabel } from "@/lib/utils/sessionType";
+import { doctorLabel } from "@/lib/utils/doctorLabel";
 import type {
   AssessmentPermission,
   AssessmentInstance,
@@ -81,6 +84,28 @@ function PatientDashboard() {
       .catch(() => {});
 
   useEffect(() => { reloadAppointments(); reloadDeviceSessions(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [modalityByProtocol, setModalityByProtocol] = useState<Record<string, string | null>>({});
+
+  useEffect(() => {
+    const ids = [...new Set(
+      appointments
+        .filter((a) => a.appointment_type === "device_session" && a.protocol_id)
+        .map((a) => a.protocol_id as string)
+    )].filter((id) => !(id in modalityByProtocol));
+    if (ids.length === 0) return;
+    ids.forEach((pid) => {
+      treatmentProtocolService.getProtocolDetail(pid)
+        .then((p) => setModalityByProtocol((prev) => ({ ...prev, [pid]: p.modality ?? null })))
+        .catch(() => setModalityByProtocol((prev) => ({ ...prev, [pid]: null })));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointments]);
+
+  const apptTypeLabel = (appt: Appointment): string =>
+    appt.appointment_type === "device_session"
+      ? getDeviceSessionLabel(appt.protocol_id ? modalityByProtocol[appt.protocol_id] : null)
+      : (appt.appointment_type?.replace(/_/g, " ") ?? "");
 
   // Live update — a request approval pushes here via SSE.
   useEffect(() => {
@@ -190,7 +215,7 @@ function PatientDashboard() {
                         Here is your next session
                       </h2>
                       <p className="text-blue-100 mt-0.5 text-xs">
-                        {nextAppt.appointment_type?.replace(/_/g, " ")} · Anava Clinic
+                        {apptTypeLabel(nextAppt)} · Anava Clinic
                       </p>
                     </>
                   ) : (
@@ -231,7 +256,7 @@ function PatientDashboard() {
                 )}
                 {nextAppt?.status === "planned" && (nextAppt.appointment_type === "device_session" || nextAppt.appointment_type === "protocol_followup") && (
                   <button
-                    onClick={() => router.push(`/patient/appointments/${nextAppt.appointment_id}`)}
+                    onClick={() => router.push(`/patient/appointments/${nextAppt.appointment_id}?claim=1`)}
                     className="bg-white text-[#09172E] rounded-lg px-3.5 py-2 text-xs font-semibold hover:bg-blue-50 transition-colors"
                   >
                     Select Slot
@@ -244,7 +269,7 @@ function PatientDashboard() {
                     </div>
                     <div>
                       <p className="text-[10px] text-blue-100">Your Doctor</p>
-                      <p className="font-semibold text-xs">{doctor.full_name}</p>
+                      <p className="font-semibold text-xs">{doctorLabel(doctor.full_name)}</p>
                     </div>
                   </div>
                 )}
@@ -398,7 +423,7 @@ function PatientDashboard() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-gray-900 truncate">
-                        {appt.reason ?? appt.appointment_type?.replace(/_/g, " ")}
+                        {appt.reason ?? apptTypeLabel(appt)}
                       </p>
                       <p className="text-[10px] text-gray-500 mt-0.5">
                         {/* "planned" (protocol-born device_session/follow-up)
@@ -422,7 +447,7 @@ function PatientDashboard() {
                       )}
                       {appt.status === "planned" && (appt.appointment_type === "device_session" || appt.appointment_type === "protocol_followup") && (
                         <button
-                          onClick={() => router.push(`/patient/appointments/${appt.appointment_id}`)}
+                          onClick={() => router.push(`/patient/appointments/${appt.appointment_id}?claim=1`)}
                           className="flex items-center gap-1 text-[10px] font-semibold text-white px-2 py-1 rounded-md hover:opacity-90"
                           style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
                         >
@@ -450,7 +475,7 @@ function PatientDashboard() {
                     <User className="w-5 h-5 text-blue-400" />
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-gray-900">{doctor.full_name}</p>
+                    <p className="text-sm font-bold text-gray-900">{doctorLabel(doctor.full_name)}</p>
                     <p className="text-xs text-gray-500">{doctor.specialization ?? "Neurologist"}</p>
                     {doctor.phone && <p className="text-[10px] text-gray-400">{doctor.phone}</p>}
                   </div>

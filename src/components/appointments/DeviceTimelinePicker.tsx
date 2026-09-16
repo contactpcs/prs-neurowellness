@@ -26,14 +26,23 @@ const SNAP_MINUTES = 30;
 
 interface DeviceTimelinePickerProps {
   appointmentId: string;
+  /** Only used to tell whether the timeline being shown is today's — a
+   * past-dated appointment always shows an already-elapsed day, but that's
+   * not what "already passed" means here; only today's clock matters. */
+  plannedDate: string;
   onClaimed: (appointment: Appointment) => void;
+}
+
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 /** Continuous red/green day timeline — the device's real booked intervals,
  * not a discrete slot grid. Duration is fixed (this appointment's own
  * billable_items.duration_minutes, resolved server-side); the patient only
  * picks where in the free time a window that long fits. */
-export function DeviceTimelinePicker({ appointmentId, onClaimed }: DeviceTimelinePickerProps) {
+export function DeviceTimelinePicker({ appointmentId, plannedDate, onClaimed }: DeviceTimelinePickerProps) {
   const [avail, setAvail] = useState<DeviceDayAvailability | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -63,6 +72,16 @@ export function DeviceTimelinePicker({ appointmentId, onClaimed }: DeviceTimelin
   const totalMin = Math.max(1, openEndMin - openStartMin);
   const duration = avail?.duration_minutes ?? 0;
 
+  // A window that starts before the current clock time can't actually be
+  // booked. Today: only the elapsed part of the day is blocked. Any earlier
+  // date: the whole day is in the past, so nothing on it is bookable at all
+  // — plannedDate is a fixed protocol date, never re-chosen, so a past date
+  // here means the patient is looking at a session that's simply overdue.
+  const today = todayStr();
+  const isToday = plannedDate === today;
+  const isPastDay = plannedDate < today;
+  const nowMin = isToday ? new Date().getHours() * 60 + new Date().getMinutes() : isPastDay ? openEndMin : -1;
+
   const blockedRanges = useMemo(() => {
     if (!avail) return [];
     const ranges = avail.busy.map((b) => [toMinutes(b.start_time), toMinutes(b.end_time)] as [number, number]);
@@ -72,6 +91,8 @@ export function DeviceTimelinePicker({ appointmentId, onClaimed }: DeviceTimelin
 
   function windowIsFree(start: number, end: number): boolean {
     if (start < openStartMin || end > openEndMin) return false;
+    if (isPastDay) return false;
+    if (isToday && start < nowMin) return false;
     return !blockedRanges.some(([bs, be]) => start < be && end > bs);
   }
 
@@ -134,7 +155,14 @@ export function DeviceTimelinePicker({ appointmentId, onClaimed }: DeviceTimelin
   return (
     <div className="space-y-4">
       <p className="text-sm text-neutral-600">
-        Select a <strong>{duration}-minute</strong> window — tap anywhere on the green area.
+        {isPastDay ? (
+          "This date has already passed — contact the clinic to reschedule this session."
+        ) : (
+          <>
+            Select a <strong>{duration}-minute</strong> window — tap anywhere on the green area.
+            {isToday && nowMin > openStartMin && " Orange marks times already past."}
+          </>
+        )}
       </p>
 
       <div className="relative pt-5 pb-6">
@@ -161,6 +189,16 @@ export function DeviceTimelinePicker({ appointmentId, onClaimed }: DeviceTimelin
           {ticks.map((t) => (
             <div key={t} className="absolute top-0 bottom-0 w-px bg-white/60" style={{ left: `${pct(t)}%` }} />
           ))}
+          {/* already-elapsed time — the whole day if it's a past date, or
+              just the part of today that's gone — not clickable, shown
+              separately from busy/break bands so it reads differently from
+              an actually-booked slot */}
+          {(isToday || isPastDay) && nowMin > openStartMin && (
+            <div
+              className="absolute top-0 bottom-0 bg-warning-500"
+              style={{ left: "0%", width: `${pct(Math.min(nowMin, openEndMin))}%` }}
+            />
+          )}
           {/* busy/break bands */}
           {blockedRanges.map(([bs, be], i) => (
             <div

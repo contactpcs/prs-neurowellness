@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { User, Check, X, AlertCircle, Edit2 } from "lucide-react";
 import { PageLoader } from "@/components/ui";
 import { clinicalAssistantService } from "@/lib/api/services/clinicalAssistant.service";
+import { COUNTRY_OPTIONS } from "@/lib/countries";
+import { LANGUAGE_OPTIONS, languageLabel } from "@/lib/languages";
 
 // ─── helpers ──────────────────────────────────────────────────────
 
@@ -210,10 +212,26 @@ export default function ClinicalAssistantProfilePage() {
                 <FieldInput label="State" value={form.state} onChange={(v) => set("state", v)} />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <FieldInput label="Country" value={form.country} onChange={(v) => set("country", v)} />
+                <div>
+                  <label className={labelCls}>Country</label>
+                  <select className={inputCls} value={form.country} onChange={(e) => set("country", e.target.value)}>
+                    <option value="">Select</option>
+                    {COUNTRY_OPTIONS.map((c) => (
+                      <option key={c.name} value={c.name}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
                 <FieldInput label="Pincode" value={form.pincode} onChange={(v) => set("pincode", v)} />
               </div>
-              <FieldInput label="Language Preference" value={form.language_pref} onChange={(v) => set("language_pref", v)} placeholder="e.g. en, hi" />
+              <div>
+                <label className={labelCls}>Language Preference</label>
+                <select className={inputCls} value={form.language_pref} onChange={(e) => set("language_pref", e.target.value)}>
+                  <option value="">Select</option>
+                  {LANGUAGE_OPTIONS.map((l) => (
+                    <option key={l.code} value={l.code}>{l.label}</option>
+                  ))}
+                </select>
+              </div>
 
               {saveError && (
                 <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
@@ -244,7 +262,7 @@ export default function ClinicalAssistantProfilePage() {
                 <InfoRow label="State"    value={form.state} />
                 <InfoRow label="Country"  value={form.country} />
                 <InfoRow label="Pincode"  value={form.pincode} />
-                <InfoRow label="Language" value={form.language_pref?.toUpperCase()} />
+                <InfoRow label="Language" value={languageLabel(form.language_pref)} />
               </div>
               {saveSuccess && (
                 <span className="flex items-center gap-1.5 text-sm text-green-600 font-medium mt-4">

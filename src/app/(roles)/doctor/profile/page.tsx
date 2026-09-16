@@ -11,6 +11,8 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
+import { COUNTRY_OPTIONS } from "@/lib/countries";
+import { LANGUAGE_OPTIONS, languageLabel } from "@/lib/languages";
 import type { Appointment } from "@/types/domain.types";
 
 // ─── types ────────────────────────────────────────────────────────
@@ -284,14 +286,19 @@ export default function DoctorProfilePage() {
                     </div>
                     <div>
                       <label className={labelCls}>Country</label>
-                      <input className={inputCls} value={form.country} onChange={(e) => set("country", e.target.value)} />
+                      <select className={inputCls} value={form.country} onChange={(e) => set("country", e.target.value)}>
+                        <option value="">Select</option>
+                        {COUNTRY_OPTIONS.map((c) => (
+                          <option key={c.name} value={c.name}>{c.name}</option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <label className={labelCls}>Language Preference</label>
                       <select className={inputCls} value={form.language_pref} onChange={(e) => set("language_pref", e.target.value)}>
                         <option value="">Select</option>
-                        {["en","hi","te","ta","mr","kn","ml"].map((l) => (
-                          <option key={l} value={l}>{l.toUpperCase()}</option>
+                        {LANGUAGE_OPTIONS.map((l) => (
+                          <option key={l.code} value={l.code}>{l.label}</option>
                         ))}
                       </select>
                     </div>
@@ -323,7 +330,7 @@ export default function DoctorProfilePage() {
                         { label: "Years of Experience", value: form.years_of_experience ? `${form.years_of_experience} years` : null },
                         { label: "Clinic / Practice",   value: form.hospital },
                         { label: "Country",             value: form.country },
-                        { label: "Languages",           value: form.language_pref?.toUpperCase() },
+                        { label: "Languages",           value: languageLabel(form.language_pref) },
                         { label: "Status",              value: approvalStatus, colored: true },
                       ].map(({ label, value, colored }) => (
                         <div key={label} className="flex items-center justify-between py-2.5 gap-4">

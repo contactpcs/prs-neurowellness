@@ -7,9 +7,12 @@ import {
   ChevronRight, Loader2, RefreshCw, Lock, History,
 } from "lucide-react";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
+import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { BookAppointmentModal } from "@/components/appointments/BookAppointmentModal";
 import { PatientMonthCalendar } from "@/components/appointments/PatientMonthCalendar";
 import { STATUS_LABEL, ACTIVE_APPOINTMENT_STATUSES, isSupersededCancellation } from "@/lib/appointmentStatus";
+import { getDeviceSessionLabel, SESSION_TYPE_LABEL } from "@/lib/utils/sessionType";
+import { doctorLabel } from "@/lib/utils/doctorLabel";
 import type { Appointment, AppointmentHistoryEntry, AppointmentType } from "@/types/domain.types";
 
 function todayStr(): string {
@@ -50,16 +53,6 @@ function fmtMoney(n?: number | null, currency?: string | null) {
   return `${currency === "INR" || !currency ? "₹" : currency + " "}${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 }
 
-// Backend returns doctor_name as first_name || ' ' || last_name, unmassaged —
-// title-cased and "Dr."-prefixed here so display never depends on how the
-// name was originally typed in.
-function titleCase(s: string): string {
-  return s.replace(/\S+/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
-}
-function doctorLabel(name?: string | null): string {
-  return name ? `Dr. ${titleCase(name)}` : "Your Doctor";
-}
-
 export default function PatientAppointmentsPage() {
   const router = useRouter();
   const [appts, setAppts]             = useState<Appointment[]>([]);
@@ -92,6 +85,32 @@ export default function PatientAppointmentsPage() {
   }, []);
 
   useEffect(() => { loadAppointments(); loadHistory(); }, [loadAppointments, loadHistory]);
+
+  const [modalityByProtocol, setModalityByProtocol] = useState<Record<string, string | null>>({});
+
+  useEffect(() => {
+    const ids = [...new Set(
+      [...appts, ...history]
+        .filter((a) => a.appointment_type === "device_session" && a.protocol_id)
+        .map((a) => a.protocol_id as string)
+    )].filter((id) => !(id in modalityByProtocol));
+    if (ids.length === 0) return;
+    ids.forEach((pid) => {
+      treatmentProtocolService.getProtocolDetail(pid)
+        .then((p) => setModalityByProtocol((prev) => ({ ...prev, [pid]: p.modality ?? null })))
+        .catch(() => setModalityByProtocol((prev) => ({ ...prev, [pid]: null })));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appts, history]);
+
+  const apptTypeLabel = useCallback((appt: Appointment): string =>
+    appt.appointment_type === "device_session"
+      ? getDeviceSessionLabel(appt.protocol_id ? modalityByProtocol[appt.protocol_id] : null)
+      : appt.appointment_type
+        ? SESSION_TYPE_LABEL[appt.appointment_type]
+        : "",
+    [modalityByProtocol],
+  );
 
   useEffect(() => {
     const onAppointmentEvent = () => { loadAppointments(); loadHistory(); };
@@ -194,8 +213,8 @@ export default function PatientAppointmentsPage() {
               {fmtDate(nextAppointment.appointment_date)}
               {nextAppointment.status !== "planned" && nextAppointment.start_time ? ` · ${fmtTime(nextAppointment.start_time)}` : ""}
             </p>
-            <p className="text-sm text-white/90 capitalize mt-0.5">
-              {(nextAppointment.appointment_type ?? "").replace(/_/g, " ")}
+            <p className="text-sm text-white/90 mt-0.5">
+              {apptTypeLabel(nextAppointment)}
             </p>
           </div>
           <ChevronRight className="h-4 w-4 text-white/70 flex-shrink-0" />
@@ -214,7 +233,7 @@ export default function PatientAppointmentsPage() {
 
       {/* Calendar + day detail */}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4">
-        <PatientMonthCalendar appointments={visibleAppts} selectedDate={selectedDate} onSelectDate={handleSelectDate} />
+        <PatientMonthCalendar appointments={visibleAppts} selectedDate={selectedDate} onSelectDate={handleSelectDate} modalityByProtocol={modalityByProtocol} />
 
         <section className="space-y-3">
           <div className="flex items-center justify-between">
@@ -242,7 +261,7 @@ export default function PatientAppointmentsPage() {
           ) : (
             <div className="space-y-2">
               {dayAppts.map((a) => (
-                <AppointmentRow key={a.appointment_id} appt={a} onClick={() => router.push(`/patient/appointments/${a.appointment_id}`)} />
+                <AppointmentRow key={a.appointment_id} appt={a} typeLabel={apptTypeLabel(a)} onClick={() => router.push(`/patient/appointments/${a.appointment_id}`)} />
               ))}
             </div>
           )}
@@ -279,7 +298,7 @@ export default function PatientAppointmentsPage() {
         ) : (
           <div className="space-y-2">
             {visibleHistory.map((a) => (
-              <HistoryRow key={a.appointment_id} appt={a} onClick={() => router.push(`/patient/appointments/${a.appointment_id}`)} />
+              <HistoryRow key={a.appointment_id} appt={a} typeLabel={apptTypeLabel(a)} onClick={() => router.push(`/patient/appointments/${a.appointment_id}`)} />
             ))}
           </div>
         )}
@@ -303,7 +322,7 @@ export default function PatientAppointmentsPage() {
 
 // Whole row navigates to the appointment's detail page — that page is
 // where payment/status/reschedule now live, this list is just a picker.
-function AppointmentRow({ appt, onClick }: { appt: Appointment; onClick: () => void }) {
+function AppointmentRow({ appt, typeLabel, onClick }: { appt: Appointment; typeLabel: string; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -332,9 +351,7 @@ function AppointmentRow({ appt, onClick }: { appt: Appointment; onClick: () => v
               {fmtTime(appt.start_time)}
             </span>
           )}
-          {appt.appointment_type && (
-            <span className="capitalize">{appt.appointment_type.replace(/_/g, " ")}</span>
-          )}
+          {typeLabel && <span>{typeLabel}</span>}
         </div>
         {appt.reason && (
           <p className="text-xs text-neutral-400 mt-0.5 truncate">{appt.reason}</p>
@@ -350,7 +367,7 @@ function AppointmentRow({ appt, onClick }: { appt: Appointment; onClick: () => v
 // its hold expiring — so it gets a lock icon instead of the usual chevron;
 // everything else (including an abandoned attempt the sweeper cancelled) is
 // a plain settled row, clickable through to detail like AppointmentRow.
-function HistoryRow({ appt, onClick }: { appt: AppointmentHistoryEntry; onClick: () => void }) {
+function HistoryRow({ appt, typeLabel, onClick }: { appt: AppointmentHistoryEntry; typeLabel: string; onClick: () => void }) {
   const isLocked = appt.status === "selected";
   const money = fmtMoney(appt.payment_amount, appt.payment_currency);
   return (
@@ -386,9 +403,7 @@ function HistoryRow({ appt, onClick }: { appt: AppointmentHistoryEntry; onClick:
               {fmtTime(appt.start_time)}
             </span>
           )}
-          {appt.appointment_type && (
-            <span className="capitalize">{appt.appointment_type.replace(/_/g, " ")}</span>
-          )}
+          {typeLabel && <span>{typeLabel}</span>}
           {money && <span className="font-medium text-neutral-600">{money}</span>}
         </div>
         {isLocked && (

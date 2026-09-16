@@ -242,7 +242,15 @@ function LocalRegisterForm() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <FieldLabel htmlFor="country" text="Country" optional />
-            <input id="country" placeholder="India" {...field("country")} className={inputCls} />
+            <div className="relative">
+              <select id="country" {...field("country")} className={`${inputCls} appearance-none pr-9`}>
+                <option value="">Select</option>
+                {COUNTRY_OPTIONS.map((c) => (
+                  <option key={c.name} value={c.name}>{c.name}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
+            </div>
           </div>
           <div>
             <FieldLabel htmlFor="pincode" text="Pincode" optional />

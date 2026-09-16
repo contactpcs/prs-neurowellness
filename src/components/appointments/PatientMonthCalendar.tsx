@@ -29,6 +29,15 @@ interface PatientMonthCalendarProps {
   appointments: Appointment[];
   selectedDate: string | null;
   onSelectDate: (dateStr: string) => void;
+  modalityByProtocol?: Record<string, string | null>;
+}
+
+function dayTypeLabel(appt: Appointment, modalityByProtocol: Record<string, string | null>): string {
+  if (appt.appointment_type === "device_session") {
+    const modality = appt.protocol_id ? modalityByProtocol[appt.protocol_id] : null;
+    return modality ?? TYPE_LABEL.device_session;
+  }
+  return TYPE_LABEL[appt.appointment_type] ?? appt.appointment_type;
 }
 
 /**
@@ -37,7 +46,7 @@ interface PatientMonthCalendarProps {
  * Read-only display + date selection; the day-detail list and payment flow
  * live in the parent page.
  */
-export function PatientMonthCalendar({ appointments, selectedDate, onSelectDate }: PatientMonthCalendarProps) {
+export function PatientMonthCalendar({ appointments, selectedDate, onSelectDate, modalityByProtocol = {} }: PatientMonthCalendarProps) {
   const [viewMonth, setViewMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -123,7 +132,7 @@ export function PatientMonthCalendar({ appointments, selectedDate, onSelectDate 
                     isSelected ? "bg-white/20 text-white" : "text-neutral-600",
                   )}
                 >
-                  {TYPE_LABEL[dayAppts[0].appointment_type] ?? dayAppts[0].appointment_type}
+                  {dayTypeLabel(dayAppts[0], modalityByProtocol)}
                 </span>
               )}
               {dayAppts.length > 1 && (
