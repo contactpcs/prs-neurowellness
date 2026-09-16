@@ -74,10 +74,13 @@ export default function PatientSessionAssessmentPage() {
           return;
         }
 
-        // Gate: the scale row must be pushed to the patient and not done.
+        // Gate: the scale row must be pushed to the patient, not done, and
+        // not frozen (its protocol was amended before this was answered —
+        // the server hard-rejects a submission against it, so send the
+        // patient back before they waste time filling it out).
         const rows = await deviceSessionService.listScales(appointmentId);
         const row = rows.find((r) => r.protocol_scale_id === protocolScaleId);
-        if (!row || row.delivery_mode !== "patient_app" || row.status === "completed") {
+        if (!row || row.delivery_mode !== "patient_app" || row.status === "completed" || row.status === "frozen") {
           router.replace(backHref);
           return;
         }

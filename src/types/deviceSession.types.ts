@@ -20,7 +20,9 @@ export type CognitiveActivity =
   | "sudoku" | "memory_game" | "word_recall" | "reading_aloud" | "breathing" | "sit_to_stand" | "drawing";
 
 export type ScaleDeliveryMode = "ca_administered" | "patient_app";
-export type ScaleStatus = "pending" | "in_progress" | "completed";
+/** "frozen" — the protocol this scale belonged to has since been amended;
+ * it can no longer be answered (submission is hard-rejected server-side). */
+export type ScaleStatus = "pending" | "in_progress" | "completed" | "frozen";
 export type MediaType = "photo" | "video";
 export type SosType = "discomfort" | "unwell" | "other" | "emergency";
 
@@ -74,6 +76,10 @@ export interface DeviceSessionRead {
   device_session_record_id: string;
   appointment_id: string;
   protocol_id: string;
+  /** Denormalised from appointments.ca_id/executor_role at session start —
+   * who actually ran this session, Doctor or Clinical Assistant. */
+  performed_by_id: string | null;
+  performed_by_role: "doctor" | "clinical_assistant" | "super_admin" | null;
 
   payment_verified: boolean;
   payment_override_reason: string | null;
