@@ -1,7 +1,8 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Brain, ShieldCheck, Activity, Users, Heart, Stethoscope, Sparkles } from "lucide-react";
+import { ShieldCheck, Activity, Users, Heart, Stethoscope, Sparkles } from "lucide-react";
+import { AnavaLogo } from "@/components/layout/AnavaLogo";
 
 const BRAND_CONTENT = {
   register: {
@@ -39,14 +40,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
 
         <div className="relative z-10 flex flex-col justify-between p-12 w-full">
           {/* Logo */}
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-              <Brain className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <p className="text-white font-bold text-base leading-tight">Anava</p>
-              <p className="text-white/60 text-[10px] font-semibold uppercase tracking-widest leading-tight">PRS</p>
-            </div>
+          <div className="flex flex-col items-start gap-1">
+            <AnavaLogo className="h-8 w-14" />
+            <p className="text-white font-bold text-sm tracking-[0.15em] leading-none">ANAVA</p>
           </div>
 
           {/* Headline + features */}
@@ -81,11 +77,11 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <div className="flex-1 flex items-center justify-center p-6 sm:p-10">
         <div className="w-full max-w-md animate-fade-in">
           {/* Mobile logo */}
-          <div className="flex items-center gap-2.5 mb-8 lg:hidden">
-            <div className="w-8 h-8 rounded-lg bg-brand-gradient flex items-center justify-center">
-              <Brain className="h-4 w-4 text-white" />
+          <div className="flex flex-col items-center gap-1 mb-8 lg:hidden">
+            <div className="w-full rounded-lg bg-brand-gradient flex items-center justify-center py-3">
+              <AnavaLogo className="h-6 w-11" />
             </div>
-            <span className="font-bold text-accent-dark">Anava PRS</span>
+            <span className="font-bold text-accent-dark tracking-[0.1em] text-sm">ANAVA</span>
           </div>
 
           <div className="bg-white rounded-2xl shadow-card border border-neutral-200/80 p-8">

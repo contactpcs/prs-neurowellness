@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { ChevronLeft, CalendarDays, Clock, User, RotateCcw, CheckCircle2, XCircle } from "lucide-react";
+import { Suspense, useEffect, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { ChevronLeft, CalendarDays, Clock, User, RotateCcw, CheckCircle2, XCircle, Brain, Sparkles, TrendingUp } from "lucide-react";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
 import { ClaimSlotModal } from "@/components/appointments/ClaimSlotModal";
 import { RescheduleModal } from "@/components/appointments/RescheduleModal";
 import { STATUS_LABEL, STATUS_TONE } from "@/lib/appointmentStatus";
+import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
+import { getDeviceSessionLabel, SESSION_TYPE_LABEL } from "@/lib/utils/sessionType";
+import { doctorLabel } from "@/lib/utils/doctorLabel";
 import { PageLoader, Button } from "@/components/ui";
 import { useGoBack } from "@/lib/hooks";
 import type { Appointment } from "@/types/domain.types";
@@ -23,19 +26,84 @@ function fmtTime(t?: string | null) {
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
+// One card, one message — cycles through the three angles across a
+// patient's course instead of dumping all of it on every visit: session 1
+// (nobody has a mental model yet) explains the mechanism, session 2 lists
+// concrete advantages, session 3 is pure motivation to keep going, then it
+// repeats for session 4, 5, 6...
+function getSessionEducation(sessionNumber: number | null | undefined, modality?: string | null) {
+  const device = modality || "Neuromodulation";
+  const n = sessionNumber && sessionNumber > 0 ? sessionNumber : 1;
+  const slot = (n - 1) % 3;
+
+  if (slot === 0) {
+    return {
+      kind: "mechanism" as const,
+      title: `How ${device} Works`,
+      body: `${device} passes a mild, painless current through targeted areas of the brain to gently adjust how active those neurons are. It's non-invasive, needs no anesthesia, and most patients feel little more than a light tingling as the session starts. Each session builds on the last — the effect comes from a full course of consistent sessions, not any single one.`,
+    };
+  }
+  if (slot === 1) {
+    return {
+      kind: "advantages" as const,
+      title: `Advantages of ${device}`,
+      items: [
+        "Non-invasive — no surgery, no anesthesia, no downtime",
+        "Painless, with most patients feeling only a light tingling sensation",
+        "Cumulative benefit that builds session over session",
+        "Can be combined with other therapies in your treatment plan",
+        "Well-tolerated, with a strong safety record across clinical use",
+      ],
+    };
+  }
+  return {
+    kind: "motivation" as const,
+    title: "Keep Up the Momentum",
+    body: `Session ${n} — you're building on real progress. ${device} works cumulatively: each completed session reinforces the changes made by the ones before it. Patients who complete their full course see steadier, longer-lasting improvement than those who stop partway through.`,
+  };
+}
+
 export default function AppointmentDetailPage() {
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <AppointmentDetail />
+    </Suspense>
+  );
+}
+
+function AppointmentDetail() {
   const { appointmentId } = useParams<{ appointmentId: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const goBack = useGoBack("/patient/appointments");
   const [appt, setAppt] = useState<Appointment | null>(null);
   const [loading, setLoading] = useState(true);
   const [showClaim, setShowClaim] = useState(false);
   const [showReschedule, setShowReschedule] = useState(false);
+  const [modality, setModality] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
     appointmentsService.getById(appointmentId).then(setAppt).finally(() => setLoading(false));
   }, [appointmentId]);
+
+  useEffect(() => {
+    if (!appt?.protocol_id) { setModality(null); return; }
+    let cancelled = false;
+    treatmentProtocolService.getProtocolDetail(appt.protocol_id)
+      .then((p) => { if (!cancelled) setModality(p.modality ?? null); })
+      .catch(() => { if (!cancelled) setModality(null); });
+    return () => { cancelled = true; };
+  }, [appt?.protocol_id]);
+
+  // Dashboard's "Select Slot" links here with ?claim=1 so the picker opens
+  // immediately instead of landing on the detail page and making the
+  // patient tap the button again.
+  useEffect(() => {
+    if (!appt || searchParams.get("claim") !== "1") return;
+    const isClaimable = appt.status === "planned" && (appt.appointment_type === "device_session" || appt.appointment_type === "protocol_followup");
+    if (isClaimable) setShowClaim(true);
+  }, [appt, searchParams]);
 
   if (loading) return <PageLoader />;
 
@@ -93,9 +161,10 @@ export default function AppointmentDetailPage() {
       <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs text-neutral-400 uppercase tracking-wide">{appt.appointment_type?.replace(/_/g, " ")}</p>
-            <h1 className="text-lg font-bold text-neutral-900 mt-0.5">
-              {appt.doctor_name ? `With ${appt.doctor_name}` : "Appointment"}
+            <h1 className="text-lg font-bold text-neutral-900">
+              {appt.appointment_type === "device_session"
+                ? getDeviceSessionLabel(modality)
+                : appt.appointment_type ? SESSION_TYPE_LABEL[appt.appointment_type] : "Appointment"}
             </h1>
           </div>
           <span
@@ -121,13 +190,53 @@ export default function AppointmentDetailPage() {
           {appt.doctor_name && (
             <div className="flex items-center gap-2 px-4 py-2.5">
               <User className="h-4 w-4 text-neutral-400" />
-              <span className="text-neutral-700">{appt.doctor_name}</span>
+              <span className="text-neutral-700">{doctorLabel(appt.doctor_name)}</span>
             </div>
           )}
         </div>
 
         {appt.reason && <p className="text-sm text-neutral-500">{appt.reason}</p>}
       </div>
+
+      {isPlanned && (
+        <div className="bg-neutral-100 border border-neutral-200 rounded-xl p-5 space-y-3">
+          <p className="text-sm text-neutral-600">
+            This session hasn't been scheduled to a specific slot yet — no time is locked in and nothing is due until it is.
+          </p>
+          {claimable && (
+            <Button variant="primary" size="sm" onClick={() => setShowClaim(true)}>
+              Select a Slot
+            </Button>
+          )}
+        </div>
+      )}
+
+      {appt.appointment_type === "device_session" && (() => {
+        const edu = getSessionEducation(appt.session_number, modality);
+        const Icon = edu.kind === "mechanism" ? Brain : edu.kind === "advantages" ? Sparkles : TrendingUp;
+        return (
+          <div className="bg-white border border-neutral-200 rounded-xl p-5">
+            <div className="flex items-start gap-3">
+              <Icon className="h-5 w-5 text-primary-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-neutral-900">{edu.title}</p>
+                {edu.kind === "advantages" ? (
+                  <ul className="space-y-1.5 mt-2">
+                    {edu.items.map((a) => (
+                      <li key={a} className="flex items-start gap-2 text-sm text-neutral-600">
+                        <span className="mt-1.5 h-1 w-1 rounded-full bg-primary-500 flex-shrink-0" />
+                        {a}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-neutral-600 mt-1 leading-relaxed">{edu.body}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {appt.status === "completed" && (
         <div className="bg-success-50 border border-success-100 rounded-xl p-5 flex items-center gap-3">
@@ -176,19 +285,6 @@ export default function AppointmentDetailPage() {
             router.push(`/patient/appointments/${updated.appointment_id}`);
           }}
         />
-      )}
-
-      {isPlanned && (
-        <div className="bg-neutral-100 border border-neutral-200 rounded-xl p-5 space-y-3">
-          <p className="text-sm text-neutral-600">
-            This session hasn't been scheduled to a specific slot yet — no time is locked in and nothing is due until it is.
-          </p>
-          {claimable && (
-            <Button variant="primary" size="sm" onClick={() => setShowClaim(true)}>
-              Select a Slot
-            </Button>
-          )}
-        </div>
       )}
 
       {claimable && (

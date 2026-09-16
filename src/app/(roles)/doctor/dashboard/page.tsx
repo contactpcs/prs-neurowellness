@@ -10,6 +10,8 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
 import { BookingModal } from "@/components/appointments/BookingModal";
+import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
+import { getDeviceSessionLabel } from "@/lib/utils/sessionType";
 import type { Appointment, AvailabilitySlot } from "@/types/domain.types";
 
 // ─── types ────────────────────────────────────────────────────────
@@ -170,6 +172,30 @@ export default function DoctorDashboard() {
     window.addEventListener("sse:appointment", onAppointmentEvent);
     return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
   }, [fetchRange, fetchAppointments, fetchSlots]);
+
+  const [modalityByProtocol, setModalityByProtocol] = useState<Record<string, string | null>>({});
+
+  useEffect(() => {
+    const ids = [...new Set(
+      appointments
+        .filter((a) => a.appointment_type === "device_session" && a.protocol_id)
+        .map((a) => a.protocol_id as string)
+    )].filter((id) => !(id in modalityByProtocol));
+    if (ids.length === 0) return;
+    ids.forEach((pid) => {
+      treatmentProtocolService.getProtocolDetail(pid)
+        .then((p) => setModalityByProtocol((prev) => ({ ...prev, [pid]: p.modality ?? null })))
+        .catch(() => setModalityByProtocol((prev) => ({ ...prev, [pid]: null })));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointments]);
+
+  const apptTypeLabel = useCallback((appt: Appointment): string =>
+    appt.appointment_type === "device_session"
+      ? getDeviceSessionLabel(appt.protocol_id ? modalityByProtocol[appt.protocol_id] : null)
+      : (appt.appointment_type || appt.reason || "").replace(/_/g, " "),
+    [modalityByProtocol],
+  );
 
   // ── navigation ────────────────────────────────────────────────────
 
@@ -417,7 +443,7 @@ export default function DoctorDashboard() {
                     </div>
                     {(appt.appointment_type || appt.reason) && (
                       <span className="inline-block text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-sky-50 text-sky-700">
-                        {(appt.appointment_type || appt.reason || "").replace(/_/g, " ")}
+                        {apptTypeLabel(appt)}
                       </span>
                     )}
                   </div>

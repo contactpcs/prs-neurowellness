@@ -372,8 +372,10 @@ export default function AppointmentDetailPage() {
                 <h1 className="text-xl font-bold text-neutral-900">
                   {appointment.patient_name ?? "Patient"}
                 </h1>
-                <p className="text-sm text-neutral-500 mt-0.5 capitalize">
-                  {(appointment.appointment_type ?? "follow_up").replace(/_/g, " ")}
+                <p className="text-sm text-neutral-500 mt-0.5">
+                  {appointment.appointment_type === "device_session"
+                    ? getDeviceSessionLabel(modality)
+                    : SESSION_TYPE_LABEL[appointment.appointment_type ?? "follow_up"]}
                 </p>
               </div>
               <div className="flex items-center gap-1.5">
@@ -655,8 +657,11 @@ export default function AppointmentDetailPage() {
               )}
               <MetaRow
                 label="Type"
-                value={(appointment.appointment_type ?? "follow_up").replace(/_/g, " ")}
-                capitalize
+                value={
+                  appointment.appointment_type === "device_session"
+                    ? getDeviceSessionLabel(modality)
+                    : SESSION_TYPE_LABEL[appointment.appointment_type ?? "follow_up"]
+                }
               />
               <MetaRow
                 label="Booked by"

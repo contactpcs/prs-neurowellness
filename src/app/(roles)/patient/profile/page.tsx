@@ -12,14 +12,21 @@ import { PageLoader, Modal } from "@/components/ui";
 import { usersService, NoSupportedFieldsError } from "@/lib/api/services/users.service";
 import { authService } from "@/lib/api/services/auth.service";
 import { patientFilesService, type PatientFile } from "@/lib/api/services/patientFiles.service";
-import { consentService, type ConsentRecord } from "@/lib/api/services/consent.service";
+import { consentService, type ConsentRecord, type ConsentTemplate } from "@/lib/api/services/consent.service";
 import { extractErrorMessage } from "@/lib/api/errors";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
 import { fetchMyDoctor, selectMyDoctor, invalidateDashboard } from "@/store/slices/patientsSlice";
-import { useAuth, useMyAssessments } from "@/lib/hooks";
+import { useAuth, useMyAssessments, usePincodeLookup } from "@/lib/hooks";
 import { computeProfileCompletion } from "@/lib/profileCompletion";
-import { dialCodeForCountry } from "@/lib/countries";
+import { dialCodeForCountry, COUNTRY_OPTIONS } from "@/lib/countries";
+import { LANGUAGE_OPTIONS, languageLabel } from "@/lib/languages";
+
+// Deduped by dial code (US/Canada both +1) — the verify-phone dropdown picks
+// a code, not a country, so a repeated code would collide as a <select> value.
+const DIAL_CODE_OPTIONS = COUNTRY_OPTIONS.filter(
+  (c, i) => COUNTRY_OPTIONS.findIndex((o) => o.dialCode === c.dialCode) === i,
+);
 
 // ─── helpers ──────────────────────────────────────────────────────
 
@@ -69,7 +76,7 @@ const inputCls =
 const labelCls = "text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-1.5 block";
 
 function FieldInput({
-  label, value, onChange, type = "text", placeholder, readOnly, numeric,
+  label, value, onChange, type = "text", placeholder, readOnly, numeric, alpha,
 }: {
   label: string; value: string; onChange: (v: string) => void;
   type?: string; placeholder?: string; readOnly?: boolean;
@@ -77,6 +84,9 @@ function FieldInput({
    * anything else as it's typed rather than validating after the fact, so
    * a letter or symbol never lands in the field at all. */
   numeric?: boolean;
+  /** Letters and spaces only (a person's name) — same strip-as-typed approach
+   * as `numeric`. */
+  alpha?: boolean;
 }) {
   return (
     <div>
@@ -88,7 +98,7 @@ function FieldInput({
         value={value}
         placeholder={placeholder}
         readOnly={readOnly}
-        onChange={(e) => onChange(numeric ? sanitizeNumeric(e.target.value) : e.target.value)}
+        onChange={(e) => onChange(numeric ? sanitizeNumeric(e.target.value) : alpha ? sanitizeAlpha(e.target.value) : e.target.value)}
       />
     </div>
   );
@@ -102,6 +112,11 @@ function sanitizeNumeric(raw: string): string {
   const firstDot = cleaned.indexOf(".");
   if (firstDot === -1) return cleaned;
   return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, "");
+}
+
+// Letters + spaces only — strips digits/symbols as typed for a name field.
+function sanitizeAlpha(raw: string): string {
+  return raw.replace(/[^a-zA-Z\s]/g, "");
 }
 
 // read-only display row (label → value table style)
@@ -155,13 +170,16 @@ function ChannelVerification({
   const [error, setError] = useState<string | null>(null);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
+  // Defaults from the patient's on-file country but stays editable — a
+  // patient verifying a number for a country other than their registered one
+  // (e.g. an international number) isn't locked out of it.
+  const [dialCode, setDialCode] = useState(dialCodeForCountry(country));
 
   if (!missingEmail && !missingPhone) return null;
   if (!target) return null;
 
   const label = target === "email" ? "email" : "mobile number";
   const otherLabel = target === "email" ? "mobile number" : "email";
-  const dialCode = dialCodeForCountry(country);
   // Cognito needs E.164 (+<dial code><digits>) — country is already known
   // from registration, so the digits-only input is all the patient types;
   // no separate "type your country code" step.
@@ -253,9 +271,15 @@ function ChannelVerification({
                 />
               ) : (
                 <div className="flex items-center gap-1.5 max-w-xs flex-1">
-                  <span className="flex items-center justify-center px-2 py-1.5 rounded-lg border border-amber-300 bg-white text-xs text-amber-700 flex-shrink-0">
-                    {dialCode}
-                  </span>
+                  <select
+                    value={dialCode}
+                    onChange={(e) => setDialCode(e.target.value)}
+                    className="flex items-center justify-center px-1.5 py-1.5 rounded-lg border border-amber-300 bg-white text-xs text-amber-700 flex-shrink-0 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                  >
+                    {DIAL_CODE_OPTIONS.map((c) => (
+                      <option key={c.dialCode} value={c.dialCode}>{c.dialCode}</option>
+                    ))}
+                  </select>
                   <input
                     type="tel"
                     placeholder="XXXXXXXXXX"
@@ -482,12 +506,33 @@ function ConsentsSection({ patientProfileId }: { patientProfileId?: string }) {
   const { assessments } = useMyAssessments();
   const pendingToSign = assessments.filter((a) => a.status === "granted");
 
+  // Clicked consent's document — fetched on demand (not prefetched for every
+  // row) since the template text is only needed once someone asks to see it.
+  const [viewing, setViewing] = useState<ConsentRecord | null>(null);
+  const [viewTemplate, setViewTemplate] = useState<ConsentTemplate | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+  const [viewError, setViewError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!patientProfileId) return;
     consentService.listForSubject({ patient_id: patientProfileId })
       .then(setConsents)
       .catch(() => setError("Failed to load consent records"));
   }, [patientProfileId]);
+
+  const openConsent = (c: ConsentRecord) => {
+    setViewing(c);
+    setViewTemplate(null);
+    setViewError(null);
+    setViewLoading(true);
+    // patient_onboarding (and the other non-role-split consent types) have a
+    // single row with role=null — patient consent records are never
+    // role-split the way staff-onboarding ones are, so no role param here.
+    consentService.getTemplate(c.consent_type)
+      .then((t) => { if (!t) setViewError("Consent document not found"); setViewTemplate(t); })
+      .catch(() => setViewError("Failed to load consent document"))
+      .finally(() => setViewLoading(false));
+  };
 
   return (
     <div>
@@ -532,7 +577,11 @@ function ConsentsSection({ patientProfileId }: { patientProfileId?: string }) {
       ) : (
         <div className="divide-y divide-neutral-100 border border-neutral-200 rounded-xl overflow-hidden">
           {consents.map((c) => (
-            <div key={c.consent_id} className="flex items-center justify-between gap-3 px-4 py-3">
+            <button
+              key={c.consent_id}
+              onClick={() => openConsent(c)}
+              className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-50 transition-colors"
+            >
               <span className="flex items-center gap-2.5 text-sm font-semibold text-neutral-900 capitalize">
                 <FileSignature className="w-4 h-4 flex-shrink-0" style={{ color: BRAND_PRIMARY }} />
                 {c.consent_type.replace(/_/g, " ")}
@@ -544,11 +593,35 @@ function ConsentsSection({ patientProfileId }: { patientProfileId?: string }) {
                 }`}>
                   {c.status}
                 </span>
+                <ChevronRight className="w-3.5 h-3.5 text-neutral-300" />
               </span>
-            </div>
+            </button>
           ))}
         </div>
       )}
+
+      <Modal
+        isOpen={!!viewing}
+        onClose={() => setViewing(null)}
+        title={viewTemplate?.title ?? (viewing ? `${viewing.consent_type.replace(/_/g, " ")} consent` : "")}
+      >
+        <div className="space-y-3">
+          {viewing?.signed_at && (
+            <p className="text-xs text-neutral-500">
+              Signed {new Date(viewing.signed_at).toLocaleDateString()}
+            </p>
+          )}
+          {viewLoading ? (
+            <p className="text-sm text-neutral-400">Loading…</p>
+          ) : viewError ? (
+            <p className="text-sm text-red-600">{viewError}</p>
+          ) : (
+            <div className="max-h-96 overflow-y-auto text-sm text-neutral-700 bg-neutral-50 border border-neutral-200 rounded-lg p-4 whitespace-pre-wrap">
+              {viewTemplate?.content}
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -627,6 +700,19 @@ function PatientProfile() {
 
   const set = (field: keyof FormState, value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
+
+  // Autofill city/state/country once the pincode resolves to a real post
+  // office — same lookup + wiring as the registration form.
+  const { location: pincodeLocation } = usePincodeLookup(isEditing ? form.pincode : undefined);
+  useEffect(() => {
+    if (!pincodeLocation) return;
+    setForm((prev) => ({
+      ...prev,
+      city: pincodeLocation.city,
+      state: pincodeLocation.state,
+      country: pincodeLocation.country,
+    }));
+  }, [pincodeLocation]);
 
   const handleSave = async () => {
     if (form.id_type === "aadhaar" && form.government_id.length !== 12) {
@@ -812,7 +898,15 @@ function PatientProfile() {
                     <FieldInput label="Full Name"     value={form.full_name}     onChange={(v) => set("full_name", v)} />
                     <FieldInput label="Date of Birth" value={form.date_of_birth} onChange={(v) => set("date_of_birth", v)} type="date" />
                     <FieldInput label="Address"       value={form.address_line1} onChange={(v) => set("address_line1", v)} placeholder="Street address" />
-                    <FieldInput label="Country"       value={form.country}       onChange={(v) => set("country", v)} />
+                    <div>
+                      <label className={labelCls}>Country</label>
+                      <select className={inputCls} value={form.country} onChange={(e) => set("country", e.target.value)}>
+                        <option value="">Select</option>
+                        {COUNTRY_OPTIONS.map((c) => (
+                          <option key={c.name} value={c.name}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
                       <FieldInput label="City"    value={form.city}    onChange={(v) => set("city", v)} />
                       <FieldInput label="State"   value={form.state}   onChange={(v) => set("state", v)} />
@@ -843,6 +937,7 @@ function PatientProfile() {
                       value={form.emergency_contact}
                       onChange={(v) => set("emergency_contact", v)}
                       placeholder="Full name"
+                      alpha
                     />
                     <FieldInput
                       label="Emergency Contact Number"
@@ -881,7 +976,15 @@ function PatientProfile() {
                     {form.id_type === "aadhaar" && form.government_id.length > 0 && form.government_id.length !== 12 && (
                       <p className="text-xs text-red-600">Aadhaar number must be exactly 12 digits.</p>
                     )}
-                    <FieldInput label="Mother Tongue" value={form.language_pref} onChange={(v) => set("language_pref", v)} />
+                    <div>
+                      <label className={labelCls}>Mother Tongue</label>
+                      <select className={inputCls} value={form.language_pref} onChange={(e) => set("language_pref", e.target.value)}>
+                        <option value="">Select</option>
+                        {LANGUAGE_OPTIONS.map((l) => (
+                          <option key={l.code} value={l.code}>{l.label}</option>
+                        ))}
+                      </select>
+                    </div>
 
                     {saveError && (
                       <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
@@ -921,7 +1024,7 @@ function PatientProfile() {
                     <InfoRow label="Marital Status" value={form.marital_status} />
                     <InfoRow label="Government ID"  value={form.government_id} />
                     <InfoRow label="ID Type"        value={form.id_type} />
-                    <InfoRow label="Mother Tongue" value={form.language_pref} />
+                    <InfoRow label="Mother Tongue" value={languageLabel(form.language_pref)} />
                   </div>
                 )}
               </div>
