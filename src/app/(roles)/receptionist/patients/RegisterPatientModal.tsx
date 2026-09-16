@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   X, Check, Smartphone, Mail, ShieldCheck, Lock, Loader2, MapPin,
 } from "lucide-react";
@@ -148,7 +148,12 @@ export default function RegisterPatientModal({
   const set = <K extends keyof FormState>(field: K, val: FormState[K]) =>
     setForm((f) => ({ ...f, [field]: val }));
 
-  const { location: pincodeLocation, loading: pincodeLoading } = usePincodeLookup(form.pincode);
+  // True right after "Use my location" fills the pincode — suppresses the
+  // pincode-lookup effect below so it doesn't overwrite the (more accurate)
+  // geolocation result with a district name.
+  const pincodeFromGeo = useRef(false);
+
+  const { location: pincodeLocation, loading: pincodeLoading } = usePincodeLookup(form.pincode, pincodeFromGeo.current);
   useEffect(() => {
     if (!pincodeLocation) return;
     setForm((f) => ({ ...f, city: pincodeLocation.city, state: pincodeLocation.state, country: pincodeLocation.country }));
@@ -157,6 +162,7 @@ export default function RegisterPatientModal({
   const { locate, address: geoAddress, status: geoStatus } = useGeolocationAddress();
   useEffect(() => {
     if (!geoAddress) return;
+    if (geoAddress.pincode) pincodeFromGeo.current = true;
     setForm((f) => ({
       ...f,
       pincode: geoAddress.pincode || f.pincode,
