@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -114,7 +114,12 @@ function LocalRegisterForm() {
   const selectedClinic = clinics.find((c) => c.clinic_id === selectedClinicId);
   const filteredClinics = getFilteredClinics(clinics, userCity, userState);
 
-  const { location: pincodeLocation, loading: pincodeLoading } = usePincodeLookup(userPincode);
+  // True for one render right after "Use my location" fills the pincode —
+  // suppresses the pincode-lookup effect below so it doesn't immediately
+  // overwrite the (more accurate) geolocation result with a district name.
+  const pincodeFromGeo = useRef(false);
+
+  const { location: pincodeLocation, loading: pincodeLoading } = usePincodeLookup(userPincode, pincodeFromGeo.current);
   useEffect(() => {
     if (!pincodeLocation) return;
     setValue("city", pincodeLocation.city, { shouldValidate: true });
@@ -125,7 +130,10 @@ function LocalRegisterForm() {
   const { locate, address: geoAddress, status: geoStatus } = useGeolocationAddress();
   useEffect(() => {
     if (!geoAddress) return;
-    if (geoAddress.pincode) setValue("pincode", geoAddress.pincode);
+    if (geoAddress.pincode) {
+      pincodeFromGeo.current = true;
+      setValue("pincode", geoAddress.pincode);
+    }
     setValue("city", geoAddress.city, { shouldValidate: true });
     setValue("state", geoAddress.state, { shouldValidate: true });
     setValue("country", geoAddress.country);
@@ -337,7 +345,12 @@ function OtpSignupWizard() {
   const filteredClinics = getFilteredClinics(clinics, userCity, userState);
   const dialCode = COUNTRY_OPTIONS.find((c) => c.name === watch("country"))?.dialCode ?? "+91";
 
-  const { location: pincodeLocation, loading: pincodeLoading } = usePincodeLookup(userPincode);
+  // True right after "Use my location" fills the pincode — suppresses the
+  // pincode-lookup effect below so it doesn't overwrite the (more accurate)
+  // geolocation result with a district name.
+  const pincodeFromGeo = useRef(false);
+
+  const { location: pincodeLocation, loading: pincodeLoading } = usePincodeLookup(userPincode, pincodeFromGeo.current);
   useEffect(() => {
     if (!pincodeLocation) return;
     setValue("city", pincodeLocation.city, { shouldValidate: true });
@@ -350,7 +363,10 @@ function OtpSignupWizard() {
   const { locate, address: geoAddress, status: geoStatus } = useGeolocationAddress();
   useEffect(() => {
     if (!geoAddress) return;
-    if (geoAddress.pincode) setValue("pincode", geoAddress.pincode);
+    if (geoAddress.pincode) {
+      pincodeFromGeo.current = true;
+      setValue("pincode", geoAddress.pincode);
+    }
     setValue("city", geoAddress.city, { shouldValidate: true });
     setValue("state", geoAddress.state, { shouldValidate: true });
     if (COUNTRY_OPTIONS.some((c) => c.name === geoAddress.country)) {
