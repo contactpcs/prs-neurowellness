@@ -3,23 +3,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight, ChevronLeft, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save, StickyNote, FileText } from "lucide-react";
+import { ChevronRight, ChevronLeft, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save, FileText, Pill, NotebookPen, X } from "lucide-react";
 import { PatientDetailSkeleton, Button } from "@/components/ui";
 import { AnamnesisForm } from "@/components/assessment/AnamnesisForm";
 import { adminService } from "@/lib/api/services/admin.service";
 import { PatientJourneySections, type PatientJourneyDetail } from "@/components/admin/PatientJourneySections";
-import { PatientHistoryPanel } from "@/components/admin/PatientHistoryPanel";
+import { PatientHistoryPanel, type Tab as PatientHistoryTab } from "@/components/admin/PatientHistoryPanel";
 import {
   useDoctorPatient,
   useDoctorPatients,
   usePatientPermissions,
   usePatientScoresSummary,
   usePatientAnamnesis,
-  usePatientNote,
+  useAuth,
 } from "@/lib/hooks";
 import { useAppDispatch } from "@/store/hooks";
 import { invalidatePatientAnamnesis } from "@/store/slices/anamnesisSlice";
-import type { DoctorNote } from "@/lib/api/services/doctorNotes.service";
 import type { Permission, AssessmentInstance, AnamnesisRecord } from "@/types/domain.types";
 import { EEGReportList, EEGUploadForm, NEDFUploadForm } from "@/components/eeg";
 import { TreatmentProtocolPanel, DeviceSessionsPanel } from "@/components/doctor/TreatmentProtocolPanel";
@@ -54,6 +53,44 @@ function formatDateTime(iso: string) {
   });
 }
 
+const NOTE_CATEGORIES = ["Consultation", "Assessment Review", "Treatment Review", "Session Review", "Follow-up", "General"];
+
+const SECTION_LABELS: Record<string, string> = {
+  "registration-record": "Registration Record",
+  anamnesis: "Anamnesis",
+  "brain-mapping": "Brain Mapping",
+  prs: "PRS",
+  notes: "Doctor's Notes",
+  "medical-history": "Medical History",
+  medicine: "Prescribed Medicine",
+  "treatment-protocol": "Treatment Protocol",
+  sessions: "Sessions",
+  "treatment-plan": "Treatment Plan",
+  "final-report": "Final Report",
+};
+
+type DoctorNoteEntry = {
+  date: string;
+  author: string;
+  category: string;
+  body: string;
+};
+
+const MEDICINE_TIMINGS = ["Morning", "Afternoon", "Evening", "Night", "Twice daily", "Three times daily", "As needed"];
+const MEDICINE_MEALS = ["Before meal", "After meal", "With meal", "Empty stomach", "Not applicable"];
+
+type PrescribedMedicine = {
+  id: string;
+  name: string;
+  dose: string;
+  timing: string;
+  meal: string;
+  duration: string;
+  note: string;
+  started: string;
+  status: "Active" | "Stopped";
+};
+
 function buildSections(
   anamnesisStatus: "in_progress" | "completed" | null,
   hasDoctorNote: boolean,
@@ -72,6 +109,7 @@ function buildSections(
     { id: "prs", name: "PRS", status: "start" },
     { id: "notes", name: "Doctor's Notes", status: hasDoctorNote ? "done" : null },
     { id: "medical-history", name: "Medical History", status: "link" },
+    { id: "medicine", name: "Prescribed Medicine", status: null },
     { id: "treatment-protocol", name: "Treatment Protocol", status: null },
     { id: "sessions", name: "Sessions", status: null },
     { id: "treatment-plan", name: "Treatment Plan", status: treatmentPlanLocked ? "locked" : null },
@@ -92,7 +130,8 @@ export default function DoctorPatientDetailPage() {
   const assessments = usePatientPermissions(id);
   const { instances: scoreInstances, total: totalAssessments } = usePatientScoresSummary(id);
   const { record: anamnesisRecord, isLoading: anamnesisLoading } = usePatientAnamnesis(id, "main");
-  const { note: doctorNote, isLoading: noteLoading, save: saveNote } = usePatientNote(id);
+  const { user: currentUser } = useAuth();
+  const doctorDisplayName = [currentUser?.first_name, currentUser?.last_name].filter(Boolean).join(" ") || "Doctor";
   const [headerSearch, setHeaderSearch] = useState("");
 
   const isLoading = patientLoading;
@@ -180,13 +219,29 @@ export default function DoctorPatientDetailPage() {
   const [eegRefreshKey, setEegRefreshKey] = useState(0);
   const [showEegUpload, setShowEegUpload] = useState(false);
   const [eegUploadTab, setEegUploadTab] = useState<"nedf" | "pdf">("nedf");
-  const [noteText, setNoteText] = useState("");
-  const [noteSaving, setNoteSaving] = useState(false);
-  const [noteError, setNoteError] = useState<string | null>(null);
-  const [noteSavedAt, setNoteSavedAt] = useState<string | null>(null);
-  const [notepadEditing, setNotepadEditing] = useState(false);
   const [registrationRecord, setRegistrationRecord] = useState<Record<string, unknown> | null>(null);
   const [registrationRecordError, setRegistrationRecordError] = useState<string | null>(null);
+  // Not backed by an API yet (no medications table/endpoints exist) — kept
+  // client-side per patient, so it resets on reload/navigation.
+  const [medicines, setMedicines] = useState<PrescribedMedicine[]>([]);
+  const [medForm, setMedForm] = useState<Omit<PrescribedMedicine, "id" | "started" | "status"> | null>(null);
+  // Real backend only has POST /doctor-session-notes (keyed to a session/
+  // cycle, not patient) — no list-by-patient endpoint exists, so this
+  // chronological, categorized notes feed is client-side only and resets
+  // on reload/navigation, same as Prescribed Medicine above.
+  const [doctorNotes, setDoctorNotes] = useState<DoctorNoteEntry[]>([]);
+  const [noteAdding, setNoteAdding] = useState(false);
+  const [newNoteCategory, setNewNoteCategory] = useState(NOTE_CATEGORIES[0]);
+  const [newNoteBody, setNewNoteBody] = useState("");
+  const [noteWidgetOpen, setNoteWidgetOpen] = useState(false);
+  const [widgetCategory, setWidgetCategory] = useState(NOTE_CATEGORIES[0]);
+  const [widgetBody, setWidgetBody] = useState("");
+  const [widgetSaved, setWidgetSaved] = useState(false);
+
+  useEffect(() => {
+    setMedicines([]);
+    setMedForm(null);
+  }, [id]);
 
   // Registration Record = anamnesis + general PRS taken during self-
   // registration (assessment_stage='general_registration',
@@ -198,21 +253,14 @@ export default function DoctorPatientDetailPage() {
     adminService.getPatientDetail(id).then(setRegistrationRecord).catch(() => setRegistrationRecordError("Couldn't load registration record"));
   }, [id]);
 
-  // Reset immediately on patient switch so a previous patient's note text
-  // can never linger/be saved against the wrong patient while the new
-  // patient's note is still loading.
+  // Reset immediately on patient switch so a previous patient's notes can
+  // never linger against the wrong patient.
   useEffect(() => {
-    setNoteText("");
-    setNoteSavedAt(null);
-    setNotepadEditing(false);
+    setDoctorNotes([]);
+    setNoteAdding(false);
+    setNoteWidgetOpen(false);
+    setWidgetBody("");
   }, [id]);
-
-  useEffect(() => {
-    if (doctorNote) {
-      setNoteText(doctorNote.note_text ?? "");
-      setNoteSavedAt(doctorNote.updated_at ?? null);
-    }
-  }, [doctorNote]);
 
   // Auto-expand upload panel when user returns to brain-mapping and a job is still running
   useEffect(() => {
@@ -228,21 +276,22 @@ export default function DoctorPatientDetailPage() {
     } catch {}
   }, [selectedSection, id]);
 
-  const handleSaveNote = async () => {
-    setNoteSaving(true);
-    setNoteError(null);
-    try {
-      const result = await saveNote(noteText);
-      const saved = (result as any)?.payload?.note as DoctorNote | undefined;
-      if (saved?.note_text != null) setNoteText(saved.note_text);
-      setNoteSavedAt(saved?.updated_at ?? new Date().toISOString());
-      setNotepadEditing(false);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to save note";
-      setNoteError(message);
-    } finally {
-      setNoteSaving(false);
-    }
+  const addDoctorNote = () => {
+    if (!newNoteBody.trim()) return;
+    setDoctorNotes((list) => [{ date: formatDate(new Date().toISOString()), author: doctorDisplayName, category: newNoteCategory, body: newNoteBody }, ...list]);
+    setNewNoteBody("");
+    setNoteAdding(false);
+  };
+
+  const saveWidgetNote = () => {
+    if (!widgetBody.trim()) return;
+    setDoctorNotes((list) => [
+      { date: formatDate(new Date().toISOString()), author: doctorDisplayName, category: widgetCategory, body: `(from ${SECTION_LABELS[selectedSection] ?? selectedSection}) ${widgetBody}` },
+      ...list,
+    ]);
+    setWidgetBody("");
+    setWidgetSaved(true);
+    setTimeout(() => { setWidgetSaved(false); setNoteWidgetOpen(false); }, 1400);
   };
 
   if (isLoading) return <PatientDetailSkeleton />;
@@ -459,7 +508,7 @@ export default function DoctorPatientDetailPage() {
                 <ChevronRight className={`w-5 h-5 text-neutral-600 transition-transform duration-150 ${basicOpen ? "-rotate-90" : "rotate-0"}`} />
               </button>
               <div className={`overflow-y-auto space-y-0 transition-all duration-150 ${basicOpen ? "flex-1" : "hidden"}`}>
-                {buildSections(visitSummary?.anamnesis?.status ?? null, !!doctorNote?.note_text, !!sessionId, treatmentPlanLocked).map((section) => {
+                {buildSections(visitSummary?.anamnesis?.status ?? null, doctorNotes.length > 0, !!sessionId, treatmentPlanLocked).map((section) => {
                   return (
                     <button
                       key={section.id}
@@ -490,7 +539,11 @@ export default function DoctorPatientDetailPage() {
             {/* Right Content - Assessment Details */}
             <div className="flex-1 bg-white rounded-lg shadow-md p-4 sm:p-8 overflow-y-auto">
               {selectedSection === "medical-history" ? (
-                <PatientHistoryPanel patientId={id} clinicId={patient?.clinic_id} />
+                <PatientHistoryPanel
+                  patientId={id}
+                  clinicId={patient?.clinic_id}
+                  initialTab={(searchParams.get("tab") as PatientHistoryTab | null) ?? undefined}
+                />
               ) : selectedSection === "registration-record" ? (
                 <div className="space-y-5">
                   <div>
@@ -585,6 +638,142 @@ export default function DoctorPatientDetailPage() {
 
                   <EEGReportList patientId={id} canDelete refreshTrigger={eegRefreshKey} />
                 </div>
+              ) : selectedSection === "medicine" ? (
+                <div className="space-y-6">
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div>
+                      <h2 className="text-2xl font-bold text-neutral-900 mb-1">Prescribed Medicine</h2>
+                      <p className="text-neutral-600 text-sm">Current and past prescriptions for {fullName}.</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant={medForm ? "outline" : "primary"}
+                      onClick={() => setMedForm(medForm ? null : { name: "", dose: "", timing: MEDICINE_TIMINGS[0], meal: MEDICINE_MEALS[1], duration: "", note: "" })}
+                    >
+                      {medForm ? "Cancel" : <><Plus className="h-4 w-4" /> Prescribe Medicine</>}
+                    </Button>
+                  </div>
+
+                  {medForm && (
+                    <div className="border border-blue-100 bg-blue-50/50 rounded-lg p-4 space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div>
+                          <label className="text-xs font-semibold text-neutral-700">Medicine name *</label>
+                          <input
+                            value={medForm.name}
+                            onChange={(e) => setMedForm((f) => f && { ...f, name: e.target.value })}
+                            placeholder="e.g. Escitalopram 10 mg"
+                            className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-neutral-700">Dose</label>
+                          <input
+                            value={medForm.dose}
+                            onChange={(e) => setMedForm((f) => f && { ...f, dose: e.target.value })}
+                            placeholder="e.g. 1 tablet"
+                            className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-neutral-700">Timing</label>
+                          <select
+                            value={medForm.timing}
+                            onChange={(e) => setMedForm((f) => f && { ...f, timing: e.target.value })}
+                            className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
+                          >
+                            {MEDICINE_TIMINGS.map((t) => <option key={t}>{t}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-neutral-700">Meal instruction</label>
+                          <select
+                            value={medForm.meal}
+                            onChange={(e) => setMedForm((f) => f && { ...f, meal: e.target.value })}
+                            className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
+                          >
+                            {MEDICINE_MEALS.map((m) => <option key={m}>{m}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-neutral-700">Duration</label>
+                          <input
+                            value={medForm.duration}
+                            onChange={(e) => setMedForm((f) => f && { ...f, duration: e.target.value })}
+                            placeholder="e.g. 8 weeks"
+                            className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-neutral-700">Note</label>
+                        <input
+                          value={medForm.note}
+                          onChange={(e) => setMedForm((f) => f && { ...f, note: e.target.value })}
+                          placeholder="Optional prescribing note"
+                          className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
+                        />
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        disabled={!medForm.name.trim()}
+                        onClick={() => {
+                          setMedicines((list) => [
+                            { id: `m${Date.now()}`, ...medForm, started: formatDate(new Date().toISOString()), status: "Active" },
+                            ...list,
+                          ]);
+                          setMedForm(null);
+                        }}
+                      >
+                        <Save className="h-4 w-4" /> Save Prescription
+                      </Button>
+                    </div>
+                  )}
+
+                  {medicines.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-center border border-dashed border-neutral-200 rounded-lg">
+                      <Pill className="w-6 h-6 text-neutral-300 mb-2" />
+                      <p className="text-neutral-600 font-medium mb-1">No medicine prescribed yet</p>
+                      <p className="text-neutral-500 text-sm">Prescribe medicine to start tracking it here</p>
+                    </div>
+                  ) : (
+                    <div className="border border-neutral-200 rounded-lg overflow-x-auto">
+                      <div className="min-w-[820px]">
+                        <div className="grid grid-cols-[1.6fr_0.9fr_1fr_1.3fr_0.9fr_0.9fr_0.9fr] gap-2.5 px-4 py-2.5 bg-neutral-50 border-b border-neutral-200 text-[10px] font-semibold text-neutral-500 uppercase tracking-wide">
+                          <span>Medicine</span><span>Dose</span><span>Timing</span><span>Meal Instruction</span><span>Duration</span><span>Started</span><span>Status</span>
+                        </div>
+                        {medicines.map((m, i) => (
+                          <div
+                            key={m.id}
+                            className={`grid grid-cols-[1.6fr_0.9fr_1fr_1.3fr_0.9fr_0.9fr_0.9fr] gap-2.5 items-center px-4 py-3 ${i < medicines.length - 1 ? "border-b border-neutral-100" : ""} ${m.status === "Stopped" ? "opacity-60" : ""}`}
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-neutral-900">{m.name}</p>
+                              {m.note && <p className="text-xs text-neutral-400 mt-0.5">{m.note}</p>}
+                            </div>
+                            <span className="text-xs text-neutral-700">{m.dose || "—"}</span>
+                            <span className="text-xs text-neutral-700">{m.timing}</span>
+                            <span className="text-xs text-neutral-700">{m.meal}</span>
+                            <span className="text-xs text-neutral-600">{m.duration || "—"}</span>
+                            <span className="text-xs text-neutral-500">{m.started}</span>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs font-medium px-2.5 py-0.5 rounded-full w-fit ${m.status === "Active" ? "bg-green-50 text-green-700" : "bg-neutral-100 text-neutral-600"}`}>
+                                {m.status}
+                              </span>
+                              <button
+                                onClick={() => setMedicines((list) => list.map((x) => x.id === m.id ? { ...x, status: x.status === "Active" ? "Stopped" : "Active" } : x))}
+                                className="text-xs font-medium text-neutral-400 hover:text-neutral-600 transition-colors"
+                              >
+                                {m.status === "Active" ? "Stop" : "Resume"}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               ) : selectedSection === "treatment-protocol" ? (
                 <TreatmentProtocolPanel patientId={id} />
               ) : selectedSection === "treatment-plan" ? (
@@ -593,7 +782,7 @@ export default function DoctorPatientDetailPage() {
                   patient={patient}
                   clinicalSessions={clinicalSessions}
                   sessionLocked={sessionLocked}
-                  doctorNoteText={doctorNote?.note_text ?? null}
+                  doctorNoteText={doctorNotes[0]?.body ?? null}
                   onNavigateSection={setSelectedSection}
                   onGenerateFinalReport={() => openFinalReport(currentSession)}
                 />
@@ -601,55 +790,65 @@ export default function DoctorPatientDetailPage() {
                 <DeviceSessionsPanel patientId={id} />
               ) : selectedSection === "notes" ? (
                 <div className="space-y-4">
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
                     <div>
                       <h2 className="text-2xl font-bold text-neutral-900 mb-1">Doctor's Notes</h2>
-                      <p className="text-neutral-600 text-sm">
-                        Private notes for {fullName}. Only you can view and edit these.
-                      </p>
+                      <p className="text-neutral-600 text-sm">Chronological clinical record for {fullName}.</p>
                     </div>
-                    {noteSavedAt && (
-                      <span className="text-xs text-neutral-500 mt-2">
-                        Last saved {formatDate(noteSavedAt)}
-                      </span>
-                    )}
+                    <Button size="sm" variant={noteAdding ? "outline" : "primary"} onClick={() => setNoteAdding((a) => !a)}>
+                      {noteAdding ? "Cancel" : <><Plus className="h-4 w-4" /> Add Clinical Note</>}
+                    </Button>
                   </div>
 
-                  <textarea
-                    value={noteText}
-                    onChange={(e) => setNoteText(e.target.value)}
-                    placeholder="Type your clinical notes here..."
-                    className="w-full min-h-[320px] resize-y border border-neutral-200 rounded-lg p-4 text-sm text-neutral-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-colors"
-                  />
-
-                  {noteError && (
-                    <p className="text-sm text-red-600">{noteError}</p>
-                  )}
-
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-neutral-500">
-                      {noteText.length} character{noteText.length === 1 ? "" : "s"}
-                    </p>
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setNoteText(doctorNote?.note_text ?? "")}
-                        disabled={noteSaving || noteText === (doctorNote?.note_text ?? "")}
-                        className="px-4 py-2 border border-neutral-300 text-neutral-700 font-medium rounded-lg hover:bg-neutral-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Reset
-                      </button>
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        onClick={handleSaveNote}
-                        disabled={noteSaving || noteText === (doctorNote?.note_text ?? "")}
-                      >
-                        <Save className="h-4 w-4" />
-                        {noteSaving ? "Saving..." : "Save Note"}
+                  {noteAdding && (
+                    <div className="border border-blue-100 bg-blue-50/50 rounded-lg p-4 space-y-3">
+                      <div>
+                        <label className="text-xs font-semibold text-neutral-700">Category</label>
+                        <select
+                          value={newNoteCategory}
+                          onChange={(e) => setNewNoteCategory(e.target.value)}
+                          className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
+                        >
+                          {NOTE_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-neutral-700">Note</label>
+                        <textarea
+                          value={newNoteBody}
+                          onChange={(e) => setNewNoteBody(e.target.value)}
+                          rows={4}
+                          placeholder="Clinical observations, plan, and next steps…"
+                          className="w-full mt-1.5 border border-neutral-200 rounded-lg p-3 text-sm text-neutral-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-colors resize-y"
+                        />
+                      </div>
+                      <Button size="sm" variant="primary" disabled={!newNoteBody.trim()} onClick={addDoctorNote}>
+                        <Save className="h-4 w-4" /> Save Note
                       </Button>
                     </div>
-                  </div>
+                  )}
+
+                  {doctorNotes.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-center border border-dashed border-neutral-200 rounded-lg">
+                      <p className="text-neutral-600 font-medium mb-1">No clinical notes yet</p>
+                      <p className="text-neutral-500 text-sm">Add a note to start this patient&apos;s clinical record</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {doctorNotes.map((n, i) => (
+                        <div key={i} className="border border-neutral-200 border-l-4 border-l-blue-400 rounded-lg p-4">
+                          <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold text-neutral-900">{n.date}</span>
+                              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700">{n.category}</span>
+                            </div>
+                            <span className="text-xs text-neutral-400">{n.author}</span>
+                          </div>
+                          <p className="text-sm text-neutral-800 mt-2 leading-relaxed">{n.body}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : (
                 // PRS View - Show Completed Assessments
@@ -823,60 +1022,45 @@ export default function DoctorPatientDetailPage() {
         </div>
       </div>
 
-      {/* Floating Notepad — fixed to the viewport so it's always visible while
-          scrolling and stays mounted across every section tab, sharing state
-          with Doctor's Notes so both stay in sync. */}
+      {/* Quick Doctor's Note — fixed to the viewport so it's reachable from
+          every section tab; saves into the same categorized Doctor's Notes
+          feed, tagged with the section it was written from. */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
-        {notepadEditing && (
-          <div
-            className="w-80 min-w-[240px] min-h-[220px] max-w-[calc(100vw-3rem)] max-h-[calc(100vh-8rem)] resize overflow-auto bg-white rounded-xl shadow-xl border border-neutral-200 p-4 flex flex-col"
-          >
-            <div className="flex items-center justify-between mb-2 flex-shrink-0">
-              <div className="flex items-center gap-1.5">
-                <StickyNote className="w-4 h-4 text-neutral-500" />
-                <h3 className="text-sm font-semibold text-neutral-900">Notepad</h3>
-              </div>
-              <button
-                onClick={() => setNotepadEditing(false)}
-                className="text-neutral-400 hover:text-neutral-600 transition-colors"
-              >
-                ✕
+        {noteWidgetOpen && (
+          <div className="w-[300px] bg-white rounded-xl shadow-xl border border-neutral-200 p-3.5 flex flex-col gap-2.5">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold text-neutral-900">Quick Doctor&apos;s Note</p>
+              <button onClick={() => setNoteWidgetOpen(false)} className="text-neutral-400 hover:text-neutral-600 transition-colors">
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
-
+            <p className="text-xs text-neutral-400 -mt-1.5">From: {SECTION_LABELS[selectedSection] ?? selectedSection}</p>
+            <select
+              value={widgetCategory}
+              onChange={(e) => setWidgetCategory(e.target.value)}
+              className="w-full h-9 border border-neutral-200 rounded-lg px-2 text-xs bg-white outline-none focus:border-blue-400"
+            >
+              {NOTE_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+            </select>
             <textarea
-              value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
-              placeholder="Type your clinical notes here..."
-              autoFocus
-              className="w-full flex-1 min-h-[80px] resize-none border border-neutral-200 rounded-lg p-2.5 text-sm text-neutral-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-colors"
+              value={widgetBody}
+              onChange={(e) => setWidgetBody(e.target.value)}
+              rows={3}
+              placeholder="Jot a note while reviewing this section…"
+              className="w-full border border-neutral-200 rounded-lg p-2 text-xs text-neutral-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-colors resize-y"
             />
-
-            {noteError && <p className="text-xs text-red-600 mt-2">{noteError}</p>}
-            {noteSavedAt && (
-              <p className="text-[11px] text-neutral-400 mt-2">Last saved {formatDate(noteSavedAt)}</p>
-            )}
-
-            <div className="flex justify-end mt-3">
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={handleSaveNote}
-                disabled={noteSaving || noteText === (doctorNote?.note_text ?? "")}
-              >
-                <Save className="h-3.5 w-3.5" />
-                {noteSaving ? "Saving..." : "Save"}
-              </Button>
-            </div>
+            <Button size="sm" variant="primary" disabled={!widgetBody.trim()} onClick={saveWidgetNote}>
+              {widgetSaved ? "✓ Saved to Doctor's Notes" : "Save to Doctor's Notes"}
+            </Button>
           </div>
         )}
 
         <button
-          onClick={() => setNotepadEditing((o) => !o)}
-          className="w-12 h-12 rounded-full bg-neutral-900 text-white shadow-lg flex items-center justify-center hover:bg-neutral-800 transition-colors flex-shrink-0"
-          title="Notepad"
+          onClick={() => setNoteWidgetOpen((o) => !o)}
+          className="w-12 h-12 rounded-full bg-brand-gradient text-white shadow-lg flex items-center justify-center hover:opacity-90 transition-opacity flex-shrink-0"
+          title="Add a doctor's note"
         >
-          {notepadEditing ? <span className="text-lg leading-none">✕</span> : <StickyNote className="w-5 h-5" />}
+          {noteWidgetOpen ? <X className="w-5 h-5" /> : <NotebookPen className="w-5 h-5" />}
         </button>
       </div>
 
@@ -891,7 +1075,7 @@ export default function DoctorPatientDetailPage() {
             if (!latest) return null;
             return `${latest.disease_score != null ? `Score ${latest.disease_score.toFixed(0)}/100` : ""}${latest.severity_label ? ` · ${latest.severity_label}` : ""}`.trim() || null;
           })()}
-          doctorNoteText={doctorNote?.note_text ?? null}
+          doctorNoteText={doctorNotes[0]?.body ?? null}
           protocol={finalReportProtocol}
           onClose={() => setFinalReportFor(null)}
         />

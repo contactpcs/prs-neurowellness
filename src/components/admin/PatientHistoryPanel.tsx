@@ -10,9 +10,9 @@ import { extractErrorMessage } from "@/lib/api/errors";
 import type { InstanceScoreDetail } from "@/lib/api/services/scores.service";
 import type { Appointment } from "@/types/domain.types";
 
-type Tab = "appointments" | "reports" | "prs" | "sessions" | "final-reports";
+export type Tab = "appointments" | "reports" | "prs" | "sessions" | "final-reports";
 
-const REPORT_TYPE_OPTIONS = [
+export const REPORT_TYPE_OPTIONS = [
   { value: "blood_test",     label: "Blood test" },
   { value: "scan",           label: "Scan" },
   { value: "mri",            label: "MRI" },
@@ -76,8 +76,8 @@ function SectionError({ msg }: { msg: string }) {
   );
 }
 
-export function PatientHistoryPanel({ patientId, clinicId }: { patientId: string; clinicId?: string }) {
-  const [tab, setTab] = useState<Tab>("appointments");
+export function PatientHistoryPanel({ patientId, clinicId, initialTab }: { patientId: string; clinicId?: string; initialTab?: Tab }) {
+  const [tab, setTab] = useState<Tab>(initialTab ?? "appointments");
 
   // Real, working sources — same ones the rest of the doctor patient-detail
   // page already relies on. The old standalone /history page hit stub

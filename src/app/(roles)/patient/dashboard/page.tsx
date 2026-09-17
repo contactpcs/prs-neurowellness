@@ -231,21 +231,6 @@ function PatientDashboard() {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                {nextAppt && (
-                  <div className="bg-white/20 rounded-lg px-3 py-2 text-center text-white">
-                    <p className="text-[10px] font-medium text-blue-100 uppercase tracking-wide mb-0.5">
-                      Next
-                    </p>
-                    <p className="text-base font-bold leading-tight">
-                      {new Date(nextAppt.start_at || `${nextAppt.appointment_date}T00:00:00`).toLocaleDateString("en-US", {
-                        month: "short", day: "numeric",
-                      })}
-                    </p>
-                    <p className="text-[10px] text-blue-100 mt-0.5">
-                      {nextAppt.status === "planned" ? "No time booked yet" : formatTime(nextAppt.start_time)}
-                    </p>
-                  </div>
-                )}
                 {nextAppt?.status === "selected" && (
                   <button
                     onClick={() => setPayingId(nextAppt.appointment_id)}
@@ -262,15 +247,19 @@ function PatientDashboard() {
                     Select Slot
                   </button>
                 )}
-                {doctor && (
-                  <div className="bg-white/10 rounded-lg px-3 py-2 hidden sm:flex items-center gap-2 text-white">
-                    <div className="w-7 h-7 rounded-full bg-white/80 flex items-center justify-center flex-shrink-0">
-                      <User className="w-3.5 h-3.5 text-blue-500" />
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-blue-100">Your Doctor</p>
-                      <p className="font-semibold text-xs">{doctorLabel(doctor.full_name)}</p>
-                    </div>
+                {nextAppt && (
+                  <div className="bg-white/20 rounded-lg px-3 py-2 text-center text-white">
+                    <p className="text-[10px] font-medium text-blue-100 uppercase tracking-wide mb-0.5">
+                      Next
+                    </p>
+                    <p className="text-base font-bold leading-tight">
+                      {new Date(nextAppt.start_at || `${nextAppt.appointment_date}T00:00:00`).toLocaleDateString("en-US", {
+                        month: "short", day: "numeric",
+                      })}
+                    </p>
+                    <p className="text-[10px] text-blue-100 mt-0.5">
+                      {nextAppt.status === "planned" ? "No time booked yet" : formatTime(nextAppt.start_time)}
+                    </p>
                   </div>
                 )}
               </div>

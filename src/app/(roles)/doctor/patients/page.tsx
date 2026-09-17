@@ -208,12 +208,20 @@ export default function DoctorPatientsPage() {
                     </td>
                     {/* Action */}
                     <td className="pl-6 pr-2 py-4">
-                      <button
-                        onClick={() => router.push(`/doctor/patients/${p.id}`)}
-                        className="px-4 py-1.5 rounded-lg text-sm font-semibold text-white bg-action-orange hover:bg-action-orange-dark transition-colors"
-                      >
-                        View
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => router.push(`/doctor/patients/${p.id}/summary`)}
+                          className="px-4 py-1.5 rounded-lg text-sm font-semibold text-white bg-action-orange hover:bg-action-orange-dark transition-colors"
+                        >
+                          View
+                        </button>
+                        <button
+                          onClick={() => router.push(`/doctor/patients/${p.id}`)}
+                          className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-600 border border-neutral-300 hover:bg-neutral-50 transition-colors whitespace-nowrap"
+                        >
+                          Open Clinical Workspace
+                        </button>
+                      </div>
                     </td>
                     {/* Expand toggle */}
                     <td className="pl-0 pr-3 py-4">

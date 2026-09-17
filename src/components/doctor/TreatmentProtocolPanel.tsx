@@ -19,7 +19,7 @@ function fmtDate(iso?: string | null): string {
  * reason/effective-from column, so this is the only honest place to keep
  * "why this version exists" without fabricating a field the backend
  * doesn't return. */
-function splitReason(notes?: string | null): { reason: string; note: string } {
+export function splitReason(notes?: string | null): { reason: string; note: string } {
   if (!notes) return { reason: "Initial protocol", note: "" };
   const m = notes.match(/^Reason:\s*([^—]+)—\s*([\s\S]*)$/);
   if (m) return { reason: m[1].trim(), note: m[2].trim() };
@@ -44,7 +44,7 @@ function hasPendingSessions(detail: ProtocolDetail): boolean {
  * patient's 2nd protocol overall can legitimately be v1.1 while their 3rd
  * is a fresh v2 — array index would silently disagree with what the doctor
  * who authored it actually sees. */
-function versionLabel(p: ProtocolRead): string {
+export function versionLabel(p: ProtocolRead): string {
   return p.version_minor ? `v${p.version_major}.${p.version_minor}` : `v${p.version_major}`;
 }
 
@@ -58,7 +58,7 @@ function statusTone(status: string): string {
   }
 }
 
-function ElectrodeChips({ detail }: { detail: ProtocolDetail }) {
+export function ElectrodeChips({ detail }: { detail: ProtocolDetail }) {
   const p = detail.placement;
   // A protocol uses either a catalogue placement (p, singular anode_site/
   // cathode_site/return_sites) or a custom montage (custom_montage, plural
@@ -206,7 +206,7 @@ function SessionsList({ detail, onOpenSession }: { detail: ProtocolDetail; onOpe
   );
 }
 
-function ProtocolFacts({ detail, title }: { detail: ProtocolDetail; title: string }) {
+export function ProtocolFacts({ detail, title }: { detail: ProtocolDetail; title: string }) {
   const first = detail.sessions[0]?.appointment_date;
   const last = detail.sessions[detail.sessions.length - 1]?.appointment_date;
   const rows: [string, string][] = [

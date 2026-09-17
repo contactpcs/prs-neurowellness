@@ -4,11 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   Check, ChevronRight, ChevronDown, ChevronUp, Loader2, Plus, X, AlertTriangle, ShieldCheck,
-  Cpu, ClipboardCheck, MapPin, BarChart2, ClipboardList, Calendar,
+  Cpu, ClipboardCheck, MapPin, BarChart2, ClipboardList, Calendar, ArrowLeft,
 } from "lucide-react";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { clinicDevicesService } from "@/lib/api/services/clinicDevices.service";
-import { useAuth } from "@/lib/hooks";
+import { useAuth, useGoBack } from "@/lib/hooks";
 import { Card, CardContent, Input, Select, Button, PageLoader } from "@/components/ui";
 import { PlacementMap } from "./PlacementMap";
 import { PatientClinicalSnapshot } from "@/components/doctor/PatientClinicalSnapshot";
@@ -91,6 +91,7 @@ export default function TreatmentProtocolWizardPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
+  const goToWorkspace = useGoBack(`/doctor/patients/${patientId}?section=treatment-protocol`);
 
   const mode = searchParams.get("mode") === "modify" ? "modify" : "new";
   const priorProtocolId = searchParams.get("protocolId");
@@ -604,6 +605,12 @@ export default function TreatmentProtocolWizardPage() {
   if (reasonGateOpen) {
     return (
       <div className="max-w-2xl mx-auto space-y-4">
+        <button
+          onClick={goToWorkspace}
+          className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back to Clinical Workspace
+        </button>
         <div>
           <h1 className="text-xl font-bold text-neutral-900">Modify Treatment Protocol</h1>
           <p className="text-sm text-neutral-500 mt-1">This creates protocol v-next. Sessions already performed keep the current version exactly as delivered.</p>
@@ -687,6 +694,12 @@ export default function TreatmentProtocolWizardPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-4 pb-24">
+      <button
+        onClick={goToWorkspace}
+        className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 transition-colors"
+      >
+        <ArrowLeft className="h-4 w-4" /> Back to Clinical Workspace
+      </button>
       <div>
         <h1 className="text-xl font-bold text-neutral-900">{mode === "modify" ? "Modify Treatment Protocol" : "New Treatment Protocol"}</h1>
         <p className="text-xs text-neutral-400 mt-0.5">Step {step + 1} of 8 · {STEP_LABELS[step]}</p>
