@@ -63,37 +63,6 @@ function StatusBadge({ status }: { status: AppointmentStatus }) {
   );
 }
 
-// ─── Device session notice ────────────────────────────────────────────────────
-
-function DeviceSessionNotice({ onClose, modality }: { onClose: () => void; modality?: string | null }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
-        <div className="flex items-start justify-between px-5 py-4 border-b border-neutral-100">
-          <h3 className="text-base font-semibold text-neutral-900">{getDeviceSessionLabel(modality)}</h3>
-          <button onClick={onClose} className="p-1 text-neutral-400 hover:text-neutral-600 rounded-lg hover:bg-neutral-100">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="px-5 py-4">
-          <p className="text-sm text-neutral-600">
-            This appointment is a device session. It is started and completed by the clinical assistant running it, not by the doctor.
-          </p>
-        </div>
-        <div className="flex items-center justify-end px-5 py-4 border-t border-neutral-100">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-opacity hover:opacity-90"
-            style={{ background: BRAND }}
-          >
-            Got it
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Cancel dialog ────────────────────────────────────────────────────────────
 
 function CancelDialog({
@@ -255,7 +224,6 @@ export default function AppointmentDetailPage() {
   const [showCancel,      setShowCancel]      = useState(false);
   const [showReschedule,  setShowReschedule]  = useState(false);
   const [showPay,         setShowPay]         = useState(false);
-  const [showDeviceNotice, setShowDeviceNotice] = useState(false);
   const [editingNotes,    setEditingNotes]    = useState(false);
   const [notesVal,        setNotesVal]        = useState("");
   const [history,         setHistory]         = useState<any[]>([]);
@@ -323,12 +291,21 @@ export default function AppointmentDetailPage() {
   const docId  = appointment.doctor_public_id;
   const patientPublicId = appointment.patient_public_id ?? appointment.patient_id;
 
-  // A device_session has no treating doctor by design (scheduling/service.py
-  // _authorize_transition: "administered by a clinical assistant... has NO
-  // treating doctor"). Only a clinical_assistant/super_admin may start or
-  // complete one, so clicking Start/Complete here (doctor-only route) opens
-  // an explanatory popup instead of hitting the API and surfacing a raw 403.
+  // A device_session still has no treating doctor OF RECORD (doctor_id stays
+  // NULL by design), but a doctor can now run one end-to-end just like a
+  // clinical assistant can — same live workflow, reused as-is rather than
+  // rebuilt under /doctor. Routes into the same screens the CA appointments
+  // list uses (checklist -> live -> summary, by status).
   const isDeviceSession = appointment.appointment_type === "device_session";
+  // status is appointments.status, which never becomes "paused" — pause/
+  // resume are session-local only (device_sessions.session_status), the
+  // appointment itself just stays "in_progress" throughout.
+  const deviceSessionWorkflowHref =
+    status === "in_progress"
+      ? `/clinical-assistant/device-sessions/${appointment.appointment_id}/live`
+      : status === "completed"
+        ? `/clinical-assistant/device-sessions/${appointment.appointment_id}/summary`
+        : `/clinical-assistant/device-sessions/${appointment.appointment_id}`;
 
   // Status-based action availability — mirrors the server's allowed-from
   // matrix (scheduling/service.py::_ALLOWED_FROM) so a visible button never
@@ -445,7 +422,7 @@ export default function AppointmentDetailPage() {
             </h2>
             <p className="text-sm text-neutral-500 mb-4">
               {appointment.appointment_type === "device_session"
-                ? "The treatment delivered, device readings, patient response, and safety checks for this device session are recorded read-only by the clinical assistant."
+                ? "The treatment delivered, device readings, patient response, and safety checks for this device session — run it from Actions above, or review what's recorded here."
                 : "Anamnesis, Medical History, PRS, Brain Mapping, Doctor Notes, Diagnosis, and Treatment Protocol are recorded in the patient's clinical workspace."}
               {status === "completed" && appointment.appointment_type !== "device_session" && " This session is complete — its data is frozen; open the workspace to view it or add a new Follow-up for further changes."}
               {/* workspaceLocked: gates entry until the doctor clicks "Start
@@ -589,19 +566,19 @@ export default function AppointmentDetailPage() {
               {canStart && (
                 <ActionBtn
                   icon={Play}
-                  label="Start Consultation"
+                  label={isDeviceSession ? "Run Device Session" : "Start Consultation"}
                   color="brand"
                   busy={busy}
-                  onClick={() => (isDeviceSession ? setShowDeviceNotice(true) : run(start, "Start"))}
+                  onClick={() => (isDeviceSession ? router.push(deviceSessionWorkflowHref) : run(start, "Start"))}
                 />
               )}
               {canComplete && (
                 <ActionBtn
                   icon={CheckSquare}
-                  label="Mark Complete"
+                  label={isDeviceSession ? "Run Device Session" : "Mark Complete"}
                   color="green"
                   busy={busy}
-                  onClick={() => (isDeviceSession ? setShowDeviceNotice(true) : run(complete, "Complete"))}
+                  onClick={() => (isDeviceSession ? router.push(deviceSessionWorkflowHref) : run(complete, "Complete"))}
                 />
               )}
               {canReschedule && (
@@ -680,7 +657,6 @@ export default function AppointmentDetailPage() {
       </div>
 
       {/* Modals */}
-      {showDeviceNotice && <DeviceSessionNotice onClose={() => setShowDeviceNotice(false)} modality={modality} />}
       {showCancel && (
         <CancelDialog
           busy={busy}
