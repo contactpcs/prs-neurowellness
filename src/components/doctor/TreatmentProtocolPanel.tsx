@@ -7,6 +7,7 @@ import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.s
 import { Card, CardContent, Badge, PageLoader, Button, DetailFieldList } from "@/components/ui";
 import { deviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
 import { SessionReviewPanel } from "@/components/doctor/SessionReviewPanel";
+import { PlacementMap } from "@/app/(roles)/doctor/patients/[id]/treatment-protocol/wizard/PlacementMap";
 import type { ProtocolRead, ProtocolDetail, ProtocolSessionRead } from "@/types/treatmentProtocol.types";
 
 function fmtDate(iso?: string | null): string {
@@ -66,14 +67,22 @@ function ElectrodeChips({ detail }: { detail: ProtocolDetail }) {
   // Without this fallback, a custom-montage protocol showed blank ANODE/
   // CATHODE chips here even though the sites were saved and available.
   const anodeSite = p?.anode_site || detail.custom_montage?.anode_sites?.[0] || "—";
-  const cathodeSite = p?.cathode_site
-    || (p?.return_sites?.join(", ") || "")
-    || detail.custom_montage?.cathode_sites?.join(", ")
-    || "—";
+  const cathodeSites = p?.cathode_site
+    ? [p.cathode_site]
+    : p?.return_sites?.length
+      ? p.return_sites
+      : detail.custom_montage?.cathode_sites || [];
+  const cathodeSite = cathodeSites.length ? cathodeSites.join(", ") : "—";
+  const isCustomMontage = !p && !!detail.custom_montage;
   return (
     <Card>
       <CardContent className="space-y-4">
-        <h3 className="text-sm font-semibold text-neutral-900">Electrode Placement</h3>
+        <div>
+          <h3 className="text-sm font-semibold text-neutral-900">Electrode Placement</h3>
+          {isCustomMontage && (
+            <p className="text-xs text-neutral-500 mt-0.5">{detail.custom_montage!.montage_name} · Custom montage</p>
+          )}
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-center">
             <p className="text-xs font-semibold text-red-600 tracking-wide">ANODE (+)</p>
@@ -84,6 +93,11 @@ function ElectrodeChips({ detail }: { detail: ProtocolDetail }) {
             <p className="text-2xl font-bold text-blue-700 mt-1">{cathodeSite}</p>
           </div>
         </div>
+        {isCustomMontage && (anodeSite !== "—" || cathodeSites.length > 0) && (
+          <div className="pt-1">
+            <PlacementMap anodeSite={anodeSite === "—" ? null : anodeSite} cathodeSites={cathodeSites} interactive={false} />
+          </div>
+        )}
         <div className="space-y-2 text-sm pt-1">
           <div className="flex justify-between">
             <span className="text-neutral-500">Current</span>

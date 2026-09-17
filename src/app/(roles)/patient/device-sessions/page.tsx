@@ -9,8 +9,10 @@ import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.s
 import { Card, CardContent, PageLoader } from "@/components/ui";
 import { deviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
 import { isSupersededCancellation } from "@/lib/appointmentStatus";
+import { PlacementMap } from "@/app/(roles)/doctor/patients/[id]/treatment-protocol/wizard/PlacementMap";
 import type { Appointment } from "@/types/domain.types";
 import type { DeviceSessionScale } from "@/types/deviceSession.types";
+import type { ProtocolDetail } from "@/types/treatmentProtocol.types";
 
 /** Scheduled datetime of a session. Falls back to end-of-day when the slot has
  * no start_time yet (a 'planned' protocol row the patient hasn't claimed). */
@@ -61,6 +63,7 @@ export default function PatientDeviceSessionsPage() {
   const [sessions, setSessions] = useState<Appointment[] | null>(null);
   const [summaries, setSummaries] = useState<Record<string, ScaleSummary>>({});
   const [modalityByProtocol, setModalityByProtocol] = useState<Record<string, string | null>>({});
+  const [protocolDetails, setProtocolDetails] = useState<Record<string, ProtocolDetail>>({});
   const [error, setError] = useState<string | null>(null);
   // Which protocol-version parent group is open. null = parent list.
   const [openGroupKey, setOpenGroupKey] = useState<string | null>(null);
@@ -86,6 +89,7 @@ export default function PatientDeviceSessionsPage() {
             try {
               const p = await treatmentProtocolService.getProtocolDetail(pid);
               setModalityByProtocol((prev) => ({ ...prev, [pid]: p.modality ?? null }));
+              setProtocolDetails((prev) => ({ ...prev, [pid]: p }));
             } catch {
               setModalityByProtocol((prev) => ({ ...prev, [pid]: null }));
             }
@@ -264,6 +268,34 @@ export default function PatientDeviceSessionsPage() {
             {" · "}{fmtDay(first)}{openGroup.items.length > 1 ? ` – ${fmtDay(last)}` : ""}
           </p>
         </div>
+        {(() => {
+          const detail = protocolDetails[openGroup.key];
+          if (!detail) return null;
+          const p = detail.placement;
+          const anodeSite = p?.anode_site || detail.custom_montage?.anode_sites?.[0] || null;
+          const cathodeSites = p?.cathode_site
+            ? [p.cathode_site]
+            : p?.return_sites?.length
+              ? p.return_sites
+              : detail.custom_montage?.cathode_sites || [];
+          if (!anodeSite && cathodeSites.length === 0) return null;
+          return (
+            <Card>
+              <CardContent className="space-y-3">
+                <h2 className="text-sm font-semibold text-neutral-900">Electrode Placement</h2>
+                <PlacementMap anodeSite={anodeSite} cathodeSites={cathodeSites} interactive={false} />
+                <div className="flex items-center gap-4 text-xs text-neutral-600 pt-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> Anode: {anodeSite || "—"}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-neutral-900 inline-block" /> Cathode: {cathodeSites.join(", ") || "—"}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
         <div className="space-y-3">{openGroup.items.map(renderSessionCard)}</div>
       </div>
     );
