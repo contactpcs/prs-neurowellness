@@ -210,6 +210,21 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
   const [submitting, setSubmitting] = useState(false);
   const [error,      setError]      = useState("");
 
+  // Guards against a real, live race: submitting triggers the parent page
+  // to reload its own visit summary (to refresh section-completion
+  // indicators elsewhere on the page), which briefly flips this form's
+  // initialRecord prop through undefined/null while that reload is in
+  // flight. That re-triggers this component's own fetch effect below, and
+  // if IT resolves (or the parent's reload resolves) to "not found" before
+  // the just-submitted row's fresh copy comes back, the form was wiping a
+  // known-good completed record back to a blank "start from scratch" state
+  // — found live: save succeeded, data was safely in the DB the whole time,
+  // but the screen reset anyway. Tracks the last record we know for certain
+  // is real for THIS patient+stage, so a transient miss can be ignored
+  // instead of trusted.
+  const lastGoodRecordRef = useRef<AnamnesisRecord | null>(initialRecord ?? null);
+  const contextKeyRef = useRef(`${patientId}|${assessmentStage}`);
+
   // ── version history (doctor view only) ────────────────────────────────────
   // start() always creates a new version rather than overwriting the one
   // being edited (see handleStartOnBehalf below) — this is what lets a
@@ -237,6 +252,15 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
   useEffect(() => {
     let cancelled = false;
 
+    // A genuinely different patient/stage invalidates whatever we thought
+    // was "the last known-good record" — only a same-context transient miss
+    // (see lastGoodRecordRef's own comment above) should ever be ignored.
+    const contextKey = `${patientId}|${assessmentStage}`;
+    if (contextKeyRef.current !== contextKey) {
+      contextKeyRef.current = contextKey;
+      lastGoodRecordRef.current = null;
+    }
+
     const fetchRecord = (): Promise<AnamnesisRecord | null> => {
       if (initialRecord !== undefined) {
         return Promise.resolve(initialRecord);
@@ -257,11 +281,19 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
         setSections(groupBySection(qs));
 
         if (record) {
+          lastGoodRecordRef.current = record;
           setRecord(record);
           setAnamnesisId(record.anamnesis_id);
           setMeta({ completed_at: record.completed_at, taken_by: record.taken_by });
           setResponses(hydrateResponses(record));
           setRecordState(record.status === "completed" ? "completed" : "in_progress");
+        } else if (lastGoodRecordRef.current?.status === "completed") {
+          // Transient miss during a background reload (e.g. the parent
+          // refetching its visit summary right after this same record was
+          // just submitted) — we already know a completed record is real
+          // for this patient+stage, so ignore this one rather than wiping
+          // the form back to "not started."
+          return;
         } else {
           // no record found
           setRecordState(mode === "doctor" ? "no-record" : "loading");
@@ -424,8 +456,8 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
       const completedAt = new Date().toISOString();
       setMeta((prev) => ({ ...(prev ?? { taken_by: mode === "doctor" ? "doctor_on_behalf" : "patient" }), completed_at: completedAt }));
       // Build an updated record with all current responses so AnamnesisReadOnlyView renders them
-      setRecord((prev) => ({
-        ...(prev ?? {
+      const completedRecord: AnamnesisRecord = {
+        ...(record ?? {
           anamnesis_id: anamnesisId,
           patient_id: patientId,
           submitted_by: null,
@@ -447,7 +479,11 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
           response_value: r.value || null,
           response_values: r.values.length > 0 ? r.values : null,
         })),
-      }));
+      };
+      // Arm the race guard (see lastGoodRecordRef's comment) immediately —
+      // before onSubmitted() below triggers the parent's reload, not after.
+      lastGoodRecordRef.current = completedRecord;
+      setRecord(completedRecord);
       setRecordState("completed");
       if (mode === "patient") {
         dispatch(invalidateMyAnamnesis(assessmentStage));
@@ -493,6 +529,10 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
       setRecord(null);
       setResponses({});
       setRecordState("in_progress");
+      // A deliberate fresh start — the old completed version genuinely
+      // shouldn't be resurrected by the race guard if a background reload
+      // lands mid-flight right after this.
+      lastGoodRecordRef.current = null;
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(detail ?? "Failed to start anamnesis on behalf of patient.");
