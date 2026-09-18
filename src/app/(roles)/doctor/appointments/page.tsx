@@ -267,7 +267,7 @@ export default function DoctorAppointmentsPage() {
                   href={
                     sel.status === "checked_in"
                       ? `/doctor/appointments/${sel.appointment_id}`
-                      : `/doctor/patients/${sel.patient_public_id ?? sel.patient_id}`
+                      : `/doctor/patients/${sel.patient_public_id ?? sel.patient_id}/summary`
                   }
                 >
                   <button className="h-9 px-4 rounded-lg bg-action-orange text-white text-xs font-semibold hover:bg-action-orange-dark transition-colors">
