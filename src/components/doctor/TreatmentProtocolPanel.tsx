@@ -102,11 +102,13 @@ export function ElectrodeChips({ detail }: { detail: ProtocolDetail }) {
           <div className="flex justify-between">
             <span className="text-neutral-500">Current</span>
             <span className="font-semibold text-neutral-900">
-              {detail.dosing?.current_ma_min != null
-                ? `${detail.dosing.current_ma_min} mA`
-                : detail.dosing?.total_current_ma != null
-                  ? `${detail.dosing.total_current_ma} mA`
-                  : "—"}
+              {detail.prescribed_current_ma != null
+                ? `${detail.prescribed_current_ma} mA`
+                : detail.dosing?.current_ma_min != null
+                  ? `${detail.dosing.current_ma_min} mA`
+                  : detail.dosing?.total_current_ma != null
+                    ? `${detail.dosing.total_current_ma} mA`
+                    : "—"}
             </span>
           </div>
           {(detail.modality === "tDCS" || detail.modality === "HD-tDCS") && (
@@ -225,7 +227,7 @@ export function ProtocolFacts({ detail, title }: { detail: ProtocolDetail; title
   const last = detail.sessions[detail.sessions.length - 1]?.appointment_date;
   const rows: [string, string][] = [
     ["Device / Modality", detail.device_name ? `${detail.device_name} · ${detail.modality}` : detail.modality || "—"],
-    ["Session Duration", detail.dosing?.session_duration_min != null ? `${detail.dosing.session_duration_min} min` : "—"],
+    ["Session Duration", detail.prescribed_duration_min != null ? `${detail.prescribed_duration_min} min` : detail.dosing?.session_duration_min != null ? `${detail.dosing.session_duration_min} min` : "—"],
     ["Sessions Per Day", detail.dosing?.sessions_per_day != null ? `${detail.dosing.sessions_per_day} session / day` : "—"],
     ["Treatment Period", first && last ? `${fmtDate(first)} – ${fmtDate(last)}` : "—"],
     ["Total Planned Sessions", String(detail.session_count)],
@@ -580,8 +582,8 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
                         ["Created", fmtDate(detail.created_at)],
                         ["Device / Modality", detail.device_name ? `${detail.device_name} · ${detail.modality}` : detail.modality || "—"],
                         ["Placement", detail.placement_summary || detail.custom_montage?.montage_name || "—"],
-                        ["Current", detail.dosing?.current_ma_min != null ? `${detail.dosing.current_ma_min} mA` : detail.dosing?.total_current_ma != null ? `${detail.dosing.total_current_ma} mA` : "—"],
-                        ["Duration", detail.dosing?.session_duration_min != null ? `${detail.dosing.session_duration_min} min` : "—"],
+                        ["Current", detail.prescribed_current_ma != null ? `${detail.prescribed_current_ma} mA` : detail.dosing?.current_ma_min != null ? `${detail.dosing.current_ma_min} mA` : detail.dosing?.total_current_ma != null ? `${detail.dosing.total_current_ma} mA` : "—"],
+                        ["Duration", detail.prescribed_duration_min != null ? `${detail.prescribed_duration_min} min` : detail.dosing?.session_duration_min != null ? `${detail.dosing.session_duration_min} min` : "—"],
                       ] as [string, string][]).map(([k, v]) => (
                         <div key={k} className="flex justify-between py-1.5 border-b border-neutral-50 last:border-0">
                           <span className="text-neutral-500">{k}</span>

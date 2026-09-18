@@ -258,6 +258,8 @@ export function TreatmentPlanFull({
     });
   }, [prsByVisit, clinicalSessions]);
 
+  const completedAppointments = appointments.filter((a) => a.status === "completed");
+
   const protocolSessions = activeDetail?.sessions ?? [];
   const completedSessions = protocolSessions.filter((s) => s.status === "completed");
   const missedSessions = protocolSessions.filter((s) => s.status === "no_show");
@@ -382,7 +384,7 @@ export function TreatmentPlanFull({
         <Stat label="Diagnosis" value={active.notes ? active.notes.split("—")[0].replace(/^Reason:\s*/, "").trim() || "—" : "—"} />
         <Stat label="Prescribed protocol" value={`${active.modality || "Protocol"} · v${versionNumber(active)}`} sub={active.device_name ?? undefined} />
         <Stat label="Progress" value={`${completed} / ${planned}`} sub={`${pct}% · ${remaining} remaining`} tone="bg-primary-50" />
-        <Stat label="Next review" value={String(plan.nextReview || "—")} sub={`Every ${plan.reviewEvery} sessions`} />
+       
         <Stat
           label="Latest PRS"
           value={latestScoreRow ? `${scaleGrid[0].name} ${latestScoreRow.value}/${latestScoreRow.max}` : "Not recorded"}
@@ -443,7 +445,7 @@ export function TreatmentPlanFull({
           <div>
             <GroupLabel>Review &amp; assessment</GroupLabel>
             <Row label="Reassess every" value={`${plan.reviewEvery} sessions`} />
-            <Row label="Next review" value={String(plan.nextReview || "—")} />
+            
             <Row label="Protocol versions" value={`${protocols.length} (${Math.max(0, protocols.length - 1)} change${protocols.length - 1 === 1 ? "" : "s"})`} />
             <Row label="Clinic" value={patient?.clinic_name || "—"} />
             <Row label="Treating doctor" value={doctor} />
@@ -465,12 +467,12 @@ export function TreatmentPlanFull({
               <div className="col-span-full"><Field label="Plan notes (optional)"><textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} placeholder="Anything else the team should know…" className={textareaCls} /></Field></div>
             </div>
           ) : (
-            <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
-              <div><GroupLabel>Treatment goal</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{show(plan.goal)}</p></div>
-              <div><GroupLabel>Medication plan</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{show(plan.medicationPlan)}</p></div>
-              <div className="col-span-full"><GroupLabel>Instructions for clinical assistants</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{show(plan.caInstructions)}</p></div>
-              {plan.notes && <div className="col-span-full"><GroupLabel>Plan notes</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{plan.notes}</p></div>}
-            </div>
+              <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+                <div><GroupLabel>Treatment goal</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{show(plan.goal)}</p></div>
+                <div><GroupLabel>Medication plan</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{show(plan.medicationPlan)}</p></div>
+                <div className="col-span-full"><GroupLabel>Instructions for clinical assistants</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{show(plan.caInstructions)}</p></div>
+                {plan.notes && <div className="col-span-full"><GroupLabel>Plan notes</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{plan.notes}</p></div>}
+              </div>
           )}
         </div>
       </Card>
@@ -530,7 +532,7 @@ export function TreatmentPlanFull({
         <h3 className="text-sm font-bold text-neutral-900 mb-1">Clinical basis</h3>
         <p className="text-xs text-neutral-500 mb-3">Everything the plan rests on, pulled from the patient&apos;s own record. Open only what you need.</p>
         <div className="flex flex-col gap-2">
-          <Fold title="Patient profile &amp; diagnosis" summary={`${patient?.full_name ?? "—"} · ${patient?.mrn ?? "—"} · ${patient?.age ?? "—"} yrs, ${patient?.gender ?? "—"}`}>
+          <Fold title="Patient profile" summary={`${patient?.full_name ?? "—"} · ${patient?.mrn ?? "—"} · ${patient?.age ?? "—"} yrs, ${patient?.gender ?? "—"}`}>
             <KV rows={[
               ["Patient", `${patient?.full_name ?? "—"} · ${patient?.mrn ?? "—"}`],
               ["Age / gender", `${patient?.age ?? "—"} yrs · ${patient?.gender ?? "—"}`],
@@ -544,9 +546,9 @@ export function TreatmentPlanFull({
               <KV rows={[
                 ["Chief complaint", show(anamnesis.chief_complaint)],
                 ["Main symptoms", show(anamnesis.main_symptoms)],
-                ["Symptom duration", show(anamnesis.symptoms_duration)],
-                ["Previous treatments", show(anamnesis.previous_treatments)],
-                ["Current medications", show(anamnesis.current_medications)],
+                ["Initial Symptom", show(anamnesis.symptoms_duration)],
+                ["Previous Neuromodulation treatments", show(anamnesis.previous_treatments)],
+                
               ]} />
             ) : <p className="text-[12.5px] text-neutral-400">No anamnesis recorded.</p>}
           </Fold>
@@ -572,14 +574,14 @@ export function TreatmentPlanFull({
             />
           </Fold>
 
-          <Fold title="Appointment history" summary={appointments.length ? `${appointments.length} appointment${appointments.length === 1 ? "" : "s"} on record` : "No appointments on record"}>
+          <Fold title="Appointment history" summary={completedAppointments.length ? `${completedAppointments.length} completed appointment${completedAppointments.length === 1 ? "" : "s"}` : "No completed appointments"}>
             <Table
               cols={["Date", "Time", "Type", "Status"]}
-              rows={appointments
+              rows={completedAppointments
                 .slice()
                 .sort((a, b) => (b.appointment_date + b.start_time).localeCompare(a.appointment_date + a.start_time))
                 .map((a) => [fmtDate(a.appointment_date), a.start_time?.slice(0, 5) || "—", a.appointment_type.replace(/_/g, " "), a.status.replace(/_/g, " ")])}
-              empty="No appointments recorded for this patient."
+              empty="No completed appointments for this patient."
             />
           </Fold>
 
