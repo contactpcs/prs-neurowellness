@@ -13,6 +13,7 @@ import scoresReducer from "./slices/scoresSlice";
 import anamnesisReducer from "./slices/anamnesisSlice";
 import notificationsReducer from "./slices/notificationsSlice";
 import doctorNotesReducer from "./slices/doctorNotesSlice";
+import prescribedMedicineReducer from "./slices/prescribedMedicineSlice";
 
 const combinedReducer = combineReducers({
   auth: authReducer,
@@ -29,6 +30,7 @@ const combinedReducer = combineReducers({
   anamnesis: anamnesisReducer,
   notifications: notificationsReducer,
   doctorNotes: doctorNotesReducer,
+  prescribedMedicine: prescribedMedicineReducer,
 });
 
 type AppState = ReturnType<typeof combinedReducer>;

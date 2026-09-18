@@ -20,7 +20,7 @@ import {
   Eye,
 } from "lucide-react";
 import { PatientDetailSkeleton, Button, ProgressBar, Badge } from "@/components/ui";
-import { PatientHistoryPanel, REPORT_TYPE_OPTIONS } from "@/components/admin/PatientHistoryPanel";
+import { REPORT_TYPE_OPTIONS } from "@/components/admin/PatientHistoryPanel";
 import { DeviceSessionsPanel, ProtocolFacts, ElectrodeChips, splitReason, versionLabel } from "@/components/doctor/TreatmentProtocolPanel";
 import { EEGReportList } from "@/components/eeg";
 import {
@@ -33,19 +33,21 @@ import { useGoBack } from "@/lib/hooks/useGoBack";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { patientFilesService, type PatientFile } from "@/lib/api/services/patientFiles.service";
 import { anamnesisService, type AnamnesisQuestion } from "@/lib/api/services/anamnesis.service";
+import { useAppSelector } from "@/store/hooks";
+import { selectPatientMedicines } from "@/store/slices/prescribedMedicineSlice";
 import type { ProtocolDetail } from "@/types/treatmentProtocol.types";
 
 const NAV_SECTIONS = [
   { id: "patient-summary", label: "Patient Summary", icon: LayoutDashboard },
   { id: "demographics", label: "Demographics", icon: UserCircle },
   { id: "current-treatment", label: "Current Treatment", icon: Zap },
+  { id: "sessions", label: "Sessions", icon: CalendarClock },
   { id: "prs-summary", label: "PRS Summary", icon: ClipboardList },
   { id: "medical-history", label: "Medical History", icon: HeartPulse },
   { id: "anamnesis", label: "Anamnesis", icon: FileText },
   { id: "brain-mapping", label: "Brain Mapping", icon: Brain },
   { id: "reports-documents", label: "Reports & Documents", icon: FileCheck },
   { id: "doctor-notes", label: "Doctor's Notes", icon: StickyNote },
-  { id: "sessions", label: "Sessions", icon: CalendarClock },
 ];
 
 function formatDate(iso?: string | null) {
@@ -85,6 +87,9 @@ export default function DoctorPatientSummaryPage() {
   const { instances: scoreInstances, total: totalAssessments } = usePatientScoresSummary(id);
   const { record: anamnesisRecord } = usePatientAnamnesis(id, "main");
   const { upcoming } = useUpcomingAppointments();
+  const prescribedMedicines = useAppSelector(selectPatientMedicines(id));
+  const activeMedicines = prescribedMedicines.filter((m) => m.status === "Active");
+  const pastMedicines = prescribedMedicines.filter((m) => m.status === "Stopped");
 
   const [activeSection, setActiveSection] = useState("patient-summary");
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -419,6 +424,16 @@ export default function DoctorPatientSummaryPage() {
             )}
           </section>
 
+          {/* SESSIONS */}
+          <section
+            id="sessions"
+            ref={(el) => { sectionRefs.current["sessions"] = el; }}
+            className="scroll-mt-24 bg-white rounded-lg shadow-md p-5 sm:p-6"
+          >
+            <h2 className="text-lg font-semibold text-neutral-900 mb-4">Sessions</h2>
+            <DeviceSessionsPanel patientId={id} hideSuperseded showHeader={false} />
+          </section>
+
           {/* PRS SUMMARY */}
           <section
             id="prs-summary"
@@ -465,7 +480,40 @@ export default function DoctorPatientSummaryPage() {
             className="scroll-mt-24 bg-white rounded-lg shadow-md p-5 sm:p-6"
           >
             <h2 className="text-lg font-semibold text-neutral-900 mb-4">Medical History</h2>
-            <PatientHistoryPanel patientId={id} clinicId={patient.clinic_id} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-7 gap-y-5">
+              <div>
+                <p className="text-xs font-semibold text-neutral-700 mb-1.5">Past Medication</p>
+                {pastMedicines.length === 0 ? (
+                  <p className="text-sm text-neutral-400">None reported</p>
+                ) : (
+                  <div className="flex flex-col gap-1">
+                    {pastMedicines.map((m) => (
+                      <p key={m.id} className="text-sm text-neutral-800">
+                        · {m.name}{m.dose ? ` — ${m.dose}` : ""}
+                        <span className="text-neutral-400"> (stopped)</span>
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-neutral-700 mb-1.5">Current Medications</p>
+                {activeMedicines.length === 0 ? (
+                  <p className="text-sm text-neutral-400">None reported</p>
+                ) : (
+                  <div className="flex flex-col gap-1">
+                    {activeMedicines.map((m) => (
+                      <p key={m.id} className="text-sm text-neutral-800">
+                        · {m.name}{m.dose ? ` — ${m.dose}` : ""}{m.timing ? ` · ${m.timing}` : ""}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                <Link href={`/doctor/patients/${id}?section=medicine`} className="text-xs font-medium text-blue-600 hover:underline mt-1.5 inline-block">
+                  View Full Prescribed Medications →
+                </Link>
+              </div>
+            </div>
           </section>
 
           {/* ANAMNESIS */}
@@ -565,16 +613,6 @@ export default function DoctorPatientSummaryPage() {
                 clinical workspace's own session state — nothing to preview
                 here, just the link into it. */}
             <p className="text-sm text-neutral-400">Open the clinical workspace to view and add clinical notes.</p>
-          </section>
-
-          {/* SESSIONS */}
-          <section
-            id="sessions"
-            ref={(el) => { sectionRefs.current["sessions"] = el; }}
-            className="scroll-mt-24 bg-white rounded-lg shadow-md p-5 sm:p-6"
-          >
-            <h2 className="text-lg font-semibold text-neutral-900 mb-4">Sessions</h2>
-            <DeviceSessionsPanel patientId={id} />
           </section>
         </div>
       </div>

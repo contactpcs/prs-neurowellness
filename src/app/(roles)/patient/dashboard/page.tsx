@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Bell, Search, Calendar, CheckCircle, Clock, ChevronRight,
+  Bell, Calendar, CheckCircle, Clock, ChevronRight,
   User, PlayCircle, ClipboardList,
   FileText, Zap, Check, Circle, Upload, CreditCard,
 } from "lucide-react";
@@ -166,14 +166,6 @@ function PatientDashboard() {
           <p className="text-xs text-gray-500 mt-0.5 hidden sm:block">Here's your wellness summary for today.</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="relative hidden sm:block">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search appointments, reports..."
-              className="pl-8 pr-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs w-48 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
           <button className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-700">
             <Calendar className="w-3.5 h-3.5 text-blue-500" />
             {new Date().toLocaleDateString("en-US", {

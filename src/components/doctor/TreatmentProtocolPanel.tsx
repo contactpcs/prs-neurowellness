@@ -625,7 +625,7 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
  * panel uses, not array position), and, once a parent is clicked, the child
  * Device Sessions / follow-up list for that protocol. SessionsList is reused
  * so the child table stays identical to the Treatment Protocol panel's own. */
-export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
+export function DeviceSessionsPanel({ patientId, hideSuperseded = false, showHeader = true }: { patientId: string; hideSuperseded?: boolean; showHeader?: boolean }) {
   const router = useRouter();
   const [protocols, setProtocols] = useState<ProtocolRead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -644,6 +644,7 @@ export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
   }, [patientId]);
 
   const patientName = protocols[0]?.patient_name ?? null;
+  const visibleProtocols = hideSuperseded ? protocols.filter((p) => p.status !== "superseded") : protocols;
   const openProtocol = protocols.find((p) => p.protocol_id === openProtocolId) ?? null;
 
   useEffect(() => {
@@ -702,12 +703,14 @@ export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
   // ─── Parent level — one row per protocol version ───
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Sessions</h1>
-        <p className="text-sm text-neutral-500 mt-0.5">
-          {patientName ? `${patientName}'s` : "This patient's"} protocol versions. Open one to see its device sessions and follow-up appointments.
-        </p>
-      </div>
+      {showHeader && (
+        <div>
+          <h1 className="text-2xl font-bold text-neutral-900">Sessions</h1>
+          <p className="text-sm text-neutral-500 mt-0.5">
+            {patientName ? `${patientName}'s` : "This patient's"} protocol versions. Open one to see its device sessions and follow-up appointments.
+          </p>
+        </div>
+      )}
 
       {protocols.length === 0 ? (
         <Card>
@@ -726,12 +729,14 @@ export function DeviceSessionsPanel({ patientId }: { patientId: string }) {
             </button>
           </CardContent>
         </Card>
+      ) : visibleProtocols.length === 0 ? (
+        <p className="text-sm text-neutral-400 px-2">No active protocol version.</p>
       ) : (
         <div className="space-y-2">
           {/* Latest protocol version first — real version label (versionLabel),
               not array position, same convention as the Treatment Protocol
               panel and the patient-facing device-sessions page. */}
-          {protocols.slice().reverse().map((p) => (
+          {visibleProtocols.slice().reverse().map((p) => (
             <button key={p.protocol_id} onClick={() => setOpenProtocolId(p.protocol_id)} className="w-full text-left">
               <Card className={p.status === "active" ? "border-blue-200" : ""}>
                 <CardContent className="flex items-center gap-4 py-3">

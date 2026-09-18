@@ -17,7 +17,8 @@ import {
   usePatientAnamnesis,
   useAuth,
 } from "@/lib/hooks";
-import { useAppDispatch } from "@/store/hooks";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { addMedicine, setMedicineStatus, selectPatientMedicines, type PrescribedMedicine } from "@/store/slices/prescribedMedicineSlice";
 import { invalidatePatientAnamnesis } from "@/store/slices/anamnesisSlice";
 import type { Permission, AssessmentInstance, AnamnesisRecord } from "@/types/domain.types";
 import { EEGReportList, EEGUploadForm, NEDFUploadForm } from "@/components/eeg";
@@ -78,18 +79,6 @@ type DoctorNoteEntry = {
 
 const MEDICINE_TIMINGS = ["Morning", "Afternoon", "Evening", "Night", "Twice daily", "Three times daily", "As needed"];
 const MEDICINE_MEALS = ["Before meal", "After meal", "With meal", "Empty stomach", "Not applicable"];
-
-type PrescribedMedicine = {
-  id: string;
-  name: string;
-  dose: string;
-  timing: string;
-  meal: string;
-  duration: string;
-  note: string;
-  started: string;
-  status: "Active" | "Stopped";
-};
 
 function buildSections(
   anamnesisStatus: "in_progress" | "completed" | null,
@@ -222,8 +211,9 @@ export default function DoctorPatientDetailPage() {
   const [registrationRecord, setRegistrationRecord] = useState<Record<string, unknown> | null>(null);
   const [registrationRecordError, setRegistrationRecordError] = useState<string | null>(null);
   // Not backed by an API yet (no medications table/endpoints exist) — kept
-  // client-side per patient, so it resets on reload/navigation.
-  const [medicines, setMedicines] = useState<PrescribedMedicine[]>([]);
+  // in a Redux slice (not local state) so the patient summary page can read
+  // the same list; still resets on reload since nothing is persisted.
+  const medicines = useAppSelector(selectPatientMedicines(id));
   const [medForm, setMedForm] = useState<Omit<PrescribedMedicine, "id" | "started" | "status"> | null>(null);
   // Real backend only has POST /doctor-session-notes (keyed to a session/
   // cycle, not patient) — no list-by-patient endpoint exists, so this
@@ -239,7 +229,6 @@ export default function DoctorPatientDetailPage() {
   const [widgetSaved, setWidgetSaved] = useState(false);
 
   useEffect(() => {
-    setMedicines([]);
     setMedForm(null);
   }, [id]);
 
@@ -719,10 +708,11 @@ export default function DoctorPatientDetailPage() {
                         variant="primary"
                         disabled={!medForm.name.trim()}
                         onClick={() => {
-                          setMedicines((list) => [
-                            { id: `m${Date.now()}`, ...medForm, started: formatDate(new Date().toISOString()), status: "Active" },
-                            ...list,
-                          ]);
+                          if (!medForm) return;
+                          dispatch(addMedicine({
+                            patientId: id,
+                            medicine: { id: `m${Date.now()}`, ...medForm, started: formatDate(new Date().toISOString()), status: "Active" },
+                          }));
                           setMedForm(null);
                         }}
                       >
@@ -762,7 +752,7 @@ export default function DoctorPatientDetailPage() {
                                 {m.status}
                               </span>
                               <button
-                                onClick={() => setMedicines((list) => list.map((x) => x.id === m.id ? { ...x, status: x.status === "Active" ? "Stopped" : "Active" } : x))}
+                                onClick={() => dispatch(setMedicineStatus({ patientId: id, medicineId: m.id, status: m.status === "Active" ? "Stopped" : "Active" }))}
                                 className="text-xs font-medium text-neutral-400 hover:text-neutral-600 transition-colors"
                               >
                                 {m.status === "Active" ? "Stop" : "Resume"}
