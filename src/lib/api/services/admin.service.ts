@@ -380,7 +380,11 @@ export const adminService = {
    * availability_status instead (no is_active column on that table). */
   async _setStaffActive(id: string, role: string | undefined, active: boolean): Promise<void> {
     if (role === "doctor") {
-      await apiClient.patch(`/doctors/${id}`, { availability_status: active ? "available" : "inactive" });
+      // is_active is the real login gate (profiles.is_active) — doctors has
+      // no is_active column of its own, availability_status is a separate
+      // scheduling concept. Send both: availability_status alone never
+      // blocked login, it just hid the doctor from allocation.
+      await apiClient.patch(`/doctors/${id}`, { is_active: active, availability_status: active ? "available" : "inactive" });
     } else if (role === "clinical_assistant") {
       await apiClient.patch(`/clinical-assistants/${id}`, { is_active: active });
     } else if (role === "receptionist") {
