@@ -9,12 +9,18 @@ import { doctorsService } from "@/lib/api/services/doctors.service";
 import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
 import { useDeviceSession, usePatientScoresSummary, useAuth, useGoBack } from "@/lib/hooks";
 import { useSidebar } from "@/contexts/SidebarContext";
-import { Button, Card, CardHeader, CardContent, PageLoader, DetailFieldList, Input } from "@/components/ui";
+import { Button, Card, CardHeader, CardContent, PageLoader, DetailFieldList, Input, Select } from "@/components/ui";
 import { PlacementMap } from "@/app/(roles)/doctor/patients/[id]/treatment-protocol/wizard/PlacementMap";
 import { SignatureCapture } from "@/components/deviceSession/SignatureCapture";
 import type { Appointment, PatientDetail } from "@/types/domain.types";
 import type { ProtocolDetail } from "@/types/treatmentProtocol.types";
-import type { ConsentBlock, DeviceInfo, DeviceSessionChecklistUpdate, DeviceSessionDetail } from "@/types/deviceSession.types";
+import type {
+  ConsentBlock, DeviceInfo, DeviceSessionChecklistUpdate, DeviceSessionDetail,
+  TvnsWavelength, TvnsPattern,
+} from "@/types/deviceSession.types";
+import {
+  TVNS_FREQUENCY_HZ_OPTIONS, TVNS_PULSE_WIDTH_US_OPTIONS, TVNS_DURATION_MIN_OPTIONS, formatTvnsDuration,
+} from "@/types/deviceSession.types";
 import { getDeviceSessionLabel } from "@/lib/utils/sessionType";
 
 /** Mirrors TreatmentProtocolPanel's convention: the wizard writes
@@ -79,6 +85,7 @@ export default function DeviceSessionChecklistPage() {
   const [prevSession, setPrevSession] = useState<DeviceSessionDetail | null>(null);
   const [prevAppointmentDate, setPrevAppointmentDate] = useState<string | null>(null);
   const { session, isLoading, saveChecklist, start } = useDeviceSession(appointmentId);
+  const isTvns = protocol?.modality === "tVNS";
   const patientId = appointment?.patient_public_id ?? appointment?.patient_id ?? null;
   const { instances: scoreInstances } = usePatientScoresSummary(patientId ?? "");
   const { user } = useAuth();
@@ -93,6 +100,12 @@ export default function DeviceSessionChecklistPage() {
   const [duration, setDuration] = useState<string>("");
   const [rampUp, setRampUp] = useState<string>("");
   const [rampDown, setRampDown] = useState<string>("");
+  const [tvnsWavelength, setTvnsWavelength] = useState<TvnsWavelength | "">("");
+  const [tvnsPattern, setTvnsPattern] = useState<TvnsPattern | "">("");
+  const [tvnsStrengthPct, setTvnsStrengthPct] = useState<string>("");
+  const [tvnsFrequencyHz, setTvnsFrequencyHz] = useState<string>("");
+  const [tvnsPulseWidthUs, setTvnsPulseWidthUs] = useState<string>("");
+  const [tvnsDurationMin, setTvnsDurationMin] = useState<string>("");
   const [montageVerified, setMontageVerified] = useState(false);
   const [contraindications, setContraindications] = useState<Record<string, boolean>>({});
   const [deviceFit, setDeviceFit] = useState<Record<string, boolean>>({});
@@ -161,6 +174,14 @@ export default function DeviceSessionChecklistPage() {
     if (session.actual_duration_min != null) setDuration(String(session.actual_duration_min));
     if (session.actual_ramp_up_sec != null) setRampUp(String(session.actual_ramp_up_sec));
     if (session.actual_ramp_down_sec != null) setRampDown(String(session.actual_ramp_down_sec));
+    if (session.tvns_settings) {
+      setTvnsWavelength(session.tvns_settings.wavelength);
+      setTvnsPattern(session.tvns_settings.pattern);
+      setTvnsStrengthPct(String(session.tvns_settings.strength_pct));
+      setTvnsFrequencyHz(String(session.tvns_settings.frequency_hz));
+      setTvnsPulseWidthUs(String(session.tvns_settings.pulse_width_us));
+      setTvnsDurationMin(String(session.tvns_settings.duration_min));
+    }
     setMontageVerified(session.montage_verified);
     setContraindications(session.contraindication_checklist ?? {});
     setDeviceFit(session.device_fit_checklist ?? {});
@@ -209,10 +230,14 @@ export default function DeviceSessionChecklistPage() {
     || session?.payment_verified
     || (proceedWithoutPayment && paymentOverrideReason.trim().length > 0);
 
+  const tvnsSettingsComplete = !!(
+    tvnsWavelength && tvnsPattern && tvnsStrengthPct && tvnsFrequencyHz && tvnsPulseWidthUs && tvnsDurationMin
+  );
+
   const missing: string[] = [];
   if (!paymentOk) missing.push("Payment verification");
   if (!deviceBrand) missing.push("Device brand");
-  if (!intensity || !duration) missing.push("Stimulation parameters");
+  if (isTvns ? !tvnsSettingsComplete : (!intensity || !duration)) missing.push("Stimulation parameters");
   if (!montageVerified) missing.push("Montage verification");
   if (!allContraindicationsChecked) missing.push("Contraindication checklist");
   if (!allDeviceFitChecked) missing.push("Device fit checklist");
@@ -273,6 +298,16 @@ export default function DeviceSessionChecklistPage() {
     setIsStarting(true);
     try {
       await persistChecklist();
+      if (isTvns && tvnsSettingsComplete && !session?.tvns_settings) {
+        await deviceSessionService.recordTvnsSettings(appointmentId, {
+          wavelength: tvnsWavelength as TvnsWavelength,
+          pattern: tvnsPattern as TvnsPattern,
+          strength_pct: Number(tvnsStrengthPct),
+          frequency_hz: Number(tvnsFrequencyHz),
+          pulse_width_us: Number(tvnsPulseWidthUs),
+          duration_min: Number(tvnsDurationMin),
+        });
+      }
       await start();
       router.push(`/clinical-assistant/device-sessions/${appointmentId}/live`);
     } finally {
@@ -459,21 +494,80 @@ export default function DeviceSessionChecklistPage() {
 
           <Card>
             <CardHeader><h3 className="text-sm font-semibold text-neutral-900">3. Stimulation Parameters</h3></CardHeader>
-            <CardContent className="grid grid-cols-2 gap-3">
-              <Input label="Intensity (mA)" type="number" value={intensity} onChange={(e) => setIntensity(e.target.value)}
-                hint={prescribedIntensity != null ? `Protocol: ${prescribedIntensity} mA` : undefined} />
-              <Input label="Duration (min)" type="number" value={duration} onChange={(e) => setDuration(e.target.value)}
-                hint={prescribedDuration != null ? `Protocol: ${prescribedDuration} min` : undefined} />
-              <Input label="Ramp up (s)" type="number" value={rampUp} onChange={(e) => setRampUp(e.target.value)}
-                hint={prescribedRamp != null ? `Protocol: ${prescribedRamp} s` : undefined} />
-              <Input label="Ramp down (s)" type="number" value={rampDown} onChange={(e) => setRampDown(e.target.value)}
-                hint={prescribedRamp != null ? `Protocol: ${prescribedRamp} s` : undefined} />
-              {(intensityDeviates || durationDeviates || rampUpDeviates || rampDownDeviates) && (
-                <p className="col-span-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                  Deviation from protocol — this will be recorded in the session log.
-                </p>
-              )}
-            </CardContent>
+            {isTvns ? (
+              <CardContent className="grid grid-cols-2 gap-3">
+                <Select
+                  label="Wavelength"
+                  value={tvnsWavelength}
+                  onChange={(e) => setTvnsWavelength(e.target.value as TvnsWavelength)}
+                  placeholder="Select wavelength"
+                  options={[{ value: "alternant", label: "Alternant" }, { value: "biphasic", label: "Biphasic" }]}
+                  disabled={!!session?.tvns_settings}
+                />
+                <Select
+                  label="Pattern"
+                  value={tvnsPattern}
+                  onChange={(e) => setTvnsPattern(e.target.value as TvnsPattern)}
+                  placeholder="Select pattern"
+                  options={[
+                    { value: "continuous", label: "Continuous" },
+                    { value: "modulation", label: "Modulation" },
+                    { value: "intermittent", label: "Intermittent" },
+                  ]}
+                  disabled={!!session?.tvns_settings}
+                />
+                <Input
+                  label="Strength (%)" type="number" min={0} max={100} value={tvnsStrengthPct}
+                  onChange={(e) => setTvnsStrengthPct(e.target.value)}
+                  disabled={!!session?.tvns_settings}
+                />
+                <Select
+                  label="Frequency (Hz)"
+                  value={tvnsFrequencyHz}
+                  onChange={(e) => setTvnsFrequencyHz(e.target.value)}
+                  placeholder="Select frequency"
+                  options={TVNS_FREQUENCY_HZ_OPTIONS.map((hz) => ({ value: String(hz), label: `${hz} Hz` }))}
+                  disabled={!!session?.tvns_settings}
+                />
+                <Select
+                  label="Pulse width (µs)"
+                  value={tvnsPulseWidthUs}
+                  onChange={(e) => setTvnsPulseWidthUs(e.target.value)}
+                  placeholder="Select pulse width"
+                  options={TVNS_PULSE_WIDTH_US_OPTIONS.map((us) => ({ value: String(us), label: `${us} µs` }))}
+                  disabled={!!session?.tvns_settings}
+                />
+                <Select
+                  label="Duration"
+                  value={tvnsDurationMin}
+                  onChange={(e) => setTvnsDurationMin(e.target.value)}
+                  placeholder="Select duration"
+                  options={TVNS_DURATION_MIN_OPTIONS.map((min) => ({ value: String(min), label: formatTvnsDuration(min) }))}
+                  disabled={!!session?.tvns_settings}
+                />
+                {session?.tvns_settings && (
+                  <p className="col-span-2 text-xs text-neutral-400">
+                    Settings already recorded for this session and cannot be changed here.
+                  </p>
+                )}
+              </CardContent>
+            ) : (
+              <CardContent className="grid grid-cols-2 gap-3">
+                <Input label="Intensity (mA)" type="number" value={intensity} onChange={(e) => setIntensity(e.target.value)}
+                  hint={prescribedIntensity != null ? `Protocol: ${prescribedIntensity} mA` : undefined} />
+                <Input label="Duration (min)" type="number" value={duration} onChange={(e) => setDuration(e.target.value)}
+                  hint={prescribedDuration != null ? `Protocol: ${prescribedDuration} min` : undefined} />
+                <Input label="Ramp up (s)" type="number" value={rampUp} onChange={(e) => setRampUp(e.target.value)}
+                  hint={prescribedRamp != null ? `Protocol: ${prescribedRamp} s` : undefined} />
+                <Input label="Ramp down (s)" type="number" value={rampDown} onChange={(e) => setRampDown(e.target.value)}
+                  hint={prescribedRamp != null ? `Protocol: ${prescribedRamp} s` : undefined} />
+                {(intensityDeviates || durationDeviates || rampUpDeviates || rampDownDeviates) && (
+                  <p className="col-span-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    Deviation from protocol — this will be recorded in the session log.
+                  </p>
+                )}
+              </CardContent>
+            )}
           </Card>
 
           <Card>

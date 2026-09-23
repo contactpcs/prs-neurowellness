@@ -364,8 +364,10 @@ export const ENDPOINTS = {
   // device_sessions, ships alongside SQL/v1/53_device_session_records.sql).
   // Keyed by appointment_id, the same id the CA device-session queue
   // (clinical-assistant/appointments) already has in hand — there is no
-  // separate device-session id in the URL space. ───
+  // separate device-session id in the URL space, except MY_PENDING_SCALES
+  // below, which is patient-self-scoped across every appointment. ───
   DEVICE_SESSIONS: {
+    MY_PENDING_SCALES: "/me/device-session-scales",
     DETAIL: (appointmentId: string) => `/device-sessions/${appointmentId}`,
     DEVICE_INFO: (appointmentId: string) => `/device-sessions/${appointmentId}/device-info`,
     CHECKLIST: (appointmentId: string) => `/device-sessions/${appointmentId}/checklist`,
@@ -383,6 +385,7 @@ export const ENDPOINTS = {
     SCALE: (appointmentId: string, protocolScaleId: string) => `/device-sessions/${appointmentId}/scales/${protocolScaleId}`,
     SCALE_COMPLETE: (appointmentId: string, protocolScaleId: string) => `/device-sessions/${appointmentId}/scales/${protocolScaleId}/complete`,
     FEEDBACK: (appointmentId: string) => `/device-sessions/${appointmentId}/feedback`,
+    TVNS_SETTINGS: (appointmentId: string) => `/device-sessions/${appointmentId}/tvns-settings`,
     MEDIA_CONSENT: (appointmentId: string) => `/device-sessions/${appointmentId}/media/consent`,
     MEDIA: (appointmentId: string) => `/device-sessions/${appointmentId}/media`,
     NEXT_SESSION: (appointmentId: string) => `/device-sessions/${appointmentId}/next-session`,

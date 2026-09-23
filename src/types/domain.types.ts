@@ -217,6 +217,10 @@ export interface AssessmentInstance {
   percentage?: number;
   completed_at?: string;
   scale_summaries?: ScaleResultSummary[];
+  // Set when this instance came from a device session (a CA/doctor pushing
+  // one scale mid-visit) rather than the standalone "Start assessment"
+  // flow. Null/undefined for a standalone instance.
+  appointment_id?: string | null;
 }
 
 export interface PatientScoreInstance {

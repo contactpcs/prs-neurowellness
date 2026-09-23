@@ -136,6 +136,16 @@ export default function PatientAssessmentPage() {
           patient_id: permission.patient_id,
         });
 
+        // This (patient, disease) was already completed once — the backend
+        // returned that completed instance read-only rather than a fresh
+        // blank one (submitting against it would 400 anyway). Send the
+        // patient straight to their existing results instead of rendering
+        // an editable form for an assessment they already finished.
+        if (result.is_readonly_completed) {
+          router.replace(`/patient/results/${result.instance_id}`);
+          return;
+        }
+
         if (result.scales.length === 0) throw new Error("No scales found for this assessment");
 
         setInstanceId(result.instance_id);

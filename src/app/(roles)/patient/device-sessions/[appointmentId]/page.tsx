@@ -429,7 +429,15 @@ export default function PatientDeviceSessionPage() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => router.push(sc.prs_instance_id ? `/patient/results/${sc.prs_instance_id}` : "/patient/results")}
+                                onClick={() => {
+                                  if (!sc.prs_instance_id) { router.push("/patient/results"); return; }
+                                  // scale_id scopes the (otherwise disease-wide)
+                                  // results page down to just this one scale —
+                                  // without it, a shared instance would show
+                                  // every scale answered under the same disease.
+                                  const qs = sc.scale_id ? `?scale_id=${encodeURIComponent(sc.scale_id)}` : "";
+                                  router.push(`/patient/results/${sc.prs_instance_id}${qs}`);
+                                }}
                               >
                                 View score
                               </Button>

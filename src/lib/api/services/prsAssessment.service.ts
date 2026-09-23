@@ -67,6 +67,11 @@ export type PrsAssessmentScaleResult = {
 export type PrsAssessmentStartResult = {
   instance_id: string;
   is_resumed?: boolean;
+  // True when this (patient, disease, stage) was already completed once
+  // via the standalone dashboard flow — the backend returns that same
+  // completed instance read-only instead of a fresh blank one, and every
+  // scale in it is is_completed=true. Submitting against it 400s.
+  is_readonly_completed?: boolean;
   scales: PrsAssessmentScaleResult[];
 };
 

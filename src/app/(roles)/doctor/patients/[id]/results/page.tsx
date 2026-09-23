@@ -53,7 +53,24 @@ export default function DoctorPatientResultPage() {
     );
   }
 
-  const { instance, disease_result, scale_results } = detail;
+  const { instance, disease_result, scale_results: allScaleResults } = detail;
+
+  // GET .../results is instance-scoped (every scale answered under this
+  // disease-level instance so far), not scale-scoped — a device session
+  // administering one scale under a shared instance would otherwise pull in
+  // every OTHER scale answered under that instance too, headed by the
+  // disease name. scale_id, passed only from a single-scale context (e.g.
+  // SessionReviewPanel's "View Assessment" link), narrows this page down to
+  // that one scale without touching the disease-wide view other callers
+  // (patient history list, full-instance report) rely on.
+  const scaleIdFilter = searchParams.get("scale_id");
+  const scale_results = scaleIdFilter
+    ? allScaleResults.filter((sr: any) => sr.scale_id === scaleIdFilter)
+    : allScaleResults;
+  const singleScale = scaleIdFilter ? scale_results[0] : null;
+  const responsesForView = scaleIdFilter
+    ? scaleResponses.filter((s) => s.scale_id === scaleIdFilter)
+    : scaleResponses;
   const overallResult = disease_result;
 
   return (
@@ -89,7 +106,9 @@ export default function DoctorPatientResultPage() {
         {/* Title */}
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">
-            {instance.disease_name ?? "Assessment Results"}
+            {singleScale
+              ? (singleScale.scale_name ?? singleScale.scale_code ?? "Assessment Result")
+              : (instance.disease_name ?? "Assessment Results")}
           </h1>
           <div className="flex items-center gap-4 mt-1 text-sm text-neutral-500">
             {instance.completed_at && (
@@ -105,8 +124,9 @@ export default function DoctorPatientResultPage() {
           </div>
         </div>
 
-        {/* Overall score card */}
-        {overallResult && (
+        {/* Overall score card — only for the disease-wide view; a single
+            scale's own score is already the card below. */}
+        {!singleScale && overallResult && (
           <Card>
             <CardContent className="flex items-center justify-between gap-6">
               <div>
@@ -133,10 +153,12 @@ export default function DoctorPatientResultPage() {
         {/* Per-scale results */}
         {scale_results.length > 0 && (
           <section>
-            <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide mb-3">
-              Scale-by-Scale Breakdown
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {!singleScale && (
+              <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide mb-3">
+                Scale-by-Scale Breakdown
+              </h2>
+            )}
+            <div className={singleScale ? "grid grid-cols-1 gap-4" : "grid grid-cols-1 md:grid-cols-2 gap-4"}>
               {scale_results.map((sr: any) => (
                 <Card key={sr.scale_result_id ?? sr.scale_id}>
                   <CardContent className="space-y-3">
@@ -207,11 +229,11 @@ export default function DoctorPatientResultPage() {
           </h2>
           {responsesLoading ? (
             <Card><CardContent><p className="text-sm text-neutral-400 py-2">Loading responses…</p></CardContent></Card>
-          ) : scaleResponses.length === 0 ? (
+          ) : responsesForView.length === 0 ? (
             <Card><CardContent><p className="text-sm text-neutral-400 py-2">No responses recorded.</p></CardContent></Card>
           ) : (
             <div className="space-y-4">
-              {scaleResponses.map((scale) => (
+              {responsesForView.map((scale) => (
                 <Card key={scale.scale_id}>
                   <CardContent className="space-y-0">
                     <p className="text-sm font-semibold text-neutral-900 mb-2">

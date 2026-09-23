@@ -26,6 +26,51 @@ export type ScaleStatus = "pending" | "in_progress" | "completed" | "frozen";
 export type MediaType = "photo" | "video";
 export type SosType = "discomfort" | "unwell" | "other" | "emergency";
 
+// tVNS session settings (core.tvns_session_settings, SQL/v1/90_tvns_device.sql).
+// Frequency/pulse-width/duration are fixed device-dial steps, not a free
+// range — the step size changes partway through, so each is an explicit
+// allow-list next to this type rather than a min/max pair.
+export type TvnsWavelength = "alternant" | "biphasic";
+export type TvnsPattern = "continuous" | "modulation" | "intermittent";
+
+export const TVNS_FREQUENCY_HZ_OPTIONS: number[] = [
+  ...Array.from({ length: 99 }, (_, i) => i + 1), // 1..99, 1Hz steps
+  ...Array.from({ length: 10 }, (_, i) => (i + 1) * 100), // 100..1000, 100Hz steps
+];
+
+export const TVNS_PULSE_WIDTH_US_OPTIONS: number[] = [
+  ...Array.from({ length: 25 }, (_, i) => 50 + i * 10), // 50..300, 10us steps
+  ...Array.from({ length: 4 }, (_, i) => 350 + i * 50), // 350..500, 50us steps
+];
+
+export const TVNS_DURATION_MIN_OPTIONS: number[] = [
+  5, 10, 15, 20, 30, 40, 50, 60,
+  ...Array.from({ length: 18 }, (_, i) => 70 + i * 10), // 70..240, 10min steps
+];
+
+export function formatTvnsDuration(min: number): string {
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h}h` : `${h}h${m}min`;
+}
+
+export interface TvnsSessionSettingsCreate {
+  wavelength: TvnsWavelength;
+  pattern: TvnsPattern;
+  strength_pct: number;
+  frequency_hz: number;
+  pulse_width_us: number;
+  duration_min: number;
+}
+
+export interface TvnsSessionSettingsRead extends TvnsSessionSettingsCreate {
+  tvns_session_setting_id: string;
+  device_session_record_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ConsentBlock {
   statements: { code: string; confirmed: boolean }[];
   signature: string;
@@ -131,6 +176,7 @@ export interface DeviceSessionDetail extends DeviceSessionRead {
   media: MediaRecord[];
   events: SessionEvent[];
   sos_events: SosEvent[];
+  tvns_settings: TvnsSessionSettingsRead | null;
 }
 
 export interface SymptomRecord {
@@ -178,11 +224,26 @@ export interface DeviceSessionScale {
   protocol_scale_id: string;
   scale_code?: string;
   scale_name?: string;
+  // The PRS questionnaire engine's own scale id (reference.prs_scales.scale_id)
+  // — what prs_scale_results.scale_id matches. Use this, not protocol_scale_id,
+  // to filter a shared/disease-scoped instance's results down to this one scale.
+  scale_id?: string | null;
   delivery_mode: ScaleDeliveryMode | null;
   prs_instance_id: string | null;
   status: ScaleStatus;
   created_at: string;
   updated_at: string;
+}
+
+/** GET /me/device-session-scales — every patient_app scale still open
+ * (pending/in_progress) across ALL of the caller's device sessions, for the
+ * patient dashboard's "scales sent to you" widget. Same shape as
+ * DeviceSessionScale plus enough appointment context to route straight to
+ * the assessment page without already being on that session's own page. */
+export interface PendingPatientScale extends DeviceSessionScale {
+  appointment_id: string;
+  appointment_date: string;
+  session_number: number | null;
 }
 
 export interface SessionFeedback {

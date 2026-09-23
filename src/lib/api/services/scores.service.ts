@@ -174,7 +174,13 @@ async function composeMyScoresSummary(): Promise<{ instances: AssessmentInstance
   const instancesRes = await apiClient.get(ENDPOINTS.PRS.PATIENT_INSTANCES(patientId), {
     params: { assessment_stage: "main_clinical" },
   });
-  type InstanceRow = { instance_id?: string; disease_id?: string; status?: string; completed_at?: string };
+  type InstanceRow = {
+    instance_id?: string;
+    disease_id?: string;
+    status?: string;
+    completed_at?: string;
+    appointment_id?: string | null;
+  };
   const rows: InstanceRow[] = Array.isArray(instancesRes.data) ? instancesRes.data : [];
 
   const instances: AssessmentInstance[] = await Promise.all(
@@ -189,6 +195,7 @@ async function composeMyScoresSummary(): Promise<{ instances: AssessmentInstance
           instance_id: instanceId,
           disease_id: String(r.disease_id ?? ""),
           completed_at: r.completed_at,
+          appointment_id: r.appointment_id,
         };
       }
       try {
@@ -203,9 +210,15 @@ async function composeMyScoresSummary(): Promise<{ instances: AssessmentInstance
           percentage: detail.disease_result?.percentage,
           completed_at: r.completed_at,
           scale_summaries: detail.scale_results,
+          appointment_id: r.appointment_id,
         };
       } catch {
-        return { instance_id: instanceId, disease_id: String(r.disease_id ?? ""), completed_at: r.completed_at };
+        return {
+          instance_id: instanceId,
+          disease_id: String(r.disease_id ?? ""),
+          completed_at: r.completed_at,
+          appointment_id: r.appointment_id,
+        };
       }
     }),
   );
