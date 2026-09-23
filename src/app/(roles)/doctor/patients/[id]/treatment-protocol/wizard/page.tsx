@@ -191,6 +191,19 @@ export default function TreatmentProtocolWizardPage() {
   const primaryConditionId = resolution?.driving_condition_id || state.conditionIds[0] || undefined;
   const selectedDosing = dosingRows.find((d) => d.dosing_id === state.dosingId) || null;
   const isHD = selectedDevice?.modality === "HD-tDCS";
+  // tVNS has no electrode montage/mA dosing concept — its placement
+  // (ear_side/auricular_site) and dosing (wavelength/pattern/strength_pct/
+  // frequency_hz/pulse_width_us) shapes are entirely different from every
+  // other modality this wizard renders, and reference.tvns_placements/
+  // tvns_dosing have zero catalogued rows today (never seeded — see
+  // SQL/v1/90_tvns_device.sql). There is also no "custom tVNS dosing"
+  // escape hatch at the DB level (chk_protocol_plan_dosing_requires_
+  // catalogue_placement only recognises custom_montage_id, which is
+  // electrode-shaped) — so until a super_admin seeds at least one
+  // placement+dosing pair, a tVNS protocol genuinely cannot be created.
+  // Steps 4/5 show that as an explicit blocked state instead of rendering
+  // the tDCS-shaped electrode map / mA form for a device it doesn't apply to.
+  const isTvns = selectedDevice?.modality === "tVNS";
 
   // ─── Prefill from an existing active protocol when modifying ───
   useEffect(() => {
@@ -802,11 +815,12 @@ export default function TreatmentProtocolWizardPage() {
                   onSaveCustomMontage={saveCustomMontage}
                   savingMontage={savingMontage}
                   montageErr={montageErr}
+                  isTvns={isTvns}
                 />
               )}
               {step === 4 && (
                 <DosingStep
-                  dosingRows={dosingRows} loading={dosingLoading} state={state}
+                  dosingRows={dosingRows} loading={dosingLoading} state={state} isTvns={isTvns}
                   onSelectDosing={(id) => set("dosingId", id)}
                   onField={(k, v) => set(k, v)}
                   onReset={() => {
@@ -866,7 +880,7 @@ export default function TreatmentProtocolWizardPage() {
           </Card>
         </div>
 
-        {step >= 3 && (
+        {step >= 3 && !isTvns && (
           <div className="w-full lg:w-80 flex-shrink-0 space-y-4">
             <Card>
               <CardContent>
@@ -1126,7 +1140,7 @@ function DiagnosisStep({
 // Step 4 — Placement
 // ─────────────────────────────────────────────────────────────────────────
 function PlacementStep({
-  placements, loading, state, validation, onApply, onSaveCustomMontage, savingMontage, montageErr,
+  placements, loading, state, validation, onApply, onSaveCustomMontage, savingMontage, montageErr, isTvns,
 }: {
   placements: PlacementRead[]; loading: boolean; state: WizardState;
   validation: { valid: boolean; errors: string[]; warnings: string[]; maxCathodes: number } | null;
@@ -1134,6 +1148,7 @@ function PlacementStep({
   onSaveCustomMontage: (name: string, clinicalReasoning: string, description: string) => Promise<void>;
   savingMontage: boolean;
   montageErr: string | null;
+  isTvns: boolean;
 }) {
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [montageName, setMontageName] = useState("");
@@ -1149,6 +1164,50 @@ function PlacementStep({
     setShowCustomForm(false);
     setMontageName(""); setClinicalReasoning(""); setDescription("");
   };
+
+  if (isTvns) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-base font-bold text-neutral-900">4 · Ear Placement</h2>
+          <p className="text-sm text-neutral-500 mt-1">tVNS placement (ear side, auricular site) is picked from a catalogued montage — there is no custom-montage option for this device.</p>
+        </div>
+
+        {loading && <p className="text-sm text-neutral-400">Loading placements…</p>}
+
+        {!loading && placements.length === 0 && (
+          <div className="flex items-start gap-2.5 border border-amber-100 bg-amber-50 rounded-lg px-3.5 py-2.5">
+            <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-800 leading-relaxed">
+              No catalogued tVNS ear placement exists yet for this condition — a super admin needs to add one
+              (reference.tvns_placements) before a tVNS protocol can be prescribed. Go back and pick a different
+              device, or ask a super admin to add the catalogue entry.
+            </p>
+          </div>
+        )}
+
+        {!loading && placements.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {placements.map((p) => {
+              const on = state.placementId === p.placement_id;
+              return (
+                <button
+                  key={p.placement_id}
+                  onClick={() => onApply(p)}
+                  className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors text-left ${on ? "border-blue-600 bg-blue-600 text-white" : "border-neutral-200 text-neutral-700 hover:border-neutral-300"}`}
+                >
+                  <span className="block">{p.montage_label}</span>
+                  <span className={`block text-xs mt-0.5 ${on ? "text-blue-100" : "text-neutral-400"}`}>
+                    {[p.ear_side, p.auricular_site].filter(Boolean).join(" · ") || "—"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -1231,13 +1290,94 @@ function PlacementStep({
 // Step 5 — Dosing
 // ─────────────────────────────────────────────────────────────────────────
 function DosingStep({
-  dosingRows, loading, state, onSelectDosing, onField, onReset,
+  dosingRows, loading, state, onSelectDosing, onField, onReset, isTvns,
 }: {
   dosingRows: DosingRead[]; loading: boolean; state: WizardState;
   onSelectDosing: (id: string) => void;
   onField: <K extends keyof WizardState>(k: K, v: WizardState[K]) => void;
   onReset: () => void;
+  isTvns: boolean;
 }) {
+  if (isTvns) {
+    const selected = dosingRows.find((d) => d.dosing_id === state.dosingId) || null;
+    return (
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-base font-bold text-neutral-900">5 · Stimulation Parameters</h2>
+          <p className="text-sm text-neutral-500 mt-1">tVNS dose (wavelength, pattern, strength, frequency, pulse width) is picked from a catalogued dose for the selected placement.</p>
+        </div>
+
+        {loading && <p className="text-sm text-neutral-400">Loading dosing options…</p>}
+
+        {!loading && dosingRows.length === 0 && (
+          <div className="flex items-start gap-2.5 border border-amber-100 bg-amber-50 rounded-lg px-3.5 py-2.5">
+            <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-800 leading-relaxed">
+              No catalogued tVNS dose exists yet for this placement — a super admin needs to add one
+              (reference.tvns_dosing) before this protocol can be prescribed.
+            </p>
+          </div>
+        )}
+
+        {!loading && dosingRows.length > 1 && (
+          <div className="flex flex-wrap gap-2">
+            {dosingRows.map((d) => (
+              <button
+                key={d.dosing_id}
+                onClick={() => onSelectDosing(d.dosing_id)}
+                className={`px-3 py-2 rounded-lg border text-xs font-medium ${state.dosingId === d.dosing_id ? "border-blue-600 bg-blue-50 text-blue-700" : "border-neutral-200 text-neutral-600"}`}
+              >
+                {d.num_sessions_text || d.evidence_level} · Ev. {d.evidence_level}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {selected && (
+          <div className="border border-neutral-100 bg-neutral-50 rounded-lg px-3.5 py-3 text-xs text-neutral-600 grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div><span className="text-neutral-400">Wavelength</span><p className="font-semibold text-neutral-800 capitalize">{selected.wavelength ?? "—"}</p></div>
+            <div><span className="text-neutral-400">Pattern</span><p className="font-semibold text-neutral-800 capitalize">{selected.pattern ?? "—"}</p></div>
+            <div><span className="text-neutral-400">Strength</span><p className="font-semibold text-neutral-800">{selected.strength_pct_min ?? "—"}–{selected.strength_pct_max ?? "—"}%</p></div>
+            <div><span className="text-neutral-400">Frequency</span><p className="font-semibold text-neutral-800">{selected.frequency_hz != null ? `${selected.frequency_hz} Hz` : "—"}</p></div>
+            <div><span className="text-neutral-400">Pulse width</span><p className="font-semibold text-neutral-800">{selected.pulse_width_us != null ? `${selected.pulse_width_us} µs` : "—"}</p></div>
+            <div><span className="text-neutral-400">Evidence</span><p className="font-semibold text-neutral-800">{selected.evidence_level}</p></div>
+            <div><span className="text-neutral-400">Suggested sessions</span><p className="font-semibold text-neutral-800">{selected.num_sessions_text || "—"}</p></div>
+            {selected.notes && <div className="col-span-2 sm:col-span-3"><span className="text-neutral-400">Notes</span><p className="font-semibold text-neutral-800">{selected.notes}</p></div>}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <Input
+            label="Total sessions" type="number" min={10} max={30}
+            value={state.sessionCount}
+            onChange={(e) => onField("sessionCount", e.target.value)}
+          />
+          <Input
+            label="Follow-up every N sessions (optional)"
+            value={state.followUpEveryN}
+            onChange={(e) => onField("followUpEveryN", e.target.value)}
+            placeholder="e.g. 10"
+          />
+        </div>
+
+        <div>
+          <p className="text-xs font-medium text-neutral-700 mb-2">Frequency of visits</p>
+          <div className="flex flex-wrap gap-2">
+            {FREQ_OPTIONS.map((n) => (
+              <button
+                key={n}
+                onClick={() => onField("sessionsPerWeek", n)}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-medium border ${state.sessionsPerWeek === n ? "border-blue-600 bg-blue-600 text-white" : "border-neutral-300 text-neutral-600"}`}
+              >
+                {n === 7 ? "Daily" : `${n}× / week`}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const isCustom = state.montageMode === "custom";
   const selected = isCustom ? null : dosingRows.find((d) => d.dosing_id === state.dosingId) || null;
   // Out-of-range values are flagged, not silently rewritten — snapping "1"

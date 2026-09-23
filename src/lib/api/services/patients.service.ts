@@ -149,8 +149,28 @@ export const patientsService = {
       byDisease.get(key)!.push(a);
     }
 
-    const permissions: AssessmentPermission[] = Array.from(byDisease.entries()).map(
-      ([diseaseId, rows]) => {
+    const permissions: AssessmentPermission[] = Array.from(byDisease.entries())
+      .filter(([diseaseId, rows]) => {
+        // A device session's "Send to patient app" grants ONE scale at a
+        // time (live/page.tsx's handleSendToPatient) — a CA pushing a
+        // single scale mid-visit creates a patient_scale_assignments row
+        // just like a doctor's real "assign this disease's PRS" action
+        // does, with no way to tell the two apart from the row itself.
+        // Without this, a disease with only 1 of its N catalogue scales
+        // ever pushed through a device session showed on the dashboard as
+        // "N/N complete" the moment that one scale was answered — e.g.
+        // Dementia (8-scale catalogue) reading "Completed, 1 of 1" after
+        // only IADL was ever sent. Only surface a disease here once its
+        // DISTINCT assigned scale count reaches the disease's real
+        // catalogue size (reference.prs_disease_scale_map, via diseasesRes)
+        // — a thin, partial assignment stays invisible on this card rather
+        // than misrepresenting a fragment as the whole assessment.
+        const disease = diseaseById.get(diseaseId);
+        const catalogueSize = disease?.scales?.length ?? 0;
+        const assignedScaleCount = new Set(rows.filter((r) => r.scale_id).map((r) => r.scale_id)).size;
+        return catalogueSize === 0 || assignedScaleCount >= catalogueSize;
+      })
+      .map(([diseaseId, rows]) => {
         const disease = diseaseById.get(diseaseId);
         const scaleNameById = new Map(
           (disease?.scales ?? []).map((s) => [s.scale_id, s.scale_name ?? s.short_name]),
@@ -185,8 +205,7 @@ export const patientsService = {
             ).values(),
           ),
         };
-      },
-    );
+      });
 
     return { permissions, total: permissions.length };
   },

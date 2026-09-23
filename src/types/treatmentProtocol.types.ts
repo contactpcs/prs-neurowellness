@@ -1,7 +1,7 @@
 // Mirrors backend/app/modules/treatment_protocols/schemas.py exactly.
 // Decimal -> number, UUID -> string, date -> "YYYY-MM-DD" string.
 
-export const MODALITIES = ["tDCS", "HD-tDCS", "taVNS", "TPS", "rTMS", "other"] as const;
+export const MODALITIES = ["tDCS", "HD-tDCS", "tVNS", "TPS", "rTMS", "other"] as const;
 export type Modality = (typeof MODALITIES)[number];
 
 export const EVIDENCE_RANK: Record<string, number> = { A: 3, B: 2, C: 1 };
@@ -293,10 +293,12 @@ export interface DosingRead {
   per_return_current_ma?: number | null;
   session_duration_min?: number | null;
   sessions_per_day?: number | null;
-  intensity_ma?: number | null;
+  // tVNS
+  wavelength?: "alternant" | "biphasic" | null;
+  pattern?: "continuous" | "modulation" | "intermittent" | null;
+  strength_pct_min?: number | null;
+  strength_pct_max?: number | null;
   pulse_width_us?: number | null;
-  duty_cycle_on_sec?: number | null;
-  duty_cycle_off_sec?: number | null;
   energy_mj?: number | null;
   pulses_per_session?: number | null;
   pulse_rate_hz?: number | null;
@@ -528,6 +530,10 @@ export interface DeviceSessionPrsCreate {
   appointment_id: string;
   instance_id: string;
   session_number: number;
+  // The one scale this device session administered — scopes the backend's
+  // due-scale completion sweep to just this scale instead of every scale
+  // scored on the (disease-scoped) instance.
+  scale_id: string;
 }
 
 export interface FollowUpPrsCreate {

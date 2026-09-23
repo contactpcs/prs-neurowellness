@@ -16,6 +16,8 @@ import {
   useAuth,
 } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
+import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
+import type { PendingPatientScale } from "@/types/deviceSession.types";
 import { useSidebarBadges } from "@/lib/hooks/useSidebarBadges";
 import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
 import { PatientDashboardSkeleton } from "@/components/ui";
@@ -85,6 +87,11 @@ function PatientDashboard() {
 
   useEffect(() => { reloadAppointments(); reloadDeviceSessions(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [pendingDeviceScales, setPendingDeviceScales] = useState<PendingPatientScale[]>([]);
+  useEffect(() => {
+    deviceSessionService.listMyPendingScales().then(setPendingDeviceScales).catch(() => {});
+  }, []);
+
   const [modalityByProtocol, setModalityByProtocol] = useState<Record<string, string | null>>({});
 
   useEffect(() => {
@@ -122,7 +129,17 @@ function PatientDashboard() {
   const firstName = fullName ? fullName.split(" ")[0] : "User";
 
   const pendingAssessments = assessments.filter((a) => a.status === "granted");
-  const scoreInstances = summary?.instances ?? [];
+  // assessments (getMyAssessments) already excludes a disease whose
+  // patient_scale_assignments don't yet cover its full PRS catalogue — a
+  // device session's "Send to patient app" grants one scale at a time, and
+  // without this a disease with e.g. 1 of 8 catalogue scales ever pushed
+  // read as "Completed, 1 of 1" the moment that lone scale was answered.
+  // scoreInstances (from a separate endpoint, prs_assessment_instances) has
+  // no assignment-coverage concept of its own, so it's filtered down to the
+  // same disease set here — otherwise the "no pending, show last completed"
+  // fallback below could still pick up that same thin instance directly.
+  const assessedDiseaseIds = new Set(assessments.map((a) => a.disease_id));
+  const scoreInstances = (summary?.instances ?? []).filter((i) => assessedDiseaseIds.has(i.disease_id));
 
   const upcomingAppts = appointments
     // "planned" included: a device_session/protocol_followup born from a
@@ -482,6 +499,51 @@ function PatientDashboard() {
             </div>
           )}
         </div>
+
+        {/* Scales sent to you from a live device session — separate from
+            the disease-level PrsAssessmentCard below; these are pushed by a
+            CA/doctor mid- or post-session (device_session_scales,
+            delivery_mode='patient_app') rather than assigned up front. */}
+        {pendingDeviceScales.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                <ClipboardList className="w-4 h-4 text-blue-500" /> Scales sent to you
+              </h3>
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                {pendingDeviceScales.length}
+              </span>
+            </div>
+            <div className="divide-y divide-gray-50">
+              {pendingDeviceScales.map((sc) => (
+                <button
+                  key={sc.session_scale_id}
+                  onClick={() =>
+                    router.push(
+                      `/patient/device-sessions/${sc.appointment_id}/assessment/${sc.protocol_scale_id}?scale_code=${encodeURIComponent(sc.scale_code ?? "")}`,
+                    )
+                  }
+                  className="w-full px-4 py-2.5 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-gray-900 truncate">
+                      {sc.scale_name ?? sc.scale_code ?? "Assessment scale"}
+                    </p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">
+                      {sc.session_number != null ? `Session ${sc.session_number} · ` : ""}
+                      {formatShortDate(sc.appointment_date)}
+                    </p>
+                  </div>
+                  <span className="flex items-center gap-1 text-[10px] font-semibold text-white px-2 py-1 rounded-md flex-shrink-0"
+                    style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
+                  >
+                    {sc.status === "in_progress" ? "Continue" : "Start"} <ChevronRight className="w-3 h-3" />
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Bottom row: PRS Assessment + Treatment Progress */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -170,13 +170,12 @@ export default function CaAdministerScalePage() {
       // or doctor could see it as belonging to this session.
       //
       // device_session_prs_responses is UNIQUE on appointment_id (one link
-      // per session, ever), and the backend sweep (_complete_due_scales)
-      // marks EVERY scale currently scored on this instance as complete in
-      // one shot — not just this one. Calling it after every scale would
-      // let the first submit claim the once-per-session slot and, since
-      // sibling scales on a disease-level instance share scale_results,
-      // wrongly mark scales the patient/CA hasn't actually done yet. Only
-      // call it once nothing due this session is still pending.
+      // per session, ever), so this can only be called once. The backend's
+      // sweep (_complete_due_scales) is scoped to the one scale_id passed
+      // below, not every scale scored on the instance. Still wait until
+      // nothing due this session is still pending before creating the
+      // once-per-session link record, so it reflects the scale that closed
+      // out the visit.
       const appt = await appointmentsService.getById(appointmentId);
       if (appt.protocol_id && appt.session_number != null) {
         const rows = await deviceSessionService.listScales(appointmentId);
@@ -188,6 +187,7 @@ export default function CaAdministerScalePage() {
             appointment_id: appointmentId,
             instance_id: scale.instance_id,
             session_number: appt.session_number,
+            scale_id: scale.scale_id,
           });
         }
       }

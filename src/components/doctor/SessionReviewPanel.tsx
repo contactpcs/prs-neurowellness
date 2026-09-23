@@ -409,7 +409,10 @@ export function SessionReviewPanel({
                       {humanize(sc.status)}
                     </span>
                     {sc.prs_instance_id && (
-                      <Link href={`/doctor/patients/${patientId}/results?instance_id=${sc.prs_instance_id}`} className="h-7 px-2.5 rounded-md border border-neutral-200 text-[11px] font-semibold text-neutral-700 hover:bg-neutral-50 flex items-center">
+                      <Link
+                        href={`/doctor/patients/${patientId}/results?instance_id=${sc.prs_instance_id}${sc.scale_id ? `&scale_id=${encodeURIComponent(sc.scale_id)}` : ""}`}
+                        className="h-7 px-2.5 rounded-md border border-neutral-200 text-[11px] font-semibold text-neutral-700 hover:bg-neutral-50 flex items-center"
+                      >
                         View Assessment
                       </Link>
                     )}

@@ -5,9 +5,10 @@ import type {
   SymptomRecord, Symptom, Severity,
   AdverseEventRecord, AdverseEventType,
   NoteRecord, ActivityRecord, CognitiveActivity,
-  DeviceSessionScale, ScaleDeliveryMode,
+  DeviceSessionScale, ScaleDeliveryMode, PendingPatientScale,
   SessionFeedback, MediaRecord, MediaType,
   SessionEvent, SosEvent, SosType, PauseStopReason,
+  TvnsSessionSettingsCreate, TvnsSessionSettingsRead,
 } from "@/types/deviceSession.types";
 
 /** tDCS Device Session module — backend/app/modules/device_sessions
@@ -24,6 +25,14 @@ export const deviceSessionService = {
    * backend router.py's docstring on this endpoint. */
   async getDeviceInfo(appointmentId: string): Promise<DeviceInfo> {
     const { data } = await apiClient.get(ENDPOINTS.DEVICE_SESSIONS.DEVICE_INFO(appointmentId));
+    return data;
+  },
+
+  /** Every patient_app scale still open across all of the caller's own
+   * device sessions — powers the patient dashboard's "scales sent to you"
+   * widget. Patient-only; no appointment id needed. */
+  async listMyPendingScales(): Promise<PendingPatientScale[]> {
+    const { data } = await apiClient.get(ENDPOINTS.DEVICE_SESSIONS.MY_PENDING_SCALES);
     return data;
   },
 
@@ -148,6 +157,14 @@ export const deviceSessionService = {
     quote?: string
   ): Promise<SessionFeedback> {
     const { data } = await apiClient.post(ENDPOINTS.DEVICE_SESSIONS.FEEDBACK(appointmentId), { answers, quote });
+    return data;
+  },
+
+  /** Device settings dialled in for this session — wavelength, pattern,
+   * strength, frequency, pulse width, duration. Only meaningful for a tVNS
+   * protocol; one row per session (409s on a repeat call). */
+  async recordTvnsSettings(appointmentId: string, body: TvnsSessionSettingsCreate): Promise<TvnsSessionSettingsRead> {
+    const { data } = await apiClient.post(ENDPOINTS.DEVICE_SESSIONS.TVNS_SETTINGS(appointmentId), body);
     return data;
   },
 
