@@ -31,6 +31,7 @@ const STATUS_CONFIG: Record<AppointmentStatus, { label: string; bg: string; text
   completed:   { label: "Completed",       bg: "#f8fafc", text: "#475569", border: "#cbd5e1" },
   cancelled:   { label: "Cancelled",       bg: "#fff1f2", text: "#991b1b", border: "#f87171" },
   no_show:     { label: "No Show",         bg: "#fafafa", text: "#52525b", border: "#a1a1aa" },
+  missed:      { label: "Missed",          bg: "#fafafa", text: "#52525b", border: "#a1a1aa" },
   rescheduled: { label: "Rescheduled",     bg: "#f5f3ff", text: "#4c1d95", border: "#a78bfa" },
 };
 
