@@ -83,7 +83,7 @@ function emptyState(): WizardState {
     placementId: null, anodeSite: null, cathodeSites: [],
     montageMode: "catalogue", customMontageId: null, customMontageName: null,
     dosingId: null, currentMa: "", sessionDurationMin: "", rampSeconds: "30",
-    tvnsWavelength: "", tvnsPattern: "", tvnsStrengthPct: "", tvnsFrequencyHz: "",
+    tvnsWavelength: "", tvnsPattern: "", tvnsStrengthPct: "10", tvnsFrequencyHz: "",
     tvnsPulseWidthUs: "", tvnsDurationMin: "", tvnsRampUpSec: "", tvnsRampDownSec: "",
     sessionCount: "20", sessionsPerWeek: 5, followUpEveryN: "",
     startDate: todayIso(), skipDates: [], extraDates: [],
@@ -1458,17 +1458,17 @@ function DosingStep({
 
         <div className="grid grid-cols-2 gap-3">
           <Select
-            label="Wavelength"
+            label="Waveform"
             value={state.tvnsWavelength}
             onChange={(e) => onField("tvnsWavelength", e.target.value as WizardState["tvnsWavelength"])}
-            placeholder="Select wavelength"
+            placeholder="Select waveform"
             options={[{ value: "alternant", label: "Alternant" }, { value: "biphasic", label: "Biphasic" }]}
           />
           <Select
-            label="Pattern"
+            label="Mode"
             value={state.tvnsPattern}
             onChange={(e) => onField("tvnsPattern", e.target.value as WizardState["tvnsPattern"])}
-            placeholder="Select pattern"
+            placeholder="Select mode"
             options={[
               { value: "continuous", label: "Continuous" },
               { value: "modulation", label: "Modulation" },
