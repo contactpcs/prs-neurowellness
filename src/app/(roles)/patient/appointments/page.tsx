@@ -7,11 +7,10 @@ import {
   ChevronRight, Loader2, RefreshCw, Lock, History,
 } from "lucide-react";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
-import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { BookAppointmentModal } from "@/components/appointments/BookAppointmentModal";
 import { PatientMonthCalendar } from "@/components/appointments/PatientMonthCalendar";
 import { STATUS_LABEL, ACTIVE_APPOINTMENT_STATUSES, isSupersededCancellation } from "@/lib/appointmentStatus";
-import { getDeviceSessionLabel, SESSION_TYPE_LABEL } from "@/lib/utils/sessionType";
+import { appointmentDoctorName, getDeviceSessionLabel, protocolContextLine, SESSION_TYPE_LABEL } from "@/lib/utils/sessionType";
 import { doctorLabel } from "@/lib/utils/doctorLabel";
 import type { Appointment, AppointmentHistoryEntry, AppointmentType } from "@/types/domain.types";
 
@@ -86,30 +85,15 @@ export default function PatientAppointmentsPage() {
 
   useEffect(() => { loadAppointments(); loadHistory(); }, [loadAppointments, loadHistory]);
 
-  const [modalityByProtocol, setModalityByProtocol] = useState<Record<string, string | null>>({});
-
-  useEffect(() => {
-    const ids = [...new Set(
-      [...appts, ...history]
-        .filter((a) => a.appointment_type === "device_session" && a.protocol_id)
-        .map((a) => a.protocol_id as string)
-    )].filter((id) => !(id in modalityByProtocol));
-    if (ids.length === 0) return;
-    ids.forEach((pid) => {
-      treatmentProtocolService.getProtocolDetail(pid)
-        .then((p) => setModalityByProtocol((prev) => ({ ...prev, [pid]: p.modality ?? null })))
-        .catch(() => setModalityByProtocol((prev) => ({ ...prev, [pid]: null })));
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appts, history]);
-
+  // modality now comes on the appointment row itself (backend joins the
+  // protocol's device) — no per-protocol detail fetch.
   const apptTypeLabel = useCallback((appt: Appointment): string =>
     appt.appointment_type === "device_session"
-      ? getDeviceSessionLabel(appt.protocol_id ? modalityByProtocol[appt.protocol_id] : null)
+      ? getDeviceSessionLabel(appt.modality)
       : appt.appointment_type
         ? SESSION_TYPE_LABEL[appt.appointment_type]
         : "",
-    [modalityByProtocol],
+    [],
   );
 
   useEffect(() => {
@@ -216,6 +200,9 @@ export default function PatientAppointmentsPage() {
             <p className="text-sm text-white/90 mt-0.5">
               {apptTypeLabel(nextAppointment)}
             </p>
+            {protocolContextLine(nextAppointment) && (
+              <p className="text-xs text-white/80 mt-0.5 truncate">{protocolContextLine(nextAppointment)}</p>
+            )}
           </div>
           <ChevronRight className="h-4 w-4 text-white/70 flex-shrink-0" />
         </button>
@@ -233,7 +220,7 @@ export default function PatientAppointmentsPage() {
 
       {/* Calendar + day detail */}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4">
-        <PatientMonthCalendar appointments={visibleAppts} selectedDate={selectedDate} onSelectDate={handleSelectDate} modalityByProtocol={modalityByProtocol} />
+        <PatientMonthCalendar appointments={visibleAppts} selectedDate={selectedDate} onSelectDate={handleSelectDate} />
 
         <section className="space-y-3">
           <div className="flex items-center justify-between">
@@ -334,7 +321,7 @@ function AppointmentRow({ appt, typeLabel, onClick }: { appt: Appointment; typeL
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <p className="text-sm font-semibold text-neutral-900">
-            {doctorLabel(appt.doctor_name)}
+            {doctorLabel(appointmentDoctorName(appt))}
           </p>
           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[appt.status] ?? "bg-neutral-100 text-neutral-500"}`}>
             {STATUS_LABEL[appt.status] ?? appt.status.replace(/_/g, " ")}
@@ -353,6 +340,9 @@ function AppointmentRow({ appt, typeLabel, onClick }: { appt: Appointment; typeL
           )}
           {typeLabel && <span>{typeLabel}</span>}
         </div>
+        {protocolContextLine(appt) && (
+          <p className="text-xs text-neutral-500 mt-0.5 truncate">{protocolContextLine(appt)}</p>
+        )}
         {appt.reason && (
           <p className="text-xs text-neutral-400 mt-0.5 truncate">{appt.reason}</p>
         )}
@@ -381,7 +371,7 @@ function HistoryRow({ appt, typeLabel, onClick }: { appt: AppointmentHistoryEntr
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <p className="text-sm font-semibold text-neutral-900">
-            {doctorLabel(appt.doctor_name)}
+            {doctorLabel(appointmentDoctorName(appt))}
           </p>
           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[appt.status] ?? "bg-neutral-100 text-neutral-500"}`}>
             {STATUS_LABEL[appt.status] ?? appt.status.replace(/_/g, " ")}
@@ -406,6 +396,9 @@ function HistoryRow({ appt, typeLabel, onClick }: { appt: AppointmentHistoryEntr
           {typeLabel && <span>{typeLabel}</span>}
           {money && <span className="font-medium text-neutral-600">{money}</span>}
         </div>
+        {protocolContextLine(appt) && (
+          <p className="text-xs text-neutral-500 mt-0.5 truncate">{protocolContextLine(appt)}</p>
+        )}
         {isLocked && (
           <p className="text-xs text-amber-600 mt-0.5">Slot held — complete payment to confirm.</p>
         )}

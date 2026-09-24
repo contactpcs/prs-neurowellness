@@ -34,7 +34,7 @@ interface PatientMonthCalendarProps {
 
 function dayTypeLabel(appt: Appointment, modalityByProtocol: Record<string, string | null>): string {
   if (appt.appointment_type === "device_session") {
-    const modality = appt.protocol_id ? modalityByProtocol[appt.protocol_id] : null;
+    const modality = appt.modality ?? (appt.protocol_id ? modalityByProtocol[appt.protocol_id] : null);
     return modality ?? TYPE_LABEL.device_session;
   }
   return TYPE_LABEL[appt.appointment_type] ?? appt.appointment_type;

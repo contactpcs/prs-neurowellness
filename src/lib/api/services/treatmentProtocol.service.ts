@@ -135,9 +135,9 @@ export const treatmentProtocolService = {
     return data;
   },
 
-  async listProtocols(params?: { planId?: string; patientId?: string; status?: string; skip?: number; limit?: number }): Promise<ProtocolRead[]> {
+  async listProtocols(params?: { planId?: string; instanceId?: string; patientId?: string; status?: string; skip?: number; limit?: number }): Promise<ProtocolRead[]> {
     const { data } = await apiClient.get(ENDPOINTS.TREATMENT_PROTOCOLS.LIST, {
-      params: { plan_id: params?.planId, patient_id: params?.patientId, status: params?.status, skip: params?.skip ?? 0, limit: params?.limit ?? 50 },
+      params: { plan_id: params?.planId, instance_id: params?.instanceId, patient_id: params?.patientId, status: params?.status, skip: params?.skip ?? 0, limit: params?.limit ?? 50 },
     });
     return Array.isArray(data) ? data : [];
   },
@@ -197,20 +197,34 @@ export const treatmentProtocolService = {
     return Array.isArray(data) ? data : [];
   },
 
-  /** Opens (or reuses) the patient's protocol instance directly — no more
-   *  separate treatment-cycle step. The backend retired core.treatment_cycles
-   *  (58): protocol_instances now carries patient/doctor/clinic itself and
-   *  enforces one open (draft/active) instance per PATIENT, so "Start New
-   *  Treatment Protocol" just means reuse-or-create on that rule.
+  /** Which protocol instance a wizard submit belongs to.
+   *
+   *  A patient may hold several open instances at once (backend SQL/v1/90 —
+   *  e.g. a tDCS course and a taVNS course side by side), so "any open
+   *  instance" is no longer an answer:
+   *   - Modify (supersedesProtocolId set): the amended protocol's OWN
+   *     instance — the backend rejects any other (SUPERSEDES_INSTANCE_MISMATCH).
+   *   - New: an open instance that has no protocol yet (a follow-up episode,
+   *     or one left behind by a push that failed after creating it), else a
+   *     fresh instance. Never an instance that already carries a protocol.
    */
   async resolveOrCreateInstanceId(opts: {
     patientId: string;
     doctorId: string;
     clinicId: string;
+    supersedesProtocolId?: string | null;
   }): Promise<string> {
-    const open = await this.listProtocolInstances({ patientId: opts.patientId });
-    const existing = open.find((i: any) => i.status === "draft" || i.status === "active");
-    if (existing) return existing.instance_id;
+    if (opts.supersedesProtocolId) {
+      const prior = await this.getProtocolDetail(opts.supersedesProtocolId);
+      if (!prior.instance_id) throw new Error("The protocol being modified has no protocol instance");
+      return prior.instance_id;
+    }
+
+    const instances = await this.listProtocolInstances({ patientId: opts.patientId });
+    for (const inst of instances.filter((i: any) => i.status === "draft" || i.status === "active")) {
+      const protocols = await this.listProtocols({ instanceId: inst.instance_id, limit: 1 });
+      if (protocols.length === 0) return inst.instance_id;
+    }
 
     const { data: created } = await apiClient.post(ENDPOINTS.PROTOCOL_INSTANCES.CREATE, {
       patient_id: opts.patientId,
