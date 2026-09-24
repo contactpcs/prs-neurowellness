@@ -17,6 +17,9 @@ import type {
   SchedulePreview, ProtocolCreate, ProtocolScaleAssignment, ProtocolRead, CustomMontageCreate,
   DeviceScheduleRead, DeviceOverrideRead, DeviceSlotRead,
 } from "@/types/treatmentProtocol.types";
+import {
+  TVNS_FREQUENCY_HZ_OPTIONS, TVNS_PULSE_WIDTH_US_OPTIONS, TVNS_DURATION_MIN_OPTIONS, formatTvnsDuration,
+} from "@/types/deviceSession.types";
 
 const STEP_LABELS = ["Device", "Condition", "Diagnosis", "Placement", "Dosing", "Scales", "Schedule", "Review"];
 const REASON_OPTIONS = ["Patient discomfort", "Patient tolerance", "Clinical reassessment", "Treatment response", "Other"];
@@ -49,6 +52,19 @@ interface WizardState {
   currentMa: string;
   sessionDurationMin: string;
   rampSeconds: string;
+  /** tVNS's own prescription — freely typed within range, the exact
+   *  equivalent of currentMa/sessionDurationMin/rampSeconds above but
+   *  shaped for wavelength/pattern/strength/frequency/pulse-width (92).
+   *  tvnsDosingId (mapped from dosingId when the device is tVNS) stays
+   *  provenance-only, same as dosingId already is for tDCS. */
+  tvnsWavelength: "alternant" | "biphasic" | "";
+  tvnsPattern: "continuous" | "modulation" | "intermittent" | "";
+  tvnsStrengthPct: string;
+  tvnsFrequencyHz: string;
+  tvnsPulseWidthUs: string;
+  tvnsDurationMin: string;
+  tvnsRampUpSec: string;
+  tvnsRampDownSec: string;
   sessionCount: string;
   sessionsPerWeek: number;
   followUpEveryN: string;
@@ -67,6 +83,8 @@ function emptyState(): WizardState {
     placementId: null, anodeSite: null, cathodeSites: [],
     montageMode: "catalogue", customMontageId: null, customMontageName: null,
     dosingId: null, currentMa: "", sessionDurationMin: "", rampSeconds: "30",
+    tvnsWavelength: "", tvnsPattern: "", tvnsStrengthPct: "", tvnsFrequencyHz: "",
+    tvnsPulseWidthUs: "", tvnsDurationMin: "", tvnsRampUpSec: "", tvnsRampDownSec: "",
     sessionCount: "20", sessionsPerWeek: 5, followUpEveryN: "",
     startDate: todayIso(), skipDates: [], extraDates: [],
     scales: [], protocolNote: "",
@@ -224,6 +242,14 @@ export default function TreatmentProtocolWizardPage() {
         currentMa: String(detail.prescribed_current_ma ?? (detail.device_settings as any)?.current_ma ?? ""),
         sessionDurationMin: String(detail.prescribed_duration_min ?? (detail.device_settings as any)?.duration_min ?? ""),
         rampSeconds: String(detail.ramp_seconds ?? (detail.device_settings as any)?.ramp_seconds ?? "30"),
+        tvnsWavelength: detail.prescribed_tvns_wavelength ?? "",
+        tvnsPattern: detail.prescribed_tvns_pattern ?? "",
+        tvnsStrengthPct: detail.prescribed_tvns_strength_pct != null ? String(detail.prescribed_tvns_strength_pct) : "",
+        tvnsFrequencyHz: detail.prescribed_tvns_frequency_hz != null ? String(detail.prescribed_tvns_frequency_hz) : "",
+        tvnsPulseWidthUs: detail.prescribed_tvns_pulse_width_us != null ? String(detail.prescribed_tvns_pulse_width_us) : "",
+        tvnsDurationMin: detail.prescribed_tvns_duration_min != null ? String(detail.prescribed_tvns_duration_min) : "",
+        tvnsRampUpSec: detail.prescribed_tvns_ramp_up_sec != null ? String(detail.prescribed_tvns_ramp_up_sec) : "",
+        tvnsRampDownSec: detail.prescribed_tvns_ramp_down_sec != null ? String(detail.prescribed_tvns_ramp_down_sec) : "",
         sessionCount: String(detail.session_count),
         sessionsPerWeek: detail.sessions_per_week ?? s.sessionsPerWeek,
         followUpEveryN: detail.follow_up_every_n ? String(detail.follow_up_every_n) : "",
@@ -509,9 +535,13 @@ export default function TreatmentProtocolWizardPage() {
     1: state.conditionIds.length > 0,
     2: state.diagnosisIds.length > 0,
     3: !!state.placementId || !!state.customMontageId,
-    4: state.montageMode === "custom"
-      ? !!state.currentMa && !!state.sessionDurationMin && !!state.sessionCount
-      : !!state.dosingId && !!state.sessionCount,
+    4: isTvns
+      ? !!state.tvnsWavelength && !!state.tvnsPattern && !!state.tvnsStrengthPct
+        && !!state.tvnsFrequencyHz && !!state.tvnsPulseWidthUs && !!state.tvnsDurationMin
+        && !!state.sessionCount
+      : state.montageMode === "custom"
+        ? !!state.currentMa && !!state.sessionDurationMin && !!state.sessionCount
+        : !!state.dosingId && !!state.sessionCount,
     5: true,
     6: !!preview,
     7: false,
@@ -567,6 +597,7 @@ export default function TreatmentProtocolWizardPage() {
       const currentMa = state.currentMa ? parseFloat(state.currentMa) : null;
       const durationMin = state.sessionDurationMin ? parseInt(state.sessionDurationMin) : null;
       const rampSeconds = state.rampSeconds ? parseInt(state.rampSeconds) : 30;
+      const isIntermittent = state.tvnsPattern === "intermittent";
 
       const payload: ProtocolCreate = {
         instance_id: instanceId,
@@ -602,6 +633,21 @@ export default function TreatmentProtocolWizardPage() {
         prescribed_current_ma: currentMa,
         prescribed_duration_min: durationMin,
         ramp_seconds: rampSeconds,
+        // tVNS's own prescription — freely typed, always sent alongside
+        // whichever tvns_placement_id/tvns_dosing_id was picked above
+        // (those stay provenance-only, same tier as tDCS's dosing_id).
+        ...(isTvns
+          ? {
+              prescribed_tvns_wavelength: state.tvnsWavelength || undefined,
+              prescribed_tvns_pattern: state.tvnsPattern || undefined,
+              prescribed_tvns_strength_pct: state.tvnsStrengthPct ? parseInt(state.tvnsStrengthPct) : undefined,
+              prescribed_tvns_frequency_hz: state.tvnsFrequencyHz ? parseFloat(state.tvnsFrequencyHz) : undefined,
+              prescribed_tvns_pulse_width_us: state.tvnsPulseWidthUs ? parseInt(state.tvnsPulseWidthUs) : undefined,
+              prescribed_tvns_duration_min: state.tvnsDurationMin ? parseFloat(state.tvnsDurationMin) : undefined,
+              prescribed_tvns_ramp_up_sec: isIntermittent && state.tvnsRampUpSec ? parseInt(state.tvnsRampUpSec) : undefined,
+              prescribed_tvns_ramp_down_sec: isIntermittent && state.tvnsRampDownSec ? parseInt(state.tvnsRampDownSec) : undefined,
+            }
+          : {}),
         device_settings: {},
         notes: finalNotes,
         // Amending rather than replacing: the server inherits priorProtocolId's
@@ -1299,52 +1345,82 @@ function DosingStep({
   isTvns: boolean;
 }) {
   if (isTvns) {
-    const selected = dosingRows.find((d) => d.dosing_id === state.dosingId) || null;
+    const isIntermittent = state.tvnsPattern === "intermittent";
     return (
       <div className="space-y-4">
         <div>
           <h2 className="text-base font-bold text-neutral-900">5 · Stimulation Parameters</h2>
-          <p className="text-sm text-neutral-500 mt-1">tVNS dose (wavelength, pattern, strength, frequency, pulse width) is picked from a catalogued dose for the selected placement.</p>
+          <p className="text-sm text-neutral-500 mt-1">
+            tVNS dose — freely set within the device&apos;s supported ranges, prescribed directly for this patient.
+          </p>
         </div>
 
-        {loading && <p className="text-sm text-neutral-400">Loading dosing options…</p>}
+        <div className="grid grid-cols-2 gap-3">
+          <Select
+            label="Wavelength"
+            value={state.tvnsWavelength}
+            onChange={(e) => onField("tvnsWavelength", e.target.value as WizardState["tvnsWavelength"])}
+            placeholder="Select wavelength"
+            options={[{ value: "alternant", label: "Alternant" }, { value: "biphasic", label: "Biphasic" }]}
+          />
+          <Select
+            label="Pattern"
+            value={state.tvnsPattern}
+            onChange={(e) => onField("tvnsPattern", e.target.value as WizardState["tvnsPattern"])}
+            placeholder="Select pattern"
+            options={[
+              { value: "continuous", label: "Continuous" },
+              { value: "modulation", label: "Modulation" },
+              { value: "intermittent", label: "Intermittent" },
+            ]}
+          />
+          <Input
+            label="Strength (%)" type="number" min={0} max={100}
+            value={state.tvnsStrengthPct}
+            onChange={(e) => onField("tvnsStrengthPct", e.target.value)}
+          />
+          <Select
+            label="Frequency (Hz)"
+            value={state.tvnsFrequencyHz}
+            onChange={(e) => onField("tvnsFrequencyHz", e.target.value)}
+            placeholder="Select frequency"
+            options={TVNS_FREQUENCY_HZ_OPTIONS.map((hz) => ({ value: String(hz), label: `${hz} Hz` }))}
+          />
+          <Select
+            label="Pulse width (µs)"
+            value={state.tvnsPulseWidthUs}
+            onChange={(e) => onField("tvnsPulseWidthUs", e.target.value)}
+            placeholder="Select pulse width"
+            options={TVNS_PULSE_WIDTH_US_OPTIONS.map((us) => ({ value: String(us), label: `${us} µs` }))}
+          />
+          <Select
+            label="Duration"
+            value={state.tvnsDurationMin}
+            onChange={(e) => onField("tvnsDurationMin", e.target.value)}
+            placeholder="Select duration"
+            options={TVNS_DURATION_MIN_OPTIONS.map((min) => ({ value: String(min), label: formatTvnsDuration(min) }))}
+          />
+        </div>
 
-        {!loading && dosingRows.length === 0 && (
-          <div className="flex items-start gap-2.5 border border-amber-100 bg-amber-50 rounded-lg px-3.5 py-2.5">
-            <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-800 leading-relaxed">
-              No catalogued tVNS dose exists yet for this placement — a super admin needs to add one
-              (reference.tvns_dosing) before this protocol can be prescribed.
-            </p>
-          </div>
-        )}
-
-        {!loading && dosingRows.length > 1 && (
-          <div className="flex flex-wrap gap-2">
-            {dosingRows.map((d) => (
-              <button
-                key={d.dosing_id}
-                onClick={() => onSelectDosing(d.dosing_id)}
-                className={`px-3 py-2 rounded-lg border text-xs font-medium ${state.dosingId === d.dosing_id ? "border-blue-600 bg-blue-50 text-blue-700" : "border-neutral-200 text-neutral-600"}`}
-              >
-                {d.num_sessions_text || d.evidence_level} · Ev. {d.evidence_level}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {selected && (
-          <div className="border border-neutral-100 bg-neutral-50 rounded-lg px-3.5 py-3 text-xs text-neutral-600 grid grid-cols-2 sm:grid-cols-3 gap-2">
-            <div><span className="text-neutral-400">Wavelength</span><p className="font-semibold text-neutral-800 capitalize">{selected.wavelength ?? "—"}</p></div>
-            <div><span className="text-neutral-400">Pattern</span><p className="font-semibold text-neutral-800 capitalize">{selected.pattern ?? "—"}</p></div>
-            <div><span className="text-neutral-400">Strength</span><p className="font-semibold text-neutral-800">{selected.strength_pct_min ?? "—"}–{selected.strength_pct_max ?? "—"}%</p></div>
-            <div><span className="text-neutral-400">Frequency</span><p className="font-semibold text-neutral-800">{selected.frequency_hz != null ? `${selected.frequency_hz} Hz` : "—"}</p></div>
-            <div><span className="text-neutral-400">Pulse width</span><p className="font-semibold text-neutral-800">{selected.pulse_width_us != null ? `${selected.pulse_width_us} µs` : "—"}</p></div>
-            <div><span className="text-neutral-400">Evidence</span><p className="font-semibold text-neutral-800">{selected.evidence_level}</p></div>
-            <div><span className="text-neutral-400">Suggested sessions</span><p className="font-semibold text-neutral-800">{selected.num_sessions_text || "—"}</p></div>
-            {selected.notes && <div className="col-span-2 sm:col-span-3"><span className="text-neutral-400">Notes</span><p className="font-semibold text-neutral-800">{selected.notes}</p></div>}
-          </div>
-        )}
+        {/* Ramp up/down only applies to the intermittent pattern (the
+            device ramps into/out of each on-burst) — disabled and cleared
+            otherwise, matching schemas.py's _tvns_ramp_requires_intermittent. */}
+        <div className="grid grid-cols-2 gap-3">
+          <Input
+            label="Ramp up (s)" type="number" min={0} max={120}
+            value={isIntermittent ? state.tvnsRampUpSec : ""}
+            onChange={(e) => onField("tvnsRampUpSec", e.target.value)}
+            disabled={!isIntermittent}
+            hint={!isIntermittent ? "Only applies to the intermittent pattern" : undefined}
+          />
+          <Input
+            label="Ramp down (s)" type="number" min={0} max={120}
+            value={isIntermittent ? state.tvnsRampDownSec : ""}
+            onChange={(e) => onField("tvnsRampDownSec", e.target.value)}
+            disabled={!isIntermittent}
+            hint={!isIntermittent ? "Only applies to the intermittent pattern" : undefined}
+          />
+        </div>
 
         <div className="grid grid-cols-2 gap-3">
           <Input

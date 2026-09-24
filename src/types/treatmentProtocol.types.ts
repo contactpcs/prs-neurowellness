@@ -409,6 +409,18 @@ export interface ProtocolCreate {
   prescribed_current_ma?: number | null;
   prescribed_duration_min?: number | null;
   ramp_seconds?: number;
+  /** tVNS's own prescription — freely typed, the exact equivalent of the
+   *  three fields above but shaped for wavelength/pattern/strength/
+   *  frequency/pulse-width (92). ramp_up/down only apply when pattern is
+   *  "intermittent". */
+  prescribed_tvns_wavelength?: "alternant" | "biphasic" | null;
+  prescribed_tvns_pattern?: "continuous" | "modulation" | "intermittent" | null;
+  prescribed_tvns_strength_pct?: number | null;
+  prescribed_tvns_frequency_hz?: number | null;
+  prescribed_tvns_pulse_width_us?: number | null;
+  prescribed_tvns_duration_min?: number | null;
+  prescribed_tvns_ramp_up_sec?: number | null;
+  prescribed_tvns_ramp_down_sec?: number | null;
   /** Which consultation authored this. Provenance only. */
   authored_in_appointment_id?: string | null;
   /** Set to amend an existing protocol instead of starting a new lineage:
@@ -429,6 +441,14 @@ export interface ProtocolUpdate {
   prescribed_current_ma?: number | null;
   prescribed_duration_min?: number | null;
   ramp_seconds?: number | null;
+  prescribed_tvns_wavelength?: "alternant" | "biphasic" | null;
+  prescribed_tvns_pattern?: "continuous" | "modulation" | "intermittent" | null;
+  prescribed_tvns_strength_pct?: number | null;
+  prescribed_tvns_frequency_hz?: number | null;
+  prescribed_tvns_pulse_width_us?: number | null;
+  prescribed_tvns_duration_min?: number | null;
+  prescribed_tvns_ramp_up_sec?: number | null;
+  prescribed_tvns_ramp_down_sec?: number | null;
   sessions_per_week?: number | null;
   device_settings?: Record<string, unknown>;
   notes?: string | null;
@@ -471,6 +491,14 @@ export interface ProtocolRead {
   prescribed_current_ma?: number | null;
   prescribed_duration_min?: number | null;
   ramp_seconds?: number | null;
+  prescribed_tvns_wavelength?: "alternant" | "biphasic" | null;
+  prescribed_tvns_pattern?: "continuous" | "modulation" | "intermittent" | null;
+  prescribed_tvns_strength_pct?: number | null;
+  prescribed_tvns_frequency_hz?: number | null;
+  prescribed_tvns_pulse_width_us?: number | null;
+  prescribed_tvns_duration_min?: number | null;
+  prescribed_tvns_ramp_up_sec?: number | null;
+  prescribed_tvns_ramp_down_sec?: number | null;
   sessions_per_week?: number | null;
   device_settings: Record<string, unknown>;
   notes?: string | null;
