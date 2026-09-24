@@ -310,7 +310,7 @@ export interface DeviceDayAvailability {
 // 'confirmed' never occur — payment is what confirms a visit now.
 export type AppointmentStatus =
   | "planned" | "selected" | "paid" | "checked_in" | "in_progress"
-  | "completed" | "cancelled" | "no_show" | "rescheduled";
+  | "completed" | "cancelled" | "no_show" | "missed" | "rescheduled";
 
 // Matches backend's APPOINTMENT_TYPES pattern (scheduling/schemas.py) —
 // the only 4 values the API accepts.

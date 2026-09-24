@@ -9,10 +9,8 @@ import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.s
 import { Card, CardContent, PageLoader } from "@/components/ui";
 import { deviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
 import { isSupersededCancellation } from "@/lib/appointmentStatus";
-import { PlacementMap } from "@/app/(roles)/doctor/patients/[id]/treatment-protocol/wizard/PlacementMap";
 import type { Appointment } from "@/types/domain.types";
 import type { DeviceSessionScale } from "@/types/deviceSession.types";
-import type { ProtocolDetail } from "@/types/treatmentProtocol.types";
 
 /** Scheduled datetime of a session. Falls back to end-of-day when the slot has
  * no start_time yet (a 'planned' protocol row the patient hasn't claimed). */
@@ -43,11 +41,32 @@ function fmtDay(a: Appointment): string {
  * was firing that many individual requests at once. */
 function isOpenable(a: Appointment, now: number): boolean {
   const locked = scheduledAt(a) > now && a.status !== "in_progress" && a.status !== "completed";
-  const closed = a.status === "cancelled" || a.status === "no_show";
+  const closed = a.status === "cancelled" || a.status === "no_show" || a.status === "missed";
   return !locked && !closed;
 }
 
 type ScaleSummary = { total: number; completed: number; actionable: boolean } | null;
+
+type FilterKey = "all" | "upcoming" | "in_progress" | "completed" | "paid" | "missed";
+
+function startOfToday(): number {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+const FILTERS: { key: FilterKey; label: string; test: (a: Appointment) => boolean }[] = [
+  { key: "all", label: "All", test: () => true },
+  {
+    key: "upcoming",
+    label: "Upcoming",
+    test: (a) => scheduledAt(a) >= startOfToday() && !["completed", "no_show", "missed", "cancelled"].includes(a.status),
+  },
+  { key: "in_progress", label: "In Progress", test: (a) => a.status === "in_progress" },
+  { key: "completed", label: "Completed", test: (a) => a.status === "completed" },
+  { key: "paid", label: "Paid", test: (a) => a.status === "paid" },
+  { key: "missed", label: "Missed", test: (a) => a.status === "no_show" || a.status === "missed" },
+];
 
 function summarize(scales: DeviceSessionScale[]): ScaleSummary {
   if (!scales.length) return { total: 0, completed: 0, actionable: false };
@@ -63,10 +82,13 @@ export default function PatientDeviceSessionsPage() {
   const [sessions, setSessions] = useState<Appointment[] | null>(null);
   const [summaries, setSummaries] = useState<Record<string, ScaleSummary>>({});
   const [modalityByProtocol, setModalityByProtocol] = useState<Record<string, string | null>>({});
-  const [protocolDetails, setProtocolDetails] = useState<Record<string, ProtocolDetail>>({});
   const [error, setError] = useState<string | null>(null);
-  // Which protocol-version parent group is open. null = parent list.
+  // Which protocol-version group is shown in detail. null = active version.
   const [openGroupKey, setOpenGroupKey] = useState<string | null>(null);
+  // 'detail' = session list for one protocol version (default: the active
+  // one). 'versions' = the full list of protocol versions to pick from.
+  const [screen, setScreen] = useState<"detail" | "versions">("detail");
+  const [filter, setFilter] = useState<FilterKey>("all");
 
   useEffect(() => {
     appointmentsService
@@ -89,7 +111,6 @@ export default function PatientDeviceSessionsPage() {
             try {
               const p = await treatmentProtocolService.getProtocolDetail(pid);
               setModalityByProtocol((prev) => ({ ...prev, [pid]: p.modality ?? null }));
-              setProtocolDetails((prev) => ({ ...prev, [pid]: p }));
             } catch {
               setModalityByProtocol((prev) => ({ ...prev, [pid]: null }));
             }
@@ -177,11 +198,12 @@ export default function PatientDeviceSessionsPage() {
 
   const now = Date.now();
 
-  const openGroup = groups.find((g) => g.key === openGroupKey) ?? null;
+  const detailGroupKey = openGroupKey ?? activeGroupKey;
+  const openGroup = screen === "detail" ? groups.find((g) => g.key === detailGroupKey) ?? null : null;
 
   const renderSessionCard = (a: Appointment) => {
     const locked = scheduledAt(a) > now && a.status !== "in_progress" && a.status !== "completed";
-    const closed = a.status === "cancelled" || a.status === "no_show";
+    const closed = a.status === "cancelled" || a.status === "no_show" || a.status === "missed";
     const openable = isOpenable(a, now);
     const sum = summaries[a.appointment_id];
 
@@ -214,7 +236,7 @@ export default function PatientDeviceSessionsPage() {
               {locked ? (
                 <><Lock className="h-3.5 w-3.5" /> Opens {fmtWhen(a)}</>
               ) : closed ? (
-                <>Session {a.status === "no_show" ? "missed" : "cancelled"}</>
+                <>Session {a.status === "no_show" || a.status === "missed" ? "missed" : "cancelled"}</>
               ) : sum === undefined ? (
                 <>Loading assessment status…</>
               ) : sum === null || sum.total === 0 ? (
@@ -239,18 +261,21 @@ export default function PatientDeviceSessionsPage() {
     );
   };
 
-  // ─── Child level — device sessions for the picked protocol version ───
+  // ─── Detail level — device sessions for one protocol version ───
   if (openGroup) {
     const first = openGroup.items[0];
     const last = openGroup.items[openGroup.items.length - 1];
+    const filteredItems = openGroup.items.filter(FILTERS.find((f) => f.key === filter)!.test);
     return (
       <div className="flex flex-col gap-5">
-        <button
-          onClick={() => setOpenGroupKey(null)}
-          className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 w-fit"
-        >
-          <ChevronLeft className="h-4 w-4" /> Back to protocol versions
-        </button>
+        {groups.length > 1 && (
+          <button
+            onClick={() => setScreen("versions")}
+            className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 w-fit"
+          >
+            <ChevronLeft className="h-4 w-4" /> View all protocol versions
+          </button>
+        )}
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-neutral-900">{versionLabel(openGroup.items)}</h1>
@@ -268,44 +293,57 @@ export default function PatientDeviceSessionsPage() {
             {" · "}{fmtDay(first)}{openGroup.items.length > 1 ? ` – ${fmtDay(last)}` : ""}
           </p>
         </div>
-        {(() => {
-          const detail = protocolDetails[openGroup.key];
-          if (!detail) return null;
-          const p = detail.placement;
-          const anodeSite = p?.anode_site || detail.custom_montage?.anode_sites?.[0] || null;
-          const cathodeSites = p?.cathode_site
-            ? [p.cathode_site]
-            : p?.return_sites?.length
-              ? p.return_sites
-              : detail.custom_montage?.cathode_sites || [];
-          if (!anodeSite && cathodeSites.length === 0) return null;
-          return (
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-colors ${
+                filter === f.key
+                  ? "bg-primary-600 text-white"
+                  : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="space-y-3">
+          {filteredItems.length === 0 ? (
             <Card>
-              <CardContent className="space-y-3">
-                <h2 className="text-sm font-semibold text-neutral-900">Electrode Placement</h2>
-                <PlacementMap anodeSite={anodeSite} cathodeSites={cathodeSites} interactive={false} />
-                <div className="flex items-center gap-4 text-xs text-neutral-600 pt-1">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> Anode: {anodeSite || "—"}
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-neutral-900 inline-block" /> Cathode: {cathodeSites.join(", ") || "—"}
-                  </span>
-                </div>
+              <CardContent className="px-6 py-10 text-center">
+                <p className="text-sm text-neutral-400">No sessions match this filter.</p>
               </CardContent>
             </Card>
-          );
-        })()}
-        <div className="space-y-3">{openGroup.items.map(renderSessionCard)}</div>
+          ) : (
+            filteredItems.map(renderSessionCard)
+          )}
+        </div>
       </div>
     );
   }
 
-  // ─── Parent level — one row per protocol version ───
+  // ─── Versions level — one row per protocol version ───
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Device Sessions</h1>
+        <div className="flex items-center gap-3 flex-wrap">
+          <h1 className="text-2xl font-bold text-neutral-900">Device Sessions</h1>
+          {detailGroupKey && (
+            <button
+              onClick={() => {
+                setOpenGroupKey(null);
+                setFilter("all");
+                setScreen("detail");
+              }}
+              className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-800 w-fit"
+            >
+              Back to current sessions <ChevronRight className="h-4 w-4" />
+            </button>
+          )}
+        </div>
         <p className="text-sm text-neutral-500 mt-0.5">
           Your treatment schedule. Open a protocol version to see its device sessions and assessments.
         </p>
@@ -330,7 +368,11 @@ export default function PatientDeviceSessionsPage() {
               <Card key={g.key} className="hover:border-primary-300 transition-colors">
                 <CardContent
                   className="flex items-center gap-4 py-4 cursor-pointer"
-                  onClick={() => setOpenGroupKey(g.key)}
+                  onClick={() => {
+                    setOpenGroupKey(g.key);
+                    setFilter("all");
+                    setScreen("detail");
+                  }}
                 >
                   <div className="w-11 h-11 rounded-xl bg-primary-50 text-primary-600 flex flex-col items-center justify-center flex-shrink-0">
                     <span className="text-[9px] font-semibold uppercase leading-none">Ver</span>
