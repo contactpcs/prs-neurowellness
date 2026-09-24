@@ -1355,6 +1355,43 @@ function DosingStep({
           </p>
         </div>
 
+        {dosingRows.length > 0 && (
+          <div>
+            <p className="text-xs font-medium text-neutral-700 mb-2">
+              Suggested presets for this condition — pick one to autofill, then edit freely
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {dosingRows.map((d) => (
+                <button
+                  key={d.dosing_id}
+                  type="button"
+                  onClick={() => {
+                    onField("tvnsWavelength", (d.wavelength ?? "") as WizardState["tvnsWavelength"]);
+                    onField("tvnsPattern", (d.pattern ?? "") as WizardState["tvnsPattern"]);
+                    if (d.strength_pct_min != null) onField("tvnsStrengthPct", String(d.strength_pct_min));
+                    const freq = d.frequency_hz_min ?? d.frequency_hz ?? null;
+                    if (freq != null) onField("tvnsFrequencyHz", String(freq));
+                    const pw = d.pulse_width_us_min ?? d.pulse_width_us ?? null;
+                    if (pw != null) onField("tvnsPulseWidthUs", String(pw));
+                    if (d.session_duration_min != null) onField("tvnsDurationMin", String(d.session_duration_min));
+                  }}
+                  className="px-3 py-1.5 rounded-full text-xs font-medium border border-neutral-300 text-neutral-600 hover:border-blue-600 hover:text-blue-600"
+                  title={d.notes ?? undefined}
+                >
+                  {(d.pattern ?? "").replace(/^\w/, (c) => c.toUpperCase())}
+                  {d.frequency_hz_min != null && d.frequency_hz_max != null
+                    ? ` · ${d.frequency_hz_min}-${d.frequency_hz_max}Hz`
+                    : d.frequency_hz != null ? ` · ${d.frequency_hz}Hz` : ""}
+                  {d.pulse_width_us_min != null && d.pulse_width_us_max != null
+                    ? ` · ${d.pulse_width_us_min}-${d.pulse_width_us_max}µs`
+                    : ""}
+                  {d.session_duration_min != null ? ` · ${d.session_duration_min}min` : ""}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           <Select
             label="Wavelength"

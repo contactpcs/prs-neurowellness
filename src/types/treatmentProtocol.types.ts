@@ -299,6 +299,10 @@ export interface DosingRead {
   strength_pct_min?: number | null;
   strength_pct_max?: number | null;
   pulse_width_us?: number | null;
+  frequency_hz_min?: number | null;
+  frequency_hz_max?: number | null;
+  pulse_width_us_min?: number | null;
+  pulse_width_us_max?: number | null;
   energy_mj?: number | null;
   pulses_per_session?: number | null;
   pulse_rate_hz?: number | null;
