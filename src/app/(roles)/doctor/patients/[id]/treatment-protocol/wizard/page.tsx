@@ -245,9 +245,14 @@ export default function TreatmentProtocolWizardPage() {
         tvnsWavelength: detail.prescribed_tvns_wavelength ?? "",
         tvnsPattern: detail.prescribed_tvns_pattern ?? "",
         tvnsStrengthPct: detail.prescribed_tvns_strength_pct != null ? String(detail.prescribed_tvns_strength_pct) : "",
-        tvnsFrequencyHz: detail.prescribed_tvns_frequency_hz != null ? String(detail.prescribed_tvns_frequency_hz) : "",
-        tvnsPulseWidthUs: detail.prescribed_tvns_pulse_width_us != null ? String(detail.prescribed_tvns_pulse_width_us) : "",
-        tvnsDurationMin: detail.prescribed_tvns_duration_min != null ? String(detail.prescribed_tvns_duration_min) : "",
+        // Backend Decimal fields (NUMERIC(6,2)) can come back as "100.00" —
+        // Number(...) then String(...) strips that so it matches the plain-
+        // integer option values the Frequency/Pulse width/Duration Selects
+        // render ("100"), otherwise the Select shows blank despite state
+        // holding a real value.
+        tvnsFrequencyHz: detail.prescribed_tvns_frequency_hz != null ? String(Number(detail.prescribed_tvns_frequency_hz)) : "",
+        tvnsPulseWidthUs: detail.prescribed_tvns_pulse_width_us != null ? String(Number(detail.prescribed_tvns_pulse_width_us)) : "",
+        tvnsDurationMin: detail.prescribed_tvns_duration_min != null ? String(Number(detail.prescribed_tvns_duration_min)) : "",
         tvnsRampUpSec: detail.prescribed_tvns_ramp_up_sec != null ? String(detail.prescribed_tvns_ramp_up_sec) : "",
         tvnsRampDownSec: detail.prescribed_tvns_ramp_down_sec != null ? String(detail.prescribed_tvns_ramp_down_sec) : "",
         sessionCount: String(detail.session_count),
@@ -865,7 +870,50 @@ export default function TreatmentProtocolWizardPage() {
               {step === 1 && (
                 <ConditionStep conditions={conditions} loading={conditionsLoading} selected={state.conditionIds} onToggle={(id) => {
                   const has = state.conditionIds.includes(id);
-                  set("conditionIds", has ? state.conditionIds.filter((c) => c !== id) : [...state.conditionIds, id]);
+                  const nextIds = has ? state.conditionIds.filter((c) => c !== id) : [...state.conditionIds, id];
+                  // Condition changed → the tVNS dose fields belong to
+                  // whichever condition was selected when they were last
+                  // (auto)filled. Clear them so the autofill effect (which
+                  // only fills empty fields, so it never clobbers a manual
+                  // edit) picks up the new condition's preset instead of
+                  // silently keeping the old one's values on screen.
+                  if (isTvns) {
+                    setState((s) => ({
+                      ...s,
+                      conditionIds: nextIds,
+                      tvnsWavelength: "", tvnsPattern: "", tvnsFrequencyHz: "",
+                      tvnsPulseWidthUs: "", tvnsDurationMin: "",
+                    }));
+                    // Fetch and autofill right here, on the click, instead
+                    // of only relying on the Step 5 dosing effect further
+                    // down — that effect fires too (same cache key), but
+                    // doing it here means the dose is filled the moment the
+                    // doctor picks the disease, not whenever they happen to
+                    // scroll to the dosing step.
+                    const newPrimary = nextIds[0];
+                    if (state.deviceId && newPrimary) {
+                      treatmentProtocolService
+                        .listDosing(state.deviceId, newPrimary, undefined)
+                        .then((rows) => {
+                          setDosingRows(rows);
+                          dosingCacheKey.current = JSON.stringify([state.deviceId, newPrimary, null]);
+                          tvnsAutofillKey.current = JSON.stringify([state.deviceId, newPrimary]);
+                          const d = rows[0];
+                          if (!d) return;
+                          setState((s) => ({
+                            ...s,
+                            tvnsWavelength: (d.wavelength ?? "") as WizardState["tvnsWavelength"],
+                            tvnsPattern: (d.pattern ?? "") as WizardState["tvnsPattern"],
+                            tvnsFrequencyHz: d.frequency_hz_min != null ? String(Number(d.frequency_hz_min)) : d.frequency_hz != null ? String(Number(d.frequency_hz)) : "",
+                            tvnsPulseWidthUs: d.pulse_width_us_min != null ? String(Number(d.pulse_width_us_min)) : d.pulse_width_us != null ? String(Number(d.pulse_width_us)) : "",
+                            tvnsDurationMin: d.session_duration_min != null ? String(Number(d.session_duration_min)) : "",
+                          }));
+                        })
+                        .catch(() => {});
+                    }
+                  } else {
+                    set("conditionIds", nextIds);
+                  }
                 }} />
               )}
               {step === 2 && (
@@ -1401,13 +1449,20 @@ function DosingStep({
       return v == null ? m : m == null ? v : Math.max(m, v);
     }, null);
 
+    // Always keep the already-set value selectable even if it falls outside
+    // the scoped range - an existing protocol (modify mode) can carry a
+    // value prescribed before presets existed, or from a different
+    // condition/pattern than currently selected. Otherwise the Select goes
+    // blank despite state holding a real, valid-at-the-time value.
+    const currentFreq = state.tvnsFrequencyHz ? Number(state.tvnsFrequencyHz) : null;
     const freqOptions =
       freqMin != null && freqMax != null
-        ? TVNS_FREQUENCY_HZ_OPTIONS.filter((hz) => hz >= freqMin && hz <= freqMax)
+        ? TVNS_FREQUENCY_HZ_OPTIONS.filter((hz) => (hz >= freqMin && hz <= freqMax) || hz === currentFreq)
         : TVNS_FREQUENCY_HZ_OPTIONS;
+    const currentPw = state.tvnsPulseWidthUs ? Number(state.tvnsPulseWidthUs) : null;
     const pwOptions =
       pwMin != null && pwMax != null
-        ? TVNS_PULSE_WIDTH_US_OPTIONS.filter((us) => us >= pwMin && us <= pwMax)
+        ? TVNS_PULSE_WIDTH_US_OPTIONS.filter((us) => (us >= pwMin && us <= pwMax) || us === currentPw)
         : TVNS_PULSE_WIDTH_US_OPTIONS;
 
     return (
