@@ -83,7 +83,7 @@ function emptyState(): WizardState {
     placementId: null, anodeSite: null, cathodeSites: [],
     montageMode: "catalogue", customMontageId: null, customMontageName: null,
     dosingId: null, currentMa: "", sessionDurationMin: "", rampSeconds: "30",
-    tvnsWavelength: "", tvnsPattern: "", tvnsStrengthPct: "", tvnsFrequencyHz: "",
+    tvnsWavelength: "", tvnsPattern: "", tvnsStrengthPct: "10", tvnsFrequencyHz: "",
     tvnsPulseWidthUs: "", tvnsDurationMin: "", tvnsRampUpSec: "", tvnsRampDownSec: "",
     sessionCount: "20", sessionsPerWeek: 5, followUpEveryN: "",
     startDate: todayIso(), skipDates: [], extraDates: [],
@@ -245,9 +245,14 @@ export default function TreatmentProtocolWizardPage() {
         tvnsWavelength: detail.prescribed_tvns_wavelength ?? "",
         tvnsPattern: detail.prescribed_tvns_pattern ?? "",
         tvnsStrengthPct: detail.prescribed_tvns_strength_pct != null ? String(detail.prescribed_tvns_strength_pct) : "",
-        tvnsFrequencyHz: detail.prescribed_tvns_frequency_hz != null ? String(detail.prescribed_tvns_frequency_hz) : "",
-        tvnsPulseWidthUs: detail.prescribed_tvns_pulse_width_us != null ? String(detail.prescribed_tvns_pulse_width_us) : "",
-        tvnsDurationMin: detail.prescribed_tvns_duration_min != null ? String(detail.prescribed_tvns_duration_min) : "",
+        // Backend Decimal fields (NUMERIC(6,2)) can come back as "100.00" —
+        // Number(...) then String(...) strips that so it matches the plain-
+        // integer option values the Frequency/Pulse width/Duration Selects
+        // render ("100"), otherwise the Select shows blank despite state
+        // holding a real value.
+        tvnsFrequencyHz: detail.prescribed_tvns_frequency_hz != null ? String(Number(detail.prescribed_tvns_frequency_hz)) : "",
+        tvnsPulseWidthUs: detail.prescribed_tvns_pulse_width_us != null ? String(Number(detail.prescribed_tvns_pulse_width_us)) : "",
+        tvnsDurationMin: detail.prescribed_tvns_duration_min != null ? String(Number(detail.prescribed_tvns_duration_min)) : "",
         tvnsRampUpSec: detail.prescribed_tvns_ramp_up_sec != null ? String(detail.prescribed_tvns_ramp_up_sec) : "",
         tvnsRampDownSec: detail.prescribed_tvns_ramp_down_sec != null ? String(detail.prescribed_tvns_ramp_down_sec) : "",
         sessionCount: String(detail.session_count),
@@ -396,6 +401,30 @@ export default function TreatmentProtocolWizardPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.dosingId]);
+
+  // tVNS dosing is free-typed (not catalogue-pick), but the doctor still
+  // shouldn't stare at an empty form for a condition we have preset ranges
+  // for — auto-apply the first preset row the moment it loads, same as the
+  // tDCS autofill above. Only fills fields still empty, and only once per
+  // condition (guarded by the cache key), so it never clobbers manual edits
+  // or refires while the doctor is mid-edit.
+  const tvnsAutofillKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isTvns || dosingRows.length === 0) return;
+    const key = JSON.stringify([state.deviceId, primaryConditionId ?? null]);
+    if (tvnsAutofillKey.current === key) return;
+    tvnsAutofillKey.current = key;
+    const d = dosingRows[0];
+    setState((s) => ({
+      ...s,
+      tvnsWavelength: s.tvnsWavelength || ((d.wavelength ?? "") as WizardState["tvnsWavelength"]),
+      tvnsPattern: s.tvnsPattern || ((d.pattern ?? "") as WizardState["tvnsPattern"]),
+      tvnsStrengthPct: s.tvnsStrengthPct || (d.strength_pct_min != null ? String(d.strength_pct_min) : ""),
+      tvnsFrequencyHz: s.tvnsFrequencyHz || (d.frequency_hz_min != null ? String(d.frequency_hz_min) : d.frequency_hz != null ? String(d.frequency_hz) : ""),
+      tvnsPulseWidthUs: s.tvnsPulseWidthUs || (d.pulse_width_us_min != null ? String(d.pulse_width_us_min) : d.pulse_width_us != null ? String(d.pulse_width_us) : ""),
+      tvnsDurationMin: s.tvnsDurationMin || (d.session_duration_min != null ? String(d.session_duration_min) : ""),
+    }));
+  }, [isTvns, dosingRows, state.deviceId, primaryConditionId]);
 
   // ─── Step 6: Scales ───
   // Deliberately the FULL PRS catalogue, not narrowed to the selected
@@ -840,7 +869,50 @@ export default function TreatmentProtocolWizardPage() {
               {step === 1 && (
                 <ConditionStep conditions={conditions} loading={conditionsLoading} selected={state.conditionIds} onToggle={(id) => {
                   const has = state.conditionIds.includes(id);
-                  set("conditionIds", has ? state.conditionIds.filter((c) => c !== id) : [...state.conditionIds, id]);
+                  const nextIds = has ? state.conditionIds.filter((c) => c !== id) : [...state.conditionIds, id];
+                  // Condition changed → the tVNS dose fields belong to
+                  // whichever condition was selected when they were last
+                  // (auto)filled. Clear them so the autofill effect (which
+                  // only fills empty fields, so it never clobbers a manual
+                  // edit) picks up the new condition's preset instead of
+                  // silently keeping the old one's values on screen.
+                  if (isTvns) {
+                    setState((s) => ({
+                      ...s,
+                      conditionIds: nextIds,
+                      tvnsWavelength: "", tvnsPattern: "", tvnsFrequencyHz: "",
+                      tvnsPulseWidthUs: "", tvnsDurationMin: "",
+                    }));
+                    // Fetch and autofill right here, on the click, instead
+                    // of only relying on the Step 5 dosing effect further
+                    // down — that effect fires too (same cache key), but
+                    // doing it here means the dose is filled the moment the
+                    // doctor picks the disease, not whenever they happen to
+                    // scroll to the dosing step.
+                    const newPrimary = nextIds[0];
+                    if (state.deviceId && newPrimary) {
+                      treatmentProtocolService
+                        .listDosing(state.deviceId, newPrimary, undefined)
+                        .then((rows) => {
+                          setDosingRows(rows);
+                          dosingCacheKey.current = JSON.stringify([state.deviceId, newPrimary, null]);
+                          tvnsAutofillKey.current = JSON.stringify([state.deviceId, newPrimary]);
+                          const d = rows[0];
+                          if (!d) return;
+                          setState((s) => ({
+                            ...s,
+                            tvnsWavelength: (d.wavelength ?? "") as WizardState["tvnsWavelength"],
+                            tvnsPattern: (d.pattern ?? "") as WizardState["tvnsPattern"],
+                            tvnsFrequencyHz: d.frequency_hz_min != null ? String(Number(d.frequency_hz_min)) : d.frequency_hz != null ? String(Number(d.frequency_hz)) : "",
+                            tvnsPulseWidthUs: d.pulse_width_us_min != null ? String(Number(d.pulse_width_us_min)) : d.pulse_width_us != null ? String(Number(d.pulse_width_us)) : "",
+                            tvnsDurationMin: d.session_duration_min != null ? String(Number(d.session_duration_min)) : "",
+                          }));
+                        })
+                        .catch(() => {});
+                    }
+                  } else {
+                    set("conditionIds", nextIds);
+                  }
                 }} />
               )}
               {step === 2 && (
@@ -1345,6 +1417,53 @@ function DosingStep({
 }) {
   if (isTvns) {
     const isIntermittent = state.tvnsPattern === "intermittent";
+
+    // Doctor asked: don't show the device's full 1-1000Hz/50-500µs master
+    // list once a condition is picked — narrow the picker to that disease's
+    // preset range(s) (reference.tvns_dosing.frequency_hz_min/max,
+    // pulse_width_us_min/max), same rows the preset chips above read.
+    // Prefer rows matching the chosen pattern (a condition can carry two
+    // preset rows, one per mode, with different ranges); fall back to the
+    // union across all rows for the condition when no pattern is picked
+    // yet, and to the full device range when there's no preset data at all
+    // (e.g. a condition with no seeded tVNS rows).
+    const rowsForRange = state.tvnsPattern
+      ? dosingRows.filter((d) => d.pattern === state.tvnsPattern)
+      : dosingRows;
+    const scopedRows = rowsForRange.length > 0 ? rowsForRange : dosingRows;
+    const freqMin = scopedRows.reduce<number | null>((m, d) => {
+      const v = d.frequency_hz_min ?? d.frequency_hz;
+      return v == null ? m : m == null ? v : Math.min(m, v);
+    }, null);
+    const freqMax = scopedRows.reduce<number | null>((m, d) => {
+      const v = d.frequency_hz_max ?? d.frequency_hz;
+      return v == null ? m : m == null ? v : Math.max(m, v);
+    }, null);
+    const pwMin = scopedRows.reduce<number | null>((m, d) => {
+      const v = d.pulse_width_us_min ?? d.pulse_width_us;
+      return v == null ? m : m == null ? v : Math.min(m, v);
+    }, null);
+    const pwMax = scopedRows.reduce<number | null>((m, d) => {
+      const v = d.pulse_width_us_max ?? d.pulse_width_us;
+      return v == null ? m : m == null ? v : Math.max(m, v);
+    }, null);
+
+    // Always keep the already-set value selectable even if it falls outside
+    // the scoped range - an existing protocol (modify mode) can carry a
+    // value prescribed before presets existed, or from a different
+    // condition/pattern than currently selected. Otherwise the Select goes
+    // blank despite state holding a real, valid-at-the-time value.
+    const currentFreq = state.tvnsFrequencyHz ? Number(state.tvnsFrequencyHz) : null;
+    const freqOptions =
+      freqMin != null && freqMax != null
+        ? TVNS_FREQUENCY_HZ_OPTIONS.filter((hz) => (hz >= freqMin && hz <= freqMax) || hz === currentFreq)
+        : TVNS_FREQUENCY_HZ_OPTIONS;
+    const currentPw = state.tvnsPulseWidthUs ? Number(state.tvnsPulseWidthUs) : null;
+    const pwOptions =
+      pwMin != null && pwMax != null
+        ? TVNS_PULSE_WIDTH_US_OPTIONS.filter((us) => (us >= pwMin && us <= pwMax) || us === currentPw)
+        : TVNS_PULSE_WIDTH_US_OPTIONS;
+
     return (
       <div className="space-y-4">
         <div>
@@ -1393,17 +1512,17 @@ function DosingStep({
 
         <div className="grid grid-cols-2 gap-3">
           <Select
-            label="Wavelength"
+            label="Waveform"
             value={state.tvnsWavelength}
             onChange={(e) => onField("tvnsWavelength", e.target.value as WizardState["tvnsWavelength"])}
-            placeholder="Select wavelength"
+            placeholder="Select waveform"
             options={[{ value: "alternant", label: "Alternant" }, { value: "biphasic", label: "Biphasic" }]}
           />
           <Select
-            label="Pattern"
+            label="Mode"
             value={state.tvnsPattern}
             onChange={(e) => onField("tvnsPattern", e.target.value as WizardState["tvnsPattern"])}
-            placeholder="Select pattern"
+            placeholder="Select mode"
             options={[
               { value: "continuous", label: "Continuous" },
               { value: "modulation", label: "Modulation" },
@@ -1420,14 +1539,14 @@ function DosingStep({
             value={state.tvnsFrequencyHz}
             onChange={(e) => onField("tvnsFrequencyHz", e.target.value)}
             placeholder="Select frequency"
-            options={TVNS_FREQUENCY_HZ_OPTIONS.map((hz) => ({ value: String(hz), label: `${hz} Hz` }))}
+            options={freqOptions.map((hz) => ({ value: String(hz), label: `${hz} Hz` }))}
           />
           <Select
             label="Pulse width (µs)"
             value={state.tvnsPulseWidthUs}
             onChange={(e) => onField("tvnsPulseWidthUs", e.target.value)}
             placeholder="Select pulse width"
-            options={TVNS_PULSE_WIDTH_US_OPTIONS.map((us) => ({ value: String(us), label: `${us} µs` }))}
+            options={pwOptions.map((us) => ({ value: String(us), label: `${us} µs` }))}
           />
           <Select
             label="Duration"
