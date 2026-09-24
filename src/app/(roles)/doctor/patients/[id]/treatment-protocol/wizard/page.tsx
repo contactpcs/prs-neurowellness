@@ -397,6 +397,30 @@ export default function TreatmentProtocolWizardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.dosingId]);
 
+  // tVNS dosing is free-typed (not catalogue-pick), but the doctor still
+  // shouldn't stare at an empty form for a condition we have preset ranges
+  // for — auto-apply the first preset row the moment it loads, same as the
+  // tDCS autofill above. Only fills fields still empty, and only once per
+  // condition (guarded by the cache key), so it never clobbers manual edits
+  // or refires while the doctor is mid-edit.
+  const tvnsAutofillKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isTvns || dosingRows.length === 0) return;
+    const key = JSON.stringify([state.deviceId, primaryConditionId ?? null]);
+    if (tvnsAutofillKey.current === key) return;
+    tvnsAutofillKey.current = key;
+    const d = dosingRows[0];
+    setState((s) => ({
+      ...s,
+      tvnsWavelength: s.tvnsWavelength || ((d.wavelength ?? "") as WizardState["tvnsWavelength"]),
+      tvnsPattern: s.tvnsPattern || ((d.pattern ?? "") as WizardState["tvnsPattern"]),
+      tvnsStrengthPct: s.tvnsStrengthPct || (d.strength_pct_min != null ? String(d.strength_pct_min) : ""),
+      tvnsFrequencyHz: s.tvnsFrequencyHz || (d.frequency_hz_min != null ? String(d.frequency_hz_min) : d.frequency_hz != null ? String(d.frequency_hz) : ""),
+      tvnsPulseWidthUs: s.tvnsPulseWidthUs || (d.pulse_width_us_min != null ? String(d.pulse_width_us_min) : d.pulse_width_us != null ? String(d.pulse_width_us) : ""),
+      tvnsDurationMin: s.tvnsDurationMin || (d.session_duration_min != null ? String(d.session_duration_min) : ""),
+    }));
+  }, [isTvns, dosingRows, state.deviceId, primaryConditionId]);
+
   // ─── Step 6: Scales ───
   // Deliberately the FULL PRS catalogue, not narrowed to the selected
   // conditions — a doctor may want to prescribe a scale outside the
@@ -1346,6 +1370,46 @@ function DosingStep({
 }) {
   if (isTvns) {
     const isIntermittent = state.tvnsPattern === "intermittent";
+
+    // Doctor asked: don't show the device's full 1-1000Hz/50-500µs master
+    // list once a condition is picked — narrow the picker to that disease's
+    // preset range(s) (reference.tvns_dosing.frequency_hz_min/max,
+    // pulse_width_us_min/max), same rows the preset chips above read.
+    // Prefer rows matching the chosen pattern (a condition can carry two
+    // preset rows, one per mode, with different ranges); fall back to the
+    // union across all rows for the condition when no pattern is picked
+    // yet, and to the full device range when there's no preset data at all
+    // (e.g. a condition with no seeded tVNS rows).
+    const rowsForRange = state.tvnsPattern
+      ? dosingRows.filter((d) => d.pattern === state.tvnsPattern)
+      : dosingRows;
+    const scopedRows = rowsForRange.length > 0 ? rowsForRange : dosingRows;
+    const freqMin = scopedRows.reduce<number | null>((m, d) => {
+      const v = d.frequency_hz_min ?? d.frequency_hz;
+      return v == null ? m : m == null ? v : Math.min(m, v);
+    }, null);
+    const freqMax = scopedRows.reduce<number | null>((m, d) => {
+      const v = d.frequency_hz_max ?? d.frequency_hz;
+      return v == null ? m : m == null ? v : Math.max(m, v);
+    }, null);
+    const pwMin = scopedRows.reduce<number | null>((m, d) => {
+      const v = d.pulse_width_us_min ?? d.pulse_width_us;
+      return v == null ? m : m == null ? v : Math.min(m, v);
+    }, null);
+    const pwMax = scopedRows.reduce<number | null>((m, d) => {
+      const v = d.pulse_width_us_max ?? d.pulse_width_us;
+      return v == null ? m : m == null ? v : Math.max(m, v);
+    }, null);
+
+    const freqOptions =
+      freqMin != null && freqMax != null
+        ? TVNS_FREQUENCY_HZ_OPTIONS.filter((hz) => hz >= freqMin && hz <= freqMax)
+        : TVNS_FREQUENCY_HZ_OPTIONS;
+    const pwOptions =
+      pwMin != null && pwMax != null
+        ? TVNS_PULSE_WIDTH_US_OPTIONS.filter((us) => us >= pwMin && us <= pwMax)
+        : TVNS_PULSE_WIDTH_US_OPTIONS;
+
     return (
       <div className="space-y-4">
         <div>
@@ -1421,14 +1485,14 @@ function DosingStep({
             value={state.tvnsFrequencyHz}
             onChange={(e) => onField("tvnsFrequencyHz", e.target.value)}
             placeholder="Select frequency"
-            options={TVNS_FREQUENCY_HZ_OPTIONS.map((hz) => ({ value: String(hz), label: `${hz} Hz` }))}
+            options={freqOptions.map((hz) => ({ value: String(hz), label: `${hz} Hz` }))}
           />
           <Select
             label="Pulse width (µs)"
             value={state.tvnsPulseWidthUs}
             onChange={(e) => onField("tvnsPulseWidthUs", e.target.value)}
             placeholder="Select pulse width"
-            options={TVNS_PULSE_WIDTH_US_OPTIONS.map((us) => ({ value: String(us), label: `${us} µs` }))}
+            options={pwOptions.map((us) => ({ value: String(us), label: `${us} µs` }))}
           />
           <Select
             label="Duration"
