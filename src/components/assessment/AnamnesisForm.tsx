@@ -5,7 +5,6 @@ import { Button } from "@/components/ui";
 import { CheckCircle, AlertCircle, Stethoscope, Loader2 } from "lucide-react";
 import { anamnesisService, withResponses } from "@/lib/api/services/anamnesis.service";
 import { AnamnesisReadOnlyView } from "@/components/assessment/AnamnesisReadOnlyView";
-import { AnamnesisVersionPicker } from "@/components/assessment/AnamnesisVersionPicker";
 import { useAppDispatch } from "@/store/hooks";
 import { invalidateMyAnamnesis, invalidatePatientAnamnesis } from "@/store/slices/anamnesisSlice";
 import { invalidateDashboard } from "@/store/slices/patientsSlice";
@@ -23,28 +22,14 @@ interface AnamnesisFormProps {
   assessmentStage: AnamnesisStage;
   initialRecord?: AnamnesisRecord | null;
   onSubmitted?: () => void;
-  /** True when the doctor is viewing this from a session that is NOT the
-   * patient's current/latest one (e.g. looking at Consultation after
-   * Follow-up 1 exists). The anamnesis GET endpoint only ever returns the
-   * single latest version — there's no per-session history to fetch — so
-   * recording a new one from a frozen session's view would create a new
-   * version that then silently becomes "the" anamnesis shown everywhere,
-   * including under the earlier session it doesn't belong to. Locking this
-   * out is the only honest fix available without a backend history
-   * endpoint. */
+  /** True once this consultation's appointment is completed — its anamnesis
+   *  is frozen (the server refuses edits too, ANAMNESIS_LOCKED). */
   lockedForSession?: boolean;
   /** The visit (appointment_id) this form is being recorded under, when
    *  known — passed through to anamnesisService.start() so the doctor
    *  portal's per-visit bundle can find this record later. Omit when no
    *  visit context applies (e.g. the patient's own self-service flow). */
   appointmentId?: string | null;
-  /** This session's own appointment_date ("YYYY-MM-DD"), when known — the
-   *  version picker only offers versions created on/after this date. An
-   *  older version (recorded before this follow-up ever happened) belongs
-   *  to an earlier session's own frozen view, not to this one; without this
-   *  bound the picker let a doctor "look back" past this session's own
-   *  start, which reads as this session having an anamnesis it never had. */
-  sessionDate?: string | null;
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -191,7 +176,7 @@ function QuestionField({
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord, onSubmitted, lockedForSession = false, appointmentId = null, sessionDate = null }: AnamnesisFormProps) {
+export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord, onSubmitted, lockedForSession = false, appointmentId = null }: AnamnesisFormProps) {
   const dispatch = useAppDispatch();
   const [questions,   setQuestions]   = useState<AnamnesisQuestion[]>([]);
   const [sections,    setSections]    = useState<ReturnType<typeof groupBySection>>([]);
@@ -209,16 +194,10 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
   const [saving,     setSaving]     = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error,      setError]      = useState("");
+  // Doctor reopened a completed record to edit it in place (no versions —
+  // one anamnesis per consultation, editable until the consultation completes).
+  const [editing,    setEditing]    = useState(false);
 
-  // ── version history (doctor view only) ────────────────────────────────────
-  // start() always creates a new version rather than overwriting the one
-  // being edited (see handleStartOnBehalf below) — this is what lets a
-  // doctor look back at what an earlier version said instead of only ever
-  // seeing whatever is currently latest.
-  const [versions,          setVersions]          = useState<AnamnesisRecord[]>([]);
-  const [viewedVersionId,   setViewedVersionId]    = useState<string | null>(null);
-  const [viewedVersion,     setViewedVersion]      = useState<AnamnesisRecord | null>(null);
-  const [versionLoading,    setVersionLoading]     = useState(false);
 
   // One timer per question — a single shared timer meant typing into
   // question B within 600ms of question A cancelled A's pending save via
@@ -284,56 +263,13 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientId, mode, assessmentStage, initialRecord]);
 
-  // ── version history (doctor view, completed record only) ──────────────────
-  // Only on the CURRENT session's view, never a frozen one — a frozen
-  // session (e.g. viewing Consultation from Follow-up 1's page) already
-  // gets exactly the right version via visitSummary.anamnesis
-  // (get_by_appointment, resolved server-side per appointment_id); letting
-  // the picker switch versions there would show that visit a LATER edit it
-  // never actually had, which is the opposite of what "frozen" means.
-  useEffect(() => {
-    if (mode !== "doctor" || recordState !== "completed" || lockedForSession) { setVersions([]); return; }
-    let cancelled = false;
-    anamnesisService.listVersions(patientId, assessmentStage)
-      .then((list) => {
-        if (cancelled) return;
-        // Bound to this session's own date forward — a version recorded
-        // before this follow-up ever happened belongs to an earlier
-        // session's own view, not to "history you can look back at" from
-        // here (that earlier session already shows it, frozen, on its own).
-        const bounded = sessionDate
-          ? list.filter((v) => (v.completed_at ?? v.created_at ?? "").slice(0, 10) >= sessionDate)
-          : list;
-        setVersions(bounded);
-      })
-      .catch(() => { if (!cancelled) setVersions([]); });
-    return () => { cancelled = true; };
-  }, [mode, recordState, lockedForSession, patientId, assessmentStage, sessionDate]);
-
-  // Default to viewing the current/latest version once it (and the record
-  // it belongs to) are known — resets to it whenever the underlying record
-  // changes (e.g. right after a new version is started+submitted).
-  useEffect(() => {
-    setViewedVersionId(record?.anamnesis_id ?? null);
-    setViewedVersion(record ?? null);
-  }, [record]);
-
-  const handleSelectVersion = useCallback((id: string) => {
-    setViewedVersionId(id);
-    if (id === record?.anamnesis_id) { setViewedVersion(record); return; }
-    const summary = versions.find((v) => v.anamnesis_id === id);
-    if (!summary) return;
-    setVersionLoading(true);
-    withResponses(summary)
-      .then(setViewedVersion)
-      .catch(() => setViewedVersion(summary))
-      .finally(() => setVersionLoading(false));
-  }, [record, versions]);
-
   // ── auto-start for patient when no record ─────────────────────────────────
   useEffect(() => {
     // "loading" after questions are fetched = patient has no record
     if (recordState !== "loading" || mode !== "patient" || questions.length === 0) return;
+    // A consultation (main) anamnesis belongs to an appointment and is taken by
+    // the doctor — the patient only views theirs.
+    if (assessmentStage === "main") { setRecordState("no-record"); return; }
 
     anamnesisService
       .start({ patient_id: patientId, taken_by: "patient", assessment_stage: assessmentStage })
@@ -350,7 +286,7 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
 
   // ── per-question auto-save (600 ms debounce) ──────────────────────────────
   const handleChange = useCallback((questionId: string, value: string | null, values: string[] | null) => {
-    if (recordState === "completed") return;
+    if (recordState === "completed" && !editing) return;
 
     setResponses((prev) => ({
       ...prev,
@@ -381,7 +317,7 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
       }
       finally { setSaving(false); }
     }, 600));
-  }, [anamnesisId, recordState]);
+  }, [anamnesisId, recordState, editing]);
 
   // ── submit ────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
@@ -449,6 +385,7 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
         })),
       }));
       setRecordState("completed");
+      setEditing(false);
       if (mode === "patient") {
         dispatch(invalidateMyAnamnesis(assessmentStage));
         dispatch(invalidateDashboard());
@@ -465,16 +402,13 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
     }
   };
 
-  // ── doctor: start on behalf / edit (always a new version) ────────────────
-  // Always creates a BRAND NEW anamnesis_id — never reopens an existing
-  // completed record for in-place editing. Completed anamnesis rows are
-  // frozen; new clinical information becomes a new version instead, so
-  // `60 -> 45 -> 35`-style history is never lost. Also the entry point when
-  // no record exists yet at all (nothing to version off of).
+  // ── doctor: start (get-or-create) ────────────────────────────────────────
+  // The server returns this consultation's existing anamnesis if there is
+  // one, else a new one pre-filled with the previous consultation's answers —
+  // so always load its responses rather than starting from blank.
   const handleStartOnBehalf = async () => {
     setError("");
     try {
-      // Fetch questions alongside start if not already loaded
       const [r, qs] = await Promise.all([
         anamnesisService.start({
           patient_id: patientId,
@@ -488,15 +422,22 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
         setQuestions(qs);
         setSections(groupBySection(qs));
       }
+      const full = await withResponses(r as unknown as AnamnesisRecord);
       setAnamnesisId(r.anamnesis_id);
-      setMeta({ completed_at: null, taken_by: "doctor_on_behalf" });
-      setRecord(null);
-      setResponses({});
-      setRecordState("in_progress");
+      setRecord(full);
+      setMeta({ completed_at: full.completed_at ?? null, taken_by: full.taken_by ?? "doctor_on_behalf" });
+      setResponses(hydrateResponses(full));
+      setRecordState(full.status === "completed" ? "completed" : "in_progress");
     } catch (e: unknown) {
-      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(detail ?? "Failed to start anamnesis on behalf of patient.");
+      const detail = (e as { response?: { data?: { error?: { message?: string }; detail?: string } } })?.response?.data;
+      setError(detail?.error?.message ?? detail?.detail ?? "Failed to start anamnesis on behalf of patient.");
     }
+  };
+
+  // ── doctor: edit a completed record in place ─────────────────────────────
+  const handleEdit = () => {
+    if (record) setResponses(hydrateResponses(record));
+    setEditing(true);
   };
 
   // ── render: early states ─────────────────────────────────────────────────
@@ -519,8 +460,8 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
           <p className="font-semibold text-neutral-800">Anamnesis not started</p>
           <p className="text-sm text-neutral-500 mt-1">
             {lockedForSession
-              ? "The patient had not yet begun their medical history intake as of this session."
-              : "The patient has not yet begun their medical history intake. You can start it on their behalf."}
+              ? "No anamnesis was recorded for this consultation."
+              : "No anamnesis recorded for this consultation yet. Starting it pre-fills the previous consultation's answers."}
           </p>
         </div>
         {error && <p className="text-sm text-red-600 max-w-xs">{error}</p>}
@@ -529,6 +470,16 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
             <Stethoscope className="w-4 h-4" /> Start Anamneis
           </Button>
         )}
+      </div>
+    );
+  }
+
+  if (recordState === "no-record" && mode === "patient" && assessmentStage === "main") {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
+        <Stethoscope className="w-10 h-10 text-neutral-300" />
+        <p className="font-semibold text-neutral-800">No anamnesis yet</p>
+        <p className="text-sm text-neutral-500">Your doctor records this during your consultation.</p>
       </div>
     );
   }
@@ -543,44 +494,28 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
     );
   }
 
-  // Doctor: edit while in_progress, read-only after submit
-  // Patient: edit while in_progress, read-only after submit
-  // Also forced read-only when viewing a frozen (non-latest) session, even
-  // for a dangling in-progress draft — see lockedForSession above.
-  const readOnly  = recordState === "completed" || (mode === "doctor" && lockedForSession);
+  // Doctor: editable until the consultation is completed (lockedForSession);
+  // a completed record shows read-only until the doctor clicks Edit.
+  // Patient: registration editable until submitted; consultation anamnesis
+  // is view-only (the doctor's record).
+  const patientViewOnly = mode === "patient" && assessmentStage === "main";
+  const readOnly  = (recordState === "completed" && !editing) || (mode === "doctor" && lockedForSession) || patientViewOnly;
   const completed = recordState === "completed";
 
-  // Show read-only summary view when completed
-  if (completed && record) {
-    const shown = viewedVersion ?? record;
-    const viewingLatest = shown.anamnesis_id === record.anamnesis_id;
+  if (completed && record && !editing) {
     return (
       <>
-        {lockedForSession && (
+        {mode === "doctor" && lockedForSession && (
           <div className="mb-4 flex items-start gap-2 bg-neutral-100 border border-neutral-200 rounded-lg px-4 py-3 text-sm text-neutral-600">
             <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-neutral-400" />
-            This session is frozen. Showing the latest anamnesis on record — new anamnesis can only be recorded from the patient&apos;s current session.
-          </div>
-        )}
-        {mode === "doctor" && !lockedForSession && versions.length > 1 && (
-          <AnamnesisVersionPicker
-            versions={versions}
-            selectedId={viewedVersionId}
-            onSelect={handleSelectVersion}
-            loading={versionLoading}
-          />
-        )}
-        {!viewingLatest && (
-          <div className="mb-4 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
-            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-            Viewing version {shown.version} — an earlier record, kept as history. It is read-only; editing always starts from the current version.
+            This consultation is completed — its anamnesis is read-only.
           </div>
         )}
         <AnamnesisReadOnlyView
-          record={shown}
+          record={record}
           questions={questions}
-          takenBy={shown.taken_by}
-          onEdit={mode === "doctor" && !lockedForSession && viewingLatest ? handleStartOnBehalf : undefined}
+          takenBy={record.taken_by}
+          onEdit={mode === "doctor" && !lockedForSession ? handleEdit : undefined}
           editLabel="Edit"
         />
       </>
@@ -593,7 +528,7 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
       {mode === "doctor" && lockedForSession && (
         <div className="flex items-start gap-2 bg-neutral-100 border border-neutral-200 rounded-lg px-4 py-3 text-sm text-neutral-600">
           <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-neutral-400" />
-          This session is frozen — showing the anamnesis on record as read-only.
+          This consultation is completed — its anamnesis is read-only.
         </div>
       )}
 
