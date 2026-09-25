@@ -8,8 +8,7 @@ import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
 import { ClaimSlotModal } from "@/components/appointments/ClaimSlotModal";
 import { RescheduleModal } from "@/components/appointments/RescheduleModal";
 import { STATUS_LABEL, STATUS_TONE } from "@/lib/appointmentStatus";
-import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
-import { getDeviceSessionLabel, SESSION_TYPE_LABEL } from "@/lib/utils/sessionType";
+import { appointmentDoctorName, getDeviceSessionLabel, protocolContextLine, SESSION_TYPE_LABEL } from "@/lib/utils/sessionType";
 import { doctorLabel } from "@/lib/utils/doctorLabel";
 import { PageLoader, Button } from "@/components/ui";
 import { useGoBack } from "@/lib/hooks";
@@ -80,21 +79,11 @@ function AppointmentDetail() {
   const [loading, setLoading] = useState(true);
   const [showClaim, setShowClaim] = useState(false);
   const [showReschedule, setShowReschedule] = useState(false);
-  const [modality, setModality] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
     appointmentsService.getById(appointmentId).then(setAppt).finally(() => setLoading(false));
   }, [appointmentId]);
-
-  useEffect(() => {
-    if (!appt?.protocol_id) { setModality(null); return; }
-    let cancelled = false;
-    treatmentProtocolService.getProtocolDetail(appt.protocol_id)
-      .then((p) => { if (!cancelled) setModality(p.modality ?? null); })
-      .catch(() => { if (!cancelled) setModality(null); });
-    return () => { cancelled = true; };
-  }, [appt?.protocol_id]);
 
   // Dashboard's "Select Slot" links here with ?claim=1 so the picker opens
   // immediately instead of landing on the detail page and making the
@@ -123,6 +112,10 @@ function AppointmentDetail() {
   // An overdue 'planned' row stays 'planned' (scheduling/service.py never
   // auto-flips it), so it's never "missed" either — it just needs claiming.
   const isPlanned = appt.status === "planned";
+  // Device + conditions + course come on the appointment row itself.
+  const modality = appt.modality ?? null;
+  const contextLine = protocolContextLine(appt);
+  const doctorName = appointmentDoctorName(appt);
   // Matches backend's PROTOCOL_BORN_TYPES (scheduling/service.py) — the
   // only two types claim-slot will ever accept.
   const claimable = isPlanned && (appt.appointment_type === "device_session" || appt.appointment_type === "protocol_followup");
@@ -166,6 +159,7 @@ function AppointmentDetail() {
                 ? getDeviceSessionLabel(modality)
                 : appt.appointment_type ? SESSION_TYPE_LABEL[appt.appointment_type] : "Appointment"}
             </h1>
+            {contextLine && <p className="text-sm text-neutral-500 mt-0.5">{contextLine}</p>}
           </div>
           <span
             className={`text-xs font-medium px-2.5 py-1 rounded-full whitespace-nowrap ${
@@ -187,10 +181,13 @@ function AppointmentDetail() {
               <span className="text-neutral-700">{fmtTime(appt.start_time)}</span>
             </div>
           )}
-          {appt.doctor_name && (
+          {doctorName && (
             <div className="flex items-center gap-2 px-4 py-2.5">
               <User className="h-4 w-4 text-neutral-400" />
-              <span className="text-neutral-700">{doctorLabel(appt.doctor_name)}</span>
+              <span className="text-neutral-700">
+                {doctorLabel(doctorName)}
+                {!appt.doctor_name && <span className="text-neutral-400"> · Prescribing doctor</span>}
+              </span>
             </div>
           )}
         </div>

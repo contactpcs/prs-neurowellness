@@ -334,6 +334,16 @@ export interface Appointment {
    *  `v${protocol_version_major}.${protocol_version_minor}`. */
   protocol_version_major?: number | null;
   protocol_version_minor?: number | null;
+  /** What a protocol-born row is for, so a patient running several protocols
+   *  can tell sessions apart. All null for consultations. */
+  device_name?: string | null;
+  modality?: string | null;
+  condition_names?: string[] | null;
+  instance_number?: number | null;
+  session_count?: number | null;
+  /** The protocol instance's doctor — the one to show on a device session,
+   *  which has no doctor_name of its own. */
+  prescribing_doctor_name?: string | null;
   appointment_date: string;
   start_time: string;
   end_time: string;

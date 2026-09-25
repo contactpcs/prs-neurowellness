@@ -156,6 +156,10 @@ export default function DoctorPatientDetailPage() {
   // Guarded by !sessionsLoading to avoid a "locked" flash on first render.
   const consultationNotStarted = !sessionsLoading && currentSessionIdx < 0;
   const sessionLocked = !sessionsLoading && (currentSessionIdx < 0 || !isLatestSession);
+  // Anamnesis has its own rule: one per consultation, editable until THAT
+  // consultation's appointment is completed (the server enforces the same,
+  // ANAMNESIS_LOCKED) — not frozen just because a newer visit exists.
+  const anamnesisLocked = !sessionsLoading && (currentSessionIdx < 0 || currentSession?.appointment.status === "completed");
   const [finalReportFor, setFinalReportFor] = useState<typeof currentSession>(null);
   const [showCompare, setShowCompare] = useState(false);
   const [finalReportProtocol, setFinalReportProtocol] = useState<ProtocolRead | null>(null);
@@ -555,20 +559,15 @@ export default function DoctorPatientDetailPage() {
                   patientId={id}
                   mode="doctor"
                   assessmentStage="main"
-                  initialRecord={
-                    sessionLocked
-                      ? undefined // frozen: let the form self-fetch the patient-wide latest (matches its own banner text) instead of this older visit's own (often-null) get_by_appointment record
-                      : visitSummaryLoading
-                        ? undefined
-                        : (visitSummary?.anamnesis ?? null)
-                  }
+                  // Always this consultation's own record (null = none taken
+                  // yet) — never the patient-wide latest.
+                  initialRecord={visitSummaryLoading ? undefined : (visitSummary?.anamnesis ?? null)}
                   onSubmitted={() => {
                     dispatch(invalidatePatientAnamnesis({ patientId: id, stage: "main" }));
                     reloadVisitSummary();
                   }}
-                  lockedForSession={sessionLocked}
+                  lockedForSession={anamnesisLocked}
                   appointmentId={currentSession?.appointment.appointment_id ?? sessionId}
-                  sessionDate={currentSession?.appointment.appointment_date}
                 />
               ) : selectedSection === "brain-mapping" ? (
                 <div className="space-y-5">

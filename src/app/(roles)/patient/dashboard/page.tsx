@@ -24,8 +24,7 @@ import { PatientDashboardSkeleton } from "@/components/ui";
 import { VerifyChannelBanner } from "@/components/auth/VerifyChannelBanner";
 import { computeProfileCompletion } from "@/lib/profileCompletion";
 import { isSupersededCancellation } from "@/lib/appointmentStatus";
-import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
-import { getDeviceSessionLabel } from "@/lib/utils/sessionType";
+import { appointmentDoctorName, getDeviceSessionLabel, protocolContextLine } from "@/lib/utils/sessionType";
 import { doctorLabel } from "@/lib/utils/doctorLabel";
 import type {
   AssessmentPermission,
@@ -92,26 +91,11 @@ function PatientDashboard() {
     deviceSessionService.listMyPendingScales().then(setPendingDeviceScales).catch(() => {});
   }, []);
 
-  const [modalityByProtocol, setModalityByProtocol] = useState<Record<string, string | null>>({});
-
-  useEffect(() => {
-    const ids = [...new Set(
-      appointments
-        .filter((a) => a.appointment_type === "device_session" && a.protocol_id)
-        .map((a) => a.protocol_id as string)
-    )].filter((id) => !(id in modalityByProtocol));
-    if (ids.length === 0) return;
-    ids.forEach((pid) => {
-      treatmentProtocolService.getProtocolDetail(pid)
-        .then((p) => setModalityByProtocol((prev) => ({ ...prev, [pid]: p.modality ?? null })))
-        .catch(() => setModalityByProtocol((prev) => ({ ...prev, [pid]: null })));
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appointments]);
-
+  // modality/device/conditions come on the appointment row itself — no
+  // per-protocol detail fetch.
   const apptTypeLabel = (appt: Appointment): string =>
     appt.appointment_type === "device_session"
-      ? getDeviceSessionLabel(appt.protocol_id ? modalityByProtocol[appt.protocol_id] : null)
+      ? getDeviceSessionLabel(appt.modality)
       : (appt.appointment_type?.replace(/_/g, " ") ?? "");
 
   // Live update — a request approval pushes here via SSE.
@@ -226,6 +210,9 @@ function PatientDashboard() {
                       <p className="text-blue-100 mt-0.5 text-xs">
                         {apptTypeLabel(nextAppt)} · Anava Clinic
                       </p>
+                      {protocolContextLine(nextAppt) && (
+                        <p className="text-blue-100/90 mt-0.5 text-[11px] truncate">{protocolContextLine(nextAppt)}</p>
+                      )}
                     </>
                   ) : (
                     <>
@@ -423,12 +410,15 @@ function PatientDashboard() {
                       <p className="text-xs font-medium text-gray-900 truncate">
                         {appt.reason ?? apptTypeLabel(appt)}
                       </p>
+                      {protocolContextLine(appt) && (
+                        <p className="text-[10px] text-gray-600 mt-0.5 truncate">{protocolContextLine(appt)}</p>
+                      )}
                       <p className="text-[10px] text-gray-500 mt-0.5">
                         {/* "planned" (protocol-born device_session/follow-up)
                             carries a date and no time yet — the patient picks
                             the slot; saying so beats a blank time column. */}
                         {appt.status === "planned" ? "No time booked yet" : formatTime(appt.start_time)}
-                        {appt.doctor_name ? ` · Dr. ${appt.doctor_name.split(" ").pop()}` : ""}
+                        {appointmentDoctorName(appt) ? ` · ${doctorLabel(appointmentDoctorName(appt))}` : ""}
                         {" · In-person"}
                       </p>
                     </div>

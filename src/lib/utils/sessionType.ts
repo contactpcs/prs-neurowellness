@@ -2,7 +2,7 @@
 // "clinical session type" vocabulary: Initial Consultation, Follow-up,
 // Protocol Follow-up, Protocol Device Session. There is no 5th type and no
 // separate session table — appointment_type IS the session type.
-import type { AppointmentType } from "@/types/domain.types";
+import type { Appointment, AppointmentType } from "@/types/domain.types";
 
 export const SESSION_TYPE_LABEL: Record<AppointmentType, string> = {
   initial: "Initial Consultation",
@@ -38,4 +38,30 @@ export function isProtocolGenerated(type: AppointmentType): boolean {
  * (MODALITIES in treatmentProtocol.types.ts) are already the display form. */
 export function getDeviceSessionLabel(modality?: string | null): string {
   return modality ? `${modality} Session` : SESSION_TYPE_LABEL.device_session;
+}
+
+type ProtocolContext = Pick<
+  Appointment,
+  "appointment_type" | "device_name" | "condition_names" | "instance_number" | "session_number" | "session_count"
+>;
+
+/** Second line for a protocol-born appointment, so a patient running several
+ * protocols can tell their sessions apart: "Flow · Depression · Protocol #2 ·
+ * Session 5 of 20". Empty for consultations and rows with no protocol data. */
+export function protocolContextLine(appt: ProtocolContext): string {
+  if (!isProtocolGenerated(appt.appointment_type)) return "";
+  const parts: string[] = [];
+  if (appt.appointment_type === "device_session" && appt.device_name) parts.push(appt.device_name);
+  if (appt.condition_names?.length) parts.push(appt.condition_names.join(", "));
+  if (appt.instance_number) parts.push(`Protocol #${appt.instance_number}`);
+  if (appt.appointment_type === "device_session" && appt.session_number) {
+    parts.push(appt.session_count ? `Session ${appt.session_number} of ${appt.session_count}` : `Session ${appt.session_number}`);
+  }
+  return parts.join(" · ");
+}
+
+/** The doctor to show on an appointment: its own doctor, or — for a device
+ * session, which has none — the protocol's prescribing doctor. */
+export function appointmentDoctorName(appt: Pick<Appointment, "doctor_name" | "prescribing_doctor_name">): string | null {
+  return appt.doctor_name || appt.prescribing_doctor_name || null;
 }

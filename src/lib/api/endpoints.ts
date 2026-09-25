@@ -240,7 +240,6 @@ export const ENDPOINTS = {
     ME: "/patients",                                                    // real (composed — resolve own patient_id first)
     FOR_PATIENT: (patientId: string) => `/patients/${patientId}/anamnesis`, // real
     RESPONSES: (anamnesisId: string) => `/anamnesis/${anamnesisId}/responses`, // real
-    VERSIONS: (patientId: string) => `/patients/${patientId}/anamnesis/versions`, // real — every version, newest first
   },
 
   // ─── Neuromodulation catalogue (Treatment Protocol wizard, steps 1-6) ───

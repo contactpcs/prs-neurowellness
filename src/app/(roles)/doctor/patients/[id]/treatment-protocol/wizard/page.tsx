@@ -603,13 +603,12 @@ export default function TreatmentProtocolWizardPage() {
         : (state.protocolNote || null);
 
       // A protocol belongs to a protocol INSTANCE — one course of device
-      // treatment — not to a treatment cycle. The cycle is the episode of
-      // care and allows one active per patient, so opening a cycle per
-      // protocol always failed with "Patient already has an active treatment
-      // cycle". This reuses the patient's cycle and opens (or reuses) an
-      // instance on it.
+      // treatment. A patient may run several instances side by side, so an
+      // amendment stays in the amended protocol's own instance and a new
+      // protocol gets its own (see resolveOrCreateInstanceId).
       const instanceId = await treatmentProtocolService.resolveOrCreateInstanceId({
         patientId, doctorId: user.doctor_id, clinicId: user.clinic_id,
+        supersedesProtocolId: mode === "modify" ? priorProtocolId : null,
       });
 
       // Step 5's numbers are the PRESCRIPTION, not a deviation from it, so they

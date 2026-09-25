@@ -260,7 +260,8 @@ export function ProtocolFacts({ detail, title }: { detail: ProtocolDetail; title
 export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patientId: string; showHeader?: boolean }) {
   const router = useRouter();
 
-  const [protocols, setProtocols] = useState<ProtocolRead[]>([]);
+  const [allProtocols, setAllProtocols] = useState<ProtocolRead[]>([]);
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [tab, setTab] = useState<"sessions" | "history">("sessions");
   const [historyDetailId, setHistoryDetailId] = useState<string | null>(null);
@@ -278,12 +279,35 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
   const loadProtocols = () => {
     setIsLoading(true);
     return treatmentProtocolService.listProtocols({ patientId })
-      .then((list) => setProtocols(list.slice().sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""))))
-      .catch(() => setProtocols([]))
+      .then((list) => setAllProtocols(list.slice().sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""))))
+      .catch(() => setAllProtocols([]))
       .finally(() => setIsLoading(false));
   };
 
   useEffect(() => { loadProtocols(); }, [patientId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A patient may run several protocol instances side by side (backend
+  // SQL/v1/90). Everything below this block works on ONE instance at a time —
+  // `protocols` is the selected instance's versions — so Modify / Complete /
+  // history / sessions keep their single-course meaning per instance.
+  // Open instances first, then newest.
+  const instances = Array.from(new Set(allProtocols.map((p) => p.instance_id ?? ""))).map((id) => {
+    const rows = allProtocols.filter((p) => (p.instance_id ?? "") === id);
+    const current = rows.find((p) => p.status === "active") ?? rows[rows.length - 1];
+    const open = ["draft", "active"].includes(current.instance_status ?? "");
+    return { id, current, open, number: current.instance_number ?? 0 };
+  }).sort((a, b) => Number(b.open) - Number(a.open) || b.number - a.number);
+  const selectedId = instances.some((i) => i.id === selectedInstanceId) ? selectedInstanceId : instances[0]?.id ?? null;
+  const protocols = allProtocols.filter((p) => (p.instance_id ?? "") === selectedId);
+
+  const selectInstance = (id: string) => {
+    setSelectedInstanceId(id);
+    setTab("sessions");
+    setHistoryDetailId(null);
+    setOpenSessionId(null);
+    setHistoryCardOpen(false);
+    setCompleteError(null);
+  };
 
   const active = protocols.find((p) => p.status === "active") ?? protocols[protocols.length - 1] ?? null;
   // "Modify" amends the CURRENT course (protocol_instances row) — once that
@@ -353,6 +377,37 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
           <p className="text-sm text-neutral-500 mt-0.5">
             Neuromodulation protocol and electrode montage{active?.patient_name ? ` for ${active.patient_name}` : ""}.
           </p>
+        </div>
+      )}
+
+      {instances.length > 1 && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold tracking-wide uppercase text-neutral-500">
+            Protocol Instances ({instances.length})
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {instances.map((inst) => (
+              <button key={inst.id} type="button" onClick={() => selectInstance(inst.id)} className="text-left">
+                <Card className={inst.id === selectedId ? "border-blue-400 bg-blue-50/40" : "hover:border-neutral-300"}>
+                  <CardContent className="py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-neutral-500">Instance #{inst.number || "—"}</span>
+                      <Badge className={statusTone(inst.current.instance_status ?? inst.current.status)}>
+                        {inst.current.instance_status ?? inst.current.status}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="font-bold text-neutral-900 truncate">
+                        {inst.current.device_name || inst.current.modality || "Protocol"}
+                      </span>
+                      <Badge className="bg-blue-600 text-white">{versionLabel(inst.current)}</Badge>
+                    </div>
+                    <p className="text-xs text-neutral-400 mt-1">Created {fmtDate(inst.current.created_at)}</p>
+                  </CardContent>
+                </Card>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -455,6 +510,17 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
                           onClick={() => router.push(`/doctor/patients/${patientId}/treatment-protocol/wizard?mode=modify&protocolId=${active.protocol_id}`)}
                         >
                           Modify Protocol
+                        </Button>
+                      )}
+                      {/* A patient may run several protocols side by side
+                          (backend SQL/v1/90) — a new one opens its own
+                          instance instead of amending this one. */}
+                      {canModify && (
+                        <Button
+                          variant="outline"
+                          onClick={() => router.push(`/doctor/patients/${patientId}/treatment-protocol/wizard?mode=new`)}
+                        >
+                          <Plus className="h-4 w-4" />Start New Treatment Protocol
                         </Button>
                       )}
                     </div>
