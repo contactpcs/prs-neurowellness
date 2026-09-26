@@ -39,8 +39,15 @@ export function usePatientClinicalSessions(patientId: string) {
 
   const load = useCallback(() => {
     setIsLoading(true);
+    // Scoped server-side by patient_id (scheduling/service.py resolves it
+    // through patients.patient_id -> profiles.id the same way appointment
+    // creation does) — an unscoped fetch pulled the doctor's WHOLE history
+    // ordered oldest-first, so limit:200 silently truncated any patient
+    // whose appointment sorted past row 200 (a doctor with 487 total
+    // appointments, 240 older than this one, never saw the tab appear even
+    // though the appointment was genuinely in_progress).
     appointmentsService
-      .list({ limit: 200 })
+      .list({ limit: 200, patient_id: patientId })
       .then(({ appointments }) => {
         const mine = appointments
           .filter(
