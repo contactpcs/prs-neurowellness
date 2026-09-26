@@ -1200,8 +1200,26 @@ function DiagnosisStep({
           <h2 className="text-base font-bold text-neutral-900">3 · Diagnosis Codes (ICD-10)</h2>
           <p className="text-sm text-neutral-500 mt-1">{selected.length ? `${selected.length} selected` : "None selected"}</p>
         </div>
-        <div className="w-64 flex-shrink-0">
-          <Input placeholder="Search code or description" value={query} onChange={(e) => onQuery(e.target.value)} />
+        <div className="w-full sm:w-72 flex-shrink-0">
+          <div className="flex items-end gap-2">
+            <Input
+              className="flex-1"
+              label="Search evidence codes"
+              placeholder="Code or description"
+              value={query}
+              onChange={(e) => onQuery(e.target.value)}
+            />
+            {query && (
+              <button
+                type="button"
+                aria-label="Clear evidence code search"
+                onClick={() => onQuery("")}
+                className="mb-0.5 rounded-lg p-2.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
