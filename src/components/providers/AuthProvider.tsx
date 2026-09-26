@@ -7,6 +7,7 @@ import { useAppDispatch } from "@/store/hooks";
 import { ROUTES, STORAGE_KEYS } from "@/lib/constants";
 import { TOKEN_REFRESH_SKEW_MS, clearSessionAndSignalLogout, isTokenExpired, refreshAccessToken } from "@/lib/api/client";
 import { openEventStream } from "@/lib/sse";
+import { showNotificationToast } from "@/components/providers/NotificationToast";
 import { logout } from "@/store/slices/authSlice";
 import { notificationReceived } from "@/store/slices/notificationsSlice";
 
@@ -45,6 +46,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN)) return;
     const source = openEventStream((msg) => {
       dispatch(notificationReceived(msg));
+      // Minimal popup for every live notification, in every portal.
+      showNotificationToast(msg);
       // Generic fan-out for any live count that needs to refresh (sidebar nav
       // badges) — every message type, not just appointment-specific ones.
       window.dispatchEvent(new CustomEvent("sse:notification", { detail: msg }));
