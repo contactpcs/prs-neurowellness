@@ -53,6 +53,7 @@ export function openEventStream(onMessage: (msg: SSEMessage) => void): { close: 
       source = es;
       es.onopen = () => {
         delay = RECONNECT_MIN_MS;
+        console.info("[live] connected — popups active");
       };
       es.onmessage = (event) => {
         try {
@@ -62,11 +63,15 @@ export function openEventStream(onMessage: (msg: SSEMessage) => void): { close: 
         }
       };
       es.onerror = () => {
+        console.warn(`[live] stream dropped — reconnecting in ${Math.round(delay / 1000)}s`);
         es.close();
         if (source === es) source = null;
         scheduleReconnect();
       };
-    } catch {
+    } catch (err) {
+      // 503 = backend can't reach Redis; 401 = session expired (client.ts renews it).
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      console.warn(`[live] no stream ticket (HTTP ${status ?? "network error"}) — retrying in ${Math.round(delay / 1000)}s`);
       scheduleReconnect();
     }
   }
