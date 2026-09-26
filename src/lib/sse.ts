@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "@/lib/constants";
+import { API_BASE_URL, STORAGE_KEYS } from "@/lib/constants";
 
 /** Matches the relay's publish payload (app/workers/event_relay.py::
  * _process_event) — a slice of the real notifications row, not the full
@@ -12,20 +12,48 @@ export interface SSEMessage {
   notification_id: string;
 }
 
+const RECONNECT_DELAY_MS = 5000;
+
 /** One EventSource per logged-in session (Architecture Section 25.1).
  * Browser EventSource can't set an Authorization header, so the token
  * rides as a query param — the one endpoint on the backend that accepts
  * that (core/middleware.py's AuthContextMiddleware special-cases this
- * exact path). Reconnection on a dropped connection is the browser's own
- * built-in EventSource retry — no manual backoff needed here. */
-export function openEventStream(token: string, onMessage: (msg: SSEMessage) => void): EventSource {
-  const source = new EventSource(`${API_BASE_URL}/events/stream?token=${encodeURIComponent(token)}`);
-  source.onmessage = (event) => {
-    try {
-      onMessage(JSON.parse(event.data) as SSEMessage);
-    } catch {
-      // malformed frame — never let one bad message kill the connection
-    }
+ * exact path).
+ *
+ * A dropped network connection is retried by the browser itself. An HTTP
+ * error (401 once the token in the URL has expired) is not — the browser
+ * closes the stream for good and live updates silently stop. So on CLOSED
+ * this reopens with whatever token is current in storage. Returns a handle
+ * rather than the EventSource, since the underlying source is replaced. */
+export function openEventStream(token: string, onMessage: (msg: SSEMessage) => void): { close: () => void } {
+  let source: EventSource;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let stopped = false;
+
+  const connect = (t: string) => {
+    source = new EventSource(`${API_BASE_URL}/events/stream?token=${encodeURIComponent(t)}`);
+    source.onmessage = (event) => {
+      try {
+        onMessage(JSON.parse(event.data) as SSEMessage);
+      } catch {
+        // malformed frame — never let one bad message kill the connection
+      }
+    };
+    source.onerror = () => {
+      if (stopped || source.readyState !== EventSource.CLOSED) return;
+      timer = setTimeout(() => {
+        const current = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+        if (!stopped && current) connect(current);
+      }, RECONNECT_DELAY_MS);
+    };
   };
-  return source;
+  connect(token);
+
+  return {
+    close: () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      source.close();
+    },
+  };
 }
