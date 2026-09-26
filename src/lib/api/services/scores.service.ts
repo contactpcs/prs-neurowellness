@@ -169,10 +169,19 @@ async function composeMyScoresSummary(): Promise<{ instances: AssessmentInstance
   const patientsRes = await apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD);
   const own = Array.isArray(patientsRes.data) ? patientsRes.data[0] : undefined;
   if (!own?.patient_id) return { instances: [], total: 0, diseases: 0 };
-  const patientId = String(own.patient_id);
+  return composePatientScoresSummary(String(own.patient_id), "main_clinical");
+}
 
+/** Same composition for an explicit patients.patient_id (doctor/CA views).
+ * assessment_stage omitted → every stage. patientId is passed through to
+ * fetchInstanceScoreDetail so it never falls back to GET /patients, which
+ * for a staff caller would resolve the wrong patient. */
+async function composePatientScoresSummary(
+  patientId: string,
+  assessmentStage?: string,
+): Promise<{ instances: AssessmentInstance[]; total: number; diseases: number }> {
   const instancesRes = await apiClient.get(ENDPOINTS.PRS.PATIENT_INSTANCES(patientId), {
-    params: { assessment_stage: "main_clinical" },
+    params: assessmentStage ? { assessment_stage: assessmentStage } : undefined,
   });
   type InstanceRow = {
     instance_id?: string;
@@ -199,7 +208,7 @@ async function composeMyScoresSummary(): Promise<{ instances: AssessmentInstance
         };
       }
       try {
-        const detail = await fetchInstanceScoreDetail(instanceId);
+        const detail = await fetchInstanceScoreDetail(instanceId, patientId);
         return {
           instance_id: instanceId,
           disease_id: detail.instance.disease_id ?? String(r.disease_id ?? ""),
@@ -245,7 +254,7 @@ export const scoresService = {
     return { instances: [], total: 0 };
   },
 
-  async getPatientScoresSummary(_patientId: string): Promise<{ instances: AssessmentInstance[]; total: number; diseases: number }> {
-    return { instances: [], total: 0, diseases: 0 };
+  async getPatientScoresSummary(patientId: string): Promise<{ instances: AssessmentInstance[]; total: number; diseases: number }> {
+    return composePatientScoresSummary(patientId);
   },
 };
