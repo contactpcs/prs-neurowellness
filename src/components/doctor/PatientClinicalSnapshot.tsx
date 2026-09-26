@@ -75,6 +75,21 @@ export function PatientClinicalSnapshot({ patientId }: { patientId: string }) {
 
   const activeProtocol = protocols.find((p) => p.status === "active") ?? null;
 
+  // One row per disease — a re-taken PRS scale produces a new instance for
+  // the same disease_id, so without this the box showed the same disease
+  // name twice instead of its latest overall score.
+  const latestScoreByDisease = Array.from(
+    scoreInstances
+      .filter((s) => s.disease_score != null)
+      .reduce((acc, s) => {
+        const key = s.disease_id || s.instance_id;
+        const prev = acc.get(key);
+        if (!prev || (s.completed_at ?? "") > (prev.completed_at ?? "")) acc.set(key, s);
+        return acc;
+      }, new Map<string, typeof scoreInstances[number]>())
+      .values(),
+  );
+
   // Legacy columns (chief_complaint, …) are always written null — real answers
   // live in anamnesis.responses keyed by question_id, so resolve by the catalog
   // question whose question_code matches. Falls back to the legacy column.
@@ -155,12 +170,12 @@ export function PatientClinicalSnapshot({ patientId }: { patientId: string }) {
           </Box>
 
           <Box title="PRS Scores">
-            {scoreInstances.length ? (
-              scoreInstances.slice(0, 4).map((s) => (
+            {latestScoreByDisease.length ? (
+              latestScoreByDisease.slice(0, 4).map((s) => (
                 <Field
-                  key={s.instance_id}
+                  key={s.disease_id || s.instance_id}
                   label={s.disease_name ?? "Scale"}
-                  value={s.disease_score != null ? `${s.disease_score.toFixed(0)}${s.severity_label ? ` · ${s.severity_label}` : ""}` : "—"}
+                  value={`${s.disease_score!.toFixed(0)}${s.severity_label ? ` · ${s.severity_label}` : ""}`}
                 />
               ))
             ) : <p className="text-xs text-neutral-400">Not recorded</p>}
