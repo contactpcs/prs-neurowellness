@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useDoctorPatient, usePatientScoresSummary, usePatientNote } from "@/lib/hooks";
-import { anamnesisService } from "@/lib/api/services/anamnesis.service";
+import { anamnesisService, type AnamnesisQuestion } from "@/lib/api/services/anamnesis.service";
 import { eegService } from "@/lib/api/services/eeg.service";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import type { AnamnesisRecord } from "@/types/domain.types";
@@ -45,6 +45,7 @@ export function PatientClinicalSnapshot({ patientId }: { patientId: string }) {
   const { instances: scoreInstances } = usePatientScoresSummary(patientId);
   const { note: doctorNote } = usePatientNote(patientId);
   const [anamnesis, setAnamnesis] = useState<AnamnesisRecord | null>(null);
+  const [anamnesisQuestions, setAnamnesisQuestions] = useState<AnamnesisQuestion[]>([]);
   const [eegReports, setEegReports] = useState<EEGReport[]>([]);
   const [protocols, setProtocols] = useState<ProtocolRead[]>([]);
   const [open, setOpen] = useState(true);
@@ -55,10 +56,17 @@ export function PatientClinicalSnapshot({ patientId }: { patientId: string }) {
     // — a patient who hasn't reached main_clinical yet still has real
     // anamnesis on file, and showing "Not recorded" for them was wrong, not
     // just incomplete: the data exists, this just never looked for it.
-    anamnesisService.getForPatient(patientId, "main")
-      .then((main) => main ?? anamnesisService.getForPatient(patientId, "registration"))
-      .then(setAnamnesis)
-      .catch(() => setAnamnesis(null));
+    // Load both stages and keep whichever was touched most recently, so the
+    // doctor always sees the latest answers on file.
+    const stamp = (r: AnamnesisRecord | null) => (r ? r.completed_at ?? r.updated_at ?? r.created_at ?? "" : "");
+    Promise.all([
+      anamnesisService.getForPatient(patientId, "main").catch(() => null),
+      anamnesisService.getForPatient(patientId, "registration").catch(() => null),
+    ]).then(([main, reg]) => setAnamnesis(stamp(reg) > stamp(main) ? reg : main ?? reg));
+    Promise.all([
+      anamnesisService.getQuestions("main").catch(() => [] as AnamnesisQuestion[]),
+      anamnesisService.getQuestions("registration").catch(() => [] as AnamnesisQuestion[]),
+    ]).then(([m, r]) => setAnamnesisQuestions([...m, ...r]));
     eegService.getPatientReports(patientId).then((r) => setEegReports(r.data)).catch(() => setEegReports([]));
     treatmentProtocolService.listProtocols({ patientId })
       .then((list) => setProtocols(list.slice().sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""))))
@@ -66,7 +74,28 @@ export function PatientClinicalSnapshot({ patientId }: { patientId: string }) {
   }, [patientId]);
 
   const activeProtocol = protocols.find((p) => p.status === "active") ?? null;
-  const latestScore = scoreInstances.slice().sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""))[0];
+
+  // Legacy columns (chief_complaint, …) are always written null — real answers
+  // live in anamnesis.responses keyed by question_id, so resolve by the catalog
+  // question whose question_code matches. Falls back to the legacy column.
+  const answer = (code: string): string | null => {
+    if (!anamnesis) return null;
+    const ids = new Set(anamnesisQuestions.filter((q) => q.question_code === code).map((q) => q.question_id));
+    const r = anamnesis.responses?.find((x) => ids.has(x.question_id));
+    const v = r?.response_values?.length ? r.response_values.join("; ") : r?.response_value;
+    if (v) return v;
+    const legacy = (anamnesis as unknown as Record<string, unknown>)[code];
+    return legacy == null || legacy === "" ? null : String(legacy);
+  };
+  // Yes/no question with a conditional details follow-up: show the details
+  // when given, otherwise the bare yes/no answer.
+  const yesNoDetail = (flagCode: string, detailCode: string): string | null => {
+    const detail = answer(detailCode);
+    if (detail) return detail;
+    const flag = answer(flagCode);
+    if (!flag) return null;
+    return /^(yes|true)$/i.test(flag) ? "Yes" : /^(no|false)$/i.test(flag) ? "No" : flag;
+  };
 
   return (
     <div className="border border-neutral-200 rounded-xl bg-white overflow-hidden">
@@ -93,7 +122,7 @@ export function PatientClinicalSnapshot({ patientId }: { patientId: string }) {
       </div>
 
       {open && (
-        <div className="p-4 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))" }}>
+        <div className="p-4 grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           <Box title="Demographics">
             <Field label="Age / Sex" value={`${patient?.age ?? "—"} · ${patient?.gender ?? "—"}`} />
             <Field label="MRN" value={patient?.mrn ?? "—"} />
@@ -103,10 +132,8 @@ export function PatientClinicalSnapshot({ patientId }: { patientId: string }) {
           <Box title="Anamnesis">
             {anamnesis ? (
               <>
-                <Field label="Chief complaint" value={show(anamnesis.chief_complaint)} />
-                <Field label="Duration" value={show(anamnesis.symptoms_duration)} />
-                <Field label="Frequency" value={show(anamnesis.symptoms_frequency)} />
-                <Field label="Progression" value={show(anamnesis.symptoms_progression)} />
+                <Field label="Chief complaint" value={show(answer("chief_complaint"))} />
+                <Field label="Duration" value={show(answer("symptoms_start"))} />
               </>
             ) : <p className="text-xs text-neutral-400">Not recorded</p>}
           </Box>
@@ -114,18 +141,16 @@ export function PatientClinicalSnapshot({ patientId }: { patientId: string }) {
           <Box title="History &amp; Comorbidities">
             {anamnesis ? (
               <>
-                <Field label="Diagnosis related" value={show(anamnesis.diagnosis_details)} />
-                <Field label="Operations" value={show(anamnesis.operations_details)} />
-                <Field label="Neuromodulation" value={show(anamnesis.neuromodulation_details)} />
-                <Field label="Other scans" value={show(anamnesis.other_scans)} />
+                <Field label="Neuromodulation" value={show(yesNoDetail("has_neuromodulation", "neuromodulation_details"))} />
+                <Field label="Operations" value={show(yesNoDetail("has_operations", "operations_details"))} />
               </>
             ) : <p className="text-xs text-neutral-400">Not recorded</p>}
           </Box>
 
           <Box title="Medications">
             <p className="text-xs text-neutral-400">No medication-tracking module in this system.</p>
-            {anamnesis?.current_medications && (
-              <Field label="Per anamnesis" value={anamnesis.current_medications} />
+            {answer("current_medications") && (
+              <Field label="Per anamnesis" value={answer("current_medications")} />
             )}
           </Box>
 
@@ -168,8 +193,6 @@ export function PatientClinicalSnapshot({ patientId }: { patientId: string }) {
               ))
             ) : <p className="text-xs text-neutral-400">No prior protocols</p>}
           </Box>
-
-          <p className="text-xs text-neutral-500 flex items-center gap-1.5">Latest PRS as of {fmtDate(latestScore?.completed_at)}.</p>
         </div>
       )}
     </div>
