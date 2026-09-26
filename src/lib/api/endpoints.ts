@@ -20,10 +20,18 @@ export const ENDPOINTS = {
     VERIFY_CHANNEL_START: "/auth/patients/verify-channel/start",
     VERIFY_CHANNEL_CONFIRM: "/auth/patients/verify-channel/confirm",
     ME: "/auth/me",             // real — GET only
+    REFRESH: "/auth/refresh",   // POST, no body — the httpOnly refresh cookie is the credential; -> {access_token}
+    LOGOUT: "/auth/logout",     // POST — revokes this device's session server-side, clears the cookie
     SYNC_PROFILE: "/auth/sync-profile", // NOT AVAILABLE
     CLINICS: "/auth/clinics",           // real — public clinic picker for self-registration
     FORGOT_PASSWORD_START: "/auth/forgot-password/start",     // real (cognito mode only) — {username} -> 204, always (no user enumeration)
     FORGOT_PASSWORD_CONFIRM: "/auth/forgot-password/confirm", // real (cognito mode only) — {username, code, new_password, confirm_password} -> 204
+  },
+
+  // ─── Live notifications (SSE) ───
+  LIVE: {
+    TICKET: "/events/ticket", // POST -> {ticket}: one-time, ~30 s — what the stream is opened with instead of the token
+    STREAM: "/events/stream", // GET ?ticket=…
   },
 
   // ─── Consent ───

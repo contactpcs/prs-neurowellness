@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { authService } from "@/lib/api/services";
 import { STORAGE_KEYS } from "@/lib/constants";
+import { isTokenExpired, refreshAccessToken } from "@/lib/api/client";
 import type { User, LoginCredentials, RegisterData } from "@/types/auth.types";
 
 function splitFullName(fullName: string | undefined): { first_name: string; last_name: string } {
@@ -107,7 +108,6 @@ export const login = createAsyncThunk(
       }
 
       localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.access_token);
-      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, response.refresh_token);
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(normalizedUser));
 
       return normalizedUser;
@@ -140,7 +140,6 @@ export const completeNewPassword = createAsyncThunk(
       if (!response.user) return rejectWithValue("User data missing from response");
       const normalizedUser = normalizeUser(response.user);
       localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.access_token);
-      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, response.refresh_token);
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(normalizedUser));
       return normalizedUser;
     } catch (error: any) {
@@ -160,7 +159,6 @@ export const register = createAsyncThunk(
       if (!response.user) return rejectWithValue("User data missing from response");
       const normalizedUser = normalizeUser(response.user);
       localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.access_token);
-      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, response.refresh_token);
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(normalizedUser));
       return normalizedUser;
     } catch (error: any) {
@@ -186,7 +184,6 @@ export const completePatientSignup = createAsyncThunk(
       if (!response.user) return rejectWithValue("User data missing from response");
       const normalizedUser = normalizeUser(response.user);
       localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.access_token);
-      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, response.refresh_token);
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(normalizedUser));
       return normalizedUser;
     } catch (error: any) {
@@ -226,7 +223,13 @@ export const refreshUser = createAsyncThunk(
 export const restoreSession = createAsyncThunk(
   "auth/restoreSession",
   async (_, { rejectWithValue }) => {
-    const token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    // Refresh tokens used to be kept in localStorage; they now live only in an
+    // httpOnly cookie. Drop any value an older version of the app left behind.
+    localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+    let token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    // No usable access token (closed the browser for a day, cleared storage):
+    // the refresh cookie can still sign them back in without a password.
+    if (!token || isTokenExpired(token)) token = await refreshAccessToken();
     if (!token) return rejectWithValue("No session to restore");
     try {
       const me = await authService.me();

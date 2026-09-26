@@ -1,4 +1,6 @@
-import { API_BASE_URL, STORAGE_KEYS } from "@/lib/constants";
+import apiClient from "@/lib/api/client";
+import { ENDPOINTS } from "@/lib/api/endpoints";
+import { API_BASE_URL } from "@/lib/constants";
 
 /** Matches the relay's publish payload (app/workers/event_relay.py::
  * _process_event) — a slice of the real notifications row, not the full
@@ -12,48 +14,70 @@ export interface SSEMessage {
   notification_id: string;
 }
 
-const RECONNECT_DELAY_MS = 5000;
+const RECONNECT_MIN_MS = 5_000;
+const RECONNECT_MAX_MS = 60_000;
 
-/** One EventSource per logged-in session (Architecture Section 25.1).
- * Browser EventSource can't set an Authorization header, so the token
- * rides as a query param — the one endpoint on the backend that accepts
- * that (core/middleware.py's AuthContextMiddleware special-cases this
- * exact path).
+/** One live stream per logged-in session (Architecture Section 25.1).
  *
- * A dropped network connection is retried by the browser itself. An HTTP
- * error (401 once the token in the URL has expired) is not — the browser
- * closes the stream for good and live updates silently stop. So on CLOSED
- * this reopens with whatever token is current in storage. Returns a handle
- * rather than the EventSource, since the underlying source is replaced. */
-export function openEventStream(token: string, onMessage: (msg: SSEMessage) => void): { close: () => void } {
-  let source: EventSource;
+ * A browser EventSource can't send an Authorization header, so the stream is
+ * opened with a ONE-TIME TICKET (POST /events/ticket, an ordinary
+ * authenticated call) instead of the access token — the token never appears
+ * in a URL, and with it in access logs, proxy logs or browser history. A
+ * ticket dies on first use, so the browser's own built-in reconnect (which
+ * would replay the same URL) can't work; on any drop this closes the source,
+ * asks for a fresh ticket and reconnects itself. That also means an expired
+ * access token is renewed by the ordinary request path (client.ts) on the way,
+ * instead of live updates silently stopping until the page is reloaded.
+ *
+ * Backs off from 5 s to 60 s while the server can't be reached (Redis down
+ * answers the ticket call with 503). Returns a handle rather than the
+ * EventSource, since the underlying source is replaced on every reconnect. */
+export function openEventStream(onMessage: (msg: SSEMessage) => void): { close: () => void } {
+  let source: EventSource | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
+  let delay = RECONNECT_MIN_MS;
 
-  const connect = (t: string) => {
-    source = new EventSource(`${API_BASE_URL}/events/stream?token=${encodeURIComponent(t)}`);
-    source.onmessage = (event) => {
-      try {
-        onMessage(JSON.parse(event.data) as SSEMessage);
-      } catch {
-        // malformed frame — never let one bad message kill the connection
-      }
-    };
-    source.onerror = () => {
-      if (stopped || source.readyState !== EventSource.CLOSED) return;
-      timer = setTimeout(() => {
-        const current = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-        if (!stopped && current) connect(current);
-      }, RECONNECT_DELAY_MS);
-    };
+  const scheduleReconnect = () => {
+    if (stopped) return;
+    timer = setTimeout(connect, delay);
+    delay = Math.min(delay * 2, RECONNECT_MAX_MS);
   };
-  connect(token);
+
+  async function connect() {
+    if (stopped) return;
+    try {
+      const { data } = await apiClient.post(ENDPOINTS.LIVE.TICKET);
+      if (stopped) return;
+      const es = new EventSource(`${API_BASE_URL}${ENDPOINTS.LIVE.STREAM}?ticket=${encodeURIComponent(data.ticket)}`);
+      source = es;
+      es.onopen = () => {
+        delay = RECONNECT_MIN_MS;
+      };
+      es.onmessage = (event) => {
+        try {
+          onMessage(JSON.parse(event.data) as SSEMessage);
+        } catch {
+          // malformed frame — never let one bad message kill the connection
+        }
+      };
+      es.onerror = () => {
+        es.close();
+        if (source === es) source = null;
+        scheduleReconnect();
+      };
+    } catch {
+      scheduleReconnect();
+    }
+  }
+
+  void connect();
 
   return {
     close: () => {
       stopped = true;
       if (timer) clearTimeout(timer);
-      source.close();
+      source?.close();
     },
   };
 }

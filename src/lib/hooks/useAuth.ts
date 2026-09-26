@@ -7,6 +7,7 @@ import type { RootState } from "@/store/store";
 import { useAppDispatch } from "@/store/hooks";
 import { login, register, completePatientSignup, completeNewPassword, logout, restoreSession, refreshUser, clearError, clearPasswordChallenge } from "@/store/slices/authSlice";
 import { ROUTES, USER_ROLES } from "@/lib/constants";
+import { signOutOnServer } from "@/lib/api/client";
 import type { LoginCredentials, RegisterData } from "@/types/auth.types";
 
 // Real backend role strings, exact match — super_admin/regional_admin/
@@ -106,6 +107,10 @@ export function useAuth() {
   }, [dispatch, router, passwordChallenge]);
 
   const handleLogout = useCallback(() => {
+    // Fire the server-side sign-out first: it reads the token before the local
+    // logout wipes storage, and is not awaited — logging out never waits on
+    // the network.
+    void signOutOnServer();
     dispatch(logout());
     router.push(ROUTES.LOGIN);
   }, [dispatch, router]);

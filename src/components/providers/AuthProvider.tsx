@@ -5,8 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/hooks";
 import { useAppDispatch } from "@/store/hooks";
 import { ROUTES, STORAGE_KEYS } from "@/lib/constants";
-import { clearSessionAndSignalLogout, isTokenExpired } from "@/lib/api/client";
+import { TOKEN_REFRESH_SKEW_MS, clearSessionAndSignalLogout, isTokenExpired, refreshAccessToken } from "@/lib/api/client";
 import { openEventStream } from "@/lib/sse";
+import { logout } from "@/store/slices/authSlice";
 import { notificationReceived } from "@/store/slices/notificationsSlice";
 
 // Pages that don't need a session — a stale/expired token cleanup should
@@ -41,9 +42,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // which the Redux dispatch below handles directly.
   useEffect(() => {
     if (isRestoring || !user) return;
-    const token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-    if (!token) return;
-    const source = openEventStream(token, (msg) => {
+    if (!localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN)) return;
+    const source = openEventStream((msg) => {
       dispatch(notificationReceived(msg));
       // Generic fan-out for any live count that needs to refresh (sidebar nav
       // badges) — every message type, not just appointment-specific ones.
@@ -85,20 +85,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("auth:unauthorized", handleUnauthorized);
   }, [router, pathname]);
 
-  // Proactive expiry check — logs out an idle tab even if no API call is
-  // in flight to trigger the 401 path above (client.ts's request
-  // interceptor only catches expiry at call-time). Same public-path
-  // exemption — don't clear a token that a public-flow page didn't ask for.
+  // Proactive renewal — keeps an idle-but-open tab signed in even when no API
+  // call is in flight to trigger the on-demand refresh in client.ts. Only when
+  // the session genuinely can't be renewed (refresh cookie expired or revoked)
+  // is the user logged out. Same public-path exemption — don't touch a token
+  // that a public-flow page didn't ask for.
   useEffect(() => {
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       if (isPublicPath(pathname)) return;
       const token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-      if (token && isTokenExpired(token)) {
-        clearSessionAndSignalLogout();
+      if (token && isTokenExpired(token, TOKEN_REFRESH_SKEW_MS)) {
+        if (!(await refreshAccessToken())) clearSessionAndSignalLogout();
       }
     }, 15000);
     return () => clearInterval(interval);
   }, [pathname]);
+
+  // Multi-tab logout: the access token lives in localStorage, and the browser
+  // fires "storage" in every OTHER tab when it changes. A removal there means
+  // the user logged out (or the session died) in another tab — follow it
+  // instead of sitting on a page whose token no longer exists.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== STORAGE_KEYS.ACCESS_TOKEN || e.newValue !== null) return;
+      dispatch(logout());
+      if (!isPublicPath(pathname)) router.replace(ROUTES.LOGIN);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [dispatch, router, pathname]);
 
   return <>{children}</>;
 }
