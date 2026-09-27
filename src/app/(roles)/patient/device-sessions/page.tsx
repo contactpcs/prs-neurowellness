@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Activity, CalendarDays, ClipboardList, Lock, ChevronRight, ChevronLeft, CheckCircle2, BadgeCheck } from "lucide-react";
+import { Activity, CalendarDays, ClipboardList, Lock, ChevronRight, CheckCircle2 } from "lucide-react";
 import { appointmentsService } from "@/lib/api/services";
 import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { Card, CardContent, PageLoader } from "@/components/ui";
-import { deviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
+import { patientDeviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
 import { isSupersededCancellation } from "@/lib/appointmentStatus";
 import type { Appointment } from "@/types/domain.types";
 import type { DeviceSessionScale } from "@/types/deviceSession.types";
@@ -47,7 +47,7 @@ function isOpenable(a: Appointment, now: number): boolean {
 
 type ScaleSummary = { total: number; completed: number; actionable: boolean } | null;
 
-type FilterKey = "all" | "upcoming" | "in_progress" | "completed" | "paid" | "missed";
+type FilterKey = "all" | "upcoming" | "in_progress" | "completed" | "paid" | "no_show" | "not_booked";
 
 function startOfToday(): number {
   const d = new Date();
@@ -65,8 +65,14 @@ const FILTERS: { key: FilterKey; label: string; test: (a: Appointment) => boolea
   { key: "in_progress", label: "In Progress", test: (a) => a.status === "in_progress" },
   { key: "completed", label: "Completed", test: (a) => a.status === "completed" },
   { key: "paid", label: "Paid", test: (a) => a.status === "paid" },
-  { key: "missed", label: "Missed", test: (a) => a.status === "no_show" || a.status === "missed" },
+  { key: "no_show", label: "No-Show", test: (a) => a.status === "no_show" },
+  { key: "not_booked", label: "Not Booked", test: (a) => a.status === "missed" },
 ];
+
+/** Statuses kept from an inactive (superseded/completed/cancelled) protocol:
+ * only the historical record — Completed, Paid, Missed. Its not-yet-started
+ * slots were replaced by the active protocol's own schedule. */
+const HISTORICAL_STATUSES = new Set(["completed", "paid", "no_show", "missed"]);
 
 function summarize(scales: DeviceSessionScale[]): ScaleSummary {
   if (!scales.length) return { total: 0, completed: 0, actionable: false };
@@ -81,28 +87,21 @@ export default function PatientDeviceSessionsPage() {
   const router = useRouter();
   const [sessions, setSessions] = useState<Appointment[] | null>(null);
   const [summaries, setSummaries] = useState<Record<string, ScaleSummary>>({});
-  const [modalityByProtocol, setModalityByProtocol] = useState<Record<string, string | null>>({});
+  // protocol_id -> ProtocolRead.status ("active" | "completed" | "cancelled"
+  // | "superseded" | …), or null when the lookup failed. Protocol versions
+  // are an internal detail — this only decides which sessions to show.
+  const [statusByProtocol, setStatusByProtocol] = useState<Record<string, string | null>>({});
   const [error, setError] = useState<string | null>(null);
-  // Which protocol-version group is shown in detail. null = active version.
-  const [openGroupKey, setOpenGroupKey] = useState<string | null>(null);
-  // 'detail' = session list for one protocol version (default: the active
-  // one). 'versions' = the full list of protocol versions to pick from.
-  const [screen, setScreen] = useState<"detail" | "versions">("detail");
   const [filter, setFilter] = useState<FilterKey>("all");
 
   useEffect(() => {
     appointmentsService
       .myList(true)
       .then(async (all) => {
-        const ds = all
-          .filter((a) => a.appointment_type === "device_session")
-          .sort((a, b) => {
-            const sn = (a.session_number ?? 1e9) - (b.session_number ?? 1e9);
-            return sn !== 0 ? sn : scheduledAt(a) - scheduledAt(b);
-          });
+        const ds = all.filter((a) => a.appointment_type === "device_session");
         setSessions(ds);
 
-        // One modality lookup per distinct protocol, not per session — a
+        // One status lookup per distinct protocol, not per session — a
         // course of 20-50 device sessions typically belongs to 1-3 protocol
         // versions.
         const protocolIds = [...new Set(ds.map((a) => a.protocol_id).filter((id): id is string => !!id))];
@@ -110,17 +109,16 @@ export default function PatientDeviceSessionsPage() {
           protocolIds.map(async (pid) => {
             try {
               const p = await treatmentProtocolService.getProtocolDetail(pid);
-              setModalityByProtocol((prev) => ({ ...prev, [pid]: p.modality ?? null }));
+              setStatusByProtocol((prev) => ({ ...prev, [pid]: p.status ?? null }));
             } catch {
-              setModalityByProtocol((prev) => ({ ...prev, [pid]: null }));
+              setStatusByProtocol((prev) => ({ ...prev, [pid]: null }));
             }
           })
         );
 
         // Per-session assessment status — only for sessions that could
-        // plausibly need it (see isOpenable). A locked/closed session's
-        // scale status is fetched once its group is opened instead (below),
-        // not up front for every session in the patient's whole history.
+        // plausibly need it (see isOpenable), not every session in the
+        // patient's whole history.
         const now = Date.now();
         const relevant = ds.filter((a) => isOpenable(a, now));
 
@@ -146,60 +144,49 @@ export default function PatientDeviceSessionsPage() {
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load your sessions"));
   }, []);
 
-  // One group per treatment protocol version the device sessions belong to,
-  // latest protocol version first.
-  const groups = useMemo(() => {
-    if (!sessions) return [] as { key: string; items: Appointment[] }[];
-    const byProtocol = new Map<string, Appointment[]>();
+  // Fallback active protocol while (or if) the status lookups aren't
+  // available: the most recently scheduled protocol that still has at least
+  // one item not auto-cancelled by a later amendment (see
+  // isSupersededCancellation) — an amended version never qualifies.
+  const fallbackActiveProtocolId = useMemo(() => {
+    if (!sessions) return null;
+    let best: string | null = null;
+    let bestAt = -Infinity;
     for (const a of sessions) {
-      const key = a.protocol_id ?? "unassigned";
-      const bucket = byProtocol.get(key);
-      if (bucket) bucket.push(a);
-      else byProtocol.set(key, [a]);
+      if (!a.protocol_id || isSupersededCancellation(a)) continue;
+      const at = scheduledAt(a);
+      if (at > bestAt) {
+        best = a.protocol_id;
+        bestAt = at;
+      }
     }
-    return [...byProtocol.entries()]
-      .map(([key, items]) => ({
-        key,
-        items: items.slice().sort((a, b) => {
-          const sn = (a.session_number ?? 1e9) - (b.session_number ?? 1e9);
-          return sn !== 0 ? sn : scheduledAt(a) - scheduledAt(b);
-        }),
-      }))
-      // Latest protocol version first — a patient opening this page cares
-      // about their current/most recent course, not the one they started
-      // treatment with months ago.
-      .sort((g1, g2) => scheduledAt(g2.items[0]) - scheduledAt(g1.items[0]));
+    return best;
   }, [sessions]);
 
-  // The active protocol version: the most recent group that still has at
-  // least one item not auto-cancelled by a later amendment. An amended
-  // group's rows are all superseded-cancellations (see
-  // isSupersededCancellation), so it never qualifies — only the version
-  // currently in force does.
-  const activeGroupKey = useMemo(
-    () => groups.find((g) => g.items.some((a) => !isSupersededCancellation(a)))?.key ?? null,
-    [groups]
-  );
-
-  // "Protocol Version vN" / "vN.M" per group, from the protocol's own
-  // version_major/version_minor (same convention as the doctor-side
-  // ProtocolRead) rather than the group's position in this list — a
-  // patient's 3rd protocol overall might be v2 if it amended an earlier one,
-  // and the array index would silently disagree with what the doctor sees.
-  function versionLabel(items: Appointment[]): string {
-    const major = items[0]?.protocol_version_major;
-    const minor = items[0]?.protocol_version_minor;
-    if (major == null) return "Protocol";
-    return minor ? `Protocol Version v${major}.${minor}` : `Protocol Version v${major}`;
-  }
+  // One unified list: every session of the active protocol, plus only the
+  // historical (Completed / Paid / Missed) sessions of inactive protocols.
+  // Deduped by appointment_id, then chronological.
+  const visibleSessions = useMemo(() => {
+    if (!sessions) return [] as Appointment[];
+    const isActiveProtocol = (pid: string | null | undefined): boolean => {
+      // A device session not tied to any protocol has no older version to
+      // be superseded by — always show it.
+      if (!pid) return true;
+      const status = statusByProtocol[pid];
+      return status ? status === "active" : pid === fallbackActiveProtocolId;
+    };
+    const kept = sessions.filter((a) => isActiveProtocol(a.protocol_id) || HISTORICAL_STATUSES.has(a.status));
+    const unique = Array.from(new Map(kept.map((a) => [a.appointment_id, a])).values());
+    return unique.sort((a, b) => {
+      const t = scheduledAt(a) - scheduledAt(b);
+      return t !== 0 ? t : (a.session_number ?? 1e9) - (b.session_number ?? 1e9);
+    });
+  }, [sessions, statusByProtocol, fallbackActiveProtocolId]);
 
   if (error) return <p className="text-sm text-danger-600">{error}</p>;
   if (!sessions) return <PageLoader />;
 
   const now = Date.now();
-
-  const detailGroupKey = openGroupKey ?? activeGroupKey;
-  const openGroup = screen === "detail" ? groups.find((g) => g.key === detailGroupKey) ?? null : null;
 
   const renderSessionCard = (a: Appointment) => {
     const locked = scheduledAt(a) > now && a.status !== "in_progress" && a.status !== "completed";
@@ -228,7 +215,7 @@ export default function PatientDeviceSessionsPage() {
                 {fmtWhen(a)}
               </span>
               <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${deviceSessionTone(a.status)}`}>
-                {deviceSessionLabel(a.status)}
+                {patientDeviceSessionLabel(a.status)}
               </span>
             </div>
 
@@ -261,95 +248,24 @@ export default function PatientDeviceSessionsPage() {
     );
   };
 
-  // ─── Detail level — device sessions for one protocol version ───
-  if (openGroup) {
-    const first = openGroup.items[0];
-    const last = openGroup.items[openGroup.items.length - 1];
-    const filteredItems = openGroup.items.filter(FILTERS.find((f) => f.key === filter)!.test);
-    return (
-      <div className="flex flex-col gap-5">
-        {groups.length > 1 && (
-          <button
-            onClick={() => setScreen("versions")}
-            className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 w-fit"
-          >
-            <ChevronLeft className="h-4 w-4" /> View all protocol versions
-          </button>
-        )}
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-bold text-neutral-900">{versionLabel(openGroup.items)}</h1>
-            {openGroup.key === activeGroupKey && (
-              <span
-                title="Active protocol"
-                className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-success-50 text-success-700"
-              >
-                <BadgeCheck className="h-3 w-3" /> Active
-              </span>
-            )}
-          </div>
-          <p className="text-sm text-neutral-500 mt-0.5">
-            {openGroup.items.length} {modalityByProtocol[openGroup.key] || "device"} session{openGroup.items.length === 1 ? "" : "s"}
-            {" · "}{fmtDay(first)}{openGroup.items.length > 1 ? ` – ${fmtDay(last)}` : ""}
-          </p>
-        </div>
+  const filteredItems = visibleSessions.filter(FILTERS.find((f) => f.key === filter)!.test);
+  const first = visibleSessions[0];
+  const last = visibleSessions[visibleSessions.length - 1];
 
-        <div className="flex items-center gap-2 flex-wrap">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-colors ${
-                filter === f.key
-                  ? "bg-primary-600 text-white"
-                  : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="space-y-3">
-          {filteredItems.length === 0 ? (
-            <Card>
-              <CardContent className="px-6 py-10 text-center">
-                <p className="text-sm text-neutral-400">No sessions match this filter.</p>
-              </CardContent>
-            </Card>
-          ) : (
-            filteredItems.map(renderSessionCard)
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ─── Versions level — one row per protocol version ───
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-2xl font-bold text-neutral-900">Device Sessions</h1>
-          {detailGroupKey && (
-            <button
-              onClick={() => {
-                setOpenGroupKey(null);
-                setFilter("all");
-                setScreen("detail");
-              }}
-              className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-800 w-fit"
-            >
-              Back to current sessions <ChevronRight className="h-4 w-4" />
-            </button>
-          )}
-        </div>
+        <h1 className="text-2xl font-bold text-neutral-900">Device Sessions</h1>
         <p className="text-sm text-neutral-500 mt-0.5">
-          Your treatment schedule. Open a protocol version to see its device sessions and assessments.
+          {visibleSessions.length === 0
+            ? "Your treatment schedule."
+            : `${visibleSessions.length} device session${visibleSessions.length === 1 ? "" : "s"} · ${fmtDay(first)}${
+                visibleSessions.length > 1 ? ` – ${fmtDay(last)}` : ""
+              }`}
         </p>
       </div>
 
-      {groups.length === 0 ? (
+      {visibleSessions.length === 0 ? (
         <Card>
           <CardContent className="px-6 py-14 text-center">
             <Activity className="h-8 w-8 text-neutral-200 mx-auto mb-2" />
@@ -357,60 +273,37 @@ export default function PatientDeviceSessionsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {groups.map((g) => {
-            const first = g.items[0];
-            const last = g.items[g.items.length - 1];
-            const actionable = g.items.some((a) => summaries[a.appointment_id]?.actionable);
-            const done = g.items.filter((a) => a.status === "completed").length;
-            const major = first.protocol_version_major;
-            return (
-              <Card key={g.key} className="hover:border-primary-300 transition-colors">
-                <CardContent
-                  className="flex items-center gap-4 py-4 cursor-pointer"
-                  onClick={() => {
-                    setOpenGroupKey(g.key);
-                    setFilter("all");
-                    setScreen("detail");
-                  }}
-                >
-                  <div className="w-11 h-11 rounded-xl bg-primary-50 text-primary-600 flex flex-col items-center justify-center flex-shrink-0">
-                    <span className="text-[9px] font-semibold uppercase leading-none">Ver</span>
-                    <span className="text-sm font-bold leading-none mt-0.5">{major ?? "—"}</span>
-                  </div>
+        <>
+          <div className="flex items-center gap-2 flex-wrap">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setFilter(f.key)}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-colors ${
+                  filter === f.key
+                    ? "bg-primary-600 text-white"
+                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
 
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-semibold text-neutral-900">{versionLabel(g.items)}</span>
-                      {g.key === activeGroupKey && (
-                        <span
-                          title="Active protocol"
-                          className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-success-50 text-success-700"
-                        >
-                          <BadgeCheck className="h-3 w-3" /> Active
-                        </span>
-                      )}
-                      {actionable && (
-                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-warning-50 text-warning-700">
-                          Assessment ready
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-1.5 text-xs text-neutral-500 flex items-center gap-1.5">
-                      <CalendarDays className="h-3.5 w-3.5 text-neutral-400" />
-                      {g.items.length} session{g.items.length === 1 ? "" : "s"}
-                      {" · "}{fmtDay(first)}{g.items.length > 1 ? ` – ${fmtDay(last)}` : ""}
-                      {done > 0 ? ` · ${done} done` : ""}
-                    </div>
-                  </div>
-
-                  <ChevronRight className="h-4 w-4 text-neutral-300 flex-shrink-0" />
+          <div className="space-y-3">
+            {filteredItems.length === 0 ? (
+              <Card>
+                <CardContent className="px-6 py-10 text-center">
+                  <p className="text-sm text-neutral-400">No sessions match this filter.</p>
                 </CardContent>
               </Card>
-            );
-          })}
-        </div>
+            ) : (
+              filteredItems.map(renderSessionCard)
+            )}
+          </div>
+        </>
       )}
     </div>
   );
 }
+
