@@ -199,6 +199,8 @@ export const receptionService = {
     last_name: string;
     dob?: string;
     gender?: string;
+    /** Current flow: the patient's password goes in BEFORE the OTP. */
+    password?: string;
   }): Promise<{ verification_id: string }> {
     const { data } = await apiClient.post(ENDPOINTS.RECEPTION.SEND_CODE, payload);
     return data;
@@ -214,13 +216,20 @@ export const receptionService = {
     return data;
   },
 
-  /** registrationToken comes from verifyCode() above. clinicId is resolved by the caller (receptionist's own clinic). */
+  /** registrationToken is the contact (email/phone). clinicId is resolved by
+   *  the caller (receptionist's own clinic). With `code` (current flow) this
+   *  verifies the OTP and registers the patient in ONE call
+   *  (/reception/registrations/confirm); without it, the legacy two-call flow
+   *  (verifyCode() first, then POST /reception/patients). */
   async registerPatient(
     registrationToken: string,
     clinicId: string,
     payload: RegisterPatientPayload,
+    code?: string,
   ): Promise<PatientListItem> {
-    const { data } = await apiClient.post(ENDPOINTS.RECEPTION.REGISTER_PATIENT, {
+    const endpoint = code ? ENDPOINTS.RECEPTION.CONFIRM_REGISTRATION : ENDPOINTS.RECEPTION.REGISTER_PATIENT;
+    const { data } = await apiClient.post(endpoint, {
+      ...(code ? { code } : {}),
       registration_token: registrationToken,
       personal: {
         first_name: payload.first_name,

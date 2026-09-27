@@ -295,7 +295,7 @@ function LocalRegisterForm() {
   );
 }
 
-// ─── Real signup — email-or-mobile, OTP-verified, then password ─────────────
+// ─── Real signup — details, then password, then OTP (verifying creates the account) ───
 
 const demographicsSchema = z.object({
   first_name: z.string().min(1, "First name is required"),
@@ -317,7 +317,9 @@ function OtpSignupWizard() {
   const { clinics, isLoading: clinicsLoading } = useClinics();
   const { completePatientSignup } = useAuth();
 
-  const [step, setStep] = useState<"demographics" | "otp" | "password">("demographics");
+  // Password comes BEFORE the OTP: entering the code creates the account in
+  // the same request, so a patient can't abandon signup half-registered.
+  const [step, setStep] = useState<"demographics" | "password" | "otp">("demographics");
   // Fixed by which button the patient clicked on /login — no in-page switcher.
   const [method] = useState<"email" | "mobile">(searchParams.get("method") === "mobile" ? "mobile" : "email");
   const [contact, setContact] = useState("");
@@ -362,22 +364,36 @@ function OtpSignupWizard() {
   // actually needs, while `contact` state holds just what's in the input.
   const fullContact = method === "mobile" ? `${dialCode}${contact.replace(/\D/g, "")}` : contact.trim();
 
-  // ── Step 1: demographics + clinic + contact -> send OTP ──────────────────
+  // ── Step 1: demographics + clinic + contact (no API call yet) ────────────
   const onStartSignup = async (data: DemographicsData) => {
     if (!contact.trim()) {
       setError(method === "email" ? "Enter your email address" : "Enter your mobile number");
       return;
     }
     setError(null);
+    setDemographics(data);
+    setStep("password");
+  };
+
+  // ── Step 2: password + confirm -> send OTP ───────────────────────────────
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  const onSendCode = async () => {
+    if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
+    if (password !== confirmPassword) { setError("Passwords do not match"); return; }
+    if (!demographics) { setError("Something went wrong — please start over"); setStep("demographics"); return; }
+    setError(null);
     setBusy(true);
     try {
       await authService.patientSignupStart({
-        first_name: data.first_name, last_name: data.last_name, dob: data.date_of_birth,
-        gender: data.gender, address: data.address, city: data.city, state: data.state,
-        country: data.country, pincode: data.pincode,
-        primary_clinic_id: data.clinic_id, method, contact: fullContact,
+        first_name: demographics.first_name, last_name: demographics.last_name, dob: demographics.date_of_birth,
+        gender: demographics.gender, address: demographics.address, city: demographics.city, state: demographics.state,
+        country: demographics.country, pincode: demographics.pincode,
+        primary_clinic_id: demographics.clinic_id, method, contact: fullContact,
+        password, confirm_password: confirmPassword,
       });
-      setDemographics(data);
+      setOtp("");
       setStep("otp");
     } catch (e: any) {
       setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Could not send verification code");
@@ -386,20 +402,31 @@ function OtpSignupWizard() {
     }
   };
 
-  // ── Step 2: OTP — auto-submits once 6 digits are entered ──────────────────
+  // ── Step 3: OTP -> verify + create account + log in (one call) ───────────
+  // Auto-submits once 6 digits are entered.
   const [otp, setOtp] = useState("");
   const [resending, setResending] = useState(false);
 
   const onVerifyOtp = async (code: string) => {
     if (!code.trim()) { setError("Enter the code we sent you"); return; }
+    if (!demographics) { setError("Something went wrong — please start over"); setStep("demographics"); return; }
     setError(null);
     setBusy(true);
     try {
-      await authService.patientSignupVerify(fullContact, code.trim());
-      setStep("password");
-    } catch (e: any) {
-      setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Incorrect or expired code");
-      setOtp("");
+      const result = await completePatientSignup({
+        first_name: demographics.first_name, last_name: demographics.last_name,
+        dob: demographics.date_of_birth, gender: demographics.gender, address: demographics.address,
+        city: demographics.city, state: demographics.state, country: demographics.country,
+        pincode: demographics.pincode,
+        primary_clinic_id: demographics.clinic_id, method, contact: fullContact,
+        password, code: code.trim(),
+      });
+      if ((result as any)?.meta?.requestStatus === "fulfilled") {
+        router.push(ROUTES.CONSENT);
+      } else {
+        setError(((result as any)?.payload as string) || "Incorrect or expired code");
+        setOtp("");
+      }
     } finally {
       setBusy(false);
     }
@@ -421,35 +448,6 @@ function OtpSignupWizard() {
       setError("Could not resend code — try again shortly");
     } finally {
       setResending(false);
-    }
-  };
-
-  // ── Step 3: password + confirm -> create account ──────────────────────────
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-
-  const onCompleteSignup = async () => {
-    if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
-    if (password !== confirmPassword) { setError("Passwords do not match"); return; }
-    if (!demographics) { setError("Something went wrong — please start over"); setStep("demographics"); return; }
-    setError(null);
-    setBusy(true);
-    try {
-      const result = await completePatientSignup({
-        first_name: demographics.first_name, last_name: demographics.last_name,
-        dob: demographics.date_of_birth, gender: demographics.gender, address: demographics.address,
-        city: demographics.city, state: demographics.state, country: demographics.country,
-        pincode: demographics.pincode,
-        primary_clinic_id: demographics.clinic_id, method, contact: fullContact,
-        password, confirm_password: confirmPassword,
-      });
-      if ((result as any)?.meta?.requestStatus === "fulfilled") {
-        router.push(ROUTES.CONSENT);
-      } else {
-        setError(((result as any)?.payload as string) || "Could not create your account");
-      }
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -590,7 +588,7 @@ function OtpSignupWizard() {
                   <input id="contact" type="tel" placeholder="XXXXXXXXXX" value={contact} onChange={(e) => setContact(e.target.value)} className={inputCls} />
                 </div>
               )}
-              <Button type="submit" isLoading={busy} className="flex-shrink-0">Verify</Button>
+              <Button type="submit" isLoading={busy} className="flex-shrink-0">Continue</Button>
             </div>
           </div>
         </form>
@@ -610,17 +608,21 @@ function OtpSignupWizard() {
             />
             <p className="mt-1.5 text-xs text-neutral-400">Verifies automatically once you enter all 6 digits.</p>
           </div>
-          {busy && <p className="text-sm text-neutral-500 text-center">Verifying…</p>}
+          {busy && <p className="text-sm text-neutral-500 text-center">Verifying and creating your account…</p>}
           <button type="button" onClick={onResend} disabled={resending} className="w-full text-center text-sm text-primary-600 hover:underline disabled:opacity-50">
             {resending ? "Resending…" : "Resend code"}
+          </button>
+          <button type="button" onClick={() => { setError(null); setOtp(""); setStep("password"); }} className="w-full text-center text-sm text-neutral-500 hover:underline">
+            Back
           </button>
         </div>
       )}
 
       {step === "password" && (
         <div className="space-y-4">
-          <p className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-lg px-3.5 py-2.5">
-            {method === "email" ? "Email" : "Mobile number"} verified. Choose a password to finish creating your account.
+          <p className="text-sm text-neutral-600">
+            Choose a password for your account. We&apos;ll then send a verification code to{" "}
+            <span className="font-medium text-neutral-900">{fullContact}</span>.
           </p>
           <div>
             <FieldLabel htmlFor="password" text="Password" required />
@@ -630,7 +632,10 @@ function OtpSignupWizard() {
             <FieldLabel htmlFor="confirm_password" text="Confirm password" required />
             <input id="confirm_password" type="password" placeholder="Re-enter your password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputCls} />
           </div>
-          <Button onClick={onCompleteSignup} className="w-full" size="lg" isLoading={busy}>Create Account</Button>
+          <Button onClick={onSendCode} className="w-full" size="lg" isLoading={busy}>Send Verification Code</Button>
+          <button type="button" onClick={() => { setError(null); setStep("demographics"); }} className="w-full text-center text-sm text-neutral-500 hover:underline">
+            Back
+          </button>
         </div>
       )}
 
