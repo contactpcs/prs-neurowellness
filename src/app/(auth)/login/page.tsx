@@ -47,7 +47,7 @@ export default function LoginPage() {
           className={`mb-5 px-4 py-3 rounded-lg text-sm border ${
             error === "You will be able to log in once your account is approved."
               ? "bg-amber-50 border-amber-200 text-amber-800"
-              : error === "Your account has been rejected. Please contact reception."
+              : error.startsWith("Your account has been rejected.")
               ? "bg-orange-50 border-orange-200 text-orange-800"
               : "bg-danger-50 border-danger-100 text-danger-700"
           }`}

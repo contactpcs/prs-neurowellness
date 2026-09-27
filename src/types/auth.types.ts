@@ -55,6 +55,9 @@ export interface User {
   // System Fields
   mrn?: string;
   approval_status?: string;
+  /** Why a self-registered patient's registration was turned down — set only
+   *  while approval_status is "rejected" (from GET /auth/me). */
+  rejection_reason?: string | null;
   registered_at?: string;
 
   // Consent gate (backend-v2) — is_active=false until the onboarding

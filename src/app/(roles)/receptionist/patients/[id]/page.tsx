@@ -177,9 +177,9 @@ export default function PatientDetailPage() {
   const handleReject = async () => {
     setActionLoading("reject");
     try {
-      // Real endpoint has no rejection-reason field — rejectReason isn't transmitted.
-      await receptionService.rejectPatient(id);
+      await receptionService.rejectPatient(id, rejectReason);
       setRejectModal(false);
+      setRejectReason("");
       refreshPatient();
       showToast("Patient registration rejected.", true);
     } catch {

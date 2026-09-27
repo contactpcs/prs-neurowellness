@@ -18,6 +18,7 @@ interface MeResponse {
   clinic_id: string | null; region_id: string | null; is_active: boolean; consent_signed: boolean;
   consent_type_required: string | null;
   self_registered: boolean; patient_id: string | null; registration_status: string | null;
+  approval_status: string | null; rejection_reason: string | null;
   doctor_id: string | null;
   email_verified: boolean; phone_verified: boolean;
 }
@@ -30,6 +31,8 @@ function meToUser(me: MeResponse): AuthResponse["user"] {
     is_active: me.is_active, consent_signed: me.consent_signed, consent_type_required: me.consent_type_required,
     self_registered: me.self_registered, patient_id: me.patient_id ?? undefined,
     registration_status: me.registration_status ?? undefined,
+    approval_status: me.approval_status ?? undefined,
+    rejection_reason: me.rejection_reason ?? null,
     doctor_id: me.doctor_id ?? undefined,
     email_verified: me.email_verified, phone_verified: me.phone_verified,
   };

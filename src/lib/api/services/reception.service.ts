@@ -155,6 +155,7 @@ export const receptionService = {
         email: isEmail ? String(r.contact ?? "") : "",
         phone: isEmail ? undefined : (r.contact as string) ?? undefined,
         status: (r.status as string) ?? undefined,
+        rejection_reason: (r.rejection_reason as string | null) ?? null,
         created_at: (r.submitted_on as string) ?? undefined,
         registered_at: (r.submitted_on as string) ?? undefined,
         doctor_id: null,
@@ -169,6 +170,11 @@ export const receptionService = {
     return this.getRegistrations({ status: "pending" });
   },
 
+  /** Rejected self-registrations — the Approvals screen's Rejected tab, where they can be re-approved. */
+  async getRejectedPatients(): Promise<{ patients: PatientListItem[]; total: number }> {
+    return this.getRegistrations({ status: "rejected" });
+  },
+
   async getPatient(patientId: string): Promise<PatientDetail> {
     const { data } = await apiClient.get(ENDPOINTS.RECEPTION.PATIENT(patientId));
     return normalizePatientProfile(data);
@@ -178,9 +184,10 @@ export const receptionService = {
     await apiClient.post(ENDPOINTS.RECEPTION.APPROVE_REGISTRATION(registrationId));
   },
 
-  /** Real endpoint takes no rejection reason (see router.py reject_registration) — any reason text is not sent. */
-  async rejectPatient(registrationId: string): Promise<void> {
-    await apiClient.post(ENDPOINTS.RECEPTION.REJECT_REGISTRATION(registrationId));
+  async rejectPatient(registrationId: string, rejectionReason?: string): Promise<void> {
+    await apiClient.post(ENDPOINTS.RECEPTION.REJECT_REGISTRATION(registrationId), {
+      rejection_reason: rejectionReason || undefined,
+    });
   },
 
   // ─── Registration wizard (§4.1-4.4) — real flow requires a Cognito OTP

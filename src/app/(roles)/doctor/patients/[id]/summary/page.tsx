@@ -33,8 +33,8 @@ import { useGoBack } from "@/lib/hooks/useGoBack";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { patientFilesService, type PatientFile } from "@/lib/api/services/patientFiles.service";
 import { anamnesisService, type AnamnesisQuestion } from "@/lib/api/services/anamnesis.service";
-import { useAppSelector } from "@/store/hooks";
-import { selectPatientMedicines } from "@/store/slices/prescribedMedicineSlice";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { fetchPatientMedicines, selectPatientMedicines } from "@/store/slices/prescribedMedicineSlice";
 import type { ProtocolDetail } from "@/types/treatmentProtocol.types";
 
 const NAV_SECTIONS = [
@@ -87,7 +87,10 @@ export default function DoctorPatientSummaryPage() {
   const { instances: scoreInstances, total: totalAssessments } = usePatientScoresSummary(id);
   const { record: anamnesisRecord } = usePatientAnamnesis(id, "main");
   const { upcoming } = useUpcomingAppointments();
+  const dispatch = useAppDispatch();
   const prescribedMedicines = useAppSelector(selectPatientMedicines(id));
+  // Load from the backend (SQL/v1/96) — this page can be opened directly.
+  useEffect(() => { dispatch(fetchPatientMedicines(id)); }, [dispatch, id]);
   const activeMedicines = prescribedMedicines.filter((m) => m.status === "Active");
   const pastMedicines = prescribedMedicines.filter((m) => m.status === "Stopped");
 
