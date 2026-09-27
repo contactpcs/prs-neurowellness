@@ -150,6 +150,21 @@ export function AssessmentUI({
   const visiblePosition = visibleIndices.indexOf(activeQuestionIndex);
   const isFirstVisibleQuestion = visiblePosition <= 0;
   const isLastVisibleQuestion = visiblePosition === -1 || visiblePosition === visibleIndices.length - 1;
+  const activeQuestion = activeQuestionIndex != null ? questions[activeQuestionIndex] : undefined;
+  const activeQuestionAnswered = activeQuestionIndex != null && currentScaleResponses[String(activeQuestionIndex)] !== undefined;
+  // required defaults true server-side (see doctor/patient assessment pages'
+  // toPrsScaleQuestion: is_required ?? true) — only an explicit false opts a
+  // question out of blocking Next, so a scale can never be silently skipped
+  // question-by-question without answering every mandatory item.
+  const canAdvance = activeQuestion ? activeQuestion.required === false || activeQuestionAnswered : true;
+  // Whether every required, currently-visible question in this scale has an
+  // answer — gates the final Next/Submit button the same way Next between
+  // questions is gated, so jumping straight to the last question (e.g. via
+  // the sidebar) can't be used to skip past unanswered mandatory ones.
+  const allRequiredAnswered = visibleIndices.every((idx) => {
+    const q = questions[idx];
+    return q.required === false || currentScaleResponses[String(idx)] !== undefined;
+  });
   const scaleNumber = currentScaleIndex + 1;
   const overallProgress =
     totalScales > 0 ? Math.round((completedScaleIds.size / totalScales) * 100) : 0;
@@ -203,7 +218,16 @@ export function AssessmentUI({
           currentIndex={currentScaleIndex}
           completedScaleIds={completedScaleIds}
           responses={responses}
-          onNavigate={(idx) => { onNavigateScale(idx); setSidebarOpen(false); }}
+          onNavigate={(idx) => {
+            // Every question is mandatory — jumping straight to a later,
+            // not-yet-completed scale would skip its questions entirely.
+            // Only the current scale or an already-completed (reviewable)
+            // one is a valid jump target.
+            const target = scales[idx];
+            if (idx > currentScaleIndex && !(target && completedScaleIds.has(target.scale_id))) return;
+            onNavigateScale(idx);
+            setSidebarOpen(false);
+          }}
           overallProgress={overallProgress}
         />
       </div>
@@ -455,13 +479,13 @@ export function AssessmentUI({
             </div>
 
             {isLastVisibleQuestion ? (
-              <Button onClick={onSubmitScale} isLoading={isSubmitting} size="sm">
+              <Button onClick={onSubmitScale} isLoading={isSubmitting} disabled={!allRequiredAnswered} size="sm">
                 <span className="hidden sm:inline">{isLastScale ? "Submit Assessment" : "Next Scale"}</span>
                 <span className="sm:hidden">{isLastScale ? "Submit" : "Next"}</span>
                 <ChevronRight className="h-4 w-4" />
               </Button>
             ) : (
-              <Button onClick={onQuestionNext} size="sm">
+              <Button onClick={onQuestionNext} disabled={!canAdvance} size="sm">
                 <span>Next</span>
                 <ChevronRight className="h-4 w-4" />
               </Button>
