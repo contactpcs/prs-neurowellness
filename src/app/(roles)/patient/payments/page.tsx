@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Receipt as ReceiptIcon, Download, Search } from "lucide-react";
-import { PageLoader, Card, Button, Input } from "@/components/ui";
+import { PageSkeleton, Card, Button, Input } from "@/components/ui";
 import { paymentsService, saveBlobAsFile, type PaymentHistory } from "@/lib/api/services/payments.service";
 
 const STATUS_STYLES: Record<PaymentHistory["status"], string> = {
@@ -49,7 +49,7 @@ export default function PatientPaymentsPage() {
     }
   }
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   return (
     <div className="flex flex-col space-y-6">

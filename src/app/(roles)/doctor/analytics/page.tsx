@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Users, TrendingDown, TrendingUp, Minus, ChevronRight, ShieldCheck, ClipboardList, Award, Activity, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
-import { Card, CardHeader, CardContent, Select, PageLoader } from "@/components/ui";
+import { Card, CardHeader, CardContent, Select, PageSkeleton } from "@/components/ui";
 import { SeverityBadge } from "@/components/assessment/SeverityBadge";
 import { reportsService } from "@/lib/api/services";
 import type {
@@ -533,7 +533,7 @@ export default function DoctorAnalyticsPage() {
           </CardHeader>
           <CardContent className="!px-2 !py-2">
             {isLoadingDiseases ? (
-              <div className="py-10 flex justify-center"><PageLoader /></div>
+              <div className="py-10 flex justify-center"><PageSkeleton /></div>
             ) : diseases.length === 0 ? (
               <p className="py-10 text-center text-sm text-neutral-400">No conditions tracked for your patients yet.</p>
             ) : (
@@ -588,7 +588,7 @@ export default function DoctorAnalyticsPage() {
       {diseaseId && (
         <>
           {isLoadingOverview ? (
-            <div className="py-10 flex justify-center"><PageLoader /></div>
+            <div className="py-10 flex justify-center"><PageSkeleton /></div>
           ) : (
             <>
               {!isPatient && (
@@ -629,7 +629,7 @@ export default function DoctorAnalyticsPage() {
                     {!isPatient ? (
                       <p className="py-10 text-center text-sm text-neutral-400">Select a patient from the table below.</p>
                     ) : isLoadingTrajectories ? (
-                      <div className="py-10 flex justify-center"><PageLoader /></div>
+                      <div className="py-10 flex justify-center"><PageSkeleton /></div>
                     ) : (
                       <ScaleTrajectoriesChart scales={trajectories} />
                     )}

@@ -9,7 +9,7 @@ import {
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { clinicDevicesService } from "@/lib/api/services/clinicDevices.service";
 import { useAuth, useGoBack } from "@/lib/hooks";
-import { Card, CardContent, Input, Select, Button, PageLoader } from "@/components/ui";
+import { Card, CardContent, Input, Select, Button, PageSkeleton } from "@/components/ui";
 import { PlacementMap } from "./PlacementMap";
 import { PatientClinicalSnapshot } from "@/components/doctor/PatientClinicalSnapshot";
 import type {
@@ -698,7 +698,7 @@ export default function TreatmentProtocolWizardPage() {
     }
   };
 
-  if (prefillLoading) return <PageLoader />;
+  if (prefillLoading) return <PageSkeleton />;
 
   if (reasonGateOpen) {
     return (

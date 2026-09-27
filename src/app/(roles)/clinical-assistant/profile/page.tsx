@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { User, Check, X, AlertCircle, Edit2 } from "lucide-react";
-import { PageLoader } from "@/components/ui";
+import { PageSkeleton } from "@/components/ui";
 import { clinicalAssistantService } from "@/lib/api/services/clinicalAssistant.service";
 import { COUNTRY_OPTIONS } from "@/lib/countries";
 import { LANGUAGE_OPTIONS, languageLabel } from "@/lib/languages";
@@ -142,7 +142,7 @@ export default function ClinicalAssistantProfilePage() {
 
   const handleCancel = () => { setForm(originalRef.current); setSaveError(null); setIsEditing(false); };
 
-  if (!profileRaw && !fetchError) return <PageLoader />;
+  if (!profileRaw && !fetchError) return <PageSkeleton />;
 
   const fullName = `${form.first_name} ${form.last_name}`.trim() || "—";
   const email    = (profileRaw?.email as string) ?? "—";

@@ -16,6 +16,7 @@ import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
 import { SESSION_TYPE_LABEL, getDeviceSessionLabel } from "@/lib/utils/sessionType";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
+import { AppointmentDetailSkeleton } from "@/components/ui/Skeleton";
 import type { AppointmentStatus, AppointmentType } from "@/types/domain.types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -279,11 +280,7 @@ export default function AppointmentDetailPage() {
   };
 
   if (!appointment) {
-    return (
-      <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
-        <div className="w-6 h-6 border-2 border-neutral-200 border-t-sky-400 rounded-full animate-spin" />
-      </div>
-    );
+    return <AppointmentDetailSkeleton />;
   }
 
   const status = appointment.status;

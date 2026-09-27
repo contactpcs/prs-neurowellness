@@ -9,7 +9,7 @@ import { doctorsService } from "@/lib/api/services/doctors.service";
 import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
 import { useDeviceSession, usePatientScoresSummary, useAuth, useGoBack } from "@/lib/hooks";
 import { useSidebar } from "@/contexts/SidebarContext";
-import { Button, Card, CardHeader, CardContent, PageLoader, DetailFieldList, Input, Select } from "@/components/ui";
+import { Button, Card, CardHeader, CardContent, PageSkeleton, DetailFieldList, Input, Select } from "@/components/ui";
 import { PlacementMap } from "@/app/(roles)/doctor/patients/[id]/treatment-protocol/wizard/PlacementMap";
 import { SignatureCapture } from "@/components/deviceSession/SignatureCapture";
 import type { Appointment, PatientDetail } from "@/types/domain.types";
@@ -196,7 +196,7 @@ export default function DeviceSessionChecklistPage() {
   if (loadError) {
     return <div className="text-sm text-danger-600">{loadError}</div>;
   }
-  if (!appointment || isLoading) return <PageLoader />;
+  if (!appointment || isLoading) return <PageSkeleton />;
 
   // A protocol uses either a catalogue placement (protocol.placement,
   // singular anode_site/cathode_site/return_sites) or a custom montage

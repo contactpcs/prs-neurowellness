@@ -6,7 +6,7 @@ import { Activity, CalendarDays, ClipboardList, Lock, ChevronRight, ChevronLeft,
 import { appointmentsService } from "@/lib/api/services";
 import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
-import { Card, CardContent, PageLoader } from "@/components/ui";
+import { Card, CardContent, PageSkeleton } from "@/components/ui";
 import { deviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
 import { isSupersededCancellation } from "@/lib/appointmentStatus";
 import type { Appointment } from "@/types/domain.types";
@@ -194,7 +194,7 @@ export default function PatientDeviceSessionsPage() {
   }
 
   if (error) return <p className="text-sm text-danger-600">{error}</p>;
-  if (!sessions) return <PageLoader />;
+  if (!sessions) return <PageSkeleton />;
 
   const now = Date.now();
 

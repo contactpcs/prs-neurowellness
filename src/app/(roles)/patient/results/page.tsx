@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ClipboardList, ChevronDown, Activity, CalendarDays, ArrowUpRight, Search } from "lucide-react";
 import { useMyScores } from "@/lib/hooks";
-import { PageLoader, Card, CardContent, Input } from "@/components/ui";
+import { PageSkeleton, Card, CardContent, Input } from "@/components/ui";
 
 function severityTone(level?: string): string {
   switch (level?.toLowerCase()) {
@@ -47,7 +47,7 @@ export default function PatientResultsPage() {
     });
   }, [instances, search, dateFilter]);
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   return (
     <div className="flex flex-col space-y-6">

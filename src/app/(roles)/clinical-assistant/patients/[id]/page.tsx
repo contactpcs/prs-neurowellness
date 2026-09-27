@@ -7,7 +7,7 @@ import { Plus } from "lucide-react";
 import { usePatientPermissions } from "@/lib/hooks";
 import { staffService } from "@/lib/api/services/staff.service";
 import { prsService } from "@/lib/api/services/prs.service";
-import { PageLoader, Button, Card, CardContent } from "@/components/ui";
+import { PatientDetailSkeleton, Button, Card, CardContent } from "@/components/ui";
 import { RiskAlertBanner } from "@/components/assessment";
 import type { PatientDetail } from "@/types/domain.types";
 import type { RiskAlert } from "@/types/prs.types";
@@ -49,7 +49,7 @@ export default function CAPatientProfilePage() {
     }).catch(() => {}).finally(() => setIsLoading(false));
   }, [id]);
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PatientDetailSkeleton />;
 
   const fullName = patient?.full_name || "Patient";
   const age = patient?.date_of_birth

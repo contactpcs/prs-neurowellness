@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Bell, Check, Loader2, CheckCheck } from "lucide-react";
 import { receptionService } from "@/lib/api/services/reception.service";
-import { Card, PageLoader } from "@/components/ui";
+import { Card, PageSkeleton } from "@/components/ui";
 import type { Notification } from "@/types/domain.types";
 
 function timeAgo(dateStr: string) {
@@ -74,7 +74,7 @@ export default function ReceptionistNotificationsPage() {
     }
   };
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   return (
     <div className="flex flex-col gap-5">

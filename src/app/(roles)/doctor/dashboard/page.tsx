@@ -12,6 +12,7 @@ import { ENDPOINTS } from "@/lib/api/endpoints";
 import { BookingModal } from "@/components/appointments/BookingModal";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { getDeviceSessionLabel } from "@/lib/utils/sessionType";
+import { Skeleton } from "@/components/ui/Skeleton";
 import type { Appointment, AvailabilitySlot } from "@/types/domain.types";
 
 // ─── types ────────────────────────────────────────────────────────
@@ -118,6 +119,7 @@ export default function DoctorDashboard() {
   const [bookingSlot,  setBookingSlot]  = useState<AvailabilitySlot | null>(null);
   const [ghost, setGhost] = useState<{ colIdx: number; top: number; height: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
   // ── fetch range per view ──────────────────────────────────────────
 
@@ -159,8 +161,10 @@ export default function DoctorDashboard() {
   }, [doctorId]);
 
   useEffect(() => {
-    fetchAppointments(fetchRange.from, fetchRange.to);
-    fetchSlots(fetchRange.from, fetchRange.to);
+    Promise.all([
+      fetchAppointments(fetchRange.from, fetchRange.to),
+      fetchSlots(fetchRange.from, fetchRange.to),
+    ]).finally(() => setIsLoading(false));
   }, [fetchRange, fetchAppointments, fetchSlots]);
 
   // Live update via SSE.
@@ -429,7 +433,22 @@ export default function DoctorDashboard() {
             </Link>
           </div>
           <div className="divide-y divide-neutral-100 max-h-[200px] overflow-y-auto">
-            {upcoming.length === 0 ? (
+            {isLoading ? (
+              <div className="px-5 py-4 space-y-4">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex items-start justify-between gap-3">
+                    <div className="space-y-2 flex-1">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-4 w-20 rounded-full" />
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <Skeleton className="h-5 w-16" />
+                      <Skeleton className="h-3 w-20" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : upcoming.length === 0 ? (
               <p className="px-6 py-10 text-center text-sm text-neutral-400">No upcoming appointments</p>
             ) : upcoming.map((appt) => (
               <div key={appt.appointment_id} className="px-5 py-4 hover:bg-neutral-50/60 transition-colors">
@@ -523,6 +542,18 @@ export default function DoctorDashboard() {
           </div>
         </div>
 
+        {isLoading ? (
+          <div className="p-6 space-y-3">
+            <div className="grid gap-2" style={{ gridTemplateColumns: "52px repeat(7, 1fr)" }}>
+              <div />
+              {Array.from({ length: 7 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
+            </div>
+            <Skeleton className="h-[400px] w-full" />
+          </div>
+        ) : (
+        <>
         {/* ── Week view ── */}
         {view === "Week" && (
           <div className="overflow-x-auto">
@@ -693,6 +724,8 @@ export default function DoctorDashboard() {
               ))}
             </div>
           </div>
+        )}
+        </>
         )}
 
         {/* legend */}

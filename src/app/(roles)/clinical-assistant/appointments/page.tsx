@@ -20,7 +20,7 @@ import { Activity, Calendar, ChevronRight, Cpu, Loader2, Search, User } from "lu
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
 import { useAuth } from "@/lib/hooks";
-import { Input, Card, CardContent, PageLoader } from "@/components/ui";
+import { Input, Card, CardContent, PageSkeleton } from "@/components/ui";
 import { isSupersededCancellation } from "@/lib/appointmentStatus";
 
 interface SessionRow {
@@ -149,7 +149,7 @@ export default function ClinicalAssistantAppointmentsPage() {
   // it as "paid", not the row-badge wording ("Confirmed").
   const FILTER_LABEL: Record<string, string> = { ...STATUS_LABEL, paid: "Paid" };
 
-  if (loading) return <PageLoader />;
+  if (loading) return <PageSkeleton />;
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-5">

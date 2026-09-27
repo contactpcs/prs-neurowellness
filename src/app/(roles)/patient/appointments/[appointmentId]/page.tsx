@@ -10,7 +10,7 @@ import { RescheduleModal } from "@/components/appointments/RescheduleModal";
 import { STATUS_LABEL, STATUS_TONE } from "@/lib/appointmentStatus";
 import { appointmentDoctorName, getDeviceSessionLabel, protocolContextLine, SESSION_TYPE_LABEL } from "@/lib/utils/sessionType";
 import { doctorLabel } from "@/lib/utils/doctorLabel";
-import { PageLoader, Button } from "@/components/ui";
+import { PageSkeleton, Button } from "@/components/ui";
 import { useGoBack } from "@/lib/hooks";
 import type { Appointment } from "@/types/domain.types";
 
@@ -64,7 +64,7 @@ function getSessionEducation(sessionNumber: number | null | undefined, modality?
 
 export default function AppointmentDetailPage() {
   return (
-    <Suspense fallback={<PageLoader />}>
+    <Suspense fallback={<PageSkeleton />}>
       <AppointmentDetail />
     </Suspense>
   );
@@ -94,7 +94,7 @@ function AppointmentDetail() {
     if (isClaimable) setShowClaim(true);
   }, [appt, searchParams]);
 
-  if (loading) return <PageLoader />;
+  if (loading) return <PageSkeleton />;
 
   if (!appt) {
     return (

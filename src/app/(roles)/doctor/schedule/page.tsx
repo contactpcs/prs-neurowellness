@@ -9,6 +9,7 @@ import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
 import { extractErrorMessage } from "@/lib/api/errors";
 import { BookingModal } from "@/components/appointments/BookingModal";
+import { Skeleton } from "@/components/ui/Skeleton";
 import type {
   WeeklyScheduleRow, ScheduleOverride, AvailabilitySlot,
 } from "@/types/domain.types";
@@ -81,6 +82,7 @@ export default function DoctorSchedulePage() {
   const [weekly,    setWeekly]    = useState<WeeklyScheduleRow[]>([]);
   const [overrides, setOverrides] = useState<ScheduleOverride[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [loadingSchedule, setLoadingSchedule] = useState(true);
 
   const [bookingSlot,     setBookingSlot]     = useState<AvailabilitySlot | null>(null);
   const [showEditSched,   setShowEditSched]   = useState(false);
@@ -95,6 +97,7 @@ export default function DoctorSchedulePage() {
       setWeekly(payload.weekly ?? []);
       setOverrides(payload.overrides ?? []);
     } catch { /* no schedule yet */ }
+    finally { setLoadingSchedule(false); }
   }, []);
 
   const fetchSlots = useCallback(async (monday: Date) => {
@@ -300,7 +303,11 @@ export default function DoctorSchedulePage() {
               </button>
             </div>
 
-            {weekly.filter((w) => w.is_active).length === 0 ? (
+            {loadingSchedule ? (
+              <div className="space-y-2">
+                {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-5 w-full" />)}
+              </div>
+            ) : weekly.filter((w) => w.is_active).length === 0 ? (
               <div className="text-center py-6">
                 <p className="text-xs text-neutral-400">No schedule set yet</p>
                 <button
@@ -347,7 +354,11 @@ export default function DoctorSchedulePage() {
               </button>
             </div>
 
-            {overrides.length === 0 ? (
+            {loadingSchedule ? (
+              <div className="space-y-2.5">
+                {Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+              </div>
+            ) : overrides.length === 0 ? (
               <p className="text-xs text-neutral-400 text-center py-4">No upcoming overrides</p>
             ) : (
               <div className="space-y-2.5">

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Search, UserPlus, Users } from "lucide-react";
 import { useReceptionPatients } from "@/lib/hooks";
-import { Input, Card, PageLoader, Button } from "@/components/ui";
+import { Input, Card, PatientListSkeleton, Button } from "@/components/ui";
 import type { PatientListItem } from "@/types/domain.types";
 import RegisterPatientModal from "./RegisterPatientModal";
 
@@ -41,7 +41,7 @@ export default function ReceptionistPatientsPage() {
     setShowModal(false);
   };
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PatientListSkeleton />;
 
   return (
     <div className="space-y-5">

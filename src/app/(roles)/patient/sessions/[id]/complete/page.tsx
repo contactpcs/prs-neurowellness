@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { CheckCircle2, ArrowRight, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react";
-import { Button, PageLoader, Card, CardContent } from "@/components/ui";
+import { Button, PageSkeleton, Card, CardContent } from "@/components/ui";
 import { useSessions } from "@/lib/hooks";
 import { scoresService, type InstanceScoreDetail } from "@/lib/api/services/scores.service";
 

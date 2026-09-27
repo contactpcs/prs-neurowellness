@@ -6,11 +6,11 @@ import { useQuestionnaire, useSessions } from "@/lib/hooks";
 import { useAssessmentSTT } from "@/lib/hooks/useAssessmentSTT";
 import { prsService } from "@/lib/api/services";
 import dynamic from "next/dynamic";
-import { PageLoader } from "@/components/ui";
+import { PageSkeleton } from "@/components/ui";
 
 const AssessmentUI = dynamic(
   () => import("@/components/assessment/AssessmentUI").then((m) => ({ default: m.AssessmentUI })),
-  { loading: () => <PageLoader />, ssr: false },
+  { loading: () => <PageSkeleton />, ssr: false },
 );
 import type { ScaleDefinition } from "@/types/prs.types";
 
@@ -161,8 +161,8 @@ export default function QuestionnairePage() {
   }, [sttEnabled]);
 
   // ─── Early returns (after all hooks) ──────────────────────────────────────
-  if (!currentSession || !currentScaleId) return <PageLoader />;
-  if (!currentDef) return <PageLoader />;
+  if (!currentSession || !currentScaleId) return <PageSkeleton />;
+  if (!currentDef) return <PageSkeleton />;
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
 

@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { useDeviceSession, useGoBack } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services";
-import { Button, Card, CardHeader, CardContent, PageLoader, DetailFieldList } from "@/components/ui";
+import { Button, Card, CardHeader, CardContent, PageSkeleton, DetailFieldList } from "@/components/ui";
 import { SessionLogTimeline } from "@/components/deviceSession/SessionLogTimeline";
 import type { Appointment } from "@/types/domain.types";
 
@@ -21,7 +21,7 @@ export default function DeviceSessionSummaryPage() {
     appointmentsService.getById(appointmentId).then(setAppointment);
   }, [appointmentId]);
 
-  if (!session || isLoading || !appointment) return <PageLoader />;
+  if (!session || isLoading || !appointment) return <PageSkeleton />;
 
   const completedFully = session.session_status === "completed";
   const stoppedEarly = session.session_status === "stopped_early";

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSessions, useGoBack } from "@/lib/hooks";
 import { doctorsService } from "@/lib/api/services";
-import { Button, Card, CardContent, PageLoader } from "@/components/ui";
+import { Button, Card, CardContent, PageSkeleton } from "@/components/ui";
 import { ConditionSelector } from "@/components/assessment";
 import { Clock, ChevronLeft } from "lucide-react";
 import { useAppDispatch } from "@/store/hooks";
@@ -35,7 +35,7 @@ export default function AssignAssessmentPage() {
   }, [resetConditionDetail]);
 
   const safeConditions = Array.isArray(conditions) ? conditions : [];
-  if (safeConditions.length === 0) return <PageLoader />;
+  if (safeConditions.length === 0) return <PageSkeleton />;
 
   const handleAssign = async () => {
     if (!selectedCondition) return;

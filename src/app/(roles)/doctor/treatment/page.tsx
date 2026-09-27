@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Syringe } from "lucide-react";
-import { PageLoader } from "@/components/ui";
+import { PageSkeleton } from "@/components/ui";
 import { doctorsService } from "@/lib/api/services/doctors.service";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import type { PatientListItem } from "@/types/domain.types";
@@ -59,7 +59,7 @@ export default function DoctorTreatmentPage() {
     return () => { cancelled = true; };
   }, []);
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   return (
     <div className="flex flex-col gap-5">

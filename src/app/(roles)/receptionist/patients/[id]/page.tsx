@@ -14,7 +14,7 @@ import { adminService } from "@/lib/api/services/admin.service";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { useReceptionPatient, useClinics } from "@/lib/hooks";
 import { isSupersededCancellation } from "@/lib/appointmentStatus";
-import { Card, CardHeader, CardContent, PageLoader } from "@/components/ui";
+import { Card, CardHeader, CardContent, PatientDetailSkeleton } from "@/components/ui";
 import { PatientJourneySections, type PatientJourneyDetail } from "@/components/admin/PatientJourneySections";
 import type { DoctorListItem, Appointment } from "@/types/domain.types";
 
@@ -189,7 +189,7 @@ export default function PatientDetailPage() {
     }
   };
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PatientDetailSkeleton />;
   if (!patient)  return (
     <div className="text-center py-20 text-neutral-400">Patient not found.</div>
   );

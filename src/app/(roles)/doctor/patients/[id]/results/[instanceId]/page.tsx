@@ -3,7 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { ChevronRight, AlertTriangle, User } from "lucide-react";
 import { usePatientResult } from "@/lib/hooks";
-import { PageLoader, Card, CardContent } from "@/components/ui";
+import { PageSkeleton, Card, CardContent } from "@/components/ui";
 
 function severityColor(level?: string) {
   switch (level?.toLowerCase()) {
@@ -22,7 +22,7 @@ export default function DoctorPatientResultPage() {
   const detail = usePatientResult(patientId, instanceId);
   const isLoading = !detail;
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   if (!detail) {
     return (

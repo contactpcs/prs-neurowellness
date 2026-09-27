@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { staffService } from "@/lib/api/services/staff.service";
 import { useAuth } from "@/lib/hooks";
-import { Input, Card, CardContent, PageLoader } from "@/components/ui";
+import { Input, Card, CardContent, PageSkeleton } from "@/components/ui";
 import type { PatientListItem } from "@/types/domain.types";
 
 export default function ClinicalAssistantApprovalsPage() {
@@ -84,7 +84,7 @@ export default function ClinicalAssistantApprovalsPage() {
     `${p.full_name} ${p.first_name} ${p.last_name} ${p.email}`.toLowerCase().includes(search.toLowerCase())
   );
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   return (
     <div className="space-y-6">

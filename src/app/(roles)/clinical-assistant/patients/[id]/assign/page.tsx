@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSessions } from "@/lib/hooks";
-import { Button, Card, CardContent, PageLoader } from "@/components/ui";
+import { Button, Card, CardContent, PageSkeleton } from "@/components/ui";
 import { ConditionSelector } from "@/components/assessment";
 import { permissionsService } from "@/lib/api/services/permissions.service";
 import { Clock, AlertCircle } from "lucide-react";
@@ -31,7 +31,7 @@ export default function CAAssignAssessmentPage() {
     return () => { resetConditionDetail(); };
   }, [resetConditionDetail]);
 
-  if (safeConditions.length === 0) return <PageLoader />;
+  if (safeConditions.length === 0) return <PageSkeleton />;
 
   const handleAssign = async () => {
     if (!selectedCondition || !currentCondition?.scales?.length) return;

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { User, Mail, Phone, MapPin, Building2, ShieldCheck, Calendar, Loader2 } from "lucide-react";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { useAuth } from "@/lib/hooks";
-import { Card, CardHeader, CardContent, PageLoader, Input } from "@/components/ui";
+import { Card, CardHeader, CardContent, PageSkeleton, Input } from "@/components/ui";
 
 function InfoRow({
   icon: Icon,
@@ -50,7 +50,7 @@ export default function ReceptionistProfilePage() {
 
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   // merge: profile wins over authUser for richer data
   const data: any = profile ?? authUser;

@@ -5,7 +5,7 @@ import {
   User,
   Edit2, Check, X, AlertCircle, CalendarDays, Users, Clock,
 } from "lucide-react";
-import { PageLoader } from "@/components/ui";
+import { PageSkeleton } from "@/components/ui";
 import { doctorsService } from "@/lib/api/services/doctors.service";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
@@ -183,7 +183,7 @@ export default function DoctorProfilePage() {
 
   const handleCancel = () => { setForm(originalRef.current); setSaveError(null); setIsEditing(false); };
 
-  if (!profileRaw && !fetchError) return <PageLoader />;
+  if (!profileRaw && !fetchError) return <PageSkeleton />;
 
   const fullName = `Dr. ${form.first_name} ${form.last_name}`.trim().replace(/^Dr\. $/, "—");
   const email    = (profileRaw?.email as string) ?? "—";

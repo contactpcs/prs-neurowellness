@@ -7,7 +7,7 @@ import {
   CalendarPlus, LogIn,
 } from "lucide-react";
 import { useAuth, useReceptionDashboard, useReceptionPendingPatients, useReceptionPatients } from "@/lib/hooks";
-import { PageLoader, Card, CardContent } from "@/components/ui";
+import { PageSkeleton, Card, CardContent } from "@/components/ui";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { DoctorWeekCalendar } from "@/components/appointments/DoctorWeekCalendar";
 import RegisterPatientModal from "../patients/RegisterPatientModal";
@@ -47,7 +47,7 @@ export default function ReceptionistDashboard() {
   })();
 
   const isLoading = dashLoading || pendingLoading || patientsLoading;
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   const stats = [
     { label: "Total Patients",    value: totalPatients,  icon: Users,         color: "text-primary-600",  bg: "bg-primary-50",  href: "/receptionist/patients"  },

@@ -8,7 +8,7 @@ import {
   Check, X, AlertCircle, Stethoscope, Edit2, ChevronRight,
   Mail, Phone, FileText, Upload, Download, ShieldCheck, FileSignature,
 } from "lucide-react";
-import { PageLoader, Modal } from "@/components/ui";
+import { PageSkeleton, Modal } from "@/components/ui";
 import { usersService, NoSupportedFieldsError } from "@/lib/api/services/users.service";
 import { authService } from "@/lib/api/services/auth.service";
 import { patientFilesService, type PatientFile } from "@/lib/api/services/patientFiles.service";
@@ -630,7 +630,7 @@ function ConsentsSection({ patientProfileId }: { patientProfileId?: string }) {
 
 export default function PatientProfilePage() {
   return (
-    <Suspense fallback={<PageLoader />}>
+    <Suspense fallback={<PageSkeleton />}>
       <PatientProfile />
     </Suspense>
   );
@@ -787,7 +787,7 @@ function PatientProfile() {
 
   const handleCancel = () => { setForm(originalRef.current); setSaveError(null); setIsEditing(false); };
 
-  if (!profileRaw && !fetchError) return <PageLoader />;
+  if (!profileRaw && !fetchError) return <PageSkeleton />;
 
   const age         = computeAge(form.date_of_birth);
   const mrn         = (profileRaw?.mrn as string) || "—";

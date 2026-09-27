@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight, AlertTriangle, User } from "lucide-react";
 import { usePatientResult } from "@/lib/hooks";
-import { PageLoader, Card, CardContent } from "@/components/ui";
+import { PageSkeleton, Card, CardContent } from "@/components/ui";
 import { prsAssessmentService, PRS_LANGUAGES, type PrsScaleResponses } from "@/lib/api/services/prsAssessment.service";
 
 function severityColor(level?: string) {
@@ -43,7 +43,7 @@ export default function DoctorPatientResultPage() {
     return () => { cancelled = true; };
   }, [instanceId, responseLanguage]);
 
-  if (isLoading && instanceId) return <PageLoader />;
+  if (isLoading && instanceId) return <PageSkeleton />;
 
   if (!instanceId || error || !detail) {
     return (

@@ -6,7 +6,7 @@ import { Siren, Wind, Grid3x3, Puzzle, ArrowLeft, Lock, ClipboardList, CheckCirc
 import type { LucideIcon } from "lucide-react";
 import { useDeviceSession } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services";
-import { Button, Card, CardContent, Modal, PageLoader } from "@/components/ui";
+import { Button, Card, CardContent, Modal, PageSkeleton } from "@/components/ui";
 import { deviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
 import type { Appointment } from "@/types/domain.types";
 import type { SosType } from "@/types/deviceSession.types";
@@ -334,7 +334,7 @@ export default function PatientDeviceSessionPage() {
     appointmentsService.getById(appointmentId).then(setAppointment).catch(() => setAppointment(null));
   }, [appointmentId]);
 
-  if (!appointment || isLoading) return <PageLoader />;
+  if (!appointment || isLoading) return <PageSkeleton />;
 
   const locked =
     scheduledAt(appointment) > Date.now() &&

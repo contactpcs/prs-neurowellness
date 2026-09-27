@@ -14,7 +14,7 @@ import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.s
 import { prsAssessmentService } from "@/lib/api/services/prsAssessment.service";
 import { permissionsService } from "@/lib/api/services/permissions.service";
 import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
-import { Button, Card, CardContent, Input, PageLoader } from "@/components/ui";
+import { Button, Card, CardContent, Input, PageSkeleton } from "@/components/ui";
 import { CountdownTimer } from "@/components/deviceSession/CountdownTimer";
 import { SymptomChipSelector } from "@/components/deviceSession/SymptomChipSelector";
 import { AdverseEventForm } from "@/components/deviceSession/AdverseEventForm";
@@ -131,7 +131,7 @@ export default function DeviceSessionLivePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, totalSeconds, tick]);
 
-  if (!appointment || isLoading || !session) return <PageLoader />;
+  if (!appointment || isLoading || !session) return <PageSkeleton />;
 
   const impedanceTone = (() => {
     const v = Number(impedance);

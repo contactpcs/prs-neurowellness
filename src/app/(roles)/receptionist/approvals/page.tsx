@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Search, CheckCircle, XCircle, Loader2, ClipboardList } from "lucide-react";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { useAuth } from "@/lib/hooks";
-import { PageLoader } from "@/components/ui";
+import { PageSkeleton } from "@/components/ui";
 import type { PatientListItem } from "@/types/domain.types";
 
 function fmtDate(iso?: string | null): string {
@@ -72,7 +72,7 @@ export default function ReceptionistApprovalsPage() {
     `${p.full_name} ${p.first_name} ${p.last_name} ${p.email}`.toLowerCase().includes(search.toLowerCase())
   );
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   return (
     <div className="flex flex-col gap-5">

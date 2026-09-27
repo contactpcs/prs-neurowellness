@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Activity } from "lucide-react";
-import { PageLoader } from "@/components/ui";
+import { PageSkeleton } from "@/components/ui";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { deviceSessionLabel, deviceSessionTone, isSessionFinished } from "@/lib/utils/deviceSessionStatus";
 import type { ProtocolRead, ProtocolSessionRead } from "@/types/treatmentProtocol.types";
@@ -52,7 +52,7 @@ export default function DoctorSessionsPage() {
     return label === filter;
   });
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   return (
     <div className="flex flex-col gap-5">

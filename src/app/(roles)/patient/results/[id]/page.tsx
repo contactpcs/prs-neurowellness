@@ -3,7 +3,7 @@
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight, AlertTriangle } from "lucide-react";
 import { useInstanceScore, useGoBack } from "@/lib/hooks";
-import { PageLoader, Card, CardContent } from "@/components/ui";
+import { PageSkeleton, Card, CardContent } from "@/components/ui";
 
 function severityColor(level?: string) {
   switch (level?.toLowerCase()) {
@@ -23,7 +23,7 @@ export default function PatientResultDetailPage() {
   const goBack = useGoBack("/patient/dashboard");
   const { detail, isLoading } = useInstanceScore(id);
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   if (!detail) {
     return (

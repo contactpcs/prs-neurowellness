@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Users, CalendarCheck, AlertTriangle, Activity } from "lucide-react";
-import { PageLoader } from "@/components/ui";
+import { PageSkeleton } from "@/components/ui";
 import { doctorsService } from "@/lib/api/services/doctors.service";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import type { ProtocolRead } from "@/types/treatmentProtocol.types";
@@ -52,7 +52,7 @@ export default function DoctorReportsPage() {
     return () => { cancelled = true; };
   }, []);
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   const kpis = [
     { label: "Active Patients", value: totalPatients, Icon: Users },

@@ -8,7 +8,7 @@ import { ENDPOINTS } from "@/lib/api/endpoints";
 import { staffService } from "@/lib/api/services/staff.service";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { getDeviceSessionLabel } from "@/lib/utils/sessionType";
-import { PageLoader, Card, CardContent, Button } from "@/components/ui";
+import { PageSkeleton, Card, CardContent, Button } from "@/components/ui";
 import { isSupersededCancellation } from "@/lib/appointmentStatus";
 
 /** Device sessions AND protocol follow-ups — a CA's actual worklist,
@@ -124,7 +124,7 @@ export default function CADashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [upcoming]);
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   return (
     <div className="space-y-6">
