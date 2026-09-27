@@ -117,7 +117,7 @@ export default function DoctorPatientDetailPage() {
   const { patient, isLoading: patientLoading, isError: patientError, error: patientErrorMessage } = useDoctorPatient(id);
   const { patients: patientList } = useDoctorPatients();
   const assessments = usePatientPermissions(id);
-  const { instances: scoreInstances, total: totalAssessments } = usePatientScoresSummary(id);
+  const { instances: scoreInstances } = usePatientScoresSummary(id);
   const { record: anamnesisRecord, isLoading: anamnesisLoading } = usePatientAnamnesis(id, "main");
   const { user: currentUser } = useAuth();
   const doctorDisplayName = [currentUser?.first_name, currentUser?.last_name].filter(Boolean).join(" ") || "Doctor";
@@ -858,7 +858,7 @@ export default function DoctorPatientDetailPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="bg-blue-50 rounded-lg p-4">
                       <p className="text-neutral-600 text-sm mb-1">Total Assessments</p>
-                      <p className="text-2xl font-bold text-neutral-900">{totalAssessments || assessments.length}</p>
+                      <p className="text-2xl font-bold text-neutral-900">{assessments.length}</p>
                     </div>
                     <div className="bg-green-50 rounded-lg p-4">
                       <p className="text-neutral-600 text-sm mb-1">Completed</p>

@@ -58,6 +58,11 @@ interface AssessmentUIProps {
   onSkipSection: () => void;
   onSubmitScale: () => void;
   onNavigateScale: (index: number) => void;
+  /** Step within the current scale's questions, one at a time. Falls back to
+   *  onPrev/onSubmitScale at the first/last visible question so scales with
+   *  no per-question stepper wired up (none today) still work end to end. */
+  onQuestionPrev?: () => void;
+  onQuestionNext?: () => void;
 
   sttEnabled?: boolean;
   onToggleStt?: (enabled: boolean) => void;
@@ -95,6 +100,8 @@ export function AssessmentUI({
   onSkipSection,
   onSubmitScale,
   onNavigateScale,
+  onQuestionPrev,
+  onQuestionNext,
   sttEnabled,
   onToggleStt,
   sttPhase,
@@ -133,6 +140,16 @@ export function AssessmentUI({
     0,
   );
   const questionsRemaining = totalQuestions - questionsAnsweredVisible;
+  const visibleIndices = questions.map((_, idx) => idx).filter((idx) => !hiddenIndices.has(idx));
+  // currentQuestionIndex can land on a now-hidden question (an earlier answer
+  // just hid it via skip logic) — snap to the nearest visible one so the
+  // single-question view never renders a blank/hidden slot.
+  const activeQuestionIndex = hiddenIndices.has(currentQuestionIndex)
+    ? (visibleIndices.find((idx) => idx > currentQuestionIndex) ?? visibleIndices[visibleIndices.length - 1] ?? currentQuestionIndex)
+    : currentQuestionIndex;
+  const visiblePosition = visibleIndices.indexOf(activeQuestionIndex);
+  const isFirstVisibleQuestion = visiblePosition <= 0;
+  const isLastVisibleQuestion = visiblePosition === -1 || visiblePosition === visibleIndices.length - 1;
   const scaleNumber = currentScaleIndex + 1;
   const overallProgress =
     totalScales > 0 ? Math.round((completedScaleIds.size / totalScales) * 100) : 0;
@@ -311,71 +328,62 @@ export function AssessmentUI({
               </div>
             )}
 
-            {/* All questions */}
-            <div className="space-y-3">
-              {questions.map((question, idx) => {
-                if (hiddenIndices.has(idx)) return null;
-                const qValue = scaleResponses[String(idx)];
-                const isAnswered = qValue !== undefined;
-                const isCurrentStt = idx === currentQuestionIndex && sttEnabled;
+            {/* One question at a time — a mid-list wall of questions is a lot to
+                take in for someone answering a mental-health screener, so only
+                the current question renders and Next/Previous below step
+                through them. */}
+            {activeQuestionIndex != null && questions[activeQuestionIndex] && (() => {
+              const idx = activeQuestionIndex;
+              const question = questions[idx];
+              const qValue = scaleResponses[String(idx)];
+              const isCurrentStt = idx === currentQuestionIndex && sttEnabled;
 
-                return (
-                  <div
-                    key={`${currentScale.scale_id}-${idx}`}
-                    className={cn(
-                      "rounded-xl border p-3 md:p-4 shadow-sm transition-all",
-                      isCurrentStt
-                        ? "border-primary-300 bg-primary-50/20"
-                        : "border-neutral-200 bg-white",
-                    )}
-                  >
-                    <div className="flex items-start gap-2.5 mb-3">
-                      <div className="relative flex-shrink-0 mt-0.5">
-                        <div
-                          className={cn(
-                            "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold",
-                            isAnswered ? "bg-green-500 text-white" : "bg-orange-500 text-white",
-                          )}
-                        >
-                          {idx + 1}
-                        </div>
-                        {isCurrentStt && sttPhase === "listening" && (
-                          <span className="absolute -inset-1 rounded-full bg-red-400 opacity-30 animate-ping" />
-                        )}
-                        {isCurrentStt && (
-                          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-red-500 flex items-center justify-center">
-                            <Mic className="w-2 h-2 text-white" />
-                          </span>
-                        )}
-                      </div>
-                      <h3 className="text-sm font-semibold text-neutral-900 leading-snug flex-1">
-                        {question.label}
-                      </h3>
+              return (
+                <div
+                  key={`${currentScale.scale_id}-${idx}`}
+                  className={cn(
+                    "rounded-xl border p-4 md:p-6 shadow-sm transition-all",
+                    isCurrentStt
+                      ? "border-primary-300 bg-primary-50/20"
+                      : "border-neutral-200 bg-white",
+                  )}
+                >
+                  {isCurrentStt && (
+                    <div className="relative w-6 h-6 mb-3 md:hidden">
+                      {sttPhase === "listening" && (
+                        <span className="absolute -inset-1 rounded-full bg-red-400 opacity-30 animate-ping" />
+                      )}
+                      <span className="absolute inset-0 rounded-full bg-red-500 flex items-center justify-center">
+                        <Mic className="w-3 h-3 text-white" />
+                      </span>
                     </div>
-                    <div className="pl-8 md:pl-9">
-                      <QuestionRenderer
-                        question={question}
-                        scaleId={currentScale.scale_id}
-                        value={qValue}
-                        onAnswer={onAnswer}
-                        questionNumber={idx + 1}
-                        totalQuestions={totalQuestions}
-                        showHeader={false}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  )}
+                  <QuestionRenderer
+                    question={question}
+                    scaleId={currentScale.scale_id}
+                    value={qValue}
+                    onAnswer={onAnswer}
+                    questionNumber={visiblePosition + 1}
+                    totalQuestions={totalQuestions}
+                    showHeader
+                  />
+                </div>
+              );
+            })()}
           </div>
         </div>
 
         {/* Footer */}
         <div className="bg-slate-50 border-t border-slate-200 px-4 py-3 flex-shrink-0">
           <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-2">
-            <Button variant="outline" size="sm" onClick={onPrev} disabled={isFirstScale}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={isFirstVisibleQuestion ? onPrev : (onQuestionPrev ?? onPrev)}
+              disabled={isFirstVisibleQuestion && isFirstScale}
+            >
               <ChevronLeft className="h-4 w-4" />
-              <span className="hidden sm:inline">Previous Scale</span>
+              <span className="hidden sm:inline">{isFirstVisibleQuestion ? "Previous Scale" : "Previous"}</span>
               <span className="sm:hidden">Prev</span>
             </Button>
 
@@ -446,11 +454,18 @@ export function AssessmentUI({
               </Button>
             </div>
 
-            <Button onClick={onSubmitScale} isLoading={isSubmitting} size="sm">
-              <span className="hidden sm:inline">{isLastScale ? "Submit Assessment" : "Next Scale"}</span>
-              <span className="sm:hidden">{isLastScale ? "Submit" : "Next"}</span>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+            {isLastVisibleQuestion ? (
+              <Button onClick={onSubmitScale} isLoading={isSubmitting} size="sm">
+                <span className="hidden sm:inline">{isLastScale ? "Submit Assessment" : "Next Scale"}</span>
+                <span className="sm:hidden">{isLastScale ? "Submit" : "Next"}</span>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button onClick={onQuestionNext} size="sm">
+                <span>Next</span>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </div>
       </div>

@@ -38,11 +38,19 @@ export function QuestionRenderer({
     return renderInput(question, value, handleAnswer, readOnly);
   }
 
+  const progressPct = totalQuestions > 0 ? Math.round((questionNumber / totalQuestions) * 100) : 0;
+
   return (
     <div className="space-y-6">
-      <div className="flex items-baseline justify-between">
-        <span className="text-xs font-medium text-primary-500 uppercase tracking-wide">
-          Question {questionNumber} of {totalQuestions}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 h-1.5 rounded-full bg-neutral-100 overflow-hidden">
+          <div
+            className="h-full rounded-full bg-primary-500 transition-all"
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+        <span className="text-[11px] font-medium text-neutral-400 tabular-nums shrink-0">
+          {questionNumber}/{totalQuestions}
         </span>
       </div>
 

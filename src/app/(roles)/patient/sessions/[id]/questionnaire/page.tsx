@@ -52,6 +52,24 @@ export default function QuestionnairePage() {
     });
   }, [questionnaire.currentScaleId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Once the resumed scale's questions arrive, jump straight to the first
+  // unanswered one instead of leaving the patient back at question 1 of a
+  // scale they'd already partly answered before navigating away. Only runs
+  // once per scale (jumpedForScale ref) so it doesn't fight manual Next/
+  // Previous navigation afterward.
+  const jumpedForScale = useRef<string | null>(null);
+  useEffect(() => {
+    const scaleId = questionnaire.currentScaleId;
+    const def = scaleId ? scaleDefinitions[scaleId] : undefined;
+    if (!scaleId || !def || jumpedForScale.current === scaleId) return;
+    jumpedForScale.current = scaleId;
+    const scaleResponses = questionnaire.responses[scaleId] ?? {};
+    const firstUnansweredIdx = (def.questions ?? []).findIndex(
+      (_: unknown, idx: number) => scaleResponses[String(idx)] === undefined,
+    );
+    if (firstUnansweredIdx > 0) questionnaire.goToQuestion(firstUnansweredIdx);
+  }, [questionnaire.currentScaleId, scaleDefinitions]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Pre-load all scale definitions for sidebar labels
   useEffect(() => {
     if (!currentSession) return;
@@ -184,6 +202,8 @@ export default function QuestionnairePage() {
       questionsAnswered={questionsAnswered}
       onAnswer={handleAnswer}
       onPrev={questionnaire.prevScale}
+      onQuestionPrev={questionnaire.prevQuestion}
+      onQuestionNext={() => questionnaire.nextQuestion(totalQuestions)}
       onSkipSection={handleSkipSection}
       onSubmitScale={handleSubmitScale}
       onNavigateScale={questionnaire.goToScale}

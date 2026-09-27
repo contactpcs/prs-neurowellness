@@ -111,7 +111,14 @@ export default function PatientSessionAssessmentPage() {
             const restored: Record<string, number | string> = {};
             target.questions.forEach((q, idx) => {
               const entry = byQid[q.question_id];
-              if (entry) restored[String(idx)] = entry.response_value ?? entry.given_response;
+              if (entry) {
+                // given_response is the canonical option VALUE — response_value
+                // is scoring POINTS, which can differ for reverse-scored items
+                // and breaks LikertInput's strict option.value match on restore.
+                const raw = entry.given_response;
+                const asNumber = Number(raw);
+                restored[String(idx)] = raw !== null && raw !== "" && !Number.isNaN(asNumber) ? asNumber : raw;
+              }
             });
             setResponses(restored);
           } catch {
@@ -256,6 +263,8 @@ export default function PatientSessionAssessmentPage() {
       isResumed={false}
       onAnswer={handleAnswer}
       onPrev={() => setCurrentQuestionIndex((q) => Math.max(0, q - 1))}
+      onQuestionPrev={() => setCurrentQuestionIndex((q) => Math.max(0, q - 1))}
+      onQuestionNext={() => setCurrentQuestionIndex((q) => Math.min(questions.length - 1, q + 1))}
       onSkipSection={finishAndLink}
       onSubmitScale={finishAndLink}
       onNavigateScale={() => {}}

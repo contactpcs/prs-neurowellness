@@ -206,6 +206,7 @@ export const prsAssessmentService = {
     return {
       instance_id: result.instance_id,
       is_resumed: result.is_resumed ?? false,
+      is_readonly_completed: result.is_readonly_completed ?? false,
       scales: Array.isArray(result.scales) ? result.scales : [],
     };
   },
@@ -222,6 +223,7 @@ export const prsAssessmentService = {
     return {
       instance_id: result.instance_id,
       is_resumed: result.is_resumed ?? true,
+      is_readonly_completed: result.is_readonly_completed ?? false,
       scales: Array.isArray(result.scales) ? result.scales : [],
     };
   },
@@ -244,6 +246,7 @@ export const prsAssessmentService = {
     return {
       instance_id: result.instance_id,
       is_resumed: result.is_resumed ?? false,
+      is_readonly_completed: result.is_readonly_completed ?? false,
       scales: Array.isArray(result.scales) ? result.scales : [],
     };
   },
