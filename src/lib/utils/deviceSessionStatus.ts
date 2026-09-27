@@ -20,6 +20,15 @@ export function deviceSessionLabel(status?: string | null): string {
   return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/** Patient-facing label: splits "Missed" into its two causes — no_show = a
+ * slot was booked but not attended; missed = the date passed with no slot
+ * ever booked. Staff screens keep deviceSessionLabel's single "Missed". */
+export function patientDeviceSessionLabel(status?: string | null): string {
+  if (status === "no_show") return "No-Show";
+  if (status === "missed") return "Not Booked";
+  return deviceSessionLabel(status);
+}
+
 export function deviceSessionTone(status?: string | null): string {
   if (!status || NOT_STARTED.has(status)) return "bg-neutral-100 text-neutral-500";
   if (status === "in_progress") return "bg-primary-50 text-primary-700";
