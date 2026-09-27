@@ -7,7 +7,7 @@ import type { LucideIcon } from "lucide-react";
 import { useDeviceSession } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services";
 import { Button, Card, CardContent, Modal, PageSkeleton } from "@/components/ui";
-import { deviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
+import { patientDeviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
 import type { Appointment } from "@/types/domain.types";
 import type { SosType } from "@/types/deviceSession.types";
 
@@ -368,7 +368,7 @@ export default function PatientDeviceSessionPage() {
                   Session {appointment.session_number ?? ""}
                 </h2>
                 <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${deviceSessionTone(appointment.status)}`}>
-                  {isLive ? "In progress" : deviceSessionLabel(appointment.status)}
+                  {isLive ? "In progress" : patientDeviceSessionLabel(appointment.status)}
                 </span>
               </div>
               <p className="text-sm text-neutral-500">{fmtWhen(appointment)}</p>

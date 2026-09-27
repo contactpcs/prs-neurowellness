@@ -100,6 +100,10 @@ export const ENDPOINTS = {
     MY_SCORES: "/patients/my-scores",           // NOT AVAILABLE — no list-instances-by-patient endpoint
     DECIDE_APPROVAL: (patientId: string) => `/patients/${patientId}/approval`, // real — PATCH {decision, rejection_reason}
     ALLOCATE_DOCTOR: (patientId: string) => `/patients/${patientId}/allocate-doctor`, // real — PATCH {doctor_id}
+    // real (SQL/v1/96) — GET list, POST {medicine_name, dose, timing, meal_instruction, duration, note, appointment_id?}
+    PRESCRIBED_MEDICINES: (patientId: string) => `/patients/${patientId}/prescribed-medicines`,
+    // real — PATCH {status: "active" | "stopped"} (stop/resume; never deletes)
+    PRESCRIBED_MEDICINE: (medicineId: string) => `/prescribed-medicines/${medicineId}`,
   },
 
   // ─── Staff ───

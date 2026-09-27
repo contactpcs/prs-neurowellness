@@ -22,6 +22,9 @@ export default function ReceptionistApprovalsPage() {
   const [rejectModal, setRejectModal]     = useState<{ id: string; name: string } | null>(null);
   const [rejectReason, setRejectReason]   = useState("");
   const [toast, setToast]                 = useState<{ msg: string; ok: boolean } | null>(null);
+  // Rejected registrations stay reviewable: a receptionist can re-approve one
+  // later without the patient registering again (backend migration 94).
+  const [tab, setTab]                     = useState<"pending" | "rejected">("pending");
 
   const showToast = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
@@ -30,12 +33,11 @@ export default function ReceptionistApprovalsPage() {
 
   const fetchPending = useCallback(() => {
     setIsLoading(true);
-    receptionService
-      .getPendingPatients()
+    (tab === "pending" ? receptionService.getPendingPatients() : receptionService.getRejectedPatients())
       .then(({ patients: p }) => setPatients(p))
-      .catch(() => {})
+      .catch(() => setPatients([]))
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [tab]);
 
   useEffect(() => { fetchPending(); }, [fetchPending]);
 
@@ -44,7 +46,7 @@ export default function ReceptionistApprovalsPage() {
     try {
       await receptionService.approvePatient(patientId);
       setPatients((prev) => prev.filter((p) => p.id !== patientId));
-      showToast("Patient approved successfully.", true);
+      showToast(tab === "rejected" ? "Patient re-approved successfully." : "Patient approved successfully.", true);
     } catch {
       showToast("Failed to approve. Please try again.", false);
     }
@@ -55,9 +57,7 @@ export default function ReceptionistApprovalsPage() {
     if (!rejectModal) return;
     setActionLoading(rejectModal.id);
     try {
-      // Real endpoint has no rejection-reason field — the reason text
-      // entered above isn't transmitted (see reception.service.ts).
-      await receptionService.rejectPatient(rejectModal.id);
+      await receptionService.rejectPatient(rejectModal.id, rejectReason);
       setPatients((prev) => prev.filter((p) => p.id !== rejectModal.id));
       setRejectModal(null);
       setRejectReason("");
@@ -92,6 +92,21 @@ export default function ReceptionistApprovalsPage() {
         )}
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-neutral-200">
+        {(["pending", "rejected"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => { setTab(t); setSearch(""); }}
+            className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
+              tab === t ? "border-primary-500 text-primary-700" : "border-transparent text-neutral-500 hover:text-neutral-700"
+            }`}
+          >
+            {t === "pending" ? "Pending" : "Rejected"}
+          </button>
+        ))}
+      </div>
+
       {/* Search */}
       <div className="relative max-w-[340px]">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-400 pointer-events-none" />
@@ -108,8 +123,14 @@ export default function ReceptionistApprovalsPage() {
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center px-6">
             <ClipboardList className="h-9 w-9 text-neutral-200 mb-3" />
-            <p className="text-sm font-medium text-neutral-600">No registrations to review</p>
-            <p className="text-xs text-neutral-400 mt-1">Self-registrations submitted by patients will appear here for approval.</p>
+            <p className="text-sm font-medium text-neutral-600">
+              {tab === "pending" ? "No registrations to review" : "No rejected registrations"}
+            </p>
+            <p className="text-xs text-neutral-400 mt-1">
+              {tab === "pending"
+                ? "Self-registrations submitted by patients will appear here for approval."
+                : "Rejected registrations appear here and can be re-approved."}
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -134,9 +155,20 @@ export default function ReceptionistApprovalsPage() {
                     </Link>
                     <span className="text-xs text-neutral-600 truncate">{p.email || p.phone || "—"}</span>
                     <span className="text-xs text-neutral-500">{fmtDate(p.registered_at ?? p.created_at)}</span>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-warning-50 text-warning-700 w-fit">
-                      Pending
-                    </span>
+                    {tab === "pending" ? (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-warning-50 text-warning-700 w-fit">
+                        Pending
+                      </span>
+                    ) : (
+                      <div className="min-w-0">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-danger-50 text-danger-700 w-fit">
+                          Rejected
+                        </span>
+                        <p className="text-[11px] text-neutral-500 mt-1 truncate" title={p.rejection_reason ?? undefined}>
+                          {p.rejection_reason || "No reason given"}
+                        </p>
+                      </div>
+                    )}
                     <div className="flex gap-1.5">
                       <button
                         onClick={() => handleApprove(p.id)}
@@ -144,8 +176,9 @@ export default function ReceptionistApprovalsPage() {
                         className="h-7 px-2.5 rounded-md bg-success-500 text-white text-xs font-medium hover:bg-success-700 disabled:opacity-50 transition-colors flex items-center gap-1"
                       >
                         {isActioning ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                        Approve
+                        {tab === "rejected" ? "Re-approve" : "Approve"}
                       </button>
+                      {tab === "pending" && (
                       <button
                         onClick={() => setRejectModal({ id: p.id, name })}
                         disabled={isActioning}
@@ -153,6 +186,7 @@ export default function ReceptionistApprovalsPage() {
                       >
                         Reject
                       </button>
+                      )}
                     </div>
                   </div>
                 );

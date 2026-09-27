@@ -35,6 +35,7 @@ function normalizeUser(rawUser: any): User {
     date_of_birth: rawUser?.date_of_birth ?? undefined,
     gender: rawUser?.gender ?? undefined,
     approval_status: rawUser?.approval_status ?? rawUser?.account_status ?? rawUser?.status ?? undefined,
+    rejection_reason: rawUser?.rejection_reason ?? null,
     is_active: rawUser?.is_active ?? true,
     consent_signed: rawUser?.consent_signed ?? true,
     consent_type_required: rawUser?.consent_type_required ?? null,
@@ -96,14 +97,19 @@ export const login = createAsyncThunk(
 
       const normalizedUser = normalizeUser(response.user);
 
-      // Enforce approval gate for patients
+      // A rejected self-registration can't sign in; say why. 'pending' is
+      // deliberately NOT blocked here: a self-registered patient stays
+      // 'pending' through the whole registration wizard, and must be able to
+      // log back in to resume it or to reach /patient-registration/pending
+      // (useAuth's resumeRouteForPatient). /auth/me only started returning
+      // approval_status with migration 94 — before that this gate never ran.
       if (normalizedUser.roles.includes("patient")) {
         const status = (normalizedUser.approval_status ?? "").toLowerCase();
-        if (status === "pending") {
-          return rejectWithValue("You will be able to log in once your account is approved.");
-        }
         if (status === "rejected") {
-          return rejectWithValue("Your account has been rejected. Please contact reception.");
+          const reason = normalizedUser.rejection_reason?.trim();
+          return rejectWithValue(
+            `Your account has been rejected.${reason ? ` Reason: ${reason}.` : ""} Please contact reception.`
+          );
         }
       }
 

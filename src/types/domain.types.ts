@@ -17,6 +17,8 @@ export interface PatientListItem {
   condition?: string;
   status?: string;
   approval_status?: string;
+  /** Set only on a rejected self-registration (approvals queue). */
+  rejection_reason?: string | null;
   assigned_at?: string;
   registered_at?: string;
   created_at?: string;

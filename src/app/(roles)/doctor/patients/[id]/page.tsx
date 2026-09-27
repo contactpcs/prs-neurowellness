@@ -18,7 +18,7 @@ import {
   useAuth,
 } from "@/lib/hooks";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { addMedicine, setMedicineStatus, selectPatientMedicines, type PrescribedMedicine } from "@/store/slices/prescribedMedicineSlice";
+import { changeMedicineStatus, fetchPatientMedicines, prescribeMedicine, selectPatientMedicines, type PrescribedMedicineForm } from "@/store/slices/prescribedMedicineSlice";
 import { invalidatePatientAnamnesis } from "@/store/slices/anamnesisSlice";
 import type { Permission, AssessmentInstance, AnamnesisRecord } from "@/types/domain.types";
 import { EEGReportList, EEGUploadForm, NEDFUploadForm } from "@/components/eeg";
@@ -218,7 +218,11 @@ export default function DoctorPatientDetailPage() {
   // in a Redux slice (not local state) so the patient summary page can read
   // the same list; still resets on reload since nothing is persisted.
   const medicines = useAppSelector(selectPatientMedicines(id));
-  const [medForm, setMedForm] = useState<Omit<PrescribedMedicine, "id" | "started" | "status"> | null>(null);
+  const [medForm, setMedForm] = useState<PrescribedMedicineForm | null>(null);
+  const [medSaving, setMedSaving] = useState(false);
+  const [medError, setMedError] = useState<string | null>(null);
+  // Prescriptions live in the backend (SQL/v1/96) — load them for this patient.
+  useEffect(() => { dispatch(fetchPatientMedicines(id)); }, [dispatch, id]);
   // Real backend only has POST /doctor-session-notes (keyed to a session/
   // cycle, not patient) — no list-by-patient endpoint exists, so this
   // chronological, categorized notes feed is client-side only and resets
@@ -705,18 +709,24 @@ export default function DoctorPatientDetailPage() {
                       <Button
                         size="sm"
                         variant="primary"
-                        disabled={!medForm.name.trim()}
-                        onClick={() => {
+                        disabled={!medForm.name.trim() || medSaving}
+                        onClick={async () => {
                           if (!medForm) return;
-                          dispatch(addMedicine({
+                          setMedSaving(true);
+                          setMedError(null);
+                          const result = await dispatch(prescribeMedicine({
                             patientId: id,
-                            medicine: { id: `m${Date.now()}`, ...medForm, started: formatDate(new Date().toISOString()), status: "Active" },
+                            medicine: medForm,
+                            appointmentId: currentSession?.appointment.appointment_id ?? null,
                           }));
-                          setMedForm(null);
+                          setMedSaving(false);
+                          if (prescribeMedicine.fulfilled.match(result)) setMedForm(null);
+                          else setMedError(result.error?.message || "Could not save the prescription. Please try again.");
                         }}
                       >
                         <Save className="h-4 w-4" /> Save Prescription
                       </Button>
+                      {medError && <p className="text-xs text-red-600 mt-2">{medError}</p>}
                     </div>
                   )}
 
@@ -751,7 +761,7 @@ export default function DoctorPatientDetailPage() {
                                 {m.status}
                               </span>
                               <button
-                                onClick={() => dispatch(setMedicineStatus({ patientId: id, medicineId: m.id, status: m.status === "Active" ? "Stopped" : "Active" }))}
+                                onClick={() => dispatch(changeMedicineStatus({ patientId: id, medicineId: m.id, status: m.status === "Active" ? "Stopped" : "Active" }))}
                                 className="text-xs font-medium text-neutral-400 hover:text-neutral-600 transition-colors"
                               >
                                 {m.status === "Active" ? "Stop" : "Resume"}

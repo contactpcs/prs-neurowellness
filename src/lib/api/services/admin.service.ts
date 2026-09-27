@@ -495,7 +495,12 @@ export const adminService = {
       const { data: instances } = await apiClient.get(ENDPOINTS.PRS.PATIENT_INSTANCES(id), {
         params: { assessment_stage: "general_registration" },
       });
-      const latest = Array.isArray(instances) ? instances[0] : undefined;
+      // Newest first from the API. Prefer the latest COMPLETED, non-voided
+      // instance: a leftover empty in-progress duplicate (a race, voided by
+      // backend migration 95) must never hide the real answers.
+      const list: Array<{ instance_id?: string; status?: string; is_voided?: boolean }> = Array.isArray(instances) ? instances : [];
+      const live = list.filter((i) => !i.is_voided);
+      const latest = live.find((i) => i.status === "completed") ?? live[0];
       if (latest?.instance_id) {
         const { data: results } = await apiClient.get(ENDPOINTS.PRS.INSTANCE_SCORE(latest.instance_id));
         generalPrs = { instance: latest, ...results };
