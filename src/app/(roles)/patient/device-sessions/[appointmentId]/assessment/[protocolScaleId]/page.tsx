@@ -96,6 +96,7 @@ export default function PatientSessionAssessmentPage() {
           taken_by: "patient",
           patient_id: appt.patient_public_id ?? appt.patient_id,
           appointment_id: appointmentId,
+          scale_id: resolved.scaleId,
         });
 
         // Disease-level start can return several scales — administer only the

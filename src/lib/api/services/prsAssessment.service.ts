@@ -191,6 +191,11 @@ export const prsAssessmentService = {
      *  per-visit bundle. Distinct from session_id — covers any appointment
      *  type, not just a device session. */
     appointment_id?: string;
+    /** Scopes the instance to this ONE scale instead of every scale mapped
+     *  to disease_id — for the device-session "administer this scale" flow,
+     *  whose scale has no patient_scale_assignments row of its own and
+     *  would otherwise pull in the disease's full scale set. */
+    scale_id?: string;
   }): Promise<PrsAssessmentStartResult> {
     if (!payload.patient_id) throw new Error("patient_id is required to start an assessment.");
     const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_START, {
@@ -201,6 +206,7 @@ export const prsAssessmentService = {
       ...(payload.session_id ? { session_id: payload.session_id } : {}),
       ...(payload.cycle_id ? { cycle_id: payload.cycle_id } : {}),
       ...(payload.appointment_id ? { appointment_id: payload.appointment_id } : {}),
+      ...(payload.scale_id ? { scale_id: payload.scale_id } : {}),
     });
     const result = unwrap<PrsAssessmentStartResult>(data);
     return {

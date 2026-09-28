@@ -126,6 +126,18 @@ export default function DeviceSessionChecklistPage() {
           setDuration(String(detail.prescribed_duration_min ?? ""));
           setRampUp(String(detail.ramp_seconds ?? ""));
           setRampDown(String(detail.ramp_seconds ?? ""));
+          // tVNS has its own prescribed_* columns (wavelength/pattern/
+          // strength/frequency/pulse-width/duration) — tDCS's current_ma/
+          // duration_min prefill above doesn't apply, so a tVNS protocol
+          // left this whole form blank with nothing for the CA/doctor to
+          // reference, unlike tDCS which always had its prescribed values
+          // to fall back on.
+          if (detail.prescribed_tvns_wavelength) setTvnsWavelength(detail.prescribed_tvns_wavelength);
+          if (detail.prescribed_tvns_pattern) setTvnsPattern(detail.prescribed_tvns_pattern);
+          if (detail.prescribed_tvns_strength_pct != null) setTvnsStrengthPct(String(detail.prescribed_tvns_strength_pct));
+          if (detail.prescribed_tvns_frequency_hz != null) setTvnsFrequencyHz(String(detail.prescribed_tvns_frequency_hz));
+          if (detail.prescribed_tvns_pulse_width_us != null) setTvnsPulseWidthUs(String(detail.prescribed_tvns_pulse_width_us));
+          if (detail.prescribed_tvns_duration_min != null) setTvnsDurationMin(String(detail.prescribed_tvns_duration_min));
         }
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load appointment"));
@@ -225,8 +237,13 @@ export default function DeviceSessionChecklistPage() {
   // "Paid" on the underlying appointment (a real payment record via the
   // Razorpay webhook, per scheduling's AppointmentStatusUpdate) satisfies
   // this step on its own — session.payment_verified only exists to record
-  // a CA's explicit override when the appointment ISN'T paid yet.
-  const paymentOk = appointment.status === "paid"
+  // a CA's explicit override when the appointment ISN'T paid yet. Every
+  // status past "paid" in the appointment state machine (checked_in,
+  // in_progress, completed) can only be reached BY paying first — checking
+  // a patient in is gated on status==='paid' (see appointments/[id]'s
+  // canCheckIn) — so this step must recognize those too, or a session that
+  // already progressed past payment gets incorrectly asked to override it.
+  const paymentOk = ["paid", "checked_in", "in_progress", "completed"].includes(appointment.status)
     || session?.payment_verified
     || (proceedWithoutPayment && paymentOverrideReason.trim().length > 0);
 
@@ -411,8 +428,19 @@ export default function DeviceSessionChecklistPage() {
                     doctor: protocol.doctor_name,
                     modality: protocol.modality,
                     device: protocol.device_name,
-                    current_ma: protocol.prescribed_current_ma,
-                    duration_min: protocol.prescribed_duration_min,
+                    ...(isTvns
+                      ? {
+                          tvns_wavelength: protocol.prescribed_tvns_wavelength,
+                          tvns_pattern: protocol.prescribed_tvns_pattern,
+                          tvns_strength_pct: protocol.prescribed_tvns_strength_pct,
+                          tvns_frequency_hz: protocol.prescribed_tvns_frequency_hz,
+                          tvns_pulse_width_us: protocol.prescribed_tvns_pulse_width_us,
+                          tvns_duration_min: protocol.prescribed_tvns_duration_min,
+                        }
+                      : {
+                          current_ma: protocol.prescribed_current_ma,
+                          duration_min: protocol.prescribed_duration_min,
+                        }),
                     ramp_seconds: protocol.ramp_seconds,
                     sessions_per_week: protocol.sessions_per_week,
                     session: appointment.session_number

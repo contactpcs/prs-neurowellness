@@ -657,17 +657,6 @@ function PrsAssessmentCard({ pending, instances, doctor }: {
             </div>
             <span className="text-[10px] font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full">Completed</span>
           </div>
-          {last.percentage != null && (
-            <div>
-              <div className="flex justify-between text-[10px] mb-1">
-                <span className="text-gray-500">Overall progress</span>
-                <span className="font-semibold text-gray-900">{Math.round(last.percentage)}% complete</span>
-              </div>
-              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.round(last.percentage)}%` }} />
-              </div>
-            </div>
-          )}
           {last.scale_summaries && last.scale_summaries.length > 0 && (
             <div className="space-y-1 pt-0.5">
               {last.scale_summaries.map((s, i) => (
