@@ -93,6 +93,9 @@ export const authService = {
       country: formData.country,
       pincode: formData.pincode,
       primary_clinic_id: formData.clinic_id,
+      guardian_name: formData.guardian_name,
+      guardian_relationship: formData.guardian_relationship,
+      guardian_contact: formData.guardian_contact,
     });
     const access_token: string = data.access_token;
     const meRes = await apiClient.get(ENDPOINTS.AUTH.ME, { headers: { Authorization: `Bearer ${access_token}` } });
@@ -139,6 +142,7 @@ export const authService = {
     first_name: string; last_name: string; dob?: string; gender?: string; address?: string;
     city?: string; state?: string; country?: string; pincode?: string; primary_clinic_id: string;
     method: "email" | "mobile"; contact: string; password: string; confirm_password: string;
+    guardian_name?: string; guardian_relationship?: string; guardian_contact?: string;
   }): Promise<void> {
     await apiClient.post(ENDPOINTS.AUTH.SIGNUP_START, data);
   },
@@ -154,6 +158,7 @@ export const authService = {
     first_name: string; last_name: string; dob?: string; gender?: string; address?: string;
     city?: string; state?: string; country?: string; pincode?: string; primary_clinic_id: string;
     method: "email" | "mobile"; contact: string; password: string; code: string;
+    guardian_name?: string; guardian_relationship?: string; guardian_contact?: string;
   }): Promise<AuthResponse> {
     const { data: res } = await apiClient.post(ENDPOINTS.AUTH.SIGNUP_CONFIRM, data);
     const access_token: string = res.access_token;

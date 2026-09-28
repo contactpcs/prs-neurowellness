@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   X, Check, Smartphone, Mail, ShieldCheck, Lock, Loader2, MapPin,
 } from "lucide-react";
@@ -8,6 +8,7 @@ import { receptionService } from "@/lib/api/services/reception.service";
 import { consentService } from "@/lib/api/services/consent.service";
 import { useClinics, usePincodeLookup, useGeolocationAddress } from "@/lib/hooks";
 import { Input } from "@/components/ui";
+import { GUARDIAN_RELATION_OPTIONS, ageFromDob, isMinor } from "@/lib/utils/guardian";
 import type { PatientListItem } from "@/types/domain.types";
 
 // Password before the code: entering the code on the last step registers the
@@ -117,14 +118,7 @@ export default function RegisterPatientModal({
     { value: "female", label: "Female" },
     { value: "other", label: "Other" },
   ]);
-  const [relationOptions, setRelationOptions] = useState([
-    { value: "parent", label: "Parent" },
-    { value: "spouse", label: "Spouse" },
-    { value: "sibling", label: "Sibling" },
-    { value: "child", label: "Child" },
-    { value: "legal_guardian", label: "Legal Guardian" },
-    { value: "other", label: "Other" },
-  ]);
+  const [relationOptions, setRelationOptions] = useState(GUARDIAN_RELATION_OPTIONS);
 
   useEffect(() => {
     receptionService.getEnums()
@@ -165,7 +159,26 @@ export default function RegisterPatientModal({
     }));
   }, [geoAddress]);
 
-  const contact = form.channel === "phone" ? `${form.countryCode}${form.mobile.replace(/\D/g, "")}` : form.email.trim();
+  // Under 18: guardian section opens automatically and can't be switched off.
+  // The mobile entered above belongs to the guardian, so it prefills the
+  // guardian contact until the receptionist types something else there.
+  const minor = isMinor(form.dob);
+  const guardianRequired = minor || form.guardianApplicable;
+  const autoGuardianContact = useRef("");
+  useEffect(() => {
+    if (!minor) return;
+    const prev = autoGuardianContact.current;
+    const next = form.channel === "phone" && form.mobile.trim() ? `${form.countryCode} ${form.mobile.trim()}` : "";
+    autoGuardianContact.current = next;
+    // guardianApplicable is NOT set here — the tick is derived from age
+    // (guardianRequired), so changing DOB back to 18+ un-requires it.
+    setForm((f) => ({
+      ...f,
+      guardianContact: !f.guardianContact || f.guardianContact === prev ? next : f.guardianContact,
+    }));
+  }, [minor, form.channel, form.countryCode, form.mobile]);
+
+  const contact = form.channel === "phone" ?`${form.countryCode}${form.mobile.replace(/\D/g, "")}` : form.email.trim();
   const clinicName = clinics.find((c) => c.clinic_id === clinicId)?.clinic_name
     || clinics.find((c) => c.clinic_id === clinicId)?.city
     || null;
@@ -180,7 +193,7 @@ export default function RegisterPatientModal({
     form.firstName.trim() && form.lastName.trim() && form.gender && form.dob &&
     (form.channel === "phone" ? form.mobile.trim().length >= 6 : /\S+@\S+\.\S+/.test(form.email)) &&
     form.city.trim() && form.state.trim() && form.country.trim() &&
-    (!form.guardianApplicable || (form.guardianName.trim() && form.guardianRelation && form.guardianContact.trim()));
+    (!guardianRequired || (form.guardianName.trim() && form.guardianRelation && form.guardianContact.trim()));
 
   // ─── Step 5 (Review) -> send code; Step 6 (Verify) registers ───
   const handleSendCode = async () => {
@@ -266,7 +279,7 @@ export default function RegisterPatientModal({
         state: form.state.trim(),
         country: form.country.trim(),
         pincode: form.pincode.trim() || undefined,
-        guardian: form.guardianApplicable
+        guardian: guardianRequired
           ? { name: form.guardianName.trim(), relation: form.guardianRelation, contact_number: form.guardianContact.trim() }
           : undefined,
         password: form.password,
@@ -447,15 +460,20 @@ export default function RegisterPatientModal({
               <label className="flex items-center gap-2 pt-2 border-t border-neutral-100 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={form.guardianApplicable}
+                  checked={guardianRequired}
+                  disabled={minor}
                   onChange={(e) => set("guardianApplicable", e.target.checked)}
-                  className="w-4 h-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500"
+                  className="w-4 h-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:opacity-60"
                 />
                 <span className="text-sm font-medium text-neutral-800">Guardian applicable</span>
-                <span className="text-xs text-neutral-400">— for minors or patients under assisted care</span>
+                <span className="text-xs text-neutral-400">
+                  {minor
+                    ? `— required: patient is ${ageFromDob(form.dob)} (under 18)`
+                    : "— for minors or patients under assisted care"}
+                </span>
               </label>
 
-              {form.guardianApplicable && (
+              {guardianRequired && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-neutral-700 mb-1.5">Guardian name <span className="text-red-500">*</span></label>
@@ -597,6 +615,13 @@ export default function RegisterPatientModal({
                   ["Address", form.street || "—"],
                   ["City / State", `${form.city}, ${form.state}`],
                   ["Pincode", form.pincode || "—"],
+                  ...(guardianRequired
+                    ? [
+                        ["Guardian", form.guardianName],
+                        ["Guardian relation", relationOptions.find((r) => r.value === form.guardianRelation)?.label || form.guardianRelation],
+                        ["Guardian contact", form.guardianContact],
+                      ]
+                    : []),
                   ["Country", form.country],
                   ["Clinic", clinicName || "—"],
                   ["Consent", form.consentAccepted ? "Signed" : "—"],
