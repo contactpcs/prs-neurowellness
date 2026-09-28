@@ -47,7 +47,7 @@ function isOpenable(a: Appointment, now: number): boolean {
 
 type ScaleSummary = { total: number; completed: number; actionable: boolean } | null;
 
-type FilterKey = "all" | "upcoming" | "in_progress" | "completed" | "paid" | "no_show" | "not_booked";
+type FilterKey = "all" | "upcoming" | "in_progress" | "completed" | "paid" | "no_show" | "not_booked" | "cancelled";
 
 function startOfToday(): number {
   const d = new Date();
@@ -67,6 +67,9 @@ const FILTERS: { key: FilterKey; label: string; test: (a: Appointment) => boolea
   { key: "paid", label: "Paid", test: (a) => a.status === "paid" },
   { key: "no_show", label: "No-Show", test: (a) => a.status === "no_show" },
   { key: "not_booked", label: "Not Booked", test: (a) => a.status === "missed" },
+  // Excludes slots auto-cancelled by a protocol amendment — those were never
+  // a real cancellation (see isSupersededCancellation).
+  { key: "cancelled", label: "Cancelled", test: (a) => a.status === "cancelled" && !isSupersededCancellation(a) },
 ];
 
 /** Statuses kept from an inactive (superseded/completed/cancelled) protocol:
@@ -92,7 +95,7 @@ export default function PatientDeviceSessionsPage() {
   // are an internal detail — this only decides which sessions to show.
   const [statusByProtocol, setStatusByProtocol] = useState<Record<string, string | null>>({});
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<FilterKey>("all");
+  const [filter, setFilter] = useState<FilterKey>("upcoming");
 
   useEffect(() => {
     appointmentsService
