@@ -17,6 +17,7 @@ export const ENDPOINTS = {
     SIGNUP_RESEND: "/auth/patients/signup/resend",
     SIGNUP_VERIFY: "/auth/patients/signup/verify",
     SIGNUP_COMPLETE: "/auth/patients/signup/complete",
+    SIGNUP_CONFIRM: "/auth/patients/signup/confirm", // current flow: OTP + full form -> account + session, one call
     VERIFY_CHANNEL_START: "/auth/patients/verify-channel/start",
     VERIFY_CHANNEL_CONFIRM: "/auth/patients/verify-channel/confirm",
     ME: "/auth/me",             // real — GET only
@@ -129,6 +130,7 @@ export const ENDPOINTS = {
   RECEPTION: {
     SEND_CODE: "/reception/registrations/send-code",
     VERIFY_CODE: "/reception/registrations/verify-code",
+    CONFIRM_REGISTRATION: "/reception/registrations/confirm", // current flow: OTP + full form -> registered, one call
     PASSWORD_POLICY: "/reception/registrations/password-policy",
     REGISTER_PATIENT: "/reception/patients",
     PATIENTS: "/reception/patients",

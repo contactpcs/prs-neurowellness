@@ -132,12 +132,13 @@ export const authService = {
 
   isRealSignupEnabled: getAuthMode,
 
-  /** Step 1 — starts Cognito's SignUp for the chosen channel; auto-sends
-   * the OTP. Nothing written to our DB yet. */
+  /** Step 1 — details + the patient's chosen password. Starts Cognito's
+   * SignUp with that password and auto-sends the OTP. Nothing written to our
+   * DB yet. */
   async patientSignupStart(data: {
     first_name: string; last_name: string; dob?: string; gender?: string; address?: string;
     city?: string; state?: string; country?: string; pincode?: string; primary_clinic_id: string;
-    method: "email" | "mobile"; contact: string;
+    method: "email" | "mobile"; contact: string; password: string; confirm_password: string;
   }): Promise<void> {
     await apiClient.post(ENDPOINTS.AUTH.SIGNUP_START, data);
   },
@@ -146,19 +147,15 @@ export const authService = {
     await apiClient.post(ENDPOINTS.AUTH.SIGNUP_RESEND, { contact });
   },
 
-  /** Step 2 — verifies the OTP. */
-  async patientSignupVerify(contact: string, code: string): Promise<void> {
-    await apiClient.post(ENDPOINTS.AUTH.SIGNUP_VERIFY, { contact, code });
-  },
-
-  /** Step 3 — sets the real password, creates the profiles/patients row,
-   * auto-logs in. Same fields as Start (stateless wizard) plus password. */
+  /** Step 2 — the OTP plus the same form as Start (stateless wizard).
+   * Verifies the code, creates the account and logs in, in ONE call, so a
+   * patient can't abandon signup between "verified" and "account exists". */
   async patientSignupComplete(data: {
     first_name: string; last_name: string; dob?: string; gender?: string; address?: string;
     city?: string; state?: string; country?: string; pincode?: string; primary_clinic_id: string;
-    method: "email" | "mobile"; contact: string; password: string; confirm_password: string;
+    method: "email" | "mobile"; contact: string; password: string; code: string;
   }): Promise<AuthResponse> {
-    const { data: res } = await apiClient.post(ENDPOINTS.AUTH.SIGNUP_COMPLETE, data);
+    const { data: res } = await apiClient.post(ENDPOINTS.AUTH.SIGNUP_CONFIRM, data);
     const access_token: string = res.access_token;
     const meRes = await apiClient.get(ENDPOINTS.AUTH.ME, { headers: { Authorization: `Bearer ${access_token}` } });
     return { access_token, refresh_token: "", expires_in: 0, user: meToUser(meRes.data as MeResponse) };

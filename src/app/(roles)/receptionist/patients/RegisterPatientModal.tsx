@@ -10,7 +10,10 @@ import { useClinics, usePincodeLookup, useGeolocationAddress } from "@/lib/hooks
 import { Input } from "@/components/ui";
 import type { PatientListItem } from "@/types/domain.types";
 
-const STEP_LABELS = ["Method", "Details", "Verify", "Password", "Consent", "Review"] as const;
+// Password before the code: entering the code on the last step registers the
+// patient in the same request, so a registration can't be abandoned between
+// "contact verified" and "patient exists".
+const STEP_LABELS = ["Method", "Details", "Password", "Consent", "Review", "Verify"] as const;
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
 const COUNTRY_CODES = [
@@ -134,14 +137,10 @@ export default function RegisterPatientModal({
 
   // Verification round-trip state — real backend sends an actual Cognito
   // OTP, there is no way to skip this step.
-  const [verificationId, setVerificationId] = useState("");
-  const [registrationToken, setRegistrationToken] = useState("");
   const [otpDigits, setOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
-  const [verified, setVerified] = useState(false);
   const [clinicId, setClinicId] = useState("");
 
   const [sendingCode, setSendingCode] = useState(false);
-  const [verifyingCode, setVerifyingCode] = useState(false);
   const [resending, setResending] = useState(false);
   const [registering, setRegistering] = useState(false);
 
@@ -183,25 +182,25 @@ export default function RegisterPatientModal({
     form.city.trim() && form.state.trim() && form.country.trim() &&
     (!form.guardianApplicable || (form.guardianName.trim() && form.guardianRelation && form.guardianContact.trim()));
 
+  // ─── Step 5 (Review) -> send code; Step 6 (Verify) registers ───
   const handleSendCode = async () => {
-    if (!detailsValid) return;
+    if (!detailsValid || !passwordValid || !form.consentAccepted) return;
     setErr(null);
     setSendingCode(true);
     try {
       const resolvedClinicId = await receptionService.resolveOwnClinicId();
-      const { verification_id } = await receptionService.sendVerificationCode({
+      await receptionService.sendVerificationCode({
         channel: form.channel!,
         contact,
         first_name: form.firstName.trim(),
         last_name: form.lastName.trim(),
         dob: form.dob,
         gender: form.gender,
+        password: form.password,
       });
       setClinicId(resolvedClinicId);
-      setVerificationId(verification_id);
-      setVerified(false);
       setOtpDigits(["", "", "", "", "", ""]);
-      setStep(3);
+      setStep(6);
     } catch (e: any) {
       setErr(e?.response?.data?.error?.message || e?.message || "Failed to send verification code. Please try again.");
     } finally {
@@ -224,35 +223,20 @@ export default function RegisterPatientModal({
     }
   };
 
-  const handleVerifyCode = async () => {
-    if (otpCode.length !== 6) return;
-    setErr(null);
-    setVerifyingCode(true);
-    try {
-      const { registration_token } = await receptionService.verifyCode(verificationId, otpCode);
-      setRegistrationToken(registration_token);
-      setVerified(true);
-    } catch (e: any) {
-      setErr(e?.response?.data?.error?.message || "Invalid or expired code. Please try again.");
-    } finally {
-      setVerifyingCode(false);
-    }
-  };
-
   const handleResendCode = async () => {
     setErr(null);
     setResending(true);
     try {
-      const { verification_id } = await receptionService.sendVerificationCode({
+      // Re-sending restarts the (unverified) signup with a fresh code.
+      await receptionService.sendVerificationCode({
         channel: form.channel!,
         contact,
         first_name: form.firstName.trim(),
         last_name: form.lastName.trim(),
         dob: form.dob,
         gender: form.gender,
+        password: form.password,
       });
-      setVerificationId(verification_id);
-      setVerified(false);
       setOtpDigits(["", "", "", "", "", ""]);
     } catch (e: any) {
       setErr(e?.response?.data?.error?.message || "Failed to resend code. Please try again.");
@@ -261,15 +245,16 @@ export default function RegisterPatientModal({
     }
   };
 
-  // ─── Step 4: Password ───
+  // ─── Step 3: Password ───
   const passwordValid = form.password.length >= 8 && form.password === form.confirmPassword;
 
-  // ─── Step 6: Register ───
+  // ─── Step 6: Verify code + register (one call) ───
   const handleRegister = async () => {
+    if (otpCode.length !== 6) return;
     setErr(null);
     setRegistering(true);
     try {
-      const patient = await receptionService.registerPatient(registrationToken, clinicId, {
+      const patient = await receptionService.registerPatient(contact, clinicId, {
         first_name: form.firstName.trim(),
         last_name: form.lastName.trim(),
         gender: form.gender,
@@ -285,8 +270,8 @@ export default function RegisterPatientModal({
           ? { name: form.guardianName.trim(), relation: form.guardianRelation, contact_number: form.guardianContact.trim() }
           : undefined,
         password: form.password,
-      });
-      // POST /reception/patients auto-creates a pending patient_onboarding
+      }, otpCode);
+      // Registering auto-creates a pending patient_onboarding
       // consent record — sign it now that consent was captured at the
       // front desk (no witness required).
       if (patient.profile_id) {
@@ -299,7 +284,7 @@ export default function RegisterPatientModal({
       }
       onSuccess(patient);
     } catch (e: any) {
-      setErr(e?.response?.data?.error?.message || e?.response?.data?.detail || "Failed to register patient. Please try again.");
+      setErr(e?.response?.data?.error?.message || e?.response?.data?.detail || "Invalid or expired code, or registration failed. Please try again.");
     } finally {
       setRegistering(false);
     }
@@ -504,69 +489,52 @@ export default function RegisterPatientModal({
             </div>
           )}
 
-          {/* ─── Step 3: Verify ─── */}
-          {step === 3 && (
+          {/* ─── Step 6: Verify (registers) ─── */}
+          {step === 6 && (
             <div className="flex flex-col items-center text-center py-6 space-y-4">
-              {!verified ? (
-                <>
-                  <div className="w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center">
-                    {form.channel === "phone" ? <Smartphone className="h-6 w-6 text-blue-600" /> : <Mail className="h-6 w-6 text-blue-600" />}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-neutral-900">Enter the code sent to {contact}</p>
-                    <p className="text-xs text-neutral-400 mt-0.5">The 6-digit code expires in 10 minutes.</p>
-                  </div>
-                  <div className="flex gap-2">
-                    {otpDigits.map((d, i) => (
-                      <input
-                        key={i}
-                        id={`otp-box-${i}`}
-                        value={d}
-                        onChange={(e) => handleOtpChange(i, e.target.value)}
-                        inputMode="numeric"
-                        maxLength={1}
-                        className="w-11 h-12 text-center text-lg font-semibold border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300"
-                      />
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <button
-                      onClick={handleVerifyCode}
-                      disabled={verifyingCode || otpCode.length !== 6}
-                      className="flex items-center gap-2 px-5 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-50 transition-colors"
-                      style={{ background: "linear-gradient(135deg, #0284c7 0%, #1e40af 100%)" }}
-                    >
-                      {verifyingCode && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                      Verify Code
-                    </button>
-                    <button
-                      onClick={handleResendCode}
-                      disabled={resending}
-                      className="text-sm text-blue-600 hover:underline disabled:opacity-50"
-                    >
-                      {resending ? "Resending…" : "Resend code"}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="w-14 h-14 rounded-full bg-green-50 flex items-center justify-center">
-                    <ShieldCheck className="h-6 w-6 text-green-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-neutral-900">Contact verified</p>
-                    <p className="text-xs text-neutral-500 mt-0.5">{contact} is confirmed and will be used as the patient&apos;s login ID.</p>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full bg-green-50 text-green-700 text-xs font-medium">
-                    {form.channel === "phone" ? "Mobile" : "Email"} verified
-                  </span>
-                </>
-              )}
+              <div className="w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center">
+                {form.channel === "phone" ? <Smartphone className="h-6 w-6 text-blue-600" /> : <Mail className="h-6 w-6 text-blue-600" />}
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-neutral-900">Enter the code sent to {contact}</p>
+                <p className="text-xs text-neutral-400 mt-0.5">The 6-digit code expires in 10 minutes.</p>
+              </div>
+              <div className="flex gap-2">
+                {otpDigits.map((d, i) => (
+                  <input
+                    key={i}
+                    id={`otp-box-${i}`}
+                    value={d}
+                    onChange={(e) => handleOtpChange(i, e.target.value)}
+                    inputMode="numeric"
+                    maxLength={1}
+                    className="w-11 h-12 text-center text-lg font-semibold border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                ))}
+              </div>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleRegister}
+                  disabled={registering || otpCode.length !== 6}
+                  className="flex items-center gap-2 px-5 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-50 transition-colors"
+                  style={{ background: "linear-gradient(135deg, #0284c7 0%, #1e40af 100%)" }}
+                >
+                  {registering && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {registering ? "Registering…" : "Verify & Register"}
+                </button>
+                <button
+                  onClick={handleResendCode}
+                  disabled={resending}
+                  className="text-sm text-blue-600 hover:underline disabled:opacity-50"
+                >
+                  {resending ? "Resending…" : "Resend code"}
+                </button>
+              </div>
             </div>
           )}
 
-          {/* ─── Step 4: Password ─── */}
-          {step === 4 && (
+          {/* ─── Step 3: Password ─── */}
+          {step === 3 && (
             <div className="flex flex-col items-center text-center py-6 space-y-4 w-full">
               <div className="w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center">
                 <Lock className="h-6 w-6 text-blue-600" />
@@ -593,8 +561,8 @@ export default function RegisterPatientModal({
             </div>
           )}
 
-          {/* ─── Step 5: Consent ─── */}
-          {step === 5 && (
+          {/* ─── Step 4: Consent ─── */}
+          {step === 4 && (
             <div className="space-y-4">
               <p className="text-xs text-neutral-500 leading-relaxed bg-neutral-50 border border-neutral-200 rounded-lg px-4 py-3">
                 By creating an account on Anava NeuroWellness, the patient acknowledges and agrees to the data privacy terms
@@ -615,8 +583,8 @@ export default function RegisterPatientModal({
             </div>
           )}
 
-          {/* ─── Step 6: Review ─── */}
-          {step === 6 && (
+          {/* ─── Step 5: Review ─── */}
+          {step === 5 && (
             <div className="space-y-4">
               <div className="border border-neutral-200 rounded-xl p-5 grid grid-cols-2 sm:grid-cols-3 gap-4">
                 {[
@@ -624,7 +592,7 @@ export default function RegisterPatientModal({
                   ["DOB", form.dob],
                   ["Gender", genderOptions.find((g) => g.value === form.gender)?.label || form.gender],
                   [form.channel === "phone" ? "Mobile" : "Email", form.channel === "phone" ? `${form.countryCode} ${form.mobile}` : form.email],
-                  ["Verification", verified ? "Verified" : "—"],
+                  ["Verification", "Code sent next"],
                   ["Password", form.password ? "Set" : "—"],
                   ["Address", form.street || "—"],
                   ["City / State", `${form.city}, ${form.state}`],
@@ -642,7 +610,7 @@ export default function RegisterPatientModal({
 
               <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-100 rounded-lg px-4 py-2.5">
                 <Check className="h-4 w-4 flex-shrink-0" strokeWidth={3} />
-                Ready to submit
+                Ready — send the verification code to finish
               </div>
 
               <p className="text-xs text-neutral-400">
@@ -683,19 +651,18 @@ export default function RegisterPatientModal({
 
           {step === 2 && (
             <button
-              onClick={handleSendCode}
-              disabled={!detailsValid || sendingCode}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:bg-neutral-200 disabled:text-neutral-400 transition-colors"
+              onClick={() => setStep(3)}
+              disabled={!detailsValid}
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:bg-neutral-200 disabled:text-neutral-400 transition-colors"
             >
-              {sendingCode && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Verify
+              Continue
             </button>
           )}
 
           {step === 3 && (
             <button
               onClick={() => setStep(4)}
-              disabled={!verified}
+              disabled={!passwordValid}
               className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:bg-neutral-200 disabled:text-neutral-400 transition-colors"
             >
               Continue
@@ -705,7 +672,7 @@ export default function RegisterPatientModal({
           {step === 4 && (
             <button
               onClick={() => setStep(5)}
-              disabled={!passwordValid}
+              disabled={!form.consentAccepted}
               className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:bg-neutral-200 disabled:text-neutral-400 transition-colors"
             >
               Continue
@@ -714,22 +681,12 @@ export default function RegisterPatientModal({
 
           {step === 5 && (
             <button
-              onClick={() => setStep(6)}
-              disabled={!form.consentAccepted}
-              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:bg-neutral-200 disabled:text-neutral-400 transition-colors"
-            >
-              Continue
-            </button>
-          )}
-
-          {step === 6 && (
-            <button
-              onClick={handleRegister}
-              disabled={registering}
+              onClick={handleSendCode}
+              disabled={sendingCode}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
-              {registering && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {registering ? "Registering…" : "Register Patient"}
+              {sendingCode && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {sendingCode ? "Sending…" : "Send Verification Code"}
             </button>
           )}
         </div>
