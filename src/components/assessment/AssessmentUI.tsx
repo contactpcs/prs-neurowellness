@@ -249,7 +249,7 @@ export function AssessmentUI({
 
         {/* Resumed Banner */}
         {isResumed && (
-          <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border-b border-amber-200 px-4 py-2.5">
+          <div className="flex items-center gap-1.5 text-xs text-primary-700 bg-primary-50 border-b border-primary-200 px-4 py-2.5">
             <RotateCcw className="h-3.5 w-3.5 shrink-0" />
             Resuming from where you left off
           </div>
@@ -268,15 +268,15 @@ export function AssessmentUI({
             </button>
 
             {/* Scale number badge */}
-            <div className="flex-shrink-0 w-10 h-10 md:w-12 md:h-12 bg-orange-500 rounded-xl flex flex-col items-center justify-center">
+            <div className="flex-shrink-0 w-10 h-10 md:w-12 md:h-12 bg-primary-500 rounded-xl flex flex-col items-center justify-center">
               <span className="text-base md:text-xl font-bold leading-none">{scaleNumber}</span>
-              <span className="text-[9px] md:text-[10px] text-orange-100">of {totalScales}</span>
+              <span className="text-[9px] md:text-[10px] text-primary-100">of {totalScales}</span>
             </div>
 
             {/* Title block */}
             <div className="flex-1 min-w-0">
               {currentScale.disease_type && (
-                <span className="inline-flex items-center px-2 py-0.5 bg-amber-700 text-amber-100 text-xs font-bold rounded uppercase tracking-wide mb-0.5">
+                <span className="inline-flex items-center px-2 py-0.5 bg-primary-700 text-primary-100 text-xs font-bold rounded uppercase tracking-wide mb-0.5">
                   {currentScale.disease_type}
                 </span>
               )}
@@ -324,7 +324,7 @@ export function AssessmentUI({
                 <span>~{currentScale.estimated_duration}</span>
               </div>
             )}
-            <div className="ml-auto flex items-center gap-1 px-2 py-0.5 bg-orange-50 border border-orange-200 rounded-full text-orange-700 text-xs font-medium">
+            <div className="ml-auto flex items-center gap-1 px-2 py-0.5 bg-primary-50 border border-primary-200 rounded-full text-primary-700 text-xs font-medium">
               <CheckCircle className="w-3 h-3 shrink-0" />
               {questionsAnsweredVisible}/{totalQuestions}
             </div>
@@ -412,7 +412,7 @@ export function AssessmentUI({
             </Button>
 
             <div className="flex items-center gap-2 flex-wrap justify-center">
-              <div className="flex items-center gap-1 text-xs text-amber-600 font-medium">
+              <div className="flex items-center gap-1 text-xs text-primary-600 font-medium">
                 <Info className="w-3.5 h-3.5 shrink-0" />
                 <span>{questionsRemaining} left</span>
               </div>
@@ -471,7 +471,7 @@ export function AssessmentUI({
                 variant="outline"
                 size="sm"
                 onClick={onSkipSection}
-                className="text-orange-600 border-orange-300 hover:bg-orange-50"
+                className="text-primary-600 border-primary-300 hover:bg-primary-50"
               >
                 <SkipForward className="h-4 w-4" />
                 <span className="hidden sm:inline">Skip Scale</span>
