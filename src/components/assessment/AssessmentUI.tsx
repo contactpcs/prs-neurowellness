@@ -58,16 +58,11 @@ interface AssessmentUIProps {
   onSkipSection: () => void;
   onSubmitScale: () => void;
   onNavigateScale: (index: number) => void;
-  /** Step within the current scale's questions, one batch (of BATCH_SIZE) at
-   *  a time. Falls back to onPrev/onSubmitScale at the first/last batch so
-   *  scales with no per-question stepper wired up (none today) still work
-   *  end to end. */
+  /** Unused by this component now (all questions for a scale render at
+   *  once) — kept optional so existing callers that still pass these don't
+   *  need to be touched. */
   onQuestionPrev?: () => void;
   onQuestionNext?: () => void;
-  /** Jumps directly to a specific question index within the current scale —
-   *  used to step by a whole batch instead of one question at a time.
-   *  Falls back to repeated onQuestionNext/onQuestionPrev calls when a
-   *  caller hasn't wired this up yet. */
   onQuestionJump?: (index: number) => void;
 
   sttEnabled?: boolean;
@@ -106,9 +101,6 @@ export function AssessmentUI({
   onSkipSection,
   onSubmitScale,
   onNavigateScale,
-  onQuestionPrev,
-  onQuestionNext,
-  onQuestionJump,
   sttEnabled,
   onToggleStt,
   sttPhase,
@@ -147,53 +139,13 @@ export function AssessmentUI({
     0,
   );
   const questionsRemaining = totalQuestions - questionsAnsweredVisible;
-  const visibleIndices = questions.map((_, idx) => idx).filter((idx) => !hiddenIndices.has(idx));
-  // currentQuestionIndex can land on a now-hidden question (an earlier answer
-  // just hid it via skip logic) — snap to the nearest visible one so the
-  // single-question view never renders a blank/hidden slot.
-  const activeQuestionIndex = hiddenIndices.has(currentQuestionIndex)
-    ? (visibleIndices.find((idx) => idx > currentQuestionIndex) ?? visibleIndices[visibleIndices.length - 1] ?? currentQuestionIndex)
-    : currentQuestionIndex;
-  const visiblePosition = visibleIndices.indexOf(activeQuestionIndex);
-  // Batch of up to BATCH_SIZE visible questions at a time instead of one —
-  // less scrolling/tapping for a long clinical scale while still keeping
-  // the "not the whole list at once" goal from the single-question design.
-  const BATCH_SIZE = 5;
-  const batchStart = visiblePosition === -1 ? 0 : Math.floor(visiblePosition / BATCH_SIZE) * BATCH_SIZE;
-  const batchEnd = Math.min(batchStart + BATCH_SIZE, visibleIndices.length);
-  const batchIndices = visibleIndices.slice(batchStart, batchEnd);
-  const isFirstBatch = batchStart <= 0;
-  const isLastBatch = batchEnd >= visibleIndices.length;
-  // required defaults true server-side (see doctor/patient assessment pages'
-  // toPrsScaleQuestion: is_required ?? true) — only an explicit false opts a
-  // question out of blocking Next, so a batch can never be advanced past
-  // without answering every mandatory item in it.
-  const batchFullyAnswered = batchIndices.every((idx) => {
-    const q = questions[idx];
-    return q.required === false || currentScaleResponses[String(idx)] !== undefined;
-  });
   // Whether every required, currently-visible question in this scale has an
-  // answer — gates the final Next/Submit button the same way Next between
-  // batches is gated, so jumping straight to the last batch (e.g. via the
-  // sidebar) can't be used to skip past unanswered mandatory ones.
-  const allRequiredAnswered = visibleIndices.every((idx) => {
-    const q = questions[idx];
+  // answer — gates the Submit/Next Scale button so the scale can't be
+  // submitted with a mandatory item left blank.
+  const allRequiredAnswered = questions.every((q, idx) => {
+    if (hiddenIndices.has(idx)) return true;
     return q.required === false || currentScaleResponses[String(idx)] !== undefined;
   });
-  const jumpToBatch = (targetBatchStart: number) => {
-    const targetIdx = visibleIndices[Math.max(0, Math.min(targetBatchStart, visibleIndices.length - 1))];
-    if (targetIdx === undefined) return;
-    if (onQuestionJump) {
-      onQuestionJump(targetIdx);
-      return;
-    }
-    // Fallback for a caller that hasn't wired onQuestionJump yet — step one
-    // question at a time via whatever's available.
-    const delta = targetBatchStart - batchStart;
-    const stepper = delta > 0 ? onQuestionNext : onQuestionPrev;
-    if (!stepper) return;
-    for (let i = 0; i < Math.abs(delta); i++) stepper();
-  };
   const scaleNumber = currentScaleIndex + 1;
   const overallProgress =
     totalScales > 0 ? Math.round((completedScaleIds.size / totalScales) * 100) : 0;
@@ -375,13 +327,10 @@ export function AssessmentUI({
               </div>
             )}
 
-            {/* A batch of up to BATCH_SIZE questions at a time — the whole
-                remaining scale in one screen is a lot to take in for someone
-                answering a mental-health screener, so questions render in
-                small groups and Next/Previous below step between batches. */}
+            {/* All questions */}
             <div className="space-y-3">
-              {batchIndices.map((idx) => {
-                const question = questions[idx];
+              {questions.map((question, idx) => {
+                if (hiddenIndices.has(idx)) return null;
                 const qValue = scaleResponses[String(idx)];
                 const isAnswered = qValue !== undefined;
                 const isCurrentStt = idx === currentQuestionIndex && sttEnabled;
@@ -404,7 +353,7 @@ export function AssessmentUI({
                             isAnswered ? "bg-green-500 text-white" : "bg-primary-500 text-white",
                           )}
                         >
-                          {visibleIndices.indexOf(idx) + 1}
+                          {idx + 1}
                         </div>
                         {isCurrentStt && sttPhase === "listening" && (
                           <span className="absolute -inset-1 rounded-full bg-red-400 opacity-30 animate-ping" />
@@ -425,7 +374,7 @@ export function AssessmentUI({
                         scaleId={currentScale.scale_id}
                         value={qValue}
                         onAnswer={onAnswer}
-                        questionNumber={visibleIndices.indexOf(idx) + 1}
+                        questionNumber={idx + 1}
                         totalQuestions={totalQuestions}
                         showHeader={false}
                       />
@@ -443,11 +392,11 @@ export function AssessmentUI({
             <Button
               variant="outline"
               size="sm"
-              onClick={isFirstBatch ? onPrev : () => jumpToBatch(batchStart - BATCH_SIZE)}
-              disabled={isFirstBatch && isFirstScale}
+              onClick={onPrev}
+              disabled={isFirstScale}
             >
               <ChevronLeft className="h-4 w-4" />
-              <span className="hidden sm:inline">{isFirstBatch ? "Previous Scale" : "Previous"}</span>
+              <span className="hidden sm:inline">Previous Scale</span>
               <span className="sm:hidden">Prev</span>
             </Button>
 
@@ -518,18 +467,11 @@ export function AssessmentUI({
               </Button>
             </div>
 
-            {isLastBatch ? (
-              <Button onClick={onSubmitScale} isLoading={isSubmitting} disabled={!allRequiredAnswered} size="sm">
-                <span className="hidden sm:inline">{isLastScale ? "Submit Assessment" : "Next Scale"}</span>
-                <span className="sm:hidden">{isLastScale ? "Submit" : "Next"}</span>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            ) : (
-              <Button onClick={() => jumpToBatch(batchStart + BATCH_SIZE)} disabled={!batchFullyAnswered} size="sm">
-                <span>Next</span>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            )}
+            <Button onClick={onSubmitScale} isLoading={isSubmitting} disabled={!allRequiredAnswered} size="sm">
+              <span className="hidden sm:inline">{isLastScale ? "Submit Assessment" : "Next Scale"}</span>
+              <span className="sm:hidden">{isLastScale ? "Submit" : "Next"}</span>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       </div>
