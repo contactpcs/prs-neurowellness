@@ -127,9 +127,13 @@ export function AssessmentUI({
   // of questions, but the internal overflow-y-auto container (not the
   // window) keeps whatever scroll position the "Next Section" click left it
   // at — usually near the bottom, so the new section opens off-screen and
-  // has to be scrolled up manually every time.
+  // has to be scrolled up manually every time. Also resets the window/page
+  // scroll — on some layouts <main> grows with content instead of the
+  // internal container being the one that actually scrolls, so only
+  // resetting the container left the page itself still scrolled down.
   useEffect(() => {
     scrollContainerRef.current?.scrollTo({ top: 0 });
+    window.scrollTo({ top: 0 });
   }, [currentScaleIndex]);
   const currentScaleResponses = currentScale ? (responses[currentScale.scale_id] ?? {}) : {};
   const hiddenIndices = computeHiddenQuestionIndices(questions, currentScaleResponses);
