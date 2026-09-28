@@ -27,6 +27,11 @@ export interface PatientListItem {
   clinic_city?: string;
   doctor_id?: string | null;
   doctor_name?: string | null;
+  /** Reception list only — "YYYY-MM-DD" of the latest completed visit. */
+  last_visit?: string | null;
+  /** Reception list only — soonest upcoming appointment, "YYYY-MM-DD" or
+   *  "YYYY-MM-DDTHH:MM" (no time on a doctor-planned session yet). */
+  next_appointment?: string | null;
   last_prs?: {
     disease_id?: string;
     disease_name?: string;

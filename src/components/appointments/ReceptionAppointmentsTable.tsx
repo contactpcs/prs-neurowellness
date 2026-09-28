@@ -42,6 +42,9 @@ const QUICK_FILTERS: QuickFilter[] = [
   "completed", "cancelled", "no_show", "missed", "rescheduled", "device_sessions",
 ];
 
+// The front desk's working list: paid appointments waiting to be checked in.
+const DEFAULT_QUICK_FILTER: QuickFilter = "paid";
+
 function quickFilterLabel(f: QuickFilter): string {
   if (f === "all") return "All";
   if (f === "initial") return "Initial";
@@ -72,7 +75,7 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
   const [loading,      setLoading]      = useState(true);
   const [q,            setQ]            = useState("");
   const [doctorFilter, setDoctorFilter] = useState("");
-  const [quickFilter,  setQuickFilter]  = useState<QuickFilter>("all");
+  const [quickFilter,  setQuickFilter]  = useState<QuickFilter>(DEFAULT_QUICK_FILTER);
   // From/To calendar range, same as the doctor's page — defaults to today
   // onward; clear or widen it to look back.
   const [dateFrom,     setDateFrom]     = useState(() => ymd(new Date()));
@@ -144,9 +147,9 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
     return Object.fromEntries(QUICK_FILTERS.map((f) => [f, scoped.filter((a) => matchesQuickFilter(a, f)).length])) as Record<QuickFilter, number>;
   }, [appointments, doctorFilter, q]);
 
-  const hasFilters = !!(q || doctorFilter || quickFilter !== "all" || dateFrom !== ymd(new Date()) || dateTo);
+  const hasFilters = !!(q || doctorFilter || quickFilter !== DEFAULT_QUICK_FILTER || dateFrom !== ymd(new Date()) || dateTo);
   const clearFilters = () => {
-    setQ(""); setDoctorFilter(""); setQuickFilter("all");
+    setQ(""); setDoctorFilter(""); setQuickFilter(DEFAULT_QUICK_FILTER);
     setDateFrom(ymd(new Date())); setDateTo("");
   };
 

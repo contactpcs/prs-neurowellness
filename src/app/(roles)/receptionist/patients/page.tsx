@@ -10,6 +10,17 @@ import RegisterPatientModal from "./RegisterPatientModal";
 
 const PAGE_SIZE = 10;
 
+/** "YYYY-MM-DD[THH:MM]" -> "28 Sep 2026" (date part only). */
+function fmtVisitDate(v?: string | null): string {
+  if (!v) return "—";
+  return new Date(v.slice(0, 10) + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function fmt12(t: string): string {
+  const [h, m] = t.split(":").map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+}
+
 const COLUMNS = ["Patient", "Age", "Gender", "Contact", "Assigned Doctor", "Last Visit", "Next Appt", "Actions"];
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -140,11 +151,24 @@ export default function ReceptionistPatientsPage() {
                   )}
                 </div>
 
-                {/* Last Visit — depends on the appointments module, not built yet; always a placeholder */}
-                <div className="text-sm text-neutral-400">—</div>
+                {/* Last Visit — latest completed appointment */}
+                <div className={`text-sm ${p.last_visit ? "text-neutral-700" : "text-neutral-300"}`}>
+                  {fmtVisitDate(p.last_visit)}
+                </div>
 
-                {/* Next Appt — same as above */}
-                <div className="text-sm text-neutral-400">—</div>
+                {/* Next Appt — soonest upcoming active appointment */}
+                <div className="text-sm">
+                  {p.next_appointment ? (
+                    <>
+                      <p className="text-neutral-800 font-medium">{fmtVisitDate(p.next_appointment)}</p>
+                      {p.next_appointment.includes("T") && (
+                        <p className="text-[11px] text-neutral-400">{fmt12(p.next_appointment.split("T")[1])}</p>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-neutral-300">—</span>
+                  )}
+                </div>
 
                 {/* Actions */}
                 <div className="flex justify-end">

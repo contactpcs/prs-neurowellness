@@ -53,6 +53,8 @@ function normalizePatientListItem(raw: Record<string, unknown>): PatientListItem
     status: (raw.registration_status as string) ?? undefined,
     doctor_id: null,
     doctor_name: (raw.assigned_doctor as string | null) ?? null,
+    last_visit: (raw.last_visit as string | null) ?? null,
+    next_appointment: (raw.next_appointment as string | null) ?? null,
   };
 }
 
