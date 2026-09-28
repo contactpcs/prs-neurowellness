@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
@@ -13,6 +13,7 @@ import { register as registerThunk } from "@/store/slices/authSlice";
 import { authService } from "@/lib/api/services/auth.service";
 import { COUNTRY_OPTIONS } from "@/lib/countries";
 import { ROUTES } from "@/lib/constants";
+import { GUARDIAN_RELATION_OPTIONS, ageFromDob, isMinor } from "@/lib/utils/guardian";
 
 // ─── Shared field helpers (used by both the local-dev form and the OTP wizard) ─
 
@@ -41,6 +42,124 @@ const inputErrCls =
 function FieldError({ msg }: { msg?: string }) {
   if (!msg) return null;
   return <p className="mt-1.5 text-xs text-danger-600">{msg}</p>;
+}
+
+// ─── Guardian — same as the receptionist form: a "Guardian applicable"
+// checkbox, auto-ticked and locked when date of birth is under 18, optional
+// otherwise; once ticked, name/relationship/contact are all required. ──────
+
+const guardianShape = {
+  guardian_applicable:   z.boolean().optional(),
+  guardian_name:         z.string().optional(),
+  guardian_relationship: z.string().optional(),
+  guardian_contact:      z.string().optional(),
+};
+
+type GuardianValues = {
+  date_of_birth: string;
+  guardian_applicable?: boolean;
+  guardian_name?: string;
+  guardian_relationship?: string;
+  guardian_contact?: string;
+};
+
+const GUARDIAN_MESSAGES = {
+  guardian_name:         "Guardian name is required",
+  guardian_relationship: "Guardian relationship is required",
+  guardian_contact:      "Guardian contact is required",
+} as const;
+
+const guardianRequired = (d: GuardianValues) => isMinor(d.date_of_birth) || !!d.guardian_applicable;
+
+function requireGuardianIfApplicable(d: GuardianValues, ctx: z.RefinementCtx) {
+  if (!guardianRequired(d)) return;
+  for (const f of Object.keys(GUARDIAN_MESSAGES) as (keyof typeof GUARDIAN_MESSAGES)[]) {
+    if (!d[f]?.trim()) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [f], message: GUARDIAN_MESSAGES[f] });
+  }
+}
+
+/** Guardian fields for the API — only sent when the box is ticked (always,
+ * for minors), so leftovers from an unticked box never reach the backend. */
+function guardianPayload(d: GuardianValues) {
+  if (!guardianRequired(d)) {
+    return { guardian_name: undefined, guardian_relationship: undefined, guardian_contact: undefined };
+  }
+  return {
+    guardian_name: d.guardian_name?.trim(),
+    guardian_relationship: d.guardian_relationship,
+    guardian_contact: d.guardian_contact?.trim(),
+  };
+}
+
+/** Prefills guardian contact with the patient's own contact (for a minor it
+ * is the guardian's) until the user types something different there. */
+function useGuardianContactPrefill(minor: boolean, patientContact: string, current: string | undefined, setContact: (v: string) => void) {
+  const lastAuto = useRef("");
+  useEffect(() => {
+    if (!minor) return;
+    const prev = lastAuto.current;
+    lastAuto.current = patientContact;
+    if (!current || current === prev) setContact(patientContact);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [minor, patientContact]);
+}
+
+function GuardianFields({
+  dob, applicable, onApplicableChange, field, errors,
+}: {
+  dob: string | undefined;
+  applicable: boolean | undefined;
+  onApplicableChange: (v: boolean) => void;
+  field: (name: "guardian_name" | "guardian_relationship" | "guardian_contact") => UseFormRegisterReturn;
+  errors: Partial<Record<"guardian_name" | "guardian_relationship" | "guardian_contact", { message?: string }>>;
+}) {
+  const minor = isMinor(dob);
+  const checked = minor || !!applicable;
+  return (
+    <div className="space-y-3">
+      <label className="flex items-center gap-2 pt-2 border-t border-neutral-100 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={minor}
+          onChange={(e) => onApplicableChange(e.target.checked)}
+          className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500 disabled:opacity-60"
+        />
+        <span className="text-sm font-medium text-neutral-800">Guardian applicable</span>
+        <span className="text-xs text-neutral-400">
+          {minor
+            ? `— required: patient is ${ageFromDob(dob)} (under 18)`
+            : "— for minors or patients under assisted care"}
+        </span>
+      </label>
+
+      {checked && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <FieldLabel htmlFor="guardian_name" text="Guardian name" required />
+            <input id="guardian_name" placeholder="Arun Nair" {...field("guardian_name")} className={errors.guardian_name ? inputErrCls : inputCls} />
+            <FieldError msg={errors.guardian_name?.message} />
+          </div>
+          <div>
+            <FieldLabel htmlFor="guardian_relationship" text="Relation type" required />
+            <div className="relative">
+              <select id="guardian_relationship" {...field("guardian_relationship")} className={`${errors.guardian_relationship ? inputErrCls : inputCls} appearance-none pr-9`}>
+                <option value="">Select…</option>
+                {GUARDIAN_RELATION_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
+            </div>
+            <FieldError msg={errors.guardian_relationship?.message} />
+          </div>
+          <div>
+            <FieldLabel htmlFor="guardian_contact" text="Contact number" required />
+            <input id="guardian_contact" type="tel" placeholder="98200 33445" {...field("guardian_contact")} className={errors.guardian_contact ? inputErrCls : inputCls} />
+            <FieldError msg={errors.guardian_contact?.message} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function getFilteredClinics(allClinics: any[], userCity?: string, userState?: string) {
@@ -94,7 +213,8 @@ const registerSchema = z.object({
   country:       z.string().optional(),
   pincode:       z.string().optional(),
   clinic_id:     z.string().min(1, "Please select your clinic"),
-});
+  ...guardianShape,
+}).superRefine(requireGuardianIfApplicable);
 type RegisterFormData = z.infer<typeof registerSchema>;
 
 function LocalRegisterForm() {
@@ -113,6 +233,8 @@ function LocalRegisterForm() {
   const userPincode = watch("pincode");
   const selectedClinic = clinics.find((c) => c.clinic_id === selectedClinicId);
   const filteredClinics = getFilteredClinics(clinics, userCity, userState);
+  const dob = watch("date_of_birth");
+  useGuardianContactPrefill(isMinor(dob), watch("phone") ?? "", watch("guardian_contact"), (v) => setValue("guardian_contact", v));
 
   const { location: pincodeLocation, loading: pincodeLoading } = usePincodeLookup(userPincode);
   useEffect(() => {
@@ -133,7 +255,7 @@ function LocalRegisterForm() {
 
   const onSubmit = async (data: RegisterFormData) => {
     clearError();
-    const result = await register(data);
+    const result = await register({ ...data, ...guardianPayload(data) });
     if (registerThunk.fulfilled.match(result)) {
       router.push(ROUTES.CONSENT);
     }
@@ -259,6 +381,14 @@ function LocalRegisterForm() {
           </div>
         </div>
 
+        <GuardianFields
+          dob={dob}
+          applicable={watch("guardian_applicable")}
+          onApplicableChange={(v) => setValue("guardian_applicable", v)}
+          field={field}
+          errors={errors}
+        />
+
         <div>
           <FieldLabel htmlFor="clinic_id" text="Clinic" required />
           {clinicsLoading ? (
@@ -308,7 +438,8 @@ const demographicsSchema = z.object({
   country:    z.string().min(1, "Country is required"),
   pincode:    z.string().optional(),
   clinic_id:  z.string().min(1, "Please select your clinic"),
-});
+  ...guardianShape,
+}).superRefine(requireGuardianIfApplicable);
 type DemographicsData = z.infer<typeof demographicsSchema>;
 
 function OtpSignupWizard() {
@@ -363,6 +494,13 @@ function OtpSignupWizard() {
   // email string as typed for email — this is what Cognito/our backend
   // actually needs, while `contact` state holds just what's in the input.
   const fullContact = method === "mobile" ? `${dialCode}${contact.replace(/\D/g, "")}` : contact.trim();
+  const dob = watch("date_of_birth");
+  useGuardianContactPrefill(
+    isMinor(dob),
+    method === "mobile" && contact.trim() ? fullContact : "",
+    watch("guardian_contact"),
+    (v) => setValue("guardian_contact", v),
+  );
 
   // ── Step 1: demographics + clinic + contact (no API call yet) ────────────
   const onStartSignup = async (data: DemographicsData) => {
@@ -392,6 +530,7 @@ function OtpSignupWizard() {
         country: demographics.country, pincode: demographics.pincode,
         primary_clinic_id: demographics.clinic_id, method, contact: fullContact,
         password, confirm_password: confirmPassword,
+        ...guardianPayload(demographics),
       });
       setOtp("");
       setStep("otp");
@@ -420,6 +559,7 @@ function OtpSignupWizard() {
         pincode: demographics.pincode,
         primary_clinic_id: demographics.clinic_id, method, contact: fullContact,
         password, code: code.trim(),
+        ...guardianPayload(demographics),
       });
       if ((result as any)?.meta?.requestStatus === "fulfilled") {
         router.push(ROUTES.CONSENT);
@@ -553,6 +693,14 @@ function OtpSignupWizard() {
             </div>
             <FieldError msg={errors.country?.message} />
           </div>
+
+          <GuardianFields
+            dob={dob}
+            applicable={watch("guardian_applicable")}
+            onApplicableChange={(v) => setValue("guardian_applicable", v)}
+            field={field}
+            errors={errors}
+          />
 
           <div>
             <FieldLabel htmlFor="clinic_id" text="Clinic" required />

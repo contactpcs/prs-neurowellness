@@ -118,6 +118,10 @@ export interface RegisterData {
   state: string;
   country?: string;
   pincode?: string;
+  // Required by the backend when date_of_birth is under 18.
+  guardian_name?: string;
+  guardian_relationship?: string;
+  guardian_contact?: string;
   consent_responses?: ConsentResponseItem[];
 }
 
