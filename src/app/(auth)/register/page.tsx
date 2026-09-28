@@ -7,13 +7,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
 import { Loader2, Building2, ChevronDown, Shield, MapPin } from "lucide-react";
-import { Button } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
 import { useAuth, useClinics, usePincodeLookup, useGeolocationAddress } from "@/lib/hooks";
 import { register as registerThunk } from "@/store/slices/authSlice";
 import { authService } from "@/lib/api/services/auth.service";
 import { COUNTRY_OPTIONS } from "@/lib/countries";
 import { ROUTES } from "@/lib/constants";
 import { GUARDIAN_RELATION_OPTIONS, ageFromDob, isMinor } from "@/lib/utils/guardian";
+import { MOBILE_ERROR, isValidMobile, toMobileDigits } from "@/lib/utils/phone";
 
 // ─── Shared field helpers (used by both the local-dev form and the OTP wizard) ─
 
@@ -38,6 +39,18 @@ const inputCls =
   "w-full rounded-lg border border-neutral-300 bg-white px-3.5 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 transition-all focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 hover:border-neutral-400";
 const inputErrCls =
   "w-full rounded-lg border border-danger-400 bg-white px-3.5 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-danger-500/20 focus:border-danger-500";
+
+/** Wraps a react-hook-form registration so the input only ever holds up to
+ * 10 digits (mobile numbers). */
+function digitsOnly(reg: UseFormRegisterReturn): UseFormRegisterReturn {
+  return {
+    ...reg,
+    onChange: (e) => {
+      e.target.value = toMobileDigits(e.target.value);
+      return reg.onChange(e);
+    },
+  };
+}
 
 function FieldError({ msg }: { msg?: string }) {
   if (!msg) return null;
@@ -75,6 +88,9 @@ function requireGuardianIfApplicable(d: GuardianValues, ctx: z.RefinementCtx) {
   if (!guardianRequired(d)) return;
   for (const f of Object.keys(GUARDIAN_MESSAGES) as (keyof typeof GUARDIAN_MESSAGES)[]) {
     if (!d[f]?.trim()) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [f], message: GUARDIAN_MESSAGES[f] });
+  }
+  if (d.guardian_contact?.trim() && !isValidMobile(d.guardian_contact)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["guardian_contact"], message: MOBILE_ERROR });
   }
 }
 
@@ -153,7 +169,11 @@ function GuardianFields({
           </div>
           <div>
             <FieldLabel htmlFor="guardian_contact" text="Contact number" required />
-            <input id="guardian_contact" type="tel" placeholder="98200 33445" {...field("guardian_contact")} className={errors.guardian_contact ? inputErrCls : inputCls} />
+            <input
+              id="guardian_contact" type="tel" inputMode="numeric" maxLength={10} placeholder="9820033445"
+              {...digitsOnly(field("guardian_contact"))}
+              className={errors.guardian_contact ? inputErrCls : inputCls}
+            />
             <FieldError msg={errors.guardian_contact?.message} />
           </div>
         </div>
@@ -204,7 +224,7 @@ const registerSchema = z.object({
   last_name:     z.string().min(1, "Last name is required"),
   email:         z.string().email("Please enter a valid email"),
   password:      z.string().min(8, "Password must be at least 8 characters"),
-  phone:         z.string().min(1, "Phone is required"),
+  phone:         z.string().regex(/^\d{10}$/, MOBILE_ERROR),
   date_of_birth: z.string().min(1, "Date of birth is required"),
   gender:        z.string().min(1, "Gender is required"),
   address:       z.string().optional(),
@@ -292,13 +312,17 @@ function LocalRegisterForm() {
 
         <div>
           <FieldLabel htmlFor="password" text="Password" required />
-          <input id="password" type="password" placeholder="At least 8 characters" autoComplete="new-password" {...field("password")} className={errors.password ? inputErrCls : inputCls} />
+          <Input id="password" type="password" placeholder="At least 8 characters" autoComplete="new-password" {...field("password")} className={errors.password ? inputErrCls : inputCls} />
           <FieldError msg={errors.password?.message} />
         </div>
 
         <div>
           <FieldLabel htmlFor="phone" text="Phone" required />
-          <input id="phone" type="tel" placeholder="+91 98765 43210" autoComplete="tel" {...field("phone")} className={errors.phone ? inputErrCls : inputCls} />
+          <input
+            id="phone" type="tel" inputMode="numeric" maxLength={10} placeholder="9876543210" autoComplete="tel-national"
+            {...digitsOnly(field("phone"))}
+            className={errors.phone ? inputErrCls : inputCls}
+          />
           <FieldError msg={errors.phone?.message} />
         </div>
 
@@ -497,7 +521,7 @@ function OtpSignupWizard() {
   const dob = watch("date_of_birth");
   useGuardianContactPrefill(
     isMinor(dob),
-    method === "mobile" && contact.trim() ? fullContact : "",
+    method === "mobile" ? contact : "",
     watch("guardian_contact"),
     (v) => setValue("guardian_contact", v),
   );
@@ -506,6 +530,10 @@ function OtpSignupWizard() {
   const onStartSignup = async (data: DemographicsData) => {
     if (!contact.trim()) {
       setError(method === "email" ? "Enter your email address" : "Enter your mobile number");
+      return;
+    }
+    if (method === "mobile" && !isValidMobile(contact)) {
+      setError(MOBILE_ERROR);
       return;
     }
     setError(null);
@@ -733,7 +761,7 @@ function OtpSignupWizard() {
                   <span className="flex items-center justify-center px-3 rounded-lg border border-neutral-300 bg-neutral-50 text-sm text-neutral-600 flex-shrink-0">
                     {dialCode}
                   </span>
-                  <input id="contact" type="tel" placeholder="XXXXXXXXXX" value={contact} onChange={(e) => setContact(e.target.value)} className={inputCls} />
+                  <input id="contact" type="tel" inputMode="numeric" maxLength={10} placeholder="XXXXXXXXXX" value={contact} onChange={(e) => setContact(toMobileDigits(e.target.value))} className={inputCls} />
                 </div>
               )}
               <Button type="submit" isLoading={busy} className="flex-shrink-0">Continue</Button>
@@ -774,11 +802,11 @@ function OtpSignupWizard() {
           </p>
           <div>
             <FieldLabel htmlFor="password" text="Password" required />
-            <input id="password" type="password" placeholder="At least 8 characters" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} />
+            <Input id="password" type="password" placeholder="At least 8 characters" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} />
           </div>
           <div>
             <FieldLabel htmlFor="confirm_password" text="Confirm password" required />
-            <input id="confirm_password" type="password" placeholder="Re-enter your password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputCls} />
+            <Input id="confirm_password" type="password" placeholder="Re-enter your password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputCls} />
           </div>
           <Button onClick={onSendCode} className="w-full" size="lg" isLoading={busy}>Send Verification Code</Button>
           <button type="button" onClick={() => { setError(null); setStep("demographics"); }} className="w-full text-center text-sm text-neutral-500 hover:underline">

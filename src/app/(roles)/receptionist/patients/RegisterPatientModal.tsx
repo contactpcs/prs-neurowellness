@@ -9,6 +9,7 @@ import { consentService } from "@/lib/api/services/consent.service";
 import { useClinics, usePincodeLookup, useGeolocationAddress } from "@/lib/hooks";
 import { Input } from "@/components/ui";
 import { GUARDIAN_RELATION_OPTIONS, ageFromDob, isMinor } from "@/lib/utils/guardian";
+import { MOBILE_ERROR, isValidMobile, toMobileDigits } from "@/lib/utils/phone";
 import type { PatientListItem } from "@/types/domain.types";
 
 // Password before the code: entering the code on the last step registers the
@@ -168,7 +169,7 @@ export default function RegisterPatientModal({
   useEffect(() => {
     if (!minor) return;
     const prev = autoGuardianContact.current;
-    const next = form.channel === "phone" && form.mobile.trim() ? `${form.countryCode} ${form.mobile.trim()}` : "";
+    const next = form.channel === "phone" ? form.mobile : "";
     autoGuardianContact.current = next;
     // guardianApplicable is NOT set here — the tick is derived from age
     // (guardianRequired), so changing DOB back to 18+ un-requires it.
@@ -176,7 +177,7 @@ export default function RegisterPatientModal({
       ...f,
       guardianContact: !f.guardianContact || f.guardianContact === prev ? next : f.guardianContact,
     }));
-  }, [minor, form.channel, form.countryCode, form.mobile]);
+  }, [minor, form.channel, form.mobile]);
 
   const contact = form.channel === "phone" ?`${form.countryCode}${form.mobile.replace(/\D/g, "")}` : form.email.trim();
   const clinicName = clinics.find((c) => c.clinic_id === clinicId)?.clinic_name
@@ -191,9 +192,9 @@ export default function RegisterPatientModal({
   // ─── Step 2: Details ───
   const detailsValid =
     form.firstName.trim() && form.lastName.trim() && form.gender && form.dob &&
-    (form.channel === "phone" ? form.mobile.trim().length >= 6 : /\S+@\S+\.\S+/.test(form.email)) &&
+    (form.channel === "phone" ? isValidMobile(form.mobile) : /\S+@\S+\.\S+/.test(form.email)) &&
     form.city.trim() && form.state.trim() && form.country.trim() &&
-    (!guardianRequired || (form.guardianName.trim() && form.guardianRelation && form.guardianContact.trim()));
+    (!guardianRequired || (form.guardianName.trim() && form.guardianRelation && isValidMobile(form.guardianContact)));
 
   // ─── Step 5 (Review) -> send code; Step 6 (Verify) registers ───
   const handleSendCode = async () => {
@@ -398,7 +399,8 @@ export default function RegisterPatientModal({
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-neutral-700 mb-1.5">Mobile Number <span className="text-red-500">*</span></label>
-                      <Input type="tel" placeholder="98200 11223" value={form.mobile} onChange={(e) => set("mobile", e.target.value)} />
+                      <Input type="tel" inputMode="numeric" maxLength={10} placeholder="9820011223" value={form.mobile} onChange={(e) => set("mobile", toMobileDigits(e.target.value))} />
+                      {form.mobile && !isValidMobile(form.mobile) && <p className="text-xs text-red-600 mt-1">{MOBILE_ERROR}</p>}
                     </div>
                   </>
                 ) : (
@@ -492,7 +494,8 @@ export default function RegisterPatientModal({
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-neutral-700 mb-1.5">Contact number <span className="text-red-500">*</span></label>
-                    <Input placeholder="98200 33445" value={form.guardianContact} onChange={(e) => set("guardianContact", e.target.value)} />
+                    <Input type="tel" inputMode="numeric" maxLength={10} placeholder="9820033445" value={form.guardianContact} onChange={(e) => set("guardianContact", toMobileDigits(e.target.value))} />
+                    {form.guardianContact && !isValidMobile(form.guardianContact) && <p className="text-xs text-red-600 mt-1">{MOBILE_ERROR}</p>}
                   </div>
                 </div>
               )}
