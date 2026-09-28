@@ -9,9 +9,13 @@ export interface AppointmentListParams {
   clinic_id?: string; // real server-side filter (list_appointments), unlike date_from/date_to below
   doctor_id?: string;
   patient_id?: string;
+  appointment_type?: AppointmentType;
   page?: number;
   page_size?: number;
+  skip?: number;
   limit?: number;
+  /** Server sort on appointment_date/start_time. Backend default is "asc". */
+  order?: "asc" | "desc";
 }
 
 export interface AppointmentCreatePayload {
@@ -123,6 +127,27 @@ export const appointmentsService = {
     const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, { params });
     const appointments = extractList(data);
     return { appointments, total: appointments.length };
+  },
+
+  /** Pages GET /appointments (skip/limit) until a short page comes back, so
+   * the caller gets every matching row — a single `limit` call silently
+   * truncates once a clinic outgrows it (the backend returns the oldest rows
+   * first by default). `maxRows` is a safety cap against runaway loops. */
+  async listAll(
+    params?: Omit<AppointmentListParams, "skip" | "limit" | "page" | "page_size">,
+    maxRows = 10000,
+  ): Promise<{ appointments: Appointment[]; total: number }> {
+    const pageSize = 500;
+    let all: Appointment[] = [];
+    for (let skip = 0; skip < maxRows; skip += pageSize) {
+      const { appointments } = await this.list({ ...params, skip, limit: pageSize });
+      all = all.concat(appointments);
+      if (appointments.length < pageSize) break;
+    }
+    // De-dupe by id in case rows shift between pages during paging.
+    const seen = new Set<string>();
+    all = all.filter((a) => (seen.has(a.appointment_id) ? false : (seen.add(a.appointment_id), true)));
+    return { appointments: all, total: all.length };
   },
 
   async getUpcoming(): Promise<Appointment[]> {

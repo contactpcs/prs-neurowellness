@@ -9,7 +9,7 @@ import { paymentsService, saveBlobAsFile } from "@/lib/api/services/payments.ser
 import { STATUS_LABEL, STATUS_TONE, isSupersededCancellation } from "@/lib/appointmentStatus";
 import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
 import { AppointmentDetailModal } from "@/components/appointments/AppointmentDetailModal";
-import type { Appointment, AppointmentStatus, DoctorListItem } from "@/types/domain.types";
+import type { Appointment, AppointmentStatus, AppointmentType, DoctorListItem } from "@/types/domain.types";
 
 function StatusChip({ status }: { status: AppointmentStatus }) {
   return (
@@ -30,9 +30,67 @@ function fmtDate(d: string): string {
   return new Date(d + "T00:00:00").toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-const STATUS_FILTERS: (AppointmentStatus | "")[] = [
-  "", "selected", "paid", "checked_in", "in_progress", "completed", "cancelled", "no_show",
+const STATUS_FILTERS: AppointmentStatus[] = [
+  "selected", "paid", "checked_in", "in_progress", "completed", "cancelled", "no_show", "missed", "rescheduled",
 ];
+
+const TYPE_FILTERS: { value: AppointmentType; label: string }[] = [
+  { value: "initial",           label: "Initial" },
+  { value: "follow_up",         label: "Follow Up" },
+  { value: "device_session",    label: "Device Session" },
+  { value: "protocol_followup", label: "Protocol Follow-up" },
+];
+
+type DatePreset = "all" | "today" | "tomorrow" | "upcoming" | "past7" | "past30" | "this_month" | "custom";
+
+const DATE_PRESETS: { value: DatePreset; label: string }[] = [
+  { value: "all",        label: "All Dates" },
+  { value: "today",      label: "Today" },
+  { value: "tomorrow",   label: "Tomorrow" },
+  { value: "upcoming",   label: "Upcoming" },
+  { value: "past7",      label: "Last 7 Days" },
+  { value: "past30",     label: "Last 30 Days" },
+  { value: "this_month", label: "This Month" },
+  { value: "custom",     label: "Custom Range" },
+];
+
+type SortKey = "date_desc" | "date_asc" | "patient_asc" | "patient_desc" | "doctor_asc" | "status" | "booked_desc" | "updated_desc";
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: "date_desc",    label: "Date: Newest first" },
+  { value: "date_asc",     label: "Date: Oldest first" },
+  { value: "booked_desc",  label: "Recently booked" },
+  { value: "updated_desc", label: "Recently updated" },
+  { value: "patient_asc",  label: "Patient: A → Z" },
+  { value: "patient_desc", label: "Patient: Z → A" },
+  { value: "doctor_asc",   label: "Doctor: A → Z" },
+  { value: "status",       label: "Status" },
+];
+
+/** Local-time YYYY-MM-DD — toISOString() would shift to UTC and be off by a day in IST mornings. */
+function ymd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function presetRange(p: DatePreset, from: string, to: string): { date_from?: string; date_to?: string } {
+  const today = new Date();
+  const addDays = (n: number) => { const d = new Date(today); d.setDate(d.getDate() + n); return ymd(d); };
+  switch (p) {
+    case "today":      return { date_from: ymd(today), date_to: ymd(today) };
+    case "tomorrow":   return { date_from: addDays(1), date_to: addDays(1) };
+    case "upcoming":   return { date_from: ymd(today) };
+    case "past7":      return { date_from: addDays(-7), date_to: ymd(today) };
+    case "past30":     return { date_from: addDays(-30), date_to: ymd(today) };
+    case "this_month": return {
+      date_from: ymd(new Date(today.getFullYear(), today.getMonth(), 1)),
+      date_to:   ymd(new Date(today.getFullYear(), today.getMonth() + 1, 0)),
+    };
+    case "custom":     return { date_from: from || undefined, date_to: to || undefined };
+    default:           return {};
+  }
+}
+
+const selectCls = "h-[38px] px-3 rounded-lg border border-neutral-300 bg-white text-sm text-neutral-700";
 
 export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -41,16 +99,26 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
   const [q,            setQ]            = useState("");
   const [doctorFilter, setDoctorFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<AppointmentStatus | "">("");
+  const [typeFilter,   setTypeFilter]   = useState<AppointmentType | "">("");
+  const [datePreset,   setDatePreset]   = useState<DatePreset>("all");
+  const [customFrom,   setCustomFrom]   = useState("");
+  const [customTo,     setCustomTo]     = useState("");
+  const [sortKey,      setSortKey]      = useState<SortKey>("date_desc");
   const [confirming,   setConfirming]   = useState<Appointment | null>(null);
   const [payingFor,    setPayingFor]    = useState<Appointment | null>(null);
   const [busy,         setBusy]         = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
 
+  const range = useMemo(() => presetRange(datePreset, customFrom, customTo), [datePreset, customFrom, customTo]);
+
+  // Date range is applied server-side; every page is fetched (listAll) so the
+  // list is never truncated to the oldest N rows — that truncation is what
+  // hid appointments after 23 Sep 2026 once the clinic passed 200 bookings.
   const load = useCallback(async () => {
     try {
       const [apptRes, docRes] = await Promise.all([
-        appointmentsService.list({ clinic_id: clinicId, limit: 200 }),
+        appointmentsService.listAll({ clinic_id: clinicId, order: "desc", ...range }),
         receptionService.getDoctors(),
       ]);
       setAppointments(apptRes.appointments);
@@ -60,9 +128,9 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
     } finally {
       setLoading(false);
     }
-  }, [clinicId]);
+  }, [clinicId, range]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setLoading(true); load(); }, [load]);
 
   useEffect(() => {
     const onAppointmentEvent = () => load();
@@ -72,16 +140,33 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
 
   const filtered = useMemo(() => {
     const query = q.toLowerCase();
-    return [...appointments]
+    const byDateTime = (a: Appointment, b: Appointment) =>
+      (a.appointment_date ?? "").localeCompare(b.appointment_date ?? "") || (a.start_time ?? "").localeCompare(b.start_time ?? "");
+    const cmp: Record<SortKey, (a: Appointment, b: Appointment) => number> = {
+      // Newest date first, but earliest slot first within a day — how the front desk reads a day.
+      date_desc:    (a, b) => (b.appointment_date ?? "").localeCompare(a.appointment_date ?? "") || (a.start_time ?? "").localeCompare(b.start_time ?? ""),
+      date_asc:     byDateTime,
+      booked_desc:  (a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""),
+      updated_desc: (a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""),
+      patient_asc:  (a, b) => (a.patient_name ?? "").localeCompare(b.patient_name ?? "") || byDateTime(a, b),
+      patient_desc: (a, b) => (b.patient_name ?? "").localeCompare(a.patient_name ?? "") || byDateTime(a, b),
+      doctor_asc:   (a, b) => (a.doctor_name ?? "").localeCompare(b.doctor_name ?? "") || byDateTime(a, b),
+      status:       (a, b) => STATUS_LABEL[a.status].localeCompare(STATUS_LABEL[b.status]) || byDateTime(a, b),
+    };
+    return appointments
       .filter((a) => !isSupersededCancellation(a))
       .filter((a) => !doctorFilter || a.doctor_name === doctorFilter)
       .filter((a) => !statusFilter || a.status === statusFilter)
-      .filter((a) => !query || `${a.appointment_id} ${a.patient_name ?? ""} ${a.doctor_name ?? ""}`.toLowerCase().includes(query))
-      .sort((a, b) => {
-        const dc = (b.appointment_date ?? "").localeCompare(a.appointment_date ?? "");
-        return dc !== 0 ? dc : (a.start_time ?? "").localeCompare(b.start_time ?? "");
-      });
-  }, [appointments, doctorFilter, statusFilter, q]);
+      .filter((a) => !typeFilter || a.appointment_type === typeFilter)
+      .filter((a) => !query || `${a.appointment_id} ${a.patient_name ?? ""} ${a.patient_mrn ?? ""} ${a.patient_public_id ?? ""} ${a.doctor_name ?? ""}`.toLowerCase().includes(query))
+      .sort(cmp[sortKey]);
+  }, [appointments, doctorFilter, statusFilter, typeFilter, q, sortKey]);
+
+  const hasFilters = !!(q || doctorFilter || statusFilter || typeFilter || datePreset !== "all" || sortKey !== "date_desc");
+  const clearFilters = () => {
+    setQ(""); setDoctorFilter(""); setStatusFilter(""); setTypeFilter("");
+    setDatePreset("all"); setCustomFrom(""); setCustomTo(""); setSortKey("date_desc");
+  };
 
   const doCheckIn = async (a: Appointment) => {
     setBusy(true);
@@ -115,6 +200,11 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
       {/* breadcrumb + title */}
       <div>
         <h1 className="text-2xl font-bold text-neutral-900">Appointments</h1>
+        {!loading && (
+          <p className="text-xs text-neutral-500 mt-1">
+            Showing {filtered.length} of {appointments.length} appointment{appointments.length === 1 ? "" : "s"}
+          </p>
+        )}
       </div>
 
       {/* filters + actions */}
@@ -127,26 +217,38 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
             className="w-full h-[38px] px-3 rounded-lg border border-neutral-300 bg-white text-sm outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
           />
         </div>
-        <select
-          value={doctorFilter}
-          onChange={(e) => setDoctorFilter(e.target.value)}
-          className="h-[38px] px-3 rounded-lg border border-neutral-300 bg-white text-sm text-neutral-700"
-        >
+        <select value={datePreset} onChange={(e) => setDatePreset(e.target.value as DatePreset)} className={selectCls}>
+          {DATE_PRESETS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+        </select>
+        {datePreset === "custom" && (
+          <>
+            <input type="date" value={customFrom} max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)} className={selectCls} aria-label="From date" />
+            <span className="text-xs text-neutral-400">to</span>
+            <input type="date" value={customTo} min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)} className={selectCls} aria-label="To date" />
+          </>
+        )}
+        <select value={doctorFilter} onChange={(e) => setDoctorFilter(e.target.value)} className={selectCls}>
           <option value="">All Doctors</option>
           {doctors.map((d) => (
             <option key={d.id} value={`${d.first_name} ${d.last_name}`}>Dr. {d.first_name} {d.last_name}</option>
           ))}
         </select>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as AppointmentStatus | "")}
-          className="h-[38px] px-3 rounded-lg border border-neutral-300 bg-white text-sm text-neutral-700"
-        >
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as AppointmentStatus | "")} className={selectCls}>
           <option value="">All Statuses</option>
-          {STATUS_FILTERS.filter(Boolean).map((s) => (
-            <option key={s} value={s}>{STATUS_LABEL[s as AppointmentStatus]}</option>
-          ))}
+          {STATUS_FILTERS.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
         </select>
+        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as AppointmentType | "")} className={selectCls}>
+          <option value="">All Visit Types</option>
+          {TYPE_FILTERS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+        <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)} className={selectCls} aria-label="Sort by">
+          {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>Sort: {o.label}</option>)}
+        </select>
+        {hasFilters && (
+          <button onClick={clearFilters} className="h-[38px] px-3 text-sm font-medium text-primary-600 hover:underline">
+            Clear
+          </button>
+        )}
 
         <div className="flex gap-2 ml-auto">
           <button
