@@ -68,7 +68,7 @@ const SEC_ICON: Record<number, string> = {
 // ── question field ────────────────────────────────────────────────────────────
 
 const inputCls =
-  "w-full px-3 py-2.5 border border-neutral-200 rounded-lg text-sm outline-none transition-colors focus:border-orange-500 focus:ring-1 focus:ring-orange-100 disabled:bg-neutral-50 disabled:text-neutral-500 disabled:cursor-default";
+  "w-full px-3 py-2.5 border border-neutral-200 rounded-lg text-sm outline-none transition-colors focus:border-primary-500 focus:ring-1 focus:ring-primary-100 disabled:bg-neutral-50 disabled:text-neutral-500 disabled:cursor-default";
 const textareaCls = `${inputCls} min-h-[88px] resize-y`;
 
 function QuestionField({
@@ -97,7 +97,7 @@ function QuestionField({
               checked={val === o.option_value}
               disabled={readOnly}
               onChange={() => !readOnly && onChange(q.question_id, o.option_value, null)}
-              className="w-3.5 h-3.5 accent-orange-500"
+              className="w-3.5 h-3.5 accent-primary-500"
             />
             {o.option_label}
           </label>
@@ -140,7 +140,7 @@ function QuestionField({
               checked={vals.includes(o.option_value)}
               disabled={readOnly}
               onChange={() => toggle(o.option_value)}
-              className="w-3.5 h-3.5 accent-orange-500"
+              className="w-3.5 h-3.5 accent-primary-500"
             />
             {o.option_label}
           </label>
@@ -445,7 +445,7 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
   if (recordState === "loading" && questions.length === 0) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-7 h-7 text-orange-500 animate-spin" />
+        <Loader2 className="w-7 h-7 text-primary-500 animate-spin" />
       </div>
     );
   }
@@ -533,7 +533,7 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
       )}
 
       {/* Header */}
-      <div className="bg-orange-50 border border-orange-200 rounded-xl px-5 py-4 flex items-center gap-3.5">
+      <div className="bg-primary-50 border border-primary-200 rounded-xl px-5 py-4 flex items-center gap-3.5">
         <span className="text-2xl flex-shrink-0">🩺</span>
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">
@@ -559,8 +559,8 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
       {/* Sections */}
       {sections.map((sec) => (
         <div key={sec.number} className="bg-white rounded-xl border border-neutral-200 shadow-sm p-5 space-y-5">
-          <div className="flex items-center gap-2.5 pb-3.5 border-b-2 border-orange-500">
-            <div className="w-6 h-6 rounded-full bg-orange-500 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+          <div className="flex items-center gap-2.5 pb-3.5 border-b-2 border-primary-500">
+            <div className="w-6 h-6 rounded-full bg-primary-500 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
               {sec.number}
             </div>
             <h3 className="text-sm font-bold text-neutral-900">
@@ -607,7 +607,7 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
           <Button
             onClick={handleSubmit}
             isLoading={submitting}
-            className="bg-orange-500 hover:bg-orange-600 text-white"
+            className="bg-primary-500 hover:bg-primary-600 text-white"
           >
             ✓ Submit Anamnesis
           </Button>
