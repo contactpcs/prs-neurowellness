@@ -205,6 +205,7 @@ export default function DeviceSessionLivePage() {
         taken_by: "patient",
         patient_id: patientId,
         appointment_id: appointmentId,
+        scale_id: scaleId,
       });
       await setScaleDelivery(protocolScaleId, "patient_app" as ScaleDeliveryMode);
     } catch (e: unknown) {

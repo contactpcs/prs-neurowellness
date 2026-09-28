@@ -64,13 +64,14 @@ export default function CaAdministerScalePage() {
 
         const resolved = await prsAssessmentService.resolveDiseaseAndScaleId(scaleCode);
         if (!resolved) throw new Error(`No PRS disease maps to ${scaleCode} — cannot render this scale`);
-        const { diseaseId } = resolved;
+        const { diseaseId, scaleId } = resolved;
 
         const result = await prsAssessmentService.startAssessment({
           disease_id: diseaseId,
           taken_by: "doctor_on_behalf",
           patient_id: patientId,
           appointment_id: appointmentId,
+          scale_id: scaleId,
         });
 
         // Disease-level start can return several scales (e.g. Depression/

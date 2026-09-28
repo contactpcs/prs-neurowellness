@@ -225,8 +225,13 @@ export default function DeviceSessionChecklistPage() {
   // "Paid" on the underlying appointment (a real payment record via the
   // Razorpay webhook, per scheduling's AppointmentStatusUpdate) satisfies
   // this step on its own — session.payment_verified only exists to record
-  // a CA's explicit override when the appointment ISN'T paid yet.
-  const paymentOk = appointment.status === "paid"
+  // a CA's explicit override when the appointment ISN'T paid yet. Every
+  // status past "paid" in the appointment state machine (checked_in,
+  // in_progress, completed) can only be reached BY paying first — checking
+  // a patient in is gated on status==='paid' (see appointments/[id]'s
+  // canCheckIn) — so this step must recognize those too, or a session that
+  // already progressed past payment gets incorrectly asked to override it.
+  const paymentOk = ["paid", "checked_in", "in_progress", "completed"].includes(appointment.status)
     || session?.payment_verified
     || (proceedWithoutPayment && paymentOverrideReason.trim().length > 0);
 
