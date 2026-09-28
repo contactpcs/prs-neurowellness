@@ -204,6 +204,7 @@ export default function QuestionnairePage() {
       onPrev={questionnaire.prevScale}
       onQuestionPrev={questionnaire.prevQuestion}
       onQuestionNext={() => questionnaire.nextQuestion(totalQuestions)}
+      onQuestionJump={questionnaire.goToQuestion}
       onSkipSection={handleSkipSection}
       onSubmitScale={handleSubmitScale}
       onNavigateScale={questionnaire.goToScale}

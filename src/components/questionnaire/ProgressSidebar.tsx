@@ -60,22 +60,16 @@ export function ProgressSidebar({
           const isActive = idx === currentIndex;
           const isComplete = completedScaleIds.has(scale.scale_id);
           const hasResponses = Object.keys(responses[scale.scale_id] || {}).length > 0;
-          // Every question is mandatory — a later, not-yet-completed scale
-          // can't be jumped into ahead of finishing the current one.
-          const isLocked = idx > currentIndex && !isComplete;
 
           return (
             <button
               key={scale.scale_id}
-              onClick={() => !isLocked && onNavigate(idx)}
-              disabled={isLocked}
+              onClick={() => onNavigate(idx)}
               className={cn(
                 "w-full flex items-center gap-2 px-3 py-2 text-left transition-all border-r-2",
                 isActive
                   ? "bg-primary-50 border-r-primary-500"
-                  : isLocked
-                    ? "border-r-transparent opacity-50 cursor-not-allowed"
-                    : "border-r-transparent hover:bg-neutral-50",
+                  : "border-r-transparent hover:bg-neutral-50",
               )}
             >
               <div

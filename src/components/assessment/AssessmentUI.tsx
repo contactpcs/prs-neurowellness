@@ -58,11 +58,17 @@ interface AssessmentUIProps {
   onSkipSection: () => void;
   onSubmitScale: () => void;
   onNavigateScale: (index: number) => void;
-  /** Step within the current scale's questions, one at a time. Falls back to
-   *  onPrev/onSubmitScale at the first/last visible question so scales with
-   *  no per-question stepper wired up (none today) still work end to end. */
+  /** Step within the current scale's questions, one batch (of BATCH_SIZE) at
+   *  a time. Falls back to onPrev/onSubmitScale at the first/last batch so
+   *  scales with no per-question stepper wired up (none today) still work
+   *  end to end. */
   onQuestionPrev?: () => void;
   onQuestionNext?: () => void;
+  /** Jumps directly to a specific question index within the current scale —
+   *  used to step by a whole batch instead of one question at a time.
+   *  Falls back to repeated onQuestionNext/onQuestionPrev calls when a
+   *  caller hasn't wired this up yet. */
+  onQuestionJump?: (index: number) => void;
 
   sttEnabled?: boolean;
   onToggleStt?: (enabled: boolean) => void;
@@ -102,6 +108,7 @@ export function AssessmentUI({
   onNavigateScale,
   onQuestionPrev,
   onQuestionNext,
+  onQuestionJump,
   sttEnabled,
   onToggleStt,
   sttPhase,
@@ -148,23 +155,45 @@ export function AssessmentUI({
     ? (visibleIndices.find((idx) => idx > currentQuestionIndex) ?? visibleIndices[visibleIndices.length - 1] ?? currentQuestionIndex)
     : currentQuestionIndex;
   const visiblePosition = visibleIndices.indexOf(activeQuestionIndex);
-  const isFirstVisibleQuestion = visiblePosition <= 0;
-  const isLastVisibleQuestion = visiblePosition === -1 || visiblePosition === visibleIndices.length - 1;
-  const activeQuestion = activeQuestionIndex != null ? questions[activeQuestionIndex] : undefined;
-  const activeQuestionAnswered = activeQuestionIndex != null && currentScaleResponses[String(activeQuestionIndex)] !== undefined;
+  // Batch of up to BATCH_SIZE visible questions at a time instead of one —
+  // less scrolling/tapping for a long clinical scale while still keeping
+  // the "not the whole list at once" goal from the single-question design.
+  const BATCH_SIZE = 5;
+  const batchStart = visiblePosition === -1 ? 0 : Math.floor(visiblePosition / BATCH_SIZE) * BATCH_SIZE;
+  const batchEnd = Math.min(batchStart + BATCH_SIZE, visibleIndices.length);
+  const batchIndices = visibleIndices.slice(batchStart, batchEnd);
+  const isFirstBatch = batchStart <= 0;
+  const isLastBatch = batchEnd >= visibleIndices.length;
   // required defaults true server-side (see doctor/patient assessment pages'
   // toPrsScaleQuestion: is_required ?? true) — only an explicit false opts a
-  // question out of blocking Next, so a scale can never be silently skipped
-  // question-by-question without answering every mandatory item.
-  const canAdvance = activeQuestion ? activeQuestion.required === false || activeQuestionAnswered : true;
+  // question out of blocking Next, so a batch can never be advanced past
+  // without answering every mandatory item in it.
+  const batchFullyAnswered = batchIndices.every((idx) => {
+    const q = questions[idx];
+    return q.required === false || currentScaleResponses[String(idx)] !== undefined;
+  });
   // Whether every required, currently-visible question in this scale has an
   // answer — gates the final Next/Submit button the same way Next between
-  // questions is gated, so jumping straight to the last question (e.g. via
-  // the sidebar) can't be used to skip past unanswered mandatory ones.
+  // batches is gated, so jumping straight to the last batch (e.g. via the
+  // sidebar) can't be used to skip past unanswered mandatory ones.
   const allRequiredAnswered = visibleIndices.every((idx) => {
     const q = questions[idx];
     return q.required === false || currentScaleResponses[String(idx)] !== undefined;
   });
+  const jumpToBatch = (targetBatchStart: number) => {
+    const targetIdx = visibleIndices[Math.max(0, Math.min(targetBatchStart, visibleIndices.length - 1))];
+    if (targetIdx === undefined) return;
+    if (onQuestionJump) {
+      onQuestionJump(targetIdx);
+      return;
+    }
+    // Fallback for a caller that hasn't wired onQuestionJump yet — step one
+    // question at a time via whatever's available.
+    const delta = targetBatchStart - batchStart;
+    const stepper = delta > 0 ? onQuestionNext : onQuestionPrev;
+    if (!stepper) return;
+    for (let i = 0; i < Math.abs(delta); i++) stepper();
+  };
   const scaleNumber = currentScaleIndex + 1;
   const overallProgress =
     totalScales > 0 ? Math.round((completedScaleIds.size / totalScales) * 100) : 0;
@@ -219,12 +248,6 @@ export function AssessmentUI({
           completedScaleIds={completedScaleIds}
           responses={responses}
           onNavigate={(idx) => {
-            // Every question is mandatory — jumping straight to a later,
-            // not-yet-completed scale would skip its questions entirely.
-            // Only the current scale or an already-completed (reviewable)
-            // one is a valid jump target.
-            const target = scales[idx];
-            if (idx > currentScaleIndex && !(target && completedScaleIds.has(target.scale_id))) return;
             onNavigateScale(idx);
             setSidebarOpen(false);
           }}
@@ -352,48 +375,65 @@ export function AssessmentUI({
               </div>
             )}
 
-            {/* One question at a time — a mid-list wall of questions is a lot to
-                take in for someone answering a mental-health screener, so only
-                the current question renders and Next/Previous below step
-                through them. */}
-            {activeQuestionIndex != null && questions[activeQuestionIndex] && (() => {
-              const idx = activeQuestionIndex;
-              const question = questions[idx];
-              const qValue = scaleResponses[String(idx)];
-              const isCurrentStt = idx === currentQuestionIndex && sttEnabled;
+            {/* A batch of up to BATCH_SIZE questions at a time — the whole
+                remaining scale in one screen is a lot to take in for someone
+                answering a mental-health screener, so questions render in
+                small groups and Next/Previous below step between batches. */}
+            <div className="space-y-3">
+              {batchIndices.map((idx) => {
+                const question = questions[idx];
+                const qValue = scaleResponses[String(idx)];
+                const isAnswered = qValue !== undefined;
+                const isCurrentStt = idx === currentQuestionIndex && sttEnabled;
 
-              return (
-                <div
-                  key={`${currentScale.scale_id}-${idx}`}
-                  className={cn(
-                    "rounded-xl border p-4 md:p-6 shadow-sm transition-all",
-                    isCurrentStt
-                      ? "border-primary-300 bg-primary-50/20"
-                      : "border-neutral-200 bg-white",
-                  )}
-                >
-                  {isCurrentStt && (
-                    <div className="relative w-6 h-6 mb-3 md:hidden">
-                      {sttPhase === "listening" && (
-                        <span className="absolute -inset-1 rounded-full bg-red-400 opacity-30 animate-ping" />
-                      )}
-                      <span className="absolute inset-0 rounded-full bg-red-500 flex items-center justify-center">
-                        <Mic className="w-3 h-3 text-white" />
-                      </span>
+                return (
+                  <div
+                    key={`${currentScale.scale_id}-${idx}`}
+                    className={cn(
+                      "rounded-xl border p-3 md:p-4 shadow-sm transition-all",
+                      isCurrentStt
+                        ? "border-primary-300 bg-primary-50/20"
+                        : "border-neutral-200 bg-white",
+                    )}
+                  >
+                    <div className="flex items-start gap-2.5 mb-3">
+                      <div className="relative flex-shrink-0 mt-0.5">
+                        <div
+                          className={cn(
+                            "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold",
+                            isAnswered ? "bg-green-500 text-white" : "bg-primary-500 text-white",
+                          )}
+                        >
+                          {visibleIndices.indexOf(idx) + 1}
+                        </div>
+                        {isCurrentStt && sttPhase === "listening" && (
+                          <span className="absolute -inset-1 rounded-full bg-red-400 opacity-30 animate-ping" />
+                        )}
+                        {isCurrentStt && (
+                          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-red-500 flex items-center justify-center">
+                            <Mic className="w-2 h-2 text-white" />
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="text-sm font-semibold text-neutral-900 leading-snug flex-1">
+                        {question.label}
+                      </h3>
                     </div>
-                  )}
-                  <QuestionRenderer
-                    question={question}
-                    scaleId={currentScale.scale_id}
-                    value={qValue}
-                    onAnswer={onAnswer}
-                    questionNumber={visiblePosition + 1}
-                    totalQuestions={totalQuestions}
-                    showHeader
-                  />
-                </div>
-              );
-            })()}
+                    <div className="pl-8 md:pl-9">
+                      <QuestionRenderer
+                        question={question}
+                        scaleId={currentScale.scale_id}
+                        value={qValue}
+                        onAnswer={onAnswer}
+                        questionNumber={visibleIndices.indexOf(idx) + 1}
+                        totalQuestions={totalQuestions}
+                        showHeader={false}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -403,11 +443,11 @@ export function AssessmentUI({
             <Button
               variant="outline"
               size="sm"
-              onClick={isFirstVisibleQuestion ? onPrev : (onQuestionPrev ?? onPrev)}
-              disabled={isFirstVisibleQuestion && isFirstScale}
+              onClick={isFirstBatch ? onPrev : () => jumpToBatch(batchStart - BATCH_SIZE)}
+              disabled={isFirstBatch && isFirstScale}
             >
               <ChevronLeft className="h-4 w-4" />
-              <span className="hidden sm:inline">{isFirstVisibleQuestion ? "Previous Scale" : "Previous"}</span>
+              <span className="hidden sm:inline">{isFirstBatch ? "Previous Scale" : "Previous"}</span>
               <span className="sm:hidden">Prev</span>
             </Button>
 
@@ -478,14 +518,14 @@ export function AssessmentUI({
               </Button>
             </div>
 
-            {isLastVisibleQuestion ? (
+            {isLastBatch ? (
               <Button onClick={onSubmitScale} isLoading={isSubmitting} disabled={!allRequiredAnswered} size="sm">
                 <span className="hidden sm:inline">{isLastScale ? "Submit Assessment" : "Next Scale"}</span>
                 <span className="sm:hidden">{isLastScale ? "Submit" : "Next"}</span>
                 <ChevronRight className="h-4 w-4" />
               </Button>
             ) : (
-              <Button onClick={onQuestionNext} disabled={!canAdvance} size="sm">
+              <Button onClick={() => jumpToBatch(batchStart + BATCH_SIZE)} disabled={!batchFullyAnswered} size="sm">
                 <span>Next</span>
                 <ChevronRight className="h-4 w-4" />
               </Button>

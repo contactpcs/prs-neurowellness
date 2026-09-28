@@ -405,6 +405,7 @@ export default function ClinicalAssistantOnBehalfAssessmentPage() {
       onPrev={handlePrev}
       onQuestionNext={handleQuestionNext}
       onQuestionPrev={handleQuestionPrev}
+      onQuestionJump={setCurrentQuestionIndex}
       onSkipSection={handleSkipSection}
       onSubmitScale={handleSubmitScale}
       onNavigateScale={(idx) => {

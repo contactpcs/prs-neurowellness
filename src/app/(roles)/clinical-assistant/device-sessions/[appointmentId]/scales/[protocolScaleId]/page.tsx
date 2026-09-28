@@ -261,6 +261,7 @@ export default function CaAdministerScalePage() {
       onPrev={() => setCurrentQuestionIndex((q) => Math.max(0, q - 1))}
       onQuestionPrev={() => setCurrentQuestionIndex((q) => Math.max(0, q - 1))}
       onQuestionNext={() => setCurrentQuestionIndex((q) => Math.min(totalQuestions - 1, q + 1))}
+      onQuestionJump={setCurrentQuestionIndex}
       onSkipSection={finishAndLink}
       onSubmitScale={finishAndLink}
       onNavigateScale={() => {}}
