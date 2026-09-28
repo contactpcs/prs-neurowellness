@@ -126,6 +126,18 @@ export default function DeviceSessionChecklistPage() {
           setDuration(String(detail.prescribed_duration_min ?? ""));
           setRampUp(String(detail.ramp_seconds ?? ""));
           setRampDown(String(detail.ramp_seconds ?? ""));
+          // tVNS has its own prescribed_* columns (wavelength/pattern/
+          // strength/frequency/pulse-width/duration) — tDCS's current_ma/
+          // duration_min prefill above doesn't apply, so a tVNS protocol
+          // left this whole form blank with nothing for the CA/doctor to
+          // reference, unlike tDCS which always had its prescribed values
+          // to fall back on.
+          if (detail.prescribed_tvns_wavelength) setTvnsWavelength(detail.prescribed_tvns_wavelength);
+          if (detail.prescribed_tvns_pattern) setTvnsPattern(detail.prescribed_tvns_pattern);
+          if (detail.prescribed_tvns_strength_pct != null) setTvnsStrengthPct(String(detail.prescribed_tvns_strength_pct));
+          if (detail.prescribed_tvns_frequency_hz != null) setTvnsFrequencyHz(String(detail.prescribed_tvns_frequency_hz));
+          if (detail.prescribed_tvns_pulse_width_us != null) setTvnsPulseWidthUs(String(detail.prescribed_tvns_pulse_width_us));
+          if (detail.prescribed_tvns_duration_min != null) setTvnsDurationMin(String(detail.prescribed_tvns_duration_min));
         }
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load appointment"));
@@ -416,8 +428,19 @@ export default function DeviceSessionChecklistPage() {
                     doctor: protocol.doctor_name,
                     modality: protocol.modality,
                     device: protocol.device_name,
-                    current_ma: protocol.prescribed_current_ma,
-                    duration_min: protocol.prescribed_duration_min,
+                    ...(isTvns
+                      ? {
+                          tvns_wavelength: protocol.prescribed_tvns_wavelength,
+                          tvns_pattern: protocol.prescribed_tvns_pattern,
+                          tvns_strength_pct: protocol.prescribed_tvns_strength_pct,
+                          tvns_frequency_hz: protocol.prescribed_tvns_frequency_hz,
+                          tvns_pulse_width_us: protocol.prescribed_tvns_pulse_width_us,
+                          tvns_duration_min: protocol.prescribed_tvns_duration_min,
+                        }
+                      : {
+                          current_ma: protocol.prescribed_current_ma,
+                          duration_min: protocol.prescribed_duration_min,
+                        }),
                     ramp_seconds: protocol.ramp_seconds,
                     sessions_per_week: protocol.sessions_per_week,
                     session: appointment.session_number
