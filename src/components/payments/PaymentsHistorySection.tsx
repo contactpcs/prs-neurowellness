@@ -1,17 +1,39 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Search, TrendingUp, Receipt, Users, RefreshCw, AlertTriangle, ListTree } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Search, TrendingUp, Receipt, Users, RefreshCw, AlertTriangle, ListTree, Crown } from "lucide-react";
 import { Card, CardContent, Skeleton, Badge } from "@/components/ui";
-import { RevenueLineChart } from "@/components/payments/RevenueLineChart";
+import { useAuth } from "@/lib/hooks";
+import { RevenueOverTimeChart } from "@/components/payments/RevenueOverTimeChart";
+import { RevenueBreakdownPanel } from "@/components/payments/RevenueBreakdownPanel";
+import { purposeLabel } from "@/components/payments/revenueViz";
 import {
   paymentsService,
   type PaymentHistoryDetail,
   type PaymentLogDetail,
   type PatientRevenueTotal,
   type RevenueByPurposePoint,
+  type RevenueDimension,
   type RevenueGroupBy,
 } from "@/lib/api/services/payments.service";
+
+type RangeKey = "7d" | "30d" | "90d" | "12m" | "all";
+
+const RANGE_OPTIONS: { value: RangeKey; label: string; days?: number; groupBy: RevenueGroupBy }[] = [
+  { value: "7d", label: "Last 7 days", days: 7, groupBy: "day" },
+  { value: "30d", label: "Last 30 days", days: 30, groupBy: "day" },
+  { value: "90d", label: "Last 90 days", days: 90, groupBy: "week" },
+  { value: "12m", label: "Last 12 months", days: 365, groupBy: "month" },
+  { value: "all", label: "All time", groupBy: "month" },
+];
+
+// Mirrors the server's per-role allow-list (payments/service.py
+// _BREAKDOWN_DIMENSIONS_BY_ROLE) — the server still refuses anything else.
+function breakdownDimensionsFor(roles: string[]): RevenueDimension[] {
+  if (roles.includes("super_admin")) return ["region", "clinic", "doctor", "purpose"];
+  if (roles.includes("regional_admin")) return ["clinic", "doctor", "purpose"];
+  return ["doctor", "purpose"];
+}
 
 const STATUS_STYLES: Record<string, string> = {
   pending: "bg-amber-100 text-amber-700",
@@ -42,16 +64,28 @@ function fmtDateTime(d?: string | null): string {
   return new Date(d).toLocaleString("en-US", { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit" });
 }
 
-function StatTile({ icon: Icon, label, value, sub }: { icon: React.ElementType; label: string; value: string; sub?: string }) {
+function StatTile({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  hero = false,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  sub?: string;
+  hero?: boolean;
+}) {
   return (
     <Card>
       <CardContent className="p-4">
-        <div className="flex items-center gap-2 text-neutral-400">
+        <div className="flex items-center gap-2 text-neutral-500">
           <Icon className="h-4 w-4" />
           <span className="text-xs font-medium">{label}</span>
         </div>
-        <p className="text-xl font-bold text-neutral-900 mt-1">{value}</p>
-        {sub && <p className="text-xs text-neutral-400 mt-0.5">{sub}</p>}
+        <p className={`font-bold text-neutral-900 mt-1.5 truncate ${hero ? "text-3xl" : "text-xl"}`}>{value}</p>
+        {sub && <p className="text-xs text-neutral-400 mt-0.5 truncate">{sub}</p>}
       </CardContent>
     </Card>
   );
@@ -63,6 +97,22 @@ function StatTile({ icon: Icon, label, value, sub }: { icon: React.ElementType; 
  * caller's role, not a prop here — there's nothing for this component to
  * get wrong by passing the wrong clinic_id. */
 export function PaymentsHistorySection() {
+  const { user } = useAuth();
+  const roles = (user?.roles ?? []).map((r) => String(r).toLowerCase());
+  const dimensions = useMemo(() => breakdownDimensionsFor(roles), [roles.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [range, setRange] = useState<RangeKey>("all");
+  // One date filter scopes every chart, tile and table on the page, so the
+  // numbers always agree with each other.
+  const dateFrom = useMemo(() => {
+    const days = RANGE_OPTIONS.find((o) => o.value === range)?.days;
+    if (!days) return undefined;
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - (days - 1));
+    return d.toISOString();
+  }, [range]);
+
   const [history, setHistory] = useState<PaymentHistoryDetail[]>([]);
   const [revenueByPurpose, setRevenueByPurpose] = useState<RevenueByPurposePoint[]>([]);
   const [topPatients, setTopPatients] = useState<PatientRevenueTotal[]>([]);
@@ -70,7 +120,7 @@ export function PaymentsHistorySection() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [groupBy, setGroupBy] = useState<RevenueGroupBy>("day");
+  const [groupBy, setGroupBy] = useState<RevenueGroupBy>("month");
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -88,9 +138,9 @@ export function PaymentsHistorySection() {
     setError(null);
     try {
       const [historyRes, revenueRes, topRes] = await Promise.all([
-        paymentsService.getHistory({ status: status || undefined, search: debouncedSearch || undefined, limit: 100 }),
-        paymentsService.getRevenueSummaryByPurpose({ group_by: groupBy }),
-        paymentsService.getPatientTotals({ limit: 8 }),
+        paymentsService.getHistory({ status: status || undefined, search: debouncedSearch || undefined, date_from: dateFrom, limit: 100 }),
+        paymentsService.getRevenueSummaryByPurpose({ group_by: groupBy, date_from: dateFrom }),
+        paymentsService.getPatientTotals({ date_from: dateFrom, limit: 8 }),
       ]);
       setHistory(historyRes);
       setRevenueByPurpose(revenueRes);
@@ -100,11 +150,25 @@ export function PaymentsHistorySection() {
     }
   }
 
+  // Skeleton only on first load; later refetches keep the current render
+  // (dimmed) so the layout doesn't jump when a filter changes.
+  const [refetching, setRefetching] = useState(false);
+  const [loadedOnce, setLoadedOnce] = useState(false);
   useEffect(() => {
-    setIsLoading(true);
-    load().finally(() => setIsLoading(false));
+    if (loadedOnce) setRefetching(true);
+    else setIsLoading(true);
+    load().finally(() => {
+      setIsLoading(false);
+      setRefetching(false);
+      setLoadedOnce(true);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, debouncedSearch, groupBy]);
+  }, [status, debouncedSearch, groupBy, dateFrom]);
+
+  function selectRange(value: RangeKey) {
+    setRange(value);
+    setGroupBy(RANGE_OPTIONS.find((o) => o.value === value)!.groupBy);
+  }
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -128,18 +192,20 @@ export function PaymentsHistorySection() {
     loadLogs().finally(() => setLogsLoading(false));
   }, [loadLogs]);
 
-  const totalRevenue = revenueByPurpose.reduce((sum, p) => sum + p.total, 0);
+  const totalRevenue = revenueByPurpose.reduce((sum, p) => sum + Number(p.total), 0);
   const totalPaymentCount = revenueByPurpose.reduce((sum, p) => sum + p.payment_count, 0);
   const avgPayment = totalPaymentCount > 0 ? totalRevenue / totalPaymentCount : 0;
 
   const byPurposeTotals = Object.values(
     revenueByPurpose.reduce<Record<string, { purpose: string; total: number; count: number }>>((acc, p) => {
       acc[p.purpose] ??= { purpose: p.purpose, total: 0, count: 0 };
-      acc[p.purpose].total += p.total;
+      acc[p.purpose].total += Number(p.total);
       acc[p.purpose].count += p.payment_count;
       return acc;
     }, {})
   ).sort((a, b) => b.total - a.total);
+  const topService = byPurposeTotals[0];
+  const rangeLabel = RANGE_OPTIONS.find((o) => o.value === range)!.label.toLowerCase();
 
   if (isLoading) {
     return (
@@ -158,7 +224,7 @@ export function PaymentsHistorySection() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">Payments</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">Who paid, how much, for what — and revenue over time.</p>
+          <p className="text-sm text-neutral-500 mt-0.5">How much came in, from where, and for what.</p>
         </div>
         <button
           onClick={handleRefresh}
@@ -170,52 +236,68 @@ export function PaymentsHistorySection() {
         </button>
       </div>
 
-      {error && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>}
-
-      {/* Stat tiles */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatTile icon={TrendingUp} label="Total Revenue" value={fmtMoney(totalRevenue)} sub={`Across ${GROUP_BY_OPTIONS.find((o) => o.value === groupBy)?.label.toLowerCase()} buckets shown`} />
-        <StatTile icon={Receipt} label="Payments Collected" value={String(totalPaymentCount)} />
-        <StatTile icon={Users} label="Avg per Payment" value={fmtMoney(avgPayment)} />
-      </div>
-
-      {/* By type — total revenue + count per appointment_type/device_session */}
-      {byPurposeTotals.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {byPurposeTotals.map(({ purpose, total, count }) => (
-            <Card key={purpose}>
-              <CardContent className="p-3.5">
-                <p className="text-[11px] font-medium text-neutral-400 capitalize truncate">{purpose.replace(/_/g, " ")}</p>
-                <p className="text-base font-bold text-neutral-900 mt-0.5">{fmtMoney(total)}</p>
-                <p className="text-[11px] text-neutral-400">{count} payment{count === 1 ? "" : "s"}</p>
-              </CardContent>
-            </Card>
+      {/* Filter row — scopes every tile, chart and table below it. */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1 overflow-x-auto">
+          {RANGE_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              onClick={() => selectRange(o.value)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
+                range === o.value ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"
+              }`}
+            >
+              {o.label}
+            </button>
           ))}
         </div>
-      )}
+        <label className="flex items-center gap-2 text-xs text-neutral-500">
+          Group by
+          <select
+            value={groupBy}
+            onChange={(e) => setGroupBy(e.target.value as RevenueGroupBy)}
+            className="px-2.5 py-1.5 text-xs border border-neutral-200 rounded-lg bg-white text-neutral-700"
+          >
+            {GROUP_BY_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </label>
+        {refetching && <span className="text-xs text-neutral-400">Updating…</span>}
+      </div>
 
-      {/* Revenue chart — one line per appointment_type/device_session */}
+      {error && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>}
+
+      <div className={`space-y-6 transition-opacity ${refetching ? "opacity-60" : ""}`}>
+      {/* KPI tiles */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatTile hero icon={TrendingUp} label="Total revenue" value={fmtMoney(totalRevenue)} sub={`Paid, ${rangeLabel}`} />
+        <StatTile icon={Receipt} label="Payments collected" value={totalPaymentCount.toLocaleString("en-IN")} sub="Successful payments" />
+        <StatTile icon={Users} label="Average payment" value={fmtMoney(avgPayment)} sub="Per paid payment" />
+        <StatTile
+          icon={Crown}
+          label="Top service"
+          value={topService ? purposeLabel(topService.purpose) : "—"}
+          sub={topService && totalRevenue > 0 ? `${fmtMoney(topService.total)} · ${Math.round((topService.total / totalRevenue) * 100)}% of revenue` : undefined}
+        />
+      </div>
+
+      {/* Revenue over time — stacked by service type */}
       <Card>
         <CardContent className="p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-neutral-700">Revenue Over Time by Type</h2>
-            <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1">
-              {GROUP_BY_OPTIONS.map((o) => (
-                <button
-                  key={o.value}
-                  onClick={() => setGroupBy(o.value)}
-                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-                    groupBy === o.value ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"
-                  }`}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
+          <div className="mb-1">
+            <h2 className="text-sm font-semibold text-neutral-800">Revenue over time by service</h2>
+            <p className="text-xs text-neutral-400 mt-0.5">
+              Each column is one {groupBy}’s paid revenue, split by service type. Hover a column for the exact split.
+            </p>
           </div>
-          <RevenueLineChart points={revenueByPurpose} groupBy={groupBy} />
+          <RevenueOverTimeChart points={revenueByPurpose} groupBy={groupBy} />
         </CardContent>
       </Card>
+
+      {/* Where revenue comes from — region / clinic / doctor / service */}
+      <RevenueBreakdownPanel dimensions={dimensions} dateFrom={dateFrom} />
+      </div>
 
       {/* Top patients by revenue */}
       {topPatients.length > 0 && (
