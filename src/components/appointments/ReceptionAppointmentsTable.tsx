@@ -7,8 +7,10 @@ import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { paymentsService, saveBlobAsFile } from "@/lib/api/services/payments.service";
 import { STATUS_LABEL, STATUS_TONE, isSupersededCancellation } from "@/lib/appointmentStatus";
-import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
+import { Modal } from "@/components/ui";
+import { StaffPaymentPanel } from "@/components/appointments/StaffPaymentPanel";
 import { AppointmentDetailModal } from "@/components/appointments/AppointmentDetailModal";
+import { ReceptionBookAppointmentModal } from "@/components/appointments/ReceptionBookAppointmentModal";
 import type { Appointment, AppointmentStatus, DoctorListItem } from "@/types/domain.types";
 
 function StatusChip({ status }: { status: AppointmentStatus }) {
@@ -80,6 +82,7 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
   const [busy,         setBusy]         = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [showBooking,  setShowBooking]  = useState(false);
 
   const range = useMemo(
     () => ({ date_from: dateFrom || undefined, date_to: dateTo || undefined }),
@@ -193,12 +196,12 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
           >
             <Printer className="w-3.5 h-3.5" /> Print
           </button>
-          <Link
-            href="/receptionist/dashboard"
+          <button
+            onClick={() => setShowBooking(true)}
             className="h-[38px] px-4 rounded-lg bg-brand-gradient text-white text-sm font-medium flex items-center gap-1.5 hover:opacity-90 transition-opacity"
           >
             <CalendarPlus className="w-4 h-4" /> Schedule Appointment
-          </Link>
+          </button>
         </div>
       </div>
 
@@ -396,13 +399,21 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
       )}
 
       {payingFor && (
-        <MockPaymentModal
-          isOpen
-          appointmentId={payingFor.appointment_id}
-          onClose={() => setPayingFor(null)}
-          onPaid={() => { setPayingFor(null); load(); }}
-        />
+        <Modal isOpen onClose={() => { setPayingFor(null); load(); }} title="Collect Payment" className="max-w-lg">
+          <StaffPaymentPanel
+            appointmentId={payingFor.appointment_id}
+            onDone={() => { setPayingFor(null); load(); }}
+            onCancel={() => { setPayingFor(null); load(); }}
+          />
+        </Modal>
       )}
+
+      <ReceptionBookAppointmentModal
+        isOpen={showBooking}
+        clinicId={clinicId}
+        onClose={() => setShowBooking(false)}
+        onBooked={() => { setShowBooking(false); load(); }}
+      />
 
       <AppointmentDetailModal
         appointment={selectedAppointment}

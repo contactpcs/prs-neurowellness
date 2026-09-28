@@ -192,6 +192,14 @@ export const paymentsService = {
     return data;
   },
 
+  /** Staff only — cash taken at the counter. Settles the appointment the
+   * same way a completed online payment does (appointment -> paid, payment
+   * log, receipt), with payment_method 'cash'. */
+  recordCash: async (appointmentId: string): Promise<Payment> => {
+    const { data } = await apiClient.post(`/appointments/${appointmentId}/payments/cash`);
+    return data;
+  },
+
   myList: async (): Promise<PaymentHistory[]> => {
     const { data } = await apiClient.get("/me/payments");
     return Array.isArray(data) ? data : [];

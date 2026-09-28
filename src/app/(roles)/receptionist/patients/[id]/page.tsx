@@ -1,7 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
-import Link from "next/link";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, User, Mail, Phone, Calendar, MapPin,
@@ -12,11 +11,12 @@ import { staffService } from "@/lib/api/services/staff.service";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { adminService } from "@/lib/api/services/admin.service";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
-import { useReceptionPatient, useClinics } from "@/lib/hooks";
+import { useReceptionPatient, useClinics, useAuth } from "@/lib/hooks";
+import { ReceptionBookAppointmentModal } from "@/components/appointments/ReceptionBookAppointmentModal";
 import { isSupersededCancellation } from "@/lib/appointmentStatus";
 import { Card, CardHeader, CardContent, PatientDetailSkeleton } from "@/components/ui";
 import { PatientJourneySections, type PatientJourneyDetail } from "@/components/admin/PatientJourneySections";
-import type { DoctorListItem, Appointment } from "@/types/domain.types";
+import type { DoctorListItem, Appointment, PatientListItem } from "@/types/domain.types";
 
 const TABS = ["Overview", "Appointments", "Timeline"] as const;
 type Tab = (typeof TABS)[number];
@@ -107,15 +107,26 @@ export default function PatientDetailPage() {
 
   const { patient, isLoading: patientLoading, refresh: refreshPatient } = useReceptionPatient(id);
   const { clinics } = useClinics();
+  const { user } = useAuth();
   const isLoading = patientLoading || doctorsLoading;
+  const [showBooking, setShowBooking] = useState(false);
+  // This page's patient, pre-selected in the booking modal (route id is the
+  // patients.patient_id the booking API expects). Memoised so the modal
+  // doesn't reset its form on every render.
+  const bookingPatient = useMemo<PatientListItem | null>(
+    () => (patient ? { ...patient, id } : null),
+    [patient, id],
+  );
 
-  useEffect(() => {
+  const loadAppointments = useCallback(() => {
     setApptsLoading(true);
     appointmentsService.list({ patient_id: id, limit: 100 })
       .then((res) => setAppointments(res.appointments))
       .catch(() => setAppointments([]))
       .finally(() => setApptsLoading(false));
   }, [id]);
+
+  useEffect(() => { loadAppointments(); }, [loadAppointments]);
 
   useEffect(() => {
     setJourneyDetail(null);
@@ -210,6 +221,16 @@ export default function PatientDetailPage() {
         </div>
       )}
 
+      {user?.clinic_id && (
+        <ReceptionBookAppointmentModal
+          isOpen={showBooking}
+          clinicId={user.clinic_id}
+          initialPatient={bookingPatient}
+          onClose={() => setShowBooking(false)}
+          onBooked={() => { setShowBooking(false); loadAppointments(); }}
+        />
+      )}
+
       {/* Patient header */}
       <Card>
         <CardContent className="flex flex-col sm:flex-row sm:items-center gap-5 py-6">
@@ -246,12 +267,14 @@ export default function PatientDetailPage() {
             >
               <ArrowLeft className="h-4 w-4" /> Back
             </button>
-            <Link
-              href="/receptionist/appointments"
-              className="h-[38px] px-4 rounded-lg bg-brand-gradient text-white text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-1.5 whitespace-nowrap"
+            <button
+              onClick={() => setShowBooking(true)}
+              disabled={isPending || !user?.clinic_id}
+              title={isPending ? "Approve this patient's registration before booking" : undefined}
+              className="h-[38px] px-4 rounded-lg bg-brand-gradient text-white text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-1.5 whitespace-nowrap disabled:opacity-50"
             >
               <CalendarPlus className="h-4 w-4" /> Book Appointment
-            </Link>
+            </button>
           </div>
         </CardContent>
       </Card>

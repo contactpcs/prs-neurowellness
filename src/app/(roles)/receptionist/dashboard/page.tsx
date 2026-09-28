@@ -10,8 +10,9 @@ import { useAuth, useReceptionDashboard, useReceptionPendingPatients, useRecepti
 import { PageSkeleton, Card, CardContent } from "@/components/ui";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { DoctorWeekCalendar } from "@/components/appointments/DoctorWeekCalendar";
+import { ReceptionBookAppointmentModal } from "@/components/appointments/ReceptionBookAppointmentModal";
 import RegisterPatientModal from "../patients/RegisterPatientModal";
-import type { PatientListItem, DoctorListItem } from "@/types/domain.types";
+import type { AvailabilitySlot, PatientListItem, DoctorListItem } from "@/types/domain.types";
 
 function isSameDay(dateStr?: string): boolean {
   if (!dateStr) return false;
@@ -30,6 +31,13 @@ export default function ReceptionistDashboard() {
   const [selectedDoctorId, setSelectedDoctorId] = useState("");
   const [calendarView, setCalendarView] = useState<"single" | "all">("single");
   const [showRegister, setShowRegister] = useState(false);
+  const [showBooking, setShowBooking] = useState(false);
+  // Doctor/date/time when booking was opened from a calendar slot.
+  const [bookingPrefill, setBookingPrefill] = useState<{ doctorId: string; date: string; startTime: string } | null>(null);
+  const openBookingFromSlot = (slot: AvailabilitySlot, doctorId: string) => {
+    setBookingPrefill({ doctorId, date: slot.date, startTime: slot.start_time });
+    setShowBooking(true);
+  };
 
   useEffect(() => {
     receptionService.getDoctors().then(({ doctors: d }) => {
@@ -57,7 +65,7 @@ export default function ReceptionistDashboard() {
 
   const quickActions = [
     { label: "Register Patient",    icon: UserPlus,       onClick: () => setShowRegister(true) },
-    { label: "Book Appointment",    icon: CalendarPlus,   href: "/receptionist/appointments" },
+    { label: "Book Appointment",    icon: CalendarPlus,   onClick: () => { setBookingPrefill(null); setShowBooking(true); } },
     { label: "Check-In Patient",    icon: LogIn,          href: "/receptionist/appointments" },
     { label: "Pending Approvals",   icon: ClipboardCheck, href: "/receptionist/approvals" },
   ];
@@ -154,7 +162,7 @@ export default function ReceptionistDashboard() {
         </div>
 
         {calendarView === "single" ? (
-          <DoctorWeekCalendar doctorId={selectedDoctorId} />
+          <DoctorWeekCalendar doctorId={selectedDoctorId} onSlotClick={openBookingFromSlot} />
         ) : doctors.length === 0 ? (
           <Card><CardContent className="py-10 text-center text-sm text-neutral-500">No doctors at this clinic</CardContent></Card>
         ) : (
@@ -162,7 +170,7 @@ export default function ReceptionistDashboard() {
             {doctors.map((d) => (
               <div key={d.id}>
                 <p className="text-sm font-semibold text-neutral-800 mb-2">Dr. {d.first_name} {d.last_name}</p>
-                <DoctorWeekCalendar doctorId={d.id} />
+                <DoctorWeekCalendar doctorId={d.id} onSlotClick={openBookingFromSlot} />
               </div>
             ))}
           </div>
@@ -223,6 +231,18 @@ export default function ReceptionistDashboard() {
           </div>
         </Card>
       </section>
+
+      {user?.clinic_id && (
+        <ReceptionBookAppointmentModal
+          isOpen={showBooking}
+          clinicId={user.clinic_id}
+          patients={patients}
+          prefill={bookingPrefill}
+          onClose={() => setShowBooking(false)}
+          // The doctor calendars below refresh themselves on this event.
+          onBooked={() => { setShowBooking(false); window.dispatchEvent(new Event("sse:appointment")); }}
+        />
+      )}
 
       {showRegister && (
         <RegisterPatientModal onClose={() => setShowRegister(false)} onSuccess={() => setShowRegister(false)} />
