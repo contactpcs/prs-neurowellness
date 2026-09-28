@@ -12,8 +12,40 @@ export interface DeviceCompanyRead {
   company_code: string;
   company_name: string;
   country?: string | null;
+  website?: string | null;
+  support_email?: string | null;
+  support_phone?: string | null;
+  regulatory_ids?: Record<string, string>;
+  notes?: string | null;
   is_active: boolean;
 }
+
+// ─── Super admin: device catalogue maintenance ───
+// company_code / device_code / modality are fixed at creation (backend Update
+// schemas omit them) — retire with is_active=false and create a new one instead.
+export interface DeviceCompanyCreate {
+  company_code: string;
+  company_name: string;
+  country?: string | null;
+  website?: string | null;
+  support_email?: string | null;
+  support_phone?: string | null;
+  regulatory_ids?: Record<string, string>;
+  notes?: string | null;
+  is_active?: boolean;
+}
+export type DeviceCompanyUpdate = Partial<Omit<DeviceCompanyCreate, "company_code">>;
+
+export interface DeviceCreate {
+  company_id: string;
+  device_code: string;
+  device_name: string;
+  model_number?: string | null;
+  modality: Modality;
+  phase?: 1 | 2;
+  is_active?: boolean;
+}
+export type DeviceUpdate = Partial<Omit<DeviceCreate, "device_code" | "modality">>;
 
 export interface DeviceRead {
   device_id: string;

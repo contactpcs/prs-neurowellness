@@ -259,6 +259,7 @@ export const ENDPOINTS = {
   // ─── Neuromodulation catalogue (Treatment Protocol wizard, steps 1-6) ───
   NEUROMOD: {
     DEVICE_COMPANIES: "/neuromod/device-companies",
+    DEVICE_COMPANY: (companyId: string) => `/neuromod/device-companies/${companyId}`,
     DEVICES: "/neuromod/devices",
     DEVICE: (deviceId: string) => `/neuromod/devices/${deviceId}`,
     CONDITIONS: "/neuromod/conditions",

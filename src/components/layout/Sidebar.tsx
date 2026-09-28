@@ -12,7 +12,7 @@ import {
   UserCircle, LogOut, ChevronLeft, Menu, Calendar, CalendarDays,
   ClipboardCheck, MapPin, Building2, UserCog, Settings, ShieldCheck,
   ShoppingBag, Receipt, Bell, DollarSign, Activity, Syringe, BarChart2, Percent,
-  TrendingUp,
+  TrendingUp, Cpu,
 } from "lucide-react";
 import { AnavaLogo } from "./AnavaLogo";
 
@@ -83,6 +83,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { label: "Regions",         href: "/admin/regions",         icon: MapPin },
     { label: "Clinics",         href: "/admin/clinics",         icon: Building2 },
     { label: "Clinic Requests", href: "/admin/clinic-requests", icon: ClipboardList, badge: "clinicRequests" },
+    { label: "Device Catalog",  href: "/admin/device-catalog",  icon: Cpu },
     { label: "Billable Items",  href: "/admin/billable-items",  icon: DollarSign },
     { label: "Fees & Cancellation", href: "/admin/fee-config",  icon: Percent },
     { label: "Payments",        href: "/admin/payments",        icon: Receipt },

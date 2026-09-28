@@ -2,6 +2,7 @@ import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type {
   DeviceCompanyRead, DeviceRead, ConditionRead, DiagnosisRead, DiagnosisResolution,
+  DeviceCompanyCreate, DeviceCompanyUpdate, DeviceCreate, DeviceUpdate,
   PlacementRead, ElectrodeValidationRequest, ElectrodeValidationResult,
   DosingRead, ScaleRead, SchedulePreviewRequest, SchedulePreview,
   ProtocolCreate, ProtocolUpdate, ProtocolRead, ProtocolDetail, ProtocolSessionRead,
@@ -36,6 +37,27 @@ export const treatmentProtocolService = {
 
   async getDevice(deviceId: string): Promise<DeviceRead> {
     const { data } = await apiClient.get(ENDPOINTS.NEUROMOD.DEVICE(deviceId));
+    return data;
+  },
+
+  // ─── Super admin catalogue maintenance (no delete — deactivate instead) ───
+  async createDeviceCompany(body: DeviceCompanyCreate): Promise<DeviceCompanyRead> {
+    const { data } = await apiClient.post(ENDPOINTS.NEUROMOD.DEVICE_COMPANIES, body);
+    return data;
+  },
+
+  async updateDeviceCompany(companyId: string, body: DeviceCompanyUpdate): Promise<DeviceCompanyRead> {
+    const { data } = await apiClient.patch(ENDPOINTS.NEUROMOD.DEVICE_COMPANY(companyId), body);
+    return data;
+  },
+
+  async createDevice(body: DeviceCreate): Promise<DeviceRead> {
+    const { data } = await apiClient.post(ENDPOINTS.NEUROMOD.DEVICES, body);
+    return data;
+  },
+
+  async updateDevice(deviceId: string, body: DeviceUpdate): Promise<DeviceRead> {
+    const { data } = await apiClient.patch(ENDPOINTS.NEUROMOD.DEVICE(deviceId), body);
     return data;
   },
 
