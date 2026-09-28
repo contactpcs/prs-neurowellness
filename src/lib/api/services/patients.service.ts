@@ -114,17 +114,25 @@ export const patientsService = {
     const instances: InstanceRow[] = Array.isArray(instancesRes.data) ? instancesRes.data : [];
 
     const diseaseById = new Map(diseases.map((d) => [String(d.disease_id), d]));
-    // A disease can have several prs_assessment_instances over time — every
-    // "Send to patient app" is supposed to resume-or-create exactly one via
-    // start()'s find_in_progress (most-recent-first), but a since-fixed bug
-    // let it create fresh duplicates instead, so some patients have stale
-    // ABANDONED in_progress instances from before that fix that nothing will
-    // ever resume or complete again. Treating "any in_progress instance
-    // blocks completion" (this used to) means those orphans permanently
-    // stick a disease at "pending" even after the patient finishes the
-    // instance that's actually current. Only the MOST RECENT instance per
-    // disease (by started_at, matching find_in_progress's own ordering) is
-    // authoritative — older ones are history, not blockers.
+    // A disease can have several prs_assessment_instances over time.
+    //
+    // "latest wins" was the original rule to avoid stale abandoned instances
+    // (created by a since-fixed duplicate-start bug) from blocking completion.
+    // That rule breaks when a DOCTOR opens a new in_progress instance for a
+    // disease the PATIENT already completed: the doctor's Sep 27 instance is
+    // newer, so it overwrites the Sep 16 completion in latestByDisease and
+    // the patient dashboard permanently shows "In Progress / 0%".
+    //
+    // Fix: completedDiseases scans ALL instances (not just the latest). If
+    // any instance for a disease is completed, the disease is completed for
+    // the patient — one-and-done. inProgressDiseases then explicitly excludes
+    // diseases already in completedDiseases, so the two sets are mutually
+    // exclusive and a doctor-initiated in_progress instance can never shadow
+    // a prior patient completion on the patient-facing dashboard.
+    //
+    // latestByDisease is kept for inProgressDiseases only: a disease with NO
+    // completed instance is still in_progress if its latest instance is
+    // in_progress (the stale-orphan guard still applies there).
     const latestByDisease = new Map<string, InstanceRow>();
     for (const i of instances) {
       if (!i.disease_id) continue;
@@ -134,11 +142,18 @@ export const patientsService = {
         latestByDisease.set(key, i);
       }
     }
-    const inProgressDiseases = new Set(
-      Array.from(latestByDisease.values()).filter((i) => i.status === "in_progress").map((i) => String(i.disease_id)),
-    );
+    // Any completed instance (regardless of age) makes the disease "done".
     const completedDiseases = new Set(
-      Array.from(latestByDisease.values()).filter((i) => i.status === "completed").map((i) => String(i.disease_id)),
+      instances
+        .filter((i) => i.status === "completed" && i.disease_id)
+        .map((i) => String(i.disease_id)),
+    );
+    // Only count as in_progress if the latest instance is in_progress AND
+    // the disease has never been completed (completed takes priority).
+    const inProgressDiseases = new Set(
+      Array.from(latestByDisease.values())
+        .filter((i) => i.status === "in_progress" && !completedDiseases.has(String(i.disease_id)))
+        .map((i) => String(i.disease_id)),
     );
 
     const byDisease = new Map<string, AssignmentRow[]>();
@@ -175,10 +190,20 @@ export const patientsService = {
         const scaleNameById = new Map(
           (disease?.scales ?? []).map((s) => [s.scale_id, s.scale_name ?? s.short_name]),
         );
-        const status: AssessmentPermission["status"] = inProgressDiseases.has(diseaseId)
-          ? "granted"
-          : completedDiseases.has(diseaseId)
-            ? "completed"
+        // completed is checked BEFORE in_progress — a disease the patient
+        // already finished stays "completed" on their dashboard even if a
+        // doctor subsequently opened a new in_progress instance for it
+        // (e.g. via "Start Assessment" on the staff portal, which bypasses
+        // find_completed_standalone when newer scale assignments exist).
+        // That new instance is a fresh clinical round for the doctor to
+        // administer; it is not a patient-facing redo of a finished disease.
+        // Checking inProgressDiseases first (the old order) caused the
+        // Sep 27 in_progress instance to override the Sep 16 completed one,
+        // permanently showing "In Progress / 0%" on the patient dashboard.
+        const status: AssessmentPermission["status"] = completedDiseases.has(diseaseId)
+          ? "completed"
+          : inProgressDiseases.has(diseaseId)
+            ? "granted"
             : "granted";
         return {
           permission_id: String(rows[0]?.psa_id ?? diseaseId),
