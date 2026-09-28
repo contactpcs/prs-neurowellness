@@ -174,6 +174,7 @@ export default function DeviceSessionChecklistPage() {
     if (!deviceInfo || session) return;
     setDeviceBrand(deviceInfo.device_name);
     if (deviceInfo.device_unit_serial_number) setDeviceSerial(deviceInfo.device_unit_serial_number);
+    setDuration(String(deviceInfo.session_duration_minutes));
   }, [deviceInfo, session]);
 
   useEffect(() => {

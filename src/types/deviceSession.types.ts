@@ -115,6 +115,7 @@ export interface DeviceInfo {
   device_name: string;
   device_unit_id: string | null;
   device_unit_serial_number: string | null;
+  session_duration_minutes: number;
 }
 
 export interface DeviceSessionRead {

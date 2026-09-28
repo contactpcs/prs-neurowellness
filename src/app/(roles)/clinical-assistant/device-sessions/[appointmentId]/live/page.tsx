@@ -61,6 +61,7 @@ export default function DeviceSessionLivePage() {
   const [pauseOpen, setPauseOpen] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
   const [earlyCompletionOpen, setEarlyCompletionOpen] = useState(false);
+  const [completionError, setCompletionError] = useState<string | null>(null);
   const [showAeForm, setShowAeForm] = useState(false);
 
   // Section-local drafts
@@ -97,7 +98,13 @@ export default function DeviceSessionLivePage() {
     if (session?.impedance_kohm != null) setImpedance(String(session.impedance_kohm));
   }, [session]);
 
-  const prescribedDuration = protocol?.prescribed_duration_min ?? session?.actual_duration_min ?? 0;
+  // The main admin's device-session duration controls the wall-clock session.
+  // Protocol stimulation duration remains a clinical prescription value and
+  // must not make the live timer fall back to a one-minute/default value.
+  const prescribedDuration = deviceInfo?.session_duration_minutes
+    ?? session?.actual_duration_min
+    ?? protocol?.prescribed_duration_min
+    ?? 0;
   const rampSec = protocol?.ramp_seconds ?? 0;
   const totalSeconds = prescribedDuration * 60 + rampSec * 2;
 
@@ -276,8 +283,17 @@ export default function DeviceSessionLivePage() {
                 size="sm"
                 onClick={async () => {
                   if (!timerDone) { setEarlyCompletionOpen(true); return; }
-                  await complete();
-                  router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`);
+                  setCompletionError(null);
+                  try {
+                    await complete();
+                    router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`);
+                  } catch (err: any) {
+                    setCompletionError(
+                      err?.response?.data?.error?.message
+                        || err?.response?.data?.detail
+                        || "The session could not be completed."
+                    );
+                  }
                 }}
                 disabled={!canComplete}
                 title={missingGates.length ? `Still needed: ${missingGates.join(", ")}` : undefined}
@@ -288,6 +304,11 @@ export default function DeviceSessionLivePage() {
           </div>
 
           <CountdownTimer remainingSeconds={remaining} totalSeconds={totalSeconds} sessionStatus={session.session_status} />
+          {completionError && (
+            <p className="text-xs text-danger-700 bg-danger-50 border border-danger-200 rounded-lg px-3 py-1.5">
+              {completionError}
+            </p>
+          )}
           {missingGates.length > 0 && (
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
               Still needed before completing: {missingGates.join(", ")}.
@@ -692,9 +713,18 @@ export default function DeviceSessionLivePage() {
         isOpen={earlyCompletionOpen}
         onClose={() => setEarlyCompletionOpen(false)}
         onConfirm={async (reason) => {
-          await complete(reason);
-          setEarlyCompletionOpen(false);
-          router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`);
+          setCompletionError(null);
+          try {
+            await complete(reason);
+            setEarlyCompletionOpen(false);
+            router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`);
+          } catch (err: any) {
+            setCompletionError(
+              err?.response?.data?.error?.message
+                || err?.response?.data?.detail
+                || "The session could not be completed."
+            );
+          }
         }}
       />
     </div>
