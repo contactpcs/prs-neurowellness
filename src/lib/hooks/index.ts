@@ -13,7 +13,7 @@ export { useNotifications } from "./useNotifications";
 export { useAdminDashboard, useAdminClinics, useAdminRegions, useAdminAccounts, useAdminStaff, useAdminPatients } from "./useAdmin";
 export { useStaffRequests } from "./useStaffRequests";
 export { useClinicRequests } from "./useClinicRequests";
-export { useMyDoctorNotes, usePatientNote } from "./useDoctorNotes";
+export { usePatientNotes } from "./useDoctorNotes";
 export { useVoiceMode } from "./useVoiceMode";
 export { useTTS } from "./useTTS";
 export { useAssessmentSTT } from "./useAssessmentSTT";

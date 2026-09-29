@@ -104,19 +104,77 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, [pathname]);
 
-  // Multi-tab logout: the access token lives in localStorage, and the browser
-  // fires "storage" in every OTHER tab when it changes. A removal there means
-  // the user logged out (or the session died) in another tab — follow it
-  // instead of sitting on a page whose token no longer exists.
+  // Multi-tab session synchronization:
+  // The access token and user live in localStorage, and the browser fires
+  // "storage" in every OTHER tab when they change.
+  // 1. If the token was removed (logout in another tab), log out this tab too.
+  // 2. If the token or user changed to a DIFFERENT account (e.g. user logged
+  //    into a patient profile in another tab while this tab was doctor),
+  //    reload this tab immediately so all memory state, caches, sockets,
+  //    and role guards clean-slate sync to the new account.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key !== STORAGE_KEYS.ACCESS_TOKEN || e.newValue !== null) return;
-      dispatch(logout());
-      if (!isPublicPath(pathname)) router.replace(ROUTES.LOGIN);
+      if (e.key === STORAGE_KEYS.ACCESS_TOKEN) {
+        if (e.newValue === null) {
+          dispatch(logout());
+          if (!isPublicPath(pathname)) router.replace(ROUTES.LOGIN);
+          return;
+        }
+      }
+
+      if (e.key === STORAGE_KEYS.USER && e.newValue) {
+        try {
+          const newUser = JSON.parse(e.newValue);
+          if (newUser && user && newUser.id !== user.id) {
+            window.location.reload();
+            return;
+          }
+        } catch {}
+      }
+
+      if (e.key === STORAGE_KEYS.ACCESS_TOKEN && e.newValue) {
+        try {
+          const userStr = localStorage.getItem(STORAGE_KEYS.USER);
+          if (userStr) {
+            const newUser = JSON.parse(userStr);
+            if (newUser && user && newUser.id !== user.id) {
+              window.location.reload();
+              return;
+            }
+          }
+        } catch {}
+      }
     };
+
+    // When the user switches focus back to this tab, check if another tab
+    // changed the active user while this tab was in the background
+    const onFocus = () => {
+      const token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+      const userStr = localStorage.getItem(STORAGE_KEYS.USER);
+
+      if (!token && user) {
+        dispatch(logout());
+        if (!isPublicPath(pathname)) router.replace(ROUTES.LOGIN);
+        return;
+      }
+
+      if (userStr && user) {
+        try {
+          const storedUser = JSON.parse(userStr);
+          if (storedUser && storedUser.id !== user.id) {
+            window.location.reload();
+          }
+        } catch {}
+      }
+    };
+
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [dispatch, router, pathname]);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [dispatch, router, pathname, user]);
 
   return <>{children}</>;
 }

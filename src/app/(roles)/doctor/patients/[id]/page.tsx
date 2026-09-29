@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ChevronRight, ChevronLeft, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save, FileText, Pill, NotebookPen, X } from "lucide-react";
@@ -15,6 +15,7 @@ import {
   usePatientPermissions,
   usePatientScoresSummary,
   usePatientAnamnesis,
+  usePatientNotes,
   useAuth,
 } from "@/lib/hooks";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -70,13 +71,6 @@ const SECTION_LABELS: Record<string, string> = {
   "final-report": "Final Report",
 };
 
-type DoctorNoteEntry = {
-  date: string;
-  author: string;
-  category: string;
-  body: string;
-};
-
 const MEDICINE_TIMINGS = ["Morning", "Afternoon", "Evening", "Night", "Twice daily", "Three times daily", "As needed"];
 const MEDICINE_MEALS = ["Before meal", "After meal", "With meal", "Empty stomach", "Not applicable"];
 
@@ -120,7 +114,10 @@ export default function DoctorPatientDetailPage() {
   const { instances: scoreInstances } = usePatientScoresSummary(id);
   const { record: anamnesisRecord, isLoading: anamnesisLoading } = usePatientAnamnesis(id, "main");
   const { user: currentUser } = useAuth();
-  const doctorDisplayName = [currentUser?.first_name, currentUser?.last_name].filter(Boolean).join(" ") || "Doctor";
+  const isDoctorUser = currentUser?.roles?.includes("doctor");
+  const doctorDisplayName = isDoctorUser
+    ? [currentUser?.first_name, currentUser?.last_name].filter(Boolean).join(" ") || "Doctor"
+    : "Doctor";
   const [headerSearch, setHeaderSearch] = useState("");
 
   const isLoading = patientLoading;
@@ -218,26 +215,28 @@ export default function DoctorPatientDetailPage() {
   // in a Redux slice (not local state) so the patient summary page can read
   // the same list; still resets on reload since nothing is persisted.
   const medicines = useAppSelector(selectPatientMedicines(id));
-  const [medForm, setMedForm] = useState<PrescribedMedicineForm | null>(null);
+  // Always populated — the prescribe form renders inline on the page rather
+  // than behind a "Prescribe Medicine" reveal click.
+  const emptyMedForm: PrescribedMedicineForm = { name: "", dose: "", timing: MEDICINE_TIMINGS[0], meal: MEDICINE_MEALS[1], duration: "", note: "" };
+  const [medForm, setMedForm] = useState<PrescribedMedicineForm>(emptyMedForm);
   const [medSaving, setMedSaving] = useState(false);
   const [medError, setMedError] = useState<string | null>(null);
   // Prescriptions live in the backend (SQL/v1/96) — load them for this patient.
   useEffect(() => { dispatch(fetchPatientMedicines(id)); }, [dispatch, id]);
-  // Real backend only has POST /doctor-session-notes (keyed to a session/
-  // cycle, not patient) — no list-by-patient endpoint exists, so this
-  // chronological, categorized notes feed is client-side only and resets
-  // on reload/navigation, same as Prescribed Medicine above.
-  const [doctorNotes, setDoctorNotes] = useState<DoctorNoteEntry[]>([]);
-  const [noteAdding, setNoteAdding] = useState(false);
+  // Backed by core.patient_clinical_notes (SQL/v1/99) — a real per-patient
+  // list now, persisted server-side.
+  const { notes: doctorNotes, addNote: addDoctorNoteApi } = usePatientNotes(id);
   const [newNoteCategory, setNewNoteCategory] = useState(NOTE_CATEGORIES[0]);
   const [newNoteBody, setNewNoteBody] = useState("");
   const [noteWidgetOpen, setNoteWidgetOpen] = useState(false);
   const [widgetCategory, setWidgetCategory] = useState(NOTE_CATEGORIES[0]);
   const [widgetBody, setWidgetBody] = useState("");
   const [widgetSaved, setWidgetSaved] = useState(false);
+  const [noteSaveError, setNoteSaveError] = useState<string | null>(null);
 
   useEffect(() => {
-    setMedForm(null);
+    setMedForm(emptyMedForm);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   // Registration Record = anamnesis + general PRS taken during self-
@@ -250,11 +249,9 @@ export default function DoctorPatientDetailPage() {
     adminService.getPatientDetail(id).then(setRegistrationRecord).catch(() => setRegistrationRecordError("Couldn't load registration record"));
   }, [id]);
 
-  // Reset immediately on patient switch so a previous patient's notes can
-  // never linger against the wrong patient.
+  // Reset the compose fields on patient switch — usePatientNotes(id) already
+  // re-fetches per patient_id, so no local list to clear here.
   useEffect(() => {
-    setDoctorNotes([]);
-    setNoteAdding(false);
     setNoteWidgetOpen(false);
     setWidgetBody("");
   }, [id]);
@@ -273,23 +270,41 @@ export default function DoctorPatientDetailPage() {
     } catch {}
   }, [selectedSection, id]);
 
-  const addDoctorNote = () => {
-    if (!newNoteBody.trim()) return;
-    setDoctorNotes((list) => [{ date: formatDate(new Date().toISOString()), author: doctorDisplayName, category: newNoteCategory, body: newNoteBody }, ...list]);
-    setNewNoteBody("");
-    setNoteAdding(false);
-  };
+  // Auto-save, debounced ~800ms after typing stops — no explicit Save click.
+  // Fires once per note: after the create call resolves the field clears
+  // itself, which cancels any pending timer for that now-empty value and
+  // leaves the form ready for the next note.
+  const noteSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (noteSaveTimer.current) clearTimeout(noteSaveTimer.current);
+    const text = newNoteBody.trim();
+    if (!text) return;
+    noteSaveTimer.current = setTimeout(() => {
+      addDoctorNoteApi(newNoteCategory, text)
+        .then(() => { setNewNoteBody(""); setNoteSaveError(null); })
+        .catch(() => setNoteSaveError("Could not save the note. Please try again."));
+    }, 800);
+    return () => { if (noteSaveTimer.current) clearTimeout(noteSaveTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newNoteBody]);
 
-  const saveWidgetNote = () => {
-    if (!widgetBody.trim()) return;
-    setDoctorNotes((list) => [
-      { date: formatDate(new Date().toISOString()), author: doctorDisplayName, category: widgetCategory, body: `(from ${SECTION_LABELS[selectedSection] ?? selectedSection}) ${widgetBody}` },
-      ...list,
-    ]);
-    setWidgetBody("");
-    setWidgetSaved(true);
-    setTimeout(() => { setWidgetSaved(false); setNoteWidgetOpen(false); }, 1400);
-  };
+  const widgetSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (widgetSaveTimer.current) clearTimeout(widgetSaveTimer.current);
+    const text = widgetBody.trim();
+    if (!text) return;
+    widgetSaveTimer.current = setTimeout(() => {
+      addDoctorNoteApi(widgetCategory, `(from ${SECTION_LABELS[selectedSection] ?? selectedSection}) ${text}`)
+        .then(() => {
+          setWidgetBody("");
+          setWidgetSaved(true);
+          setTimeout(() => { setWidgetSaved(false); setNoteWidgetOpen(false); }, 1400);
+        })
+        .catch(() => setNoteSaveError("Could not save the note. Please try again."));
+    }, 800);
+    return () => { if (widgetSaveTimer.current) clearTimeout(widgetSaveTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [widgetBody]);
 
   if (isLoading) return <PatientDetailSkeleton />;
 
@@ -320,6 +335,13 @@ export default function DoctorPatientDetailPage() {
   const nextAssessment = (assessments as Permission[]).find((a: Permission) => a.status === "granted");
   const completedAssessments = (assessments as Permission[]).filter((a: Permission) => a.status === "completed");
   const pendingAssessments = (assessments as Permission[]).filter((a: Permission) => a.status === "granted");
+
+  const isAssessmentStarted = (a: Permission) => {
+    if (a.instance_id) return true;
+    return scoreInstances.some(
+      s => (s.instance_id === a.instance_id || s.disease_id === a.disease_id) && !s.completed_at
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-neutral-100 to-neutral-50 -mt-14 md:-mt-6 -mx-4 sm:-mx-6 -mb-4 sm:-mb-6">
@@ -413,13 +435,17 @@ export default function DoctorPatientDetailPage() {
                 <div>
                   <p className="text-neutral-500 text-sm mb-0.5">Next Activity</p>
                   <h3 className="text-xl font-bold text-neutral-900">{nextAssessment.disease_name}</h3>
-                  <span className="inline-block mt-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-sm font-medium rounded-lg">Basic 2/7</span>
+                  <span className={`inline-block mt-1 px-2 py-0.5 text-sm font-medium rounded-lg ${
+                    isAssessmentStarted(nextAssessment) ? "bg-amber-50 text-amber-700" : "bg-blue-50 text-blue-700"
+                  }`}>
+                    {isAssessmentStarted(nextAssessment) ? "In Progress" : "Basic 2/7"}
+                  </span>
                 </div>
                 <button
                   onClick={() => router.push(`/doctor/patients/${id}/assessment/${nextAssessment.permission_id}${sessionId ? `?session=${sessionId}` : ""}`)}
                   className="px-6 py-3 bg-orange-500 text-white font-semibold text-base rounded-full hover:bg-orange-600 transition-colors flex items-center gap-2 flex-shrink-0"
                 >
-                  ▶ Start
+                  ▶ {isAssessmentStarted(nextAssessment) ? "Continue" : "Start"}
                 </button>
               </>
             ) : (
@@ -632,28 +658,18 @@ export default function DoctorPatientDetailPage() {
                 </div>
               ) : selectedSection === "medicine" ? (
                 <div className="space-y-6">
-                  <div className="flex items-start justify-between gap-4 flex-wrap">
-                    <div>
-                      <h2 className="text-2xl font-bold text-neutral-900 mb-1">Prescribed Medicine</h2>
-                      <p className="text-neutral-600 text-sm">Current and past prescriptions for {fullName}.</p>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant={medForm ? "outline" : "primary"}
-                      onClick={() => setMedForm(medForm ? null : { name: "", dose: "", timing: MEDICINE_TIMINGS[0], meal: MEDICINE_MEALS[1], duration: "", note: "" })}
-                    >
-                      {medForm ? "Cancel" : <><Plus className="h-4 w-4" /> Prescribe Medicine</>}
-                    </Button>
+                  <div>
+                    <h2 className="text-2xl font-bold text-neutral-900 mb-1">Prescribed Medicine</h2>
+                    <p className="text-neutral-600 text-sm">Current and past prescriptions for {fullName}.</p>
                   </div>
 
-                  {medForm && (
-                    <div className="border border-blue-100 bg-blue-50/50 rounded-lg p-4 space-y-4">
+                  <div className="border border-blue-100 bg-blue-50/50 rounded-lg p-4 space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div>
                           <label className="text-xs font-semibold text-neutral-700">Medicine name *</label>
                           <input
                             value={medForm.name}
-                            onChange={(e) => setMedForm((f) => f && { ...f, name: e.target.value })}
+                            onChange={(e) => setMedForm((f) => ({ ...f, name: e.target.value }))}
                             placeholder="e.g. Escitalopram 10 mg"
                             className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
                           />
@@ -662,7 +678,7 @@ export default function DoctorPatientDetailPage() {
                           <label className="text-xs font-semibold text-neutral-700">Dose</label>
                           <input
                             value={medForm.dose}
-                            onChange={(e) => setMedForm((f) => f && { ...f, dose: e.target.value })}
+                            onChange={(e) => setMedForm((f) => ({ ...f, dose: e.target.value }))}
                             placeholder="e.g. 1 tablet"
                             className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
                           />
@@ -671,7 +687,7 @@ export default function DoctorPatientDetailPage() {
                           <label className="text-xs font-semibold text-neutral-700">Timing</label>
                           <select
                             value={medForm.timing}
-                            onChange={(e) => setMedForm((f) => f && { ...f, timing: e.target.value })}
+                            onChange={(e) => setMedForm((f) => ({ ...f, timing: e.target.value }))}
                             className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
                           >
                             {MEDICINE_TIMINGS.map((t) => <option key={t}>{t}</option>)}
@@ -681,7 +697,7 @@ export default function DoctorPatientDetailPage() {
                           <label className="text-xs font-semibold text-neutral-700">Meal instruction</label>
                           <select
                             value={medForm.meal}
-                            onChange={(e) => setMedForm((f) => f && { ...f, meal: e.target.value })}
+                            onChange={(e) => setMedForm((f) => ({ ...f, meal: e.target.value }))}
                             className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
                           >
                             {MEDICINE_MEALS.map((m) => <option key={m}>{m}</option>)}
@@ -691,7 +707,7 @@ export default function DoctorPatientDetailPage() {
                           <label className="text-xs font-semibold text-neutral-700">Duration</label>
                           <input
                             value={medForm.duration}
-                            onChange={(e) => setMedForm((f) => f && { ...f, duration: e.target.value })}
+                            onChange={(e) => setMedForm((f) => ({ ...f, duration: e.target.value }))}
                             placeholder="e.g. 8 weeks"
                             className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
                           />
@@ -701,7 +717,7 @@ export default function DoctorPatientDetailPage() {
                         <label className="text-xs font-semibold text-neutral-700">Note</label>
                         <input
                           value={medForm.note}
-                          onChange={(e) => setMedForm((f) => f && { ...f, note: e.target.value })}
+                          onChange={(e) => setMedForm((f) => ({ ...f, note: e.target.value }))}
                           placeholder="Optional prescribing note"
                           className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
                         />
@@ -711,7 +727,6 @@ export default function DoctorPatientDetailPage() {
                         variant="primary"
                         disabled={!medForm.name.trim() || medSaving}
                         onClick={async () => {
-                          if (!medForm) return;
                           setMedSaving(true);
                           setMedError(null);
                           const result = await dispatch(prescribeMedicine({
@@ -720,7 +735,7 @@ export default function DoctorPatientDetailPage() {
                             appointmentId: currentSession?.appointment.appointment_id ?? null,
                           }));
                           setMedSaving(false);
-                          if (prescribeMedicine.fulfilled.match(result)) setMedForm(null);
+                          if (prescribeMedicine.fulfilled.match(result)) setMedForm(emptyMedForm);
                           else setMedError(result.error?.message || "Could not save the prescription. Please try again.");
                         }}
                       >
@@ -728,7 +743,6 @@ export default function DoctorPatientDetailPage() {
                       </Button>
                       {medError && <p className="text-xs text-red-600 mt-2">{medError}</p>}
                     </div>
-                  )}
 
                   {medicines.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-center border border-dashed border-neutral-200 rounded-lg">
@@ -781,7 +795,7 @@ export default function DoctorPatientDetailPage() {
                   patient={patient}
                   clinicalSessions={clinicalSessions}
                   sessionLocked={sessionLocked}
-                  doctorNoteText={doctorNotes[0]?.body ?? null}
+                  doctorNoteText={doctorNotes[0]?.note_text ?? null}
                   onNavigateSection={setSelectedSection}
                   onGenerateFinalReport={() => openFinalReport(currentSession)}
                 />
@@ -789,18 +803,12 @@ export default function DoctorPatientDetailPage() {
                 <DeviceSessionsPanel patientId={id} />
               ) : selectedSection === "notes" ? (
                 <div className="space-y-4">
-                  <div className="flex items-start justify-between gap-4 flex-wrap">
-                    <div>
-                      <h2 className="text-2xl font-bold text-neutral-900 mb-1">Doctor's Notes</h2>
-                      <p className="text-neutral-600 text-sm">Chronological clinical record for {fullName}.</p>
-                    </div>
-                    <Button size="sm" variant={noteAdding ? "outline" : "primary"} onClick={() => setNoteAdding((a) => !a)}>
-                      {noteAdding ? "Cancel" : <><Plus className="h-4 w-4" /> Add Clinical Note</>}
-                    </Button>
+                  <div>
+                    <h2 className="text-2xl font-bold text-neutral-900 mb-1">Doctor's Notes</h2>
+                    <p className="text-neutral-600 text-sm">Chronological clinical record for {fullName}.</p>
                   </div>
 
-                  {noteAdding && (
-                    <div className="border border-blue-100 bg-blue-50/50 rounded-lg p-4 space-y-3">
+                  <div className="border border-blue-100 bg-blue-50/50 rounded-lg p-4 space-y-3">
                       <div>
                         <label className="text-xs font-semibold text-neutral-700">Category</label>
                         <select
@@ -821,11 +829,8 @@ export default function DoctorPatientDetailPage() {
                           className="w-full mt-1.5 border border-neutral-200 rounded-lg p-3 text-sm text-neutral-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-colors resize-y"
                         />
                       </div>
-                      <Button size="sm" variant="primary" disabled={!newNoteBody.trim()} onClick={addDoctorNote}>
-                        <Save className="h-4 w-4" /> Save Note
-                      </Button>
+                      {noteSaveError && <p className="text-xs text-red-600">{noteSaveError}</p>}
                     </div>
-                  )}
 
                   {doctorNotes.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-center border border-dashed border-neutral-200 rounded-lg">
@@ -834,16 +839,16 @@ export default function DoctorPatientDetailPage() {
                     </div>
                   ) : (
                     <div className="space-y-2.5">
-                      {doctorNotes.map((n, i) => (
-                        <div key={i} className="border border-neutral-200 border-l-4 border-l-blue-400 rounded-lg p-4">
+                      {doctorNotes.map((n) => (
+                        <div key={n.id} className="border border-neutral-200 border-l-4 border-l-blue-400 rounded-lg p-4">
                           <div className="flex items-center justify-between gap-3 flex-wrap">
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-bold text-neutral-900">{n.date}</span>
+                              <span className="text-sm font-bold text-neutral-900">{formatDate(n.created_at)}</span>
                               <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700">{n.category}</span>
                             </div>
-                            <span className="text-xs text-neutral-400">{n.author}</span>
+                            <span className="text-xs text-neutral-400">{n.doctor_name ?? doctorDisplayName}</span>
                           </div>
-                          <p className="text-sm text-neutral-800 mt-2 leading-relaxed">{n.body}</p>
+                          <p className="text-sm text-neutral-800 mt-2 leading-relaxed">{n.note_text}</p>
                         </div>
                       ))}
                     </div>
@@ -994,24 +999,31 @@ export default function DoctorPatientDetailPage() {
                   {pendingAssessments.length > 0 && (
                     <div className="space-y-4">
                       <h3 className="font-semibold text-neutral-900">Pending</h3>
-                      {pendingAssessments.map(a => (
-                        <div key={a.permission_id} className="border border-neutral-200 rounded-lg p-4">
-                          <div className="flex items-start justify-between mb-4">
-                            <div>
-                              <h4 className="font-semibold text-neutral-900">{a.disease_name}</h4>
-                              <p className="text-sm text-neutral-600 mt-1">Assigned on {formatDateTime(a.granted_at)}</p>
+                      {pendingAssessments.map(a => {
+                        const started = isAssessmentStarted(a);
+                        return (
+                          <div key={a.permission_id} className="border border-neutral-200 rounded-lg p-4">
+                            <div className="flex items-start justify-between mb-4">
+                              <div>
+                                <h4 className="font-semibold text-neutral-900">{a.disease_name}</h4>
+                                <p className="text-sm text-neutral-600 mt-1">Assigned on {formatDateTime(a.granted_at)}</p>
+                              </div>
+                              <span
+                                className={`inline-flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-lg ${
+                                  started ? "bg-amber-50 text-amber-700" : "bg-blue-50 text-blue-700"
+                                }`}
+                              >
+                                {started ? "In Progress" : "Pending"}
+                              </span>
                             </div>
-                            <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg">
-                              Pending
-                            </span>
+                            <Link href={`/doctor/patients/${id}/assessment/${a.permission_id}${sessionId ? `?session=${sessionId}` : ""}`}>
+                              <Button size="sm" variant={started ? "primary" : "secondary"}>
+                                <PlayCircle className="h-4 w-4" /> {started ? "Continue" : "Start Assessment"}
+                              </Button>
+                            </Link>
                           </div>
-                          <Link href={`/doctor/patients/${id}/assessment/${a.permission_id}${sessionId ? `?session=${sessionId}` : ""}`}>
-                            <Button size="sm" variant="secondary">
-                              <PlayCircle className="h-4 w-4" /> Start Assessment
-                            </Button>
-                          </Link>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1048,9 +1060,8 @@ export default function DoctorPatientDetailPage() {
               placeholder="Jot a note while reviewing this section…"
               className="w-full border border-neutral-200 rounded-lg p-2 text-xs text-neutral-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-colors resize-y"
             />
-            <Button size="sm" variant="primary" disabled={!widgetBody.trim()} onClick={saveWidgetNote}>
-              {widgetSaved ? "✓ Saved to Doctor's Notes" : "Save to Doctor's Notes"}
-            </Button>
+            {widgetSaved && <p className="text-xs font-medium text-green-600">✓ Saved to Doctor&apos;s Notes</p>}
+            {noteSaveError && <p className="text-xs text-red-600">{noteSaveError}</p>}
           </div>
         )}
 
@@ -1074,7 +1085,7 @@ export default function DoctorPatientDetailPage() {
             if (!latest) return null;
             return `${latest.disease_score != null ? `Score ${latest.disease_score.toFixed(0)}/100` : ""}${latest.severity_label ? ` · ${latest.severity_label}` : ""}`.trim() || null;
           })()}
-          doctorNoteText={doctorNotes[0]?.body ?? null}
+          doctorNoteText={doctorNotes[0]?.note_text ?? null}
           protocol={finalReportProtocol}
           onClose={() => setFinalReportFor(null)}
         />

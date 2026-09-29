@@ -116,15 +116,18 @@ export const permissionsService = {
       roundsByDisease.set(r.disease_id, arr);
     }
     for (const [diseaseId, diseaseRounds] of roundsByDisease) {
-      diseaseRounds.sort((a, b) => (a.granted_at < b.granted_at ? -1 : 1));
+      diseaseRounds.sort((a, b) => new Date(a.granted_at).getTime() - new Date(b.granted_at).getTime());
       const diseaseInstances = instances
         .filter((i) => String(i.disease_id) === diseaseId && i.started_at)
-        .sort((a, b) => (a.started_at! < b.started_at! ? -1 : 1));
+        .sort((a, b) => new Date(a.started_at!).getTime() - new Date(b.started_at!).getTime());
       diseaseRounds.forEach((round, idx) => {
-        const windowEnd = diseaseRounds[idx + 1]?.granted_at ?? null;
-        const match = diseaseInstances.find(
-          (i) => i.started_at! >= round.granted_at && (windowEnd === null || i.started_at! < windowEnd),
-        );
+        const roundTime = new Date(round.granted_at).getTime();
+        const nextGranted = diseaseRounds[idx + 1]?.granted_at;
+        const windowEnd = nextGranted ? new Date(nextGranted).getTime() : null;
+        const match = diseaseInstances.find((i) => {
+          const t = new Date(i.started_at!).getTime();
+          return t >= roundTime - 5000 && (windowEnd === null || t < windowEnd);
+        });
         if (match?.status === "completed") {
           round.status = "completed";
           round.completed_at = match.completed_at;
@@ -133,6 +136,16 @@ export const permissionsService = {
           round.instance_id = match.instance_id; // in-progress — resumable, but not "completed"
         }
       });
+
+      // Fallback: if an in-progress instance exists for this disease and hasn't been mapped,
+      // map it to the latest uncompleted round
+      const uncompletedInstance = diseaseInstances.find((i) => i.status !== "completed" && i.instance_id);
+      if (uncompletedInstance) {
+        const targetRound = [...diseaseRounds].reverse().find((r) => r.status !== "completed" && !r.instance_id);
+        if (targetRound) {
+          targetRound.instance_id = uncompletedInstance.instance_id;
+        }
+      }
     }
 
     const permissions = [...rounds.values(), ...ungrouped];

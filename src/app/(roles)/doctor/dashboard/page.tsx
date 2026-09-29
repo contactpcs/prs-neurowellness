@@ -321,7 +321,8 @@ export default function DoctorDashboard() {
   const hours     = Array.from({ length: CAL_END - CAL_START }, (_, i) => CAL_START + i);
   const gridHeight = (CAL_END - CAL_START) * HOUR_PX;
 
-  const doctorName  = user?.first_name || "Doctor";
+  const isDoctor = user?.roles?.includes("doctor");
+  const doctorName = isDoctor ? (user?.first_name || "Doctor") : "Doctor";
   const todayDisplay = today.toLocaleDateString("en-US", {
     weekday: "short", month: "short", day: "numeric", year: "numeric",
   });
@@ -402,7 +403,9 @@ export default function DoctorDashboard() {
       {/* header */}
       <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Welcome , Dr. {doctorName}!</h1>
+          <h1 className="text-2xl font-bold text-neutral-900">
+            Welcome, {isDoctor ? `Dr. ${doctorName}` : doctorName}!
+          </h1>
           <p className="text-sm text-neutral-500 mt-0.5">Here&apos;s what&apos;s happening in your practice today.</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { useDoctorPatient, usePatientScoresSummary, usePatientNote } from "@/lib/hooks";
+import { useDoctorPatient, usePatientScoresSummary, usePatientNotes } from "@/lib/hooks";
 import { anamnesisService, type AnamnesisQuestion } from "@/lib/api/services/anamnesis.service";
 import { eegService } from "@/lib/api/services/eeg.service";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
@@ -43,7 +43,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 export function PatientClinicalSnapshot({ patientId }: { patientId: string }) {
   const { patient } = useDoctorPatient(patientId);
   const { instances: scoreInstances } = usePatientScoresSummary(patientId);
-  const { note: doctorNote } = usePatientNote(patientId);
+  const { latestNote: doctorNote } = usePatientNotes(patientId);
   const [anamnesis, setAnamnesis] = useState<AnamnesisRecord | null>(null);
   const [anamnesisQuestions, setAnamnesisQuestions] = useState<AnamnesisQuestion[]>([]);
   const [eegReports, setEegReports] = useState<EEGReport[]>([]);
