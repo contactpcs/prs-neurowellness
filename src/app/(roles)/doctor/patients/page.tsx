@@ -1,10 +1,10 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Search, ChevronDown, ChevronRight } from "lucide-react";
 import { Input, PatientListSkeleton } from "@/components/ui";
-import { useDoctorPatients, usePatientPermissions } from "@/lib/hooks";
+import { useDoctorPatients, usePatientPermissions, useClinics } from "@/lib/hooks";
 
 function calcAge(dob?: string): number | null {
   if (!dob) return null;
@@ -101,11 +101,20 @@ function PatientRowDetail({ patientId, registrationStatus }: { patientId: string
 
 export default function DoctorPatientsPage() {
   const { patients, isLoading } = useDoctorPatients();
+  const { clinics } = useClinics();
   const searchParams = useSearchParams();
   const [search, setSearch] = useState(searchParams.get("q") ?? "");
   const [visitDate, setVisitDate] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const router = useRouter();
+
+  const clinicMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of clinics) {
+      if (c.clinic_id) map.set(c.clinic_id, c.clinic_name);
+    }
+    return map;
+  }, [clinics]);
 
   const filtered = patients
     .filter((p) => `${p.first_name} ${p.last_name} ${p.email} ${p.mrn || ""}`.toLowerCase().includes(search.toLowerCase()))
@@ -169,7 +178,8 @@ export default function DoctorPatientsPage() {
             {filtered.map((p) => {
               const age = calcAge(p.date_of_birth);
               const lastVisit = p.last_visit_date ?? p.last_prs?.completed_at ?? null;
-              const clinicLabel = p.clinic_name ?? p.clinic_city ?? "Kharadi, Pune";
+              const clinicId = p.clinic_id ?? p.primary_clinic_id;
+              const clinicLabel = p.clinic_name || (clinicId ? clinicMap.get(clinicId) : null) || p.clinic_city || "—";
               const isExpanded = expandedId === p.id;
               return (
                 <Fragment key={p.id}>
@@ -211,13 +221,13 @@ export default function DoctorPatientsPage() {
                       <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => router.push(`/doctor/patients/${p.id}/summary`)}
-                          className="px-4 py-1.5 rounded-lg text-sm font-semibold text-white bg-action-orange hover:bg-action-orange-dark transition-colors"
+                          className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-neutral-700 border border-neutral-300 hover:bg-neutral-100 transition-colors whitespace-nowrap"
                         >
                           View
                         </button>
                         <button
                           onClick={() => router.push(`/doctor/patients/${p.id}`)}
-                          className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-600 border border-neutral-300 hover:bg-neutral-50 transition-colors whitespace-nowrap"
+                          className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-action-orange hover:bg-action-orange-dark transition-colors whitespace-nowrap shadow-sm"
                         >
                           Open Clinical Workspace
                         </button>

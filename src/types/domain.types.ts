@@ -23,6 +23,7 @@ export interface PatientListItem {
   registered_at?: string;
   created_at?: string;
   clinic_id?: string;
+  primary_clinic_id?: string;
   clinic_name?: string;
   clinic_city?: string;
   doctor_id?: string | null;
