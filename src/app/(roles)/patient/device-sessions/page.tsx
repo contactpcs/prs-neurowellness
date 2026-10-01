@@ -5,12 +5,10 @@ import { useRouter } from "next/navigation";
 import { Activity, CalendarDays, ClipboardList, Lock, ChevronRight, CheckCircle2 } from "lucide-react";
 import { appointmentsService } from "@/lib/api/services";
 import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
-import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { Card, CardContent, PageSkeleton } from "@/components/ui";
 import { patientDeviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
 import { isSupersededCancellation } from "@/lib/appointmentStatus";
 import type { Appointment } from "@/types/domain.types";
-import type { DeviceSessionScale } from "@/types/deviceSession.types";
 
 /** Scheduled datetime of a session. Falls back to end-of-day when the slot has
  * no start_time yet (a 'planned' protocol row the patient hasn't claimed). */
@@ -77,15 +75,6 @@ const FILTERS: { key: FilterKey; label: string; test: (a: Appointment) => boolea
  * slots were replaced by the active protocol's own schedule. */
 const HISTORICAL_STATUSES = new Set(["completed", "paid", "no_show", "missed"]);
 
-function summarize(scales: DeviceSessionScale[]): ScaleSummary {
-  if (!scales.length) return { total: 0, completed: 0, actionable: false };
-  return {
-    total: scales.length,
-    completed: scales.filter((s) => s.status === "completed").length,
-    actionable: scales.some((s) => s.delivery_mode === "patient_app" && s.status !== "completed"),
-  };
-}
-
 export default function PatientDeviceSessionsPage() {
   const router = useRouter();
   const [sessions, setSessions] = useState<Appointment[] | null>(null);
@@ -99,25 +88,16 @@ export default function PatientDeviceSessionsPage() {
 
   useEffect(() => {
     appointmentsService
-      .myList(true)
+      .myDeviceSessions()
       .then(async (all) => {
         const ds = all.filter((a) => a.appointment_type === "device_session");
         setSessions(ds);
 
-        // One status lookup per distinct protocol, not per session — a
-        // course of 20-50 device sessions typically belongs to 1-3 protocol
-        // versions.
-        const protocolIds = [...new Set(ds.map((a) => a.protocol_id).filter((id): id is string => !!id))];
-        await Promise.all(
-          protocolIds.map(async (pid) => {
-            try {
-              const p = await treatmentProtocolService.getProtocolDetail(pid);
-              setStatusByProtocol((prev) => ({ ...prev, [pid]: p.status ?? null }));
-            } catch {
-              setStatusByProtocol((prev) => ({ ...prev, [pid]: null }));
-            }
-          })
-        );
+        // Protocol status rides on each row (protocol_status) — no
+        // per-protocol detail fetch (API audit F-011).
+        const statusMap: Record<string, string | null> = {};
+        for (const a of ds) if (a.protocol_id) statusMap[a.protocol_id] = a.protocol_status ?? null;
+        setStatusByProtocol(statusMap);
 
         // Per-session assessment status — only for sessions that could
         // plausibly need it (see isOpenable), not every session in the
@@ -125,24 +105,16 @@ export default function PatientDeviceSessionsPage() {
         const now = Date.now();
         const relevant = ds.filter((a) => isOpenable(a, now));
 
-        // Batched, not all at once — a long-running course can still have
-        // dozens of open/recent sessions, and firing every request in
-        // parallel just moves the flood from "everything" to "everything
-        // that's open," still hammering the API on one page load.
-        const BATCH_SIZE = 6;
-        for (let i = 0; i < relevant.length; i += BATCH_SIZE) {
-          const batch = relevant.slice(i, i + BATCH_SIZE);
-          await Promise.all(
-            batch.map(async (a) => {
-              try {
-                const scales = await deviceSessionService.listScales(a.appointment_id);
-                setSummaries((prev) => ({ ...prev, [a.appointment_id]: summarize(scales) }));
-              } catch {
-                setSummaries((prev) => ({ ...prev, [a.appointment_id]: null }));
-              }
-            })
-          );
+        // One call for every session's scale counts (API audit F-012) —
+        // used to be listScales() per open session. A session with no
+        // device-session record yet maps to null, as its 404 used to.
+        let byAppt: Record<string, ScaleSummary> = {};
+        try {
+          byAppt = await deviceSessionService.listMyScaleSummaries();
+        } catch {
+          // leave empty -> every relevant row shows the "unavailable" state
         }
+        setSummaries(Object.fromEntries(relevant.map((a) => [a.appointment_id, byAppt[a.appointment_id] ?? null])));
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load your sessions"));
   }, []);

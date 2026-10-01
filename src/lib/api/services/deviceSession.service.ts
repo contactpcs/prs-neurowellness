@@ -31,6 +31,14 @@ export const deviceSessionService = {
   /** Every patient_app scale still open across all of the caller's own
    * device sessions — powers the patient dashboard's "scales sent to you"
    * widget. Patient-only; no appointment id needed. */
+  /** Scale counts for every one of the caller's device sessions, keyed by
+   * appointment_id — one call instead of listScales() per session. */
+  async listMyScaleSummaries(): Promise<Record<string, { total: number; completed: number; actionable: boolean }>> {
+    const { data } = await apiClient.get(ENDPOINTS.DEVICE_SESSIONS.MY_SCALE_SUMMARIES);
+    const rows: { appointment_id: string; total: number; completed: number; actionable: boolean }[] = Array.isArray(data) ? data : [];
+    return Object.fromEntries(rows.map((r) => [String(r.appointment_id), { total: r.total, completed: r.completed, actionable: r.actionable }]));
+  },
+
   async listMyPendingScales(): Promise<PendingPatientScale[]> {
     const { data } = await apiClient.get(ENDPOINTS.DEVICE_SESSIONS.MY_PENDING_SCALES);
     return data;

@@ -228,8 +228,8 @@ export const ENDPOINTS = {
     // real — the current as-of disease composite for one patient+disease
     // (core.disease_composite_scores), not tied to any single instance.
     DISEASE_COMPOSITE: (patientId: string) => `/patients/${patientId}/disease-composite`,
+    PATIENT_SCORES_SUMMARY: (patientId: string) => `/patients/${patientId}/scores-summary`, // real — GET ?assessment_stage= (F-002)
     PATIENT_SCORES: (patientId: string) => `/prs/scores/patient/${patientId}`,         // NOT AVAILABLE
-    PATIENT_SCORES_SUMMARY: (patientId: string) => `/prs/scores/patient/${patientId}/summary`, // NOT AVAILABLE
     SESSIONS: "/prs/sessions/",                                     // NOT AVAILABLE
     MY_SESSIONS: "/prs/sessions/my",                                // NOT AVAILABLE
     PATIENT_SESSIONS: (patientId: string) => `/prs/sessions/patient/${patientId}`, // NOT AVAILABLE
@@ -384,6 +384,7 @@ export const ENDPOINTS = {
   // below, which is patient-self-scoped across every appointment. ───
   DEVICE_SESSIONS: {
     MY_PENDING_SCALES: "/me/device-session-scales",
+    MY_SCALE_SUMMARIES: "/me/device-session-scale-summaries", // real — per-session scale counts (F-012)
     DETAIL: (appointmentId: string) => `/device-sessions/${appointmentId}`,
     DEVICE_INFO: (appointmentId: string) => `/device-sessions/${appointmentId}/device-info`,
     CHECKLIST: (appointmentId: string) => `/device-sessions/${appointmentId}/checklist`,

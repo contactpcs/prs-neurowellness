@@ -342,6 +342,9 @@ export interface Appointment {
    *  `v${protocol_version_major}.${protocol_version_minor}`. */
   protocol_version_major?: number | null;
   protocol_version_minor?: number | null;
+  /** protocol_plan.status of the protocol this row belongs to
+   *  (active/completed/superseded/...). */
+  protocol_status?: string | null;
   /** What a protocol-born row is for, so a patient running several protocols
    *  can tell sessions apart. All null for consultations. */
   device_name?: string | null;

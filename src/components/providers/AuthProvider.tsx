@@ -41,8 +41,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // "sse:appointment" window event this dispatches to refetch their own
   // list; everything else just needs the notification bell to update,
   // which the Redux dispatch below handles directly.
+  // Keyed on the user's id, not the user object: a profile save or
+  // refreshUser() replaces the object and used to tear the stream down and
+  // open a new one (new ticket + stream) for the same person (API audit F-017).
+  const sessionUserId = user?.id;
   useEffect(() => {
-    if (isRestoring || !user) return;
+    if (isRestoring || !sessionUserId) return;
     if (!localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN)) return;
     const source = openEventStream((msg) => {
       dispatch(notificationReceived(msg));
@@ -56,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
     return () => source.close();
-  }, [isRestoring, user, dispatch]);
+  }, [isRestoring, sessionUserId, dispatch]);
 
   // Consent/deactivation gate on every page load, not just fresh logins —
   // an inactive staff/receptionist-registered-patient account that

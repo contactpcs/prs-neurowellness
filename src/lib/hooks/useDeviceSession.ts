@@ -31,22 +31,9 @@ export function useDeviceSession(appointmentId: string | undefined) {
   const reload = useCallback(async () => {
     if (!appointmentId) return;
     try {
+      // get() now seeds device_session_scales itself (backend F-013), so its
+      // scales field is the full due-list — no follow-up listScales() call.
       const data = await deviceSessionService.get(appointmentId);
-      // get()'s own scales field is a plain read (repo.list_for_session) —
-      // it never seeds device_session_scales from the protocol's scale
-      // list. Only GET /device-sessions/{id}/scales (listScales) does that
-      // seeding, and nothing was calling it, so every session showed "No
-      // scales due this session" even when the protocol had scales
-      // assigned. Call it here and merge in, so the Scales & Assessments
-      // tab is populated as soon as the session loads instead of needing a
-      // separate trigger nothing in the UI provides.
-      try {
-        data.scales = await deviceSessionService.listScales(appointmentId);
-      } catch {
-        // Session not started yet (_header_or_404 404s pre-checklist) or a
-        // transient failure — keep get()'s scales as a fallback rather than
-        // failing the whole reload over this one field.
-      }
       setSession(data);
       setError(null);
     } catch (err) {

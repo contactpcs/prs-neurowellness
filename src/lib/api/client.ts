@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { type AxiosResponse } from "axios";
 import { API_BASE_URL, STORAGE_KEYS } from "@/lib/constants";
 import { ENDPOINTS } from "@/lib/api/endpoints";
 
@@ -78,6 +78,43 @@ export async function signOutOnServer(): Promise<void> {
   } catch {
     // Offline / server down: the local logout still happens.
   }
+}
+
+/** The /auth/me snapshot (normalized User) that login/restore/refreshUser
+ * store and logout clears. null when absent or unreadable. */
+export function getStoredUser(): Record<string, unknown> | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.USER);
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+}
+
+// ponytail: /prs-catalog/diseases is static reference data that 6 services
+// each re-fetched (7x on one patient dashboard load). One shared request,
+// reused for 5 min; a failed request is not cached.
+const CATALOG_TTL_MS = 5 * 60_000;
+let diseaseCatalog: { at: number; p: Promise<AxiosResponse> } | null = null;
+export function getDiseaseCatalog(): Promise<AxiosResponse> {
+  if (diseaseCatalog && Date.now() - diseaseCatalog.at < CATALOG_TTL_MS) return diseaseCatalog.p;
+  const p = apiClient.get(ENDPOINTS.PRS.CONDITIONS);
+  diseaseCatalog = { at: Date.now(), p };
+  p.catch(() => { diseaseCatalog = null; });
+  return p;
+}
+
+/** The logged-in patient's own patients.patient_id, from the /auth/me
+ * snapshot every login/restore path stores. Falls back to GET /patients
+ * (RLS-scoped to the caller's own row) only when the snapshot lacks it —
+ * saves that round trip on every "my ..." call. */
+export async function getMyPatientId(): Promise<string | undefined> {
+  const id = getStoredUser()?.patient_id;
+  if (id) return String(id);
+  const { data } = await apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD);
+  const own = Array.isArray(data) ? data[0] : undefined;
+  return own?.patient_id ? String(own.patient_id) : undefined;
 }
 
 export function clearSessionAndSignalLogout() {

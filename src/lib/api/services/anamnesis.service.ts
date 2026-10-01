@@ -1,4 +1,4 @@
-import apiClient from "../client";
+import apiClient, { getMyPatientId } from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type { AnamnesisRecord } from "@/types/domain.types";
 
@@ -177,12 +177,11 @@ export const anamnesisService = {
     return data;
   },
 
-  // NOT AVAILABLE directly — resolved via the caller's own /patients record first.
+  // Own patient_id from the stored /auth/me snapshot (getMyPatientId).
   async getMyAnamnesis(assessmentStage?: AnamnesisStage): Promise<AnamnesisRecord> {
-    const patientsRes = await apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD);
-    const own = Array.isArray(patientsRes.data) ? patientsRes.data[0] : undefined;
-    if (!own?.patient_id) throw new Error("No patient record found for the current user.");
-    const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.FOR_PATIENT(own.patient_id), {
+    const patientId = await getMyPatientId();
+    if (!patientId) throw new Error("No patient record found for the current user.");
+    const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.FOR_PATIENT(patientId), {
       params: assessmentStage ? { assessment_stage: assessmentStage } : undefined,
     });
     return withResponses(data);

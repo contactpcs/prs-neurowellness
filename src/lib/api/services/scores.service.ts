@@ -1,4 +1,4 @@
-import apiClient from "../client";
+import apiClient, { getDiseaseCatalog, getMyPatientId } from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type { AssessmentInstance } from "@/types/domain.types";
 
@@ -65,48 +65,30 @@ function parseJsonField<T>(v: unknown, fallback: T): T {
  * patient's own "my scores" flow has no patient_id in scope), this resolves
  * the caller's own patient_id from GET /patients first — the same fallback
  * anamnesisService.getMyAnamnesis() uses. */
-export async function fetchInstanceScoreDetail(instanceId: string, patientId?: string): Promise<InstanceScoreDetail> {
-  const [resultsRes, instanceRes, diseasesRes] = await Promise.all([
+export async function fetchInstanceScoreDetail(instanceId: string, _patientId?: string): Promise<InstanceScoreDetail> {
+  // /results now carries the instance row and the current as-of disease
+  // composite (backend F-014) — one call instead of three. _patientId is no
+  // longer needed (kept so existing callers compile unchanged).
+  const [resultsRes, diseasesRes] = await Promise.all([
     apiClient.get(ENDPOINTS.PRS.INSTANCE_SCORE(instanceId)),
-    apiClient.get(ENDPOINTS.PRS.ASSESSMENT_INSTANCE(instanceId)).catch(() => ({ data: null })),
-    apiClient.get(ENDPOINTS.PRS.CONDITIONS).catch(() => ({ data: [] })),
+    getDiseaseCatalog().catch(() => ({ data: [] })),
   ]);
 
-  const raw = resultsRes.data as { scale_results?: Record<string, unknown>[]; final_result?: Record<string, unknown> | null };
-  const inst = (instanceRes.data ?? {}) as Record<string, unknown>;
+  const raw = resultsRes.data as {
+    scale_results?: Record<string, unknown>[];
+    final_result?: Record<string, unknown> | null;
+    instance?: Record<string, unknown> | null;
+    disease_composite?: { calculated_value?: number | null; severity_level?: string | null; severity_label?: string | null } | null;
+  };
+  const inst = (raw.instance ?? {}) as Record<string, unknown>;
   const diseases: { disease_id?: string; disease_name?: string }[] = Array.isArray(diseasesRes.data) ? diseasesRes.data : [];
 
   const final = raw.final_result ?? null;
   const summaries = parseJsonField<{ scale_code?: string; scale_name?: string }[]>(final?.scale_summaries, []);
   const nameByCode = new Map(summaries.map((s) => [s.scale_code, s.scale_name]));
 
-  // NOTE: inst.patient_id here is a PROFILE id (prs_assessment_instances.
-  // patient_id references profiles(id) directly, per this codebase's own
-  // convention) — NOT the patients.patient_id role-table id the /patients/
-  // {patient_id}/... routes expect. Passing it straight through 404s with
-  // "Patient not found" (caught below, this was verified against the real
-  // backend). Resolve the real patients.patient_id instead of guessing.
   const instDiseaseId = inst.disease_id != null ? String(inst.disease_id) : undefined;
-  const resolvedPatientId =
-    patientId ??
-    (await apiClient
-      .get(ENDPOINTS.PATIENTS.DASHBOARD)
-      .then((r) => (Array.isArray(r.data) ? r.data[0]?.patient_id : undefined))
-      .catch(() => undefined));
-
-  // final_result.composite_score (prs_final_results) stopped being written
-  // once the as-of-latest-per-scale composite model landed — it's a disease-
-  // level, not per-instance, number now, computed across whichever scales
-  // are most recently completed (possibly from other instances too). Fetch
-  // it separately from core.disease_composite_scores instead of reading the
-  // now-permanently-null old column.
-  const composite =
-    resolvedPatientId && instDiseaseId
-      ? await apiClient
-          .get(ENDPOINTS.PRS.DISEASE_COMPOSITE(resolvedPatientId), { params: { disease_id: instDiseaseId } })
-          .then((r) => r.data as { calculated_value?: number | null; severity_level?: string | null; severity_label?: string | null })
-          .catch(() => null)
-      : null;
+  const composite = raw.disease_composite ?? null;
 
   const scale_results: ScaleResultDetail[] = (Array.isArray(raw.scale_results) ? raw.scale_results : []).map((sr) => {
     const scaleId = String(sr.scale_id ?? "");
@@ -166,74 +148,39 @@ export async function fetchInstanceScoreDetail(instanceId: string, patientId?: s
  * scale_summaries, so an empty instances list meant "0 of N completed"
  * forever regardless of what the patient actually finished. */
 async function composeMyScoresSummary(): Promise<{ instances: AssessmentInstance[]; total: number; diseases: number }> {
-  const patientsRes = await apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD);
-  const own = Array.isArray(patientsRes.data) ? patientsRes.data[0] : undefined;
-  if (!own?.patient_id) return { instances: [], total: 0, diseases: 0 };
-  return composePatientScoresSummary(String(own.patient_id), "main_clinical");
+  const patientId = await getMyPatientId();
+  if (!patientId) return { instances: [], total: 0, diseases: 0 };
+  return composePatientScoresSummary(patientId, "main_clinical");
 }
 
-/** Same composition for an explicit patients.patient_id (doctor/CA views).
- * assessment_stage omitted → every stage. patientId is passed through to
- * fetchInstanceScoreDetail so it never falls back to GET /patients, which
- * for a staff caller would resolve the wrong patient. */
+/** Same summary for an explicit patients.patient_id (doctor/CA views).
+ * assessment_stage omitted → every stage. One call: the backend composes
+ * what this used to build from /prs-instances plus 4 calls per completed
+ * instance (/results, instance, disease catalog, disease-composite) — API
+ * audit fix F-002. Score fields are the current as-of disease composite,
+ * same values as before; in_progress instances carry no scores. */
 async function composePatientScoresSummary(
   patientId: string,
   assessmentStage?: string,
 ): Promise<{ instances: AssessmentInstance[]; total: number; diseases: number }> {
-  const instancesRes = await apiClient.get(ENDPOINTS.PRS.PATIENT_INSTANCES(patientId), {
+  const { data } = await apiClient.get(ENDPOINTS.PRS.PATIENT_SCORES_SUMMARY(patientId), {
     params: assessmentStage ? { assessment_stage: assessmentStage } : undefined,
   });
-  type InstanceRow = {
-    instance_id?: string;
-    disease_id?: string;
-    status?: string;
-    completed_at?: string;
-    appointment_id?: string | null;
-  };
-  const rows: InstanceRow[] = Array.isArray(instancesRes.data) ? instancesRes.data : [];
-
-  const instances: AssessmentInstance[] = await Promise.all(
-    rows.map(async (r): Promise<AssessmentInstance> => {
-      const instanceId = String(r.instance_id ?? "");
-      // in_progress instances have no final_result yet — /results 404s or
-      // returns nothing scoreable for them, so only fetch it for completed
-      // ones. Their scale_summaries end up empty, which is correct: an
-      // in_progress instance genuinely has no completed scales to show.
-      if (r.status !== "completed" || !instanceId) {
-        return {
-          instance_id: instanceId,
-          disease_id: String(r.disease_id ?? ""),
-          completed_at: r.completed_at,
-          appointment_id: r.appointment_id,
-        };
-      }
-      try {
-        const detail = await fetchInstanceScoreDetail(instanceId, patientId);
-        return {
-          instance_id: instanceId,
-          disease_id: detail.instance.disease_id ?? String(r.disease_id ?? ""),
-          disease_name: detail.instance.disease_name,
-          disease_score: detail.disease_result?.disease_score,
-          severity_level: detail.disease_result?.severity_level,
-          severity_label: detail.disease_result?.severity_label,
-          percentage: detail.disease_result?.percentage,
-          completed_at: r.completed_at,
-          scale_summaries: detail.scale_results,
-          appointment_id: r.appointment_id,
-        };
-      } catch {
-        return {
-          instance_id: instanceId,
-          disease_id: String(r.disease_id ?? ""),
-          completed_at: r.completed_at,
-          appointment_id: r.appointment_id,
-        };
-      }
-    }),
-  );
-
-  const diseases = new Set(instances.map((i) => i.disease_id)).size;
-  return { instances, total: instances.length, diseases };
+  const orUndef = <T,>(v: T | null | undefined): T | undefined => (v ?? undefined);
+  const rows: Record<string, any>[] = Array.isArray(data?.instances) ? data.instances : [];
+  const instances: AssessmentInstance[] = rows.map((r) => ({
+    instance_id: String(r.instance_id ?? ""),
+    disease_id: String(r.disease_id ?? ""),
+    disease_name: orUndef(r.disease_name),
+    disease_score: orUndef(r.disease_score),
+    severity_level: orUndef(r.severity_level),
+    severity_label: orUndef(r.severity_label),
+    percentage: orUndef(r.percentage),
+    completed_at: orUndef(r.completed_at),
+    scale_summaries: r.status === "completed" ? (r.scale_summaries ?? []) : undefined,
+    appointment_id: r.appointment_id,
+  }));
+  return { instances, total: instances.length, diseases: Number(data?.diseases ?? 0) };
 }
 
 export const scoresService = {

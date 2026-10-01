@@ -1,4 +1,4 @@
-import apiClient from "../client";
+import apiClient, { getDiseaseCatalog, getMyPatientId } from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type { Permission } from "@/types/domain.types";
 
@@ -35,12 +35,11 @@ export const permissionsService = {
     return mapAssignment(created[0]?.data ?? {});
   },
 
-  // NOT AVAILABLE directly — resolved via the caller's own /patients record first.
+  // Own patient_id from the stored /auth/me snapshot (getMyPatientId).
   async getMyPermissions(): Promise<{ permissions: Permission[]; total: number }> {
-    const patientsRes = await apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD);
-    const own = Array.isArray(patientsRes.data) ? patientsRes.data[0] : undefined;
-    if (!own?.patient_id) return { permissions: [], total: 0 };
-    return permissionsService.getPatientPermissions(own.patient_id as string);
+    const patientId = await getMyPatientId();
+    if (!patientId) return { permissions: [], total: 0 };
+    return permissionsService.getPatientPermissions(patientId);
   },
 
   async getPatientPermissions(patientId: string): Promise<{ permissions: Permission[]; total: number }> {
@@ -66,7 +65,7 @@ export const permissionsService = {
       apiClient.get(ENDPOINTS.PRS.PATIENT_PERMISSIONS(patientId), {
         params: { assessment_stage: "main_clinical" },
       }),
-      apiClient.get(ENDPOINTS.PRS.CONDITIONS).catch(() => ({ data: [] })),
+      getDiseaseCatalog().catch(() => ({ data: [] })),
       apiClient
         .get(ENDPOINTS.PRS.PATIENT_INSTANCES(patientId), {
           params: { assessment_stage: "main_clinical" },

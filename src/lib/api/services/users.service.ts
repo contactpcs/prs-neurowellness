@@ -1,4 +1,4 @@
-import apiClient from "../client";
+import apiClient, { getStoredUser } from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type { User } from "@/types/auth.types";
 
@@ -10,10 +10,11 @@ export const usersService = {
   // GET /patients/{patient_id} instead (patient_id comes off the logged-in
   // user, set on every /auth/me call — see auth.types.ts).
   async getProfile(): Promise<Record<string, unknown>> {
-    const me = await apiClient.get(ENDPOINTS.USERS.PROFILE);
-    const patientId = me.data.patient_id;
-    if (!patientId) return me.data;
-    const { data } = await apiClient.get(ENDPOINTS.DOCTORS.PATIENT(patientId));
+    // patient_id from the stored /auth/me snapshot — no extra /auth/me
+    // round trip (API audit F-008). Non-patients keep the old /auth/me read.
+    const patientId = getStoredUser()?.patient_id;
+    if (!patientId) return (await apiClient.get(ENDPOINTS.USERS.PROFILE)).data;
+    const { data } = await apiClient.get(ENDPOINTS.DOCTORS.PATIENT(String(patientId)));
     return data;
   },
 
@@ -53,10 +54,10 @@ export const usersService = {
       );
     }
 
-    const me = await apiClient.get(ENDPOINTS.USERS.PROFILE);
-    const patientId = me.data.patient_id;
+    // patient_id from the stored /auth/me snapshot (API audit F-016).
+    const patientId = getStoredUser()?.patient_id ?? (await apiClient.get(ENDPOINTS.USERS.PROFILE)).data.patient_id;
     if (!patientId) throw new Error("No patient record for this account.");
-    const { data } = await apiClient.patch(ENDPOINTS.USERS.PATIENT_SELF_UPDATE(patientId), mapped);
+    const { data } = await apiClient.patch(ENDPOINTS.USERS.PATIENT_SELF_UPDATE(String(patientId)), mapped);
     // response_model=PatientRead always carries these — if the server ever
     // sends back something else (a proxy error page, a shape change), fail
     // loudly here instead of letting the caller blank out a form that had

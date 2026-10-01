@@ -1,4 +1,4 @@
-import apiClient from "../client";
+import apiClient, { getDiseaseCatalog } from "../client";
 import { ENDPOINTS } from "../endpoints";
 
 // POST /prs-assessment-instances returns the full AssessmentStartRead
@@ -139,7 +139,7 @@ export const prsAssessmentService = {
   /** Composed from GET /prs-catalog/diseases — each disease row now carries
    * its scales[] (scale_id, scale_code, scale_name, full_name, short_name). */
   async getConditionDetails(conditionId: string): Promise<PrsConditionDetails> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.CONDITIONS);
+    const { data } = await getDiseaseCatalog();
     const list = unwrap<Record<string, unknown>[]>(data);
     const match = Array.isArray(list)
       ? list.find((d) => d.disease_id === conditionId)
@@ -162,7 +162,7 @@ export const prsAssessmentService = {
    * over the same /prs-catalog/diseases list getConditionDetails already
    * uses is sufficient — first match wins. */
   async resolveDiseaseAndScaleId(scaleCode: string): Promise<{ diseaseId: string; scaleId: string } | null> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.CONDITIONS);
+    const { data } = await getDiseaseCatalog();
     const list = unwrap<Record<string, unknown>[]>(data);
     if (!Array.isArray(list)) return null;
     for (const disease of list) {

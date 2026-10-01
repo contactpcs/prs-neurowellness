@@ -66,6 +66,7 @@ function mapAppointment(a: Record<string, unknown>): Appointment {
     patient_mrn: a.patient_mrn ? String(a.patient_mrn) : null,
     protocol_version_major: typeof a.protocol_version_major === "number" ? a.protocol_version_major : null,
     protocol_version_minor: typeof a.protocol_version_minor === "number" ? a.protocol_version_minor : null,
+    protocol_status: a.protocol_status ? String(a.protocol_status) : null,
     device_name: a.device_name ? String(a.device_name) : null,
     modality: a.modality ? String(a.modality) : null,
     condition_names: Array.isArray(a.condition_names) ? a.condition_names.map(String) : null,
@@ -115,6 +116,28 @@ function mapAppointmentHistory(a: Record<string, unknown>): AppointmentHistoryEn
     payment_method: a.payment_method ? String(a.payment_method) : null,
     paid_at: a.paid_at ? String(a.paid_at) : null,
   };
+}
+
+// ponytail: callers within HISTORY_REUSE_MS share one /me/appointments/history
+// request (myList(true) + myHistory() fire together on the appointments
+// page). Short window so an SSE-triggered reload still gets fresh rows.
+const HISTORY_REUSE_MS = 2000;
+let myHistoryReq: { at: number; p: Promise<AppointmentHistoryEntry[]> } | null = null;
+function fetchMyHistory(): Promise<AppointmentHistoryEntry[]> {
+  if (myHistoryReq && Date.now() - myHistoryReq.at < HISTORY_REUSE_MS) return myHistoryReq.p;
+  const p = apiClient
+    .get(ENDPOINTS.APPOINTMENTS.MY_HISTORY)
+    .then(({ data }) => (Array.isArray(data) ? data.map(mapAppointmentHistory) : []));
+  myHistoryReq = { at: Date.now(), p };
+  p.catch(() => { myHistoryReq = null; });
+  return p;
+}
+
+// /me/appointments order: appointment_date, start_time NULLS LAST.
+function byDateTimeAsc(a: Appointment, b: Appointment): number {
+  if (a.appointment_date !== b.appointment_date) return a.appointment_date < b.appointment_date ? -1 : 1;
+  if (!a.start_time || !b.start_time) return a.start_time ? -1 : b.start_time ? 1 : 0;
+  return a.start_time < b.start_time ? -1 : a.start_time > b.start_time ? 1 : 0;
 }
 
 async function setStatus(id: string, status: AppointmentStatus, extra?: Record<string, unknown>): Promise<Appointment> {
@@ -217,7 +240,21 @@ export const appointmentsService = {
   // never take an id or send ownership fields.
 
   async myList(includePast = false): Promise<Appointment[]> {
+    // Past-inclusive list = exactly the /history rows (history only adds
+    // payment fields), so serve it from the shared history request: the
+    // appointments page loads both at once and used to download the same
+    // rows twice (API audit F-009). Re-sorted to /me/appointments' order.
+    if (includePast) return [...(await fetchMyHistory())].sort(byDateTimeAsc);
     const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.MY_LIST, { params: { include_past: includePast } });
+    return extractList(data);
+  },
+
+  /** Only the caller's device_session rows, past included — server-side
+   * filter instead of downloading every appointment (API audit F-010). */
+  async myDeviceSessions(): Promise<Appointment[]> {
+    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.MY_LIST, {
+      params: { include_past: true, appointment_type: "device_session" },
+    });
     return extractList(data);
   },
 
@@ -226,8 +263,7 @@ export const appointmentsService = {
   // abandoned/failed, paid, or none). One call instead of joining myList()
   // with a separate payments fetch client-side.
   async myHistory(): Promise<AppointmentHistoryEntry[]> {
-    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.MY_HISTORY);
-    return Array.isArray(data) ? data.map(mapAppointmentHistory) : [];
+    return fetchMyHistory();
   },
 
   async myAvailability(fromDate: string, toDate: string): Promise<AvailabilitySlot[]> {

@@ -1,4 +1,4 @@
-import apiClient from "../client";
+import apiClient, { getDiseaseCatalog } from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type { DoctorDashboard, PatientListItem, PatientDetail, AnamnesisRecord } from "@/types/domain.types";
 import type { ProtocolRead } from "@/types/treatmentProtocol.types";
@@ -101,7 +101,7 @@ export const doctorsService = {
   async grantAssessment(patientId: string, payload: { disease_id: string; scale_ids?: string[] }): Promise<unknown> {
     let scaleIds = payload.scale_ids ?? [];
     if (scaleIds.length === 0) {
-      const { data } = await apiClient.get(ENDPOINTS.PRS.CONDITIONS);
+      const { data } = await getDiseaseCatalog();
       const diseases: { disease_id?: string; scales?: { scale_id: string }[]; scale_ids?: string[] }[] =
         Array.isArray(data) ? data : [];
       const disease = diseases.find((d) => d.disease_id === payload.disease_id);

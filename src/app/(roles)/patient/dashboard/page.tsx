@@ -80,7 +80,7 @@ function PatientDashboard() {
   // off it is always 0 — the doctor card's "Sessions done" needs the full
   // (past-inclusive) device-session history instead.
   const reloadDeviceSessions = () =>
-    appointmentsService.myList(true)
+    appointmentsService.myDeviceSessions()
       .then((all) => setDeviceSessions(all.filter((a) => a.appointment_type === "device_session" && !isSupersededCancellation(a))))
       .catch(() => {});
 

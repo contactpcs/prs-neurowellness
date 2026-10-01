@@ -1,4 +1,4 @@
-import apiClient from "../client";
+import apiClient, { getDiseaseCatalog, getMyPatientId, getStoredUser } from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type { PatientDashboard, AssessmentPermission } from "@/types/domain.types";
 
@@ -7,8 +7,11 @@ export const patientsService = {
    * and /patients (RLS-scoped to the caller's own record, which also joins
    * the assigned doctor's name/phone/specialization off primary_doctor_id). */
   async getDashboard(): Promise<PatientDashboard> {
+    // Name/email come from the /auth/me snapshot login/restore already
+    // stored; re-fetch only if it is missing.
+    const stored = getStoredUser();
     const [meRes, patientsRes] = await Promise.all([
-      apiClient.get(ENDPOINTS.AUTH.ME),
+      stored ? Promise.resolve({ data: stored }) : apiClient.get(ENDPOINTS.AUTH.ME),
       apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD),
     ]);
     const me = meRes.data as { id: string; first_name: string; last_name: string; email: string };
@@ -78,16 +81,14 @@ export const patientsService = {
    * Disease/scale names come from /prs-catalog/diseases; a disease counts as
    * "completed" when a completed prs-instance exists for it. */
   async getMyAssessments(): Promise<{ permissions: AssessmentPermission[]; total: number }> {
-    const patientsRes = await apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD);
-    const own = Array.isArray(patientsRes.data) ? patientsRes.data[0] : undefined;
-    if (!own?.patient_id) return { permissions: [], total: 0 };
-    const patientId = String(own.patient_id);
+    const patientId = await getMyPatientId();
+    if (!patientId) return { permissions: [], total: 0 };
 
     const [assignRes, diseasesRes, instancesRes] = await Promise.all([
       apiClient.get(ENDPOINTS.PRS.PATIENT_PERMISSIONS(patientId), {
         params: { assessment_stage: "main_clinical" },
       }),
-      apiClient.get(ENDPOINTS.PRS.CONDITIONS).catch(() => ({ data: [] })),
+      getDiseaseCatalog().catch(() => ({ data: [] })),
       apiClient
         .get(ENDPOINTS.PRS.PATIENT_INSTANCES(patientId), {
           params: { assessment_stage: "main_clinical" },
