@@ -108,15 +108,28 @@ export function ReceptionBookAppointmentModal({
     receptionService.getDoctors()
       .then(({ doctors: d }) => { setDoctors(d); setDoctorId((prev) => prefill?.doctorId || prev || d[0]?.id || ""); })
       .catch(() => setDoctors([]));
-    if (!patientsProp) {
-      receptionService.getPatients().then(({ patients: p }) => setPatients(p)).catch(() => {});
-    }
     // Only on open (or a new calendar slot) — a background patient-list
     // refresh mustn't wipe the form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, prefill, initialPatient]);
 
   useEffect(() => { if (patientsProp) setPatients(patientsProp); }, [patientsProp]);
+
+  // No preloaded list: search the server as the receptionist types (debounced,
+  // first 8 matches) instead of downloading every clinic patient on open
+  // (API audit F-021).
+  useEffect(() => {
+    if (patientsProp || !isOpen) return;
+    const q = search.trim();
+    if (!q) { setPatients([]); return; }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      receptionService.getPatients({ search: q, pageSize: 8 })
+        .then(({ patients: p }) => { if (!cancelled) setPatients(p); })
+        .catch(() => {});
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [search, isOpen, patientsProp]);
 
   useEffect(() => {
     if (!isOpen) return;

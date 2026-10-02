@@ -6,7 +6,7 @@ import { Printer, CalendarPlus, X, CalendarDays, Download, Search } from "lucide
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { paymentsService, saveBlobAsFile } from "@/lib/api/services/payments.service";
-import { STATUS_LABEL, STATUS_TONE, isSupersededCancellation } from "@/lib/appointmentStatus";
+import { STATUS_LABEL, STATUS_TONE } from "@/lib/appointmentStatus";
 import { Modal } from "@/components/ui";
 import { StaffPaymentPanel } from "@/components/appointments/StaffPaymentPanel";
 import { AppointmentDetailModal } from "@/components/appointments/AppointmentDetailModal";
@@ -44,6 +44,7 @@ const QUICK_FILTERS: QuickFilter[] = [
 
 // The front desk's working list: paid appointments waiting to be checked in.
 const DEFAULT_QUICK_FILTER: QuickFilter = "paid";
+const PAGE_SIZE = 25;
 
 function quickFilterLabel(f: QuickFilter): string {
   if (f === "all") return "All";
@@ -52,13 +53,6 @@ function quickFilterLabel(f: QuickFilter): string {
   if (f === "follow_up") return "Follow-up";
   if (f === "protocol_followup") return "Protocol Follow-up";
   return STATUS_LABEL[f];
-}
-
-function matchesQuickFilter(a: Appointment, f: QuickFilter): boolean {
-  if (f === "all") return true;
-  if (f === "device_sessions") return a.appointment_type === "device_session";
-  if (f === "initial" || f === "follow_up" || f === "protocol_followup") return a.appointment_type === f;
-  return a.status === f;
 }
 
 /** Local-time YYYY-MM-DD — toISOString() would shift to UTC and be off by a day in IST mornings. */
@@ -92,23 +86,46 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
     [dateFrom, dateTo],
   );
 
-  // Date range is applied server-side; every page is fetched (listAll) so the
-  // list is never truncated to the oldest N rows — that truncation is what
-  // hid appointments after 23 Sep 2026 once the clinic passed 200 bookings.
+  // One server page at a time (API audit F-023): date range, doctor, quick
+  // filter and search are applied in SQL, pill counts come back with it.
+  // Used to download every appointment in range (343 KB at 230 rows) and
+  // filter/count in the browser — again on every SSE appointment event.
+  const [page,       setPage]       = useState(1);
+  const [total,      setTotal]      = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [counts,     setCounts]     = useState<{ all: number; by_status: Record<string, number>; by_type: Record<string, number> }>({ all: 0, by_status: {}, by_type: {} });
+  const [qDebounced, setQDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setQDebounced(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+  useEffect(() => { setPage(1); }, [qDebounced, doctorFilter, quickFilter, range]);
+
+  useEffect(() => {
+    receptionService.getDoctors().then(({ doctors: d }) => setDoctors(d)).catch(() => {});
+  }, []);
+
   const load = useCallback(async () => {
+    const typeFilter = quickFilter === "device_sessions" ? "device_session"
+      : quickFilter === "initial" || quickFilter === "follow_up" || quickFilter === "protocol_followup" ? quickFilter
+      : undefined;
+    const statusFilter = quickFilter === "all" || typeFilter ? undefined : quickFilter;
     try {
-      const [apptRes, docRes] = await Promise.all([
-        appointmentsService.listAll({ clinic_id: clinicId, order: "desc", ...range }),
-        receptionService.getDoctors(),
-      ]);
-      setAppointments(apptRes.appointments);
-      setDoctors(docRes.doctors);
+      const res = await appointmentsService.page({
+        clinic_id: clinicId, ...range, doctor_name: doctorFilter || undefined,
+        status: statusFilter, appointment_type: typeFilter, search: qDebounced || undefined,
+        page, page_size: PAGE_SIZE,
+      });
+      setAppointments(res.appointments);
+      setTotal(res.total);
+      setTotalPages(res.totalPages);
+      setCounts(res.counts);
     } catch {
       setAppointments([]);
     } finally {
       setLoading(false);
     }
-  }, [clinicId, range]);
+  }, [clinicId, range, doctorFilter, quickFilter, qDebounced, page]);
 
   useEffect(() => { setLoading(true); load(); }, [load]);
 
@@ -118,34 +135,14 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
     return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
   }, [load]);
 
-  const filtered = useMemo(() => {
-    const query = q.toLowerCase();
-    return appointments
-      .filter((a) => !isSupersededCancellation(a))
-      .filter((a) => !doctorFilter || a.doctor_name === doctorFilter)
-      .filter((a) => matchesQuickFilter(a, quickFilter))
-      .filter((a) => !query || `${a.appointment_id} ${a.patient_name ?? ""} ${a.patient_mrn ?? ""} ${a.patient_public_id ?? ""} ${a.doctor_name ?? ""}`.toLowerCase().includes(query))
-      // Range is applied server-side too; re-checked here so a stale or
-      // SSE-refreshed list can never show rows outside the picked dates.
-      // appointment_date is "YYYY-MM-DD", so string comparison is correct.
-      .filter((a) => !dateFrom || (a.appointment_date ?? "") >= dateFrom)
-      .filter((a) => !dateTo || (a.appointment_date ?? "") <= dateTo)
-      // Chronological, same as the doctor's page — the picked start date
-      // comes first, then each later day, earliest slot first within a day.
-      .sort((a, b) =>
-        (a.appointment_date ?? "").localeCompare(b.appointment_date ?? "") || (a.start_time ?? "").localeCompare(b.start_time ?? ""));
-  }, [appointments, doctorFilter, quickFilter, q, dateFrom, dateTo]);
-
-  // Count per pill over the same search/doctor/date scope, so each pill shows
-  // how many rows clicking it would leave.
-  const quickCounts = useMemo(() => {
-    const query = q.toLowerCase();
-    const scoped = appointments
-      .filter((a) => !isSupersededCancellation(a))
-      .filter((a) => !doctorFilter || a.doctor_name === doctorFilter)
-      .filter((a) => !query || `${a.appointment_id} ${a.patient_name ?? ""} ${a.patient_mrn ?? ""} ${a.patient_public_id ?? ""} ${a.doctor_name ?? ""}`.toLowerCase().includes(query));
-    return Object.fromEntries(QUICK_FILTERS.map((f) => [f, scoped.filter((a) => matchesQuickFilter(a, f)).length])) as Record<QuickFilter, number>;
-  }, [appointments, doctorFilter, q]);
+  // Server already filtered, sorted and paged (superseded cancellations excluded).
+  const filtered = appointments;
+  const quickCounts = Object.fromEntries(QUICK_FILTERS.map((f) => [f,
+    f === "all" ? counts.all
+      : f === "device_sessions" ? counts.by_type.device_session ?? 0
+      : f === "initial" || f === "follow_up" || f === "protocol_followup" ? counts.by_type[f] ?? 0
+      : counts.by_status[f] ?? 0,
+  ])) as Record<QuickFilter, number>;
 
   const hasFilters = !!(q || doctorFilter || quickFilter !== DEFAULT_QUICK_FILTER || dateFrom !== ymd(new Date()) || dateTo);
   const clearFilters = () => {
@@ -188,7 +185,7 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
           <h1 className="text-2xl font-bold text-neutral-900">Appointments</h1>
           {!loading && (
             <p className="text-xs text-neutral-500 mt-1">
-              Showing {filtered.length} of {appointments.length} appointment{appointments.length === 1 ? "" : "s"}
+              Showing {total} of {counts.all} appointment{counts.all === 1 ? "" : "s"}
             </p>
           )}
         </div>
@@ -367,6 +364,40 @@ export function ReceptionAppointmentsTable({ clinicId }: { clinicId: string }) {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+        {totalPages > 1 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 border-t border-neutral-100">
+            <p className="text-xs text-neutral-500">
+              Showing page {Math.min(page, totalPages)} of {totalPages} · {total} records
+            </p>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="px-3 py-1 rounded-lg text-xs font-medium text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+              >
+                Prev
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setPage(n)}
+                  className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
+                    n === page ? "bg-brand-gradient text-white" : "text-neutral-600 hover:bg-neutral-100"
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="px-3 py-1 rounded-lg text-xs font-medium text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+              >
+                Next
+              </button>
             </div>
           </div>
         )}

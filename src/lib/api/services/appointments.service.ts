@@ -152,25 +152,22 @@ export const appointmentsService = {
     return { appointments, total: appointments.length };
   },
 
-  /** Pages GET /appointments (skip/limit) until a short page comes back, so
-   * the caller gets every matching row — a single `limit` call silently
-   * truncates once a clinic outgrows it (the backend returns the oldest rows
-   * first by default). `maxRows` is a safety cap against runaway loops. */
-  async listAll(
-    params?: Omit<AppointmentListParams, "skip" | "limit" | "page" | "page_size">,
-    maxRows = 10000,
-  ): Promise<{ appointments: Appointment[]; total: number }> {
-    const pageSize = 500;
-    let all: Appointment[] = [];
-    for (let skip = 0; skip < maxRows; skip += pageSize) {
-      const { appointments } = await this.list({ ...params, skip, limit: pageSize });
-      all = all.concat(appointments);
-      if (appointments.length < pageSize) break;
-    }
-    // De-dupe by id in case rows shift between pages during paging.
-    const seen = new Set<string>();
-    all = all.filter((a) => (seen.has(a.appointment_id) ? false : (seen.add(a.appointment_id), true)));
-    return { appointments: all, total: all.length };
+  /** One server page + total + pill counts (GET /appointments/page, API
+   * audit F-023) — the reception table's data source. */
+  async page(params: {
+    clinic_id?: string; doctor_name?: string; status?: string; appointment_type?: string;
+    date_from?: string; date_to?: string; search?: string; page: number; page_size: number;
+  }): Promise<{
+    appointments: Appointment[]; total: number; totalPages: number;
+    counts: { all: number; by_status: Record<string, number>; by_type: Record<string, number> };
+  }> {
+    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.PAGE, { params });
+    return {
+      appointments: extractList(data?.items),
+      total: data?.total ?? 0,
+      totalPages: data?.total_pages ?? 1,
+      counts: data?.counts ?? { all: 0, by_status: {}, by_type: {} },
+    };
   },
 
   async getUpcoming(): Promise<Appointment[]> {

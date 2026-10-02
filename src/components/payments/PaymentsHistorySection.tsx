@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, TrendingUp, Receipt, Users, RefreshCw, AlertTriangle, ListTree, Crown } from "lucide-react";
 import { Card, CardContent, Skeleton, Badge } from "@/components/ui";
 import { useAuth } from "@/lib/hooks";
@@ -134,36 +134,55 @@ export function PaymentsHistorySection() {
     return () => clearTimeout(t);
   }, [search]);
 
-  async function load() {
-    setError(null);
+  const failed = (e: any) =>
+    setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Failed to load payments");
+
+  // History depends on status/search/date; the revenue cards and top
+  // patients only on date/grouping. Loaded separately so a status change or
+  // a search refetches 1 call, not 3 (API audit F-024).
+  async function loadHistory() {
     try {
-      const [historyRes, revenueRes, topRes] = await Promise.all([
-        paymentsService.getHistory({ status: status || undefined, search: debouncedSearch || undefined, date_from: dateFrom, limit: 100 }),
+      setHistory(await paymentsService.getHistory({ status: status || undefined, search: debouncedSearch || undefined, date_from: dateFrom, limit: 100 }));
+    } catch (e: any) { failed(e); }
+  }
+  async function loadSummaries() {
+    try {
+      const [revenueRes, topRes] = await Promise.all([
         paymentsService.getRevenueSummaryByPurpose({ group_by: groupBy, date_from: dateFrom }),
         paymentsService.getPatientTotals({ date_from: dateFrom, limit: 8 }),
       ]);
-      setHistory(historyRes);
       setRevenueByPurpose(revenueRes);
       setTopPatients(topRes);
-    } catch (e: any) {
-      setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Failed to load payments");
-    }
+    } catch (e: any) { failed(e); }
+  }
+  async function load() {
+    setError(null);
+    await Promise.all([loadHistory(), loadSummaries()]);
   }
 
   // Skeleton only on first load; later refetches keep the current render
-  // (dimmed) so the layout doesn't jump when a filter changes.
+  // (dimmed) so the layout doesn't jump when a filter changes. `pending`
+  // counts in-flight loads so the skeleton waits for both on first mount.
   const [refetching, setRefetching] = useState(false);
   const [loadedOnce, setLoadedOnce] = useState(false);
-  useEffect(() => {
+  const pending = useRef(0);
+  function run(fn: () => Promise<void>) {
     if (loadedOnce) setRefetching(true);
     else setIsLoading(true);
-    load().finally(() => {
-      setIsLoading(false);
-      setRefetching(false);
-      setLoadedOnce(true);
+    pending.current += 1;
+    fn().finally(() => {
+      pending.current -= 1;
+      if (pending.current === 0) {
+        setIsLoading(false);
+        setRefetching(false);
+        setLoadedOnce(true);
+      }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, debouncedSearch, groupBy, dateFrom]);
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setError(null); run(loadHistory); }, [status, debouncedSearch, dateFrom]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { run(loadSummaries); }, [groupBy, dateFrom]);
 
   function selectRange(value: RangeKey) {
     setRange(value);

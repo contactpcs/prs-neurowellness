@@ -1,4 +1,4 @@
-import apiClient, { getMyPatientId } from "../client";
+import apiClient, { getMyPatientId, getAnamnesisCatalog } from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type { AnamnesisRecord } from "@/types/domain.types";
 
@@ -80,7 +80,10 @@ export type AnamnesisQuestion = {
 export const anamnesisService = {
   // Real GET /anamnesis-catalog shape matches this directly.
   async getQuestions(type?: AnamnesisStage): Promise<AnamnesisQuestion[]> {
-    const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.QUESTIONS, { params: type ? { type } : undefined });
+    // Full catalog is static -> shared cached request; typed subsets go direct.
+    const { data } = type
+      ? await apiClient.get(ENDPOINTS.ANAMNESIS.QUESTIONS, { params: { type } })
+      : await getAnamnesisCatalog();
     return Array.isArray(data) ? data : [];
   },
 

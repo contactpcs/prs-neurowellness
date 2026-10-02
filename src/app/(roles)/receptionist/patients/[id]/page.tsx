@@ -11,7 +11,7 @@ import { staffService } from "@/lib/api/services/staff.service";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { adminService } from "@/lib/api/services/admin.service";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
-import { useReceptionPatient, useClinics, useAuth } from "@/lib/hooks";
+import { useReceptionPatient, useAuth } from "@/lib/hooks";
 import { ReceptionBookAppointmentModal } from "@/components/appointments/ReceptionBookAppointmentModal";
 import { isSupersededCancellation } from "@/lib/appointmentStatus";
 import { Card, CardHeader, CardContent, PatientDetailSkeleton } from "@/components/ui";
@@ -106,7 +106,6 @@ export default function PatientDetailPage() {
   const [apptsLoading, setApptsLoading] = useState(true);
 
   const { patient, isLoading: patientLoading, refresh: refreshPatient } = useReceptionPatient(id);
-  const { clinics } = useClinics();
   const { user } = useAuth();
   const isLoading = patientLoading || doctorsLoading;
   const [showBooking, setShowBooking] = useState(false);
@@ -137,12 +136,11 @@ export default function PatientDetailPage() {
   const registrationStatus = journeyDetail?.registration_status as string | undefined;
   const currentStepIndex = REGISTRATION_STEPS.findIndex((s) => s.key === registrationStatus);
 
-  // Resolve clinic name reactively.
-  const resolvedClinic: string | null = (() => {
-    if (!patient?.clinic_id) return null;
-    const match = clinics.find((c) => c.clinic_id === patient.clinic_id);
-    return match?.clinic_name || match?.city || null;
-  })();
+  // Clinic name comes with the registration record (/patients/{id}) — no
+  // separate clinic-list fetch (API audit F-022).
+  const resolvedClinic: string | null = patient?.clinic_id
+    ? ((journeyDetail?.clinic_name as string | null | undefined) ?? null)
+    : null;
 
   useEffect(() => {
     receptionService.getDoctors()

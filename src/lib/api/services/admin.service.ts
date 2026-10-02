@@ -1,4 +1,4 @@
-import apiClient from "../client";
+import apiClient, { getAnamnesisCatalog } from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type {
   AdminDashboard,
@@ -465,53 +465,27 @@ export const adminService = {
    * was removed from registration (70_remove_disease_selection.sql, 27 Aug
    * 2026) — no longer fetched here. */
   async getPatientDetail(id: string): Promise<Record<string, unknown>> {
-    const [{ data }, clinicsRes, anamnesisCatalogRes] = await Promise.all([
+    // /patients/{id} already carries clinic_name; the anamnesis catalog is
+    // static and shared-cached (F-022); anamnesis + responses + latest
+    // general-registration PRS result come in one call (F-025) instead of
+    // two sequential chains of two.
+    const [{ data }, anamnesisCatalogRes, recordRes] = await Promise.all([
       apiClient.get(`/patients/${id}`),
-      apiClient.get(ENDPOINTS.ADMIN.CLINICS).catch(() => ({ data: [] as unknown[] })),
-      apiClient.get(ENDPOINTS.ANAMNESIS.QUESTIONS).catch(() => ({ data: [] as unknown[] })),
+      getAnamnesisCatalog().catch(() => ({ data: [] as unknown[] })),
+      apiClient.get(ENDPOINTS.PATIENTS.REGISTRATION_RECORD(id)).catch(() => ({ data: null })),
     ]);
-    const clinicNameById = new Map<string, string>();
-    if (Array.isArray(clinicsRes.data)) {
-      for (const c of clinicsRes.data as Record<string, unknown>[]) clinicNameById.set(String(c.clinic_id), String(c.clinic_name ?? ""));
-    }
-
-    let anamnesis: Record<string, unknown> | null = null;
-    let anamnesisResponses: Record<string, unknown>[] = [];
-    try {
-      const { data: assessment } = await apiClient.get(ENDPOINTS.ANAMNESIS.FOR_PATIENT(id), {
-        params: { assessment_stage: "registration" },
-      });
-      anamnesis = assessment;
-      if (assessment?.anamnesis_id) {
-        const { data: responses } = await apiClient.get(ENDPOINTS.ANAMNESIS.RESPONSES(assessment.anamnesis_id));
-        anamnesisResponses = Array.isArray(responses) ? responses : [];
-      }
-    } catch {
-      anamnesis = null;
-    }
-
-    let generalPrs: Record<string, unknown> | null = null;
-    try {
-      const { data: instances } = await apiClient.get(ENDPOINTS.PRS.PATIENT_INSTANCES(id), {
-        params: { assessment_stage: "general_registration" },
-      });
-      // Newest first from the API. Prefer the latest COMPLETED, non-voided
-      // instance: a leftover empty in-progress duplicate (a race, voided by
-      // backend migration 95) must never hide the real answers.
-      const list: Array<{ instance_id?: string; status?: string; is_voided?: boolean }> = Array.isArray(instances) ? instances : [];
-      const live = list.filter((i) => !i.is_voided);
-      const latest = live.find((i) => i.status === "completed") ?? live[0];
-      if (latest?.instance_id) {
-        const { data: results } = await apiClient.get(ENDPOINTS.PRS.INSTANCE_SCORE(latest.instance_id));
-        generalPrs = { instance: latest, ...results };
-      }
-    } catch {
-      generalPrs = null;
-    }
+    const record = (recordRes.data ?? {}) as {
+      anamnesis?: Record<string, unknown> | null;
+      anamnesis_responses?: Record<string, unknown>[];
+      general_prs?: Record<string, unknown> | null;
+    };
+    const anamnesis = record.anamnesis ?? null;
+    const anamnesisResponses = Array.isArray(record.anamnesis_responses) ? record.anamnesis_responses : [];
+    const generalPrs = record.general_prs ?? null;
 
     return {
       ...data,
-      clinic_name: data.primary_clinic_id ? clinicNameById.get(String(data.primary_clinic_id)) ?? null : null,
+      clinic_name: data.clinic_name ?? null,
       anamnesis,
       anamnesis_responses: anamnesisResponses,
       anamnesis_catalog: Array.isArray(anamnesisCatalogRes.data) ? anamnesisCatalogRes.data : [],

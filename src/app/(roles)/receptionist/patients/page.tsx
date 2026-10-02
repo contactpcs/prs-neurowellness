@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Search, UserPlus, Users } from "lucide-react";
 import { useReceptionPatients } from "@/lib/hooks";
+import { receptionService } from "@/lib/api/services/reception.service";
 import { Input, Card, PatientListSkeleton, Button } from "@/components/ui";
 import type { PatientListItem } from "@/types/domain.types";
 import RegisterPatientModal from "./RegisterPatientModal";
@@ -30,21 +31,27 @@ export default function ReceptionistPatientsPage() {
   const [doctor, setDoctor] = useState("");
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
-  const { patients, isLoading } = useReceptionPatients();
-
-  const doctorOptions = Array.from(new Set(patients.map((p) => p.doctor_name).filter(Boolean))) as string[];
-
-  const filtered = patients.filter((p) => {
-    const haystack = `${p.full_name} ${p.phone ?? ""} ${p.doctor_name ?? ""}`.toLowerCase();
-    if (!haystack.includes(search.toLowerCase())) return false;
-    if (gender && (p.gender || "").toLowerCase() !== gender.toLowerCase()) return false;
-    if (doctor && p.doctor_name !== doctor) return false;
-    return true;
+  // Server-side page + search/filters (API audit F-020/F-021) — used to
+  // download every patient and filter/page in the browser.
+  const { patients: pageItems, total, totalPages, isLoading } = useReceptionPatients({
+    page, pageSize: PAGE_SIZE, search, gender, doctor,
   });
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageSafe = Math.min(page, totalPages);
-  const pageItems = filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
+  const everLoaded = useRef(false);
+  if (!isLoading) everLoaded.current = true;
+
+  // Header count = all patients, captured whenever no filter is applied.
+  const [allTotal, setAllTotal] = useState(0);
+  useEffect(() => {
+    if (!isLoading && !search && !gender && !doctor) setAllTotal(total);
+  }, [isLoading, search, gender, doctor, total]);
+
+  const [doctorOptions, setDoctorOptions] = useState<string[]>([]);
+  useEffect(() => {
+    receptionService.getDoctors()
+      .then(({ doctors }) => setDoctorOptions(doctors.map((d) => `${d.first_name} ${d.last_name}`.trim()).filter(Boolean)))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => { setPage(1); }, [search, gender, doctor]);
 
@@ -52,7 +59,9 @@ export default function ReceptionistPatientsPage() {
     setShowModal(false);
   };
 
-  if (isLoading) return <PatientListSkeleton />;
+  // Skeleton only for the very first load — a search/page change keeps the
+  // inputs mounted (and focused) while the next page loads.
+  if (!everLoaded.current) return <PatientListSkeleton />;
 
   return (
     <div className="space-y-5">
@@ -61,7 +70,7 @@ export default function ReceptionistPatientsPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-neutral-900">All Patients</h1>
-            <p className="text-sm text-neutral-500 mt-0.5">{patients.length} registered patients</p>
+            <p className="text-sm text-neutral-500 mt-0.5">{allTotal} registered patients</p>
           </div>
           <Button onClick={() => setShowModal(true)} className="flex-shrink-0">
             <UserPlus className="h-4 w-4 mr-1.5" /><span className="hidden sm:inline">Register Patient</span><span className="sm:hidden">Register</span>
@@ -187,17 +196,17 @@ export default function ReceptionistPatientsPage() {
             <div className="flex flex-col items-center gap-2 px-6 py-14 text-center text-neutral-400">
               <Users className="h-8 w-8 text-neutral-200" />
               <p className="text-sm">
-                {patients.length === 0 ? "No patients registered yet." : "No patients match your search."}
+                {allTotal === 0 ? "No patients registered yet." : "No patients match your search."}
               </p>
             </div>
           )}
         </div>
 
         {/* Pagination */}
-        {filtered.length > 0 && (
+        {total > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 border-t border-neutral-100">
             <p className="text-xs text-neutral-500">
-              Showing page {pageSafe} of {totalPages} · {filtered.length} records
+              Showing page {pageSafe} of {totalPages} · {total} records
             </p>
             <div className="flex items-center gap-1.5 flex-wrap">
               <button

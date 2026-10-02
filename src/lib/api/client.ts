@@ -92,18 +92,22 @@ export function getStoredUser(): Record<string, unknown> | null {
   }
 }
 
-// ponytail: /prs-catalog/diseases is static reference data that 6 services
-// each re-fetched (7x on one patient dashboard load). One shared request,
-// reused for 5 min; a failed request is not cached.
+// ponytail: static reference catalogs (no write endpoint in the API) that
+// many screens re-fetched on every load — e.g. /prs-catalog/diseases 7x on
+// one patient dashboard. One shared request per URL, reused for 5 min; a
+// failed request is not cached.
 const CATALOG_TTL_MS = 5 * 60_000;
-let diseaseCatalog: { at: number; p: Promise<AxiosResponse> } | null = null;
-export function getDiseaseCatalog(): Promise<AxiosResponse> {
-  if (diseaseCatalog && Date.now() - diseaseCatalog.at < CATALOG_TTL_MS) return diseaseCatalog.p;
-  const p = apiClient.get(ENDPOINTS.PRS.CONDITIONS);
-  diseaseCatalog = { at: Date.now(), p };
-  p.catch(() => { diseaseCatalog = null; });
+const catalogs = new Map<string, { at: number; p: Promise<AxiosResponse> }>();
+function getCatalog(url: string): Promise<AxiosResponse> {
+  const hit = catalogs.get(url);
+  if (hit && Date.now() - hit.at < CATALOG_TTL_MS) return hit.p;
+  const p = apiClient.get(url);
+  catalogs.set(url, { at: Date.now(), p });
+  p.catch(() => { catalogs.delete(url); });
   return p;
 }
+export const getDiseaseCatalog = () => getCatalog(ENDPOINTS.PRS.CONDITIONS);
+export const getAnamnesisCatalog = () => getCatalog(ENDPOINTS.ANAMNESIS.QUESTIONS);
 
 /** The logged-in patient's own patients.patient_id, from the /auth/me
  * snapshot every login/restore path stores. Falls back to GET /patients

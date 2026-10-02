@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { Search, CheckCircle, XCircle, Loader2, ClipboardList } from "lucide-react";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { useAuth } from "@/lib/hooks";
 import { PageSkeleton } from "@/components/ui";
 import type { PatientListItem } from "@/types/domain.types";
+
+const PAGE_SIZE = 20;
 
 function fmtDate(iso?: string | null): string {
   if (!iso) return "—";
@@ -31,15 +33,30 @@ export default function ReceptionistApprovalsPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  // Server-side page + search (API audit F-020/F-021) — used to download
+  // the whole queue and filter it in the browser. Search debounced 300 ms.
+  const [page, setPage]             = useState(1);
+  const [total, setTotal]           = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [query, setQuery]           = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+  useEffect(() => { setPage(1); }, [tab, query]);
+
   const fetchPending = useCallback(() => {
     setIsLoading(true);
-    (tab === "pending" ? receptionService.getPendingPatients() : receptionService.getRejectedPatients())
-      .then(({ patients: p }) => setPatients(p))
-      .catch(() => setPatients([]))
+    const params = { page, pageSize: PAGE_SIZE, search: query };
+    (tab === "pending" ? receptionService.getPendingPatients(params) : receptionService.getRejectedPatients(params))
+      .then((r) => { setPatients(r.patients); setTotal(r.total); setTotalPages(r.totalPages); })
+      .catch(() => { setPatients([]); setTotal(0); setTotalPages(1); })
       .finally(() => setIsLoading(false));
-  }, [tab]);
+  }, [tab, page, query]);
 
   useEffect(() => { fetchPending(); }, [fetchPending]);
+  const everLoaded = useRef(false);
+  if (!isLoading) everLoaded.current = true;
 
   const handleApprove = async (patientId: string) => {
     setActionLoading(patientId);
@@ -68,11 +85,10 @@ export default function ReceptionistApprovalsPage() {
     setActionLoading(null);
   };
 
-  const filtered = patients.filter((p) =>
-    `${p.full_name} ${p.first_name} ${p.last_name} ${p.email}`.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = patients;
 
-  if (isLoading) return <PageSkeleton />;
+  // Skeleton only on first load — tab/search/page changes keep the inputs mounted.
+  if (!everLoaded.current) return <PageSkeleton />;
 
   return (
     <div className="flex flex-col gap-5">
@@ -191,6 +207,40 @@ export default function ReceptionistApprovalsPage() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+        {totalPages > 1 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 border-t border-neutral-100">
+            <p className="text-xs text-neutral-500">
+              Showing page {Math.min(page, totalPages)} of {totalPages} · {total} records
+            </p>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="px-3 py-1 rounded-lg text-xs font-medium text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+              >
+                Prev
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setPage(n)}
+                  className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
+                    n === page ? "bg-brand-gradient text-white" : "text-neutral-600 hover:bg-neutral-100"
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="px-3 py-1 rounded-lg text-xs font-medium text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+              >
+                Next
+              </button>
             </div>
           </div>
         )}

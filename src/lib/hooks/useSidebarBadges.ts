@@ -26,7 +26,7 @@ export type BadgeKey =
 
 const FETCHERS: Record<BadgeKey, () => Promise<number>> = {
   patientApprovals: async () => (await staffService.getPendingPatients()).total,
-  receptionPatientApprovals: async () => (await receptionService.getPendingPatients()).total,
+  receptionPatientApprovals: () => receptionService.getPendingCount(),
   staffRequests: async () => (await staffRequestsService.list({ status: "pending" })).length,
   staffApprovals: async () => (await staffRequestsService.list({ status: "pending" })).length,
   clinicRequests: async () => (await clinicRequestsService.list({ status: "pending" })).length,

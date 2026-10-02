@@ -6,26 +6,20 @@ import {
   Users, ClipboardCheck, UserPlus, ArrowRight, Clock, CheckCircle, Stethoscope,
   CalendarPlus, LogIn,
 } from "lucide-react";
-import { useAuth, useReceptionDashboard, useReceptionPendingPatients, useReceptionPatients } from "@/lib/hooks";
+import { useAuth, useReceptionDashboard } from "@/lib/hooks";
 import { PageSkeleton, Card, CardContent } from "@/components/ui";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { DoctorWeekCalendar } from "@/components/appointments/DoctorWeekCalendar";
 import { ReceptionBookAppointmentModal } from "@/components/appointments/ReceptionBookAppointmentModal";
 import RegisterPatientModal from "../patients/RegisterPatientModal";
-import type { AvailabilitySlot, PatientListItem, DoctorListItem } from "@/types/domain.types";
-
-function isSameDay(dateStr?: string): boolean {
-  if (!dateStr) return false;
-  const d = new Date(dateStr);
-  const n = new Date();
-  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
-}
+import type { AvailabilitySlot, DoctorListItem } from "@/types/domain.types";
 
 export default function ReceptionistDashboard() {
   const { user } = useAuth();
-  const { dashboard, isLoading: dashLoading } = useReceptionDashboard();
-  const { pending, isLoading: pendingLoading } = useReceptionPendingPatients();
-  const { patients, isLoading: patientsLoading } = useReceptionPatients();
+  // One call: counts + first 5 pending (API audit F-019) — used to download
+  // every patient and every pending registration to count them.
+  const { dashboard, isLoading } = useReceptionDashboard();
+  const pending = dashboard?.pending_preview ?? [];
 
   const [doctors, setDoctors] = useState<DoctorListItem[]>([]);
   const [selectedDoctorId, setSelectedDoctorId] = useState("");
@@ -46,15 +40,10 @@ export default function ReceptionistDashboard() {
     }).catch(() => {});
   }, []);
 
-  // Dashboard stats come from the server, or derive client-side from cached lists.
-  const totalPatients = dashboard?.patient_count ?? patients.length;
-  const pendingCount  = dashboard?.pending_count ?? pending.length;
-  const registeredToday = (() => {
-    if (dashboard?.registered_today) return dashboard.registered_today;
-    return patients.filter((p) => isSameDay(p.registered_at ?? p.created_at ?? p.assigned_at)).length;
-  })();
+  const totalPatients = dashboard?.patient_count ?? 0;
+  const pendingCount  = dashboard?.pending_count ?? 0;
+  const registeredToday = dashboard?.registered_today ?? 0;
 
-  const isLoading = dashLoading || pendingLoading || patientsLoading;
   if (isLoading) return <PageSkeleton />;
 
   const stats = [
@@ -236,7 +225,6 @@ export default function ReceptionistDashboard() {
         <ReceptionBookAppointmentModal
           isOpen={showBooking}
           clinicId={user.clinic_id}
-          patients={patients}
           prefill={bookingPrefill}
           onClose={() => setShowBooking(false)}
           // The doctor calendars below refresh themselves on this event.

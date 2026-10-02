@@ -96,6 +96,7 @@ export const ENDPOINTS = {
   // ─── Patients (patient-role self views) ───
   PATIENTS: {
     DASHBOARD: "/patients",       // real — RLS-scoped to own record, composed client-side
+    REGISTRATION_RECORD: (patientId: string) => `/patients/${patientId}/registration-record`, // real — anamnesis + responses + general PRS (F-025)
     MY_DOCTOR: "/patients/my-doctor",           // NOT AVAILABLE
     MY_ASSESSMENTS: "/patients/my-assessments", // NOT AVAILABLE — scale-assignments carry no disease grouping data
     MY_SCORES: "/patients/my-scores",           // NOT AVAILABLE — no list-instances-by-patient endpoint
@@ -138,6 +139,7 @@ export const ENDPOINTS = {
     PATIENTS: "/reception/patients",
     PATIENT: (patientId: string) => `/reception/patients/${patientId}`,
     REGISTRATIONS: "/reception/registrations",
+    DASHBOARD: "/reception/dashboard", // real — counts + pending preview (F-019)
     APPROVE_REGISTRATION: (registrationId: string) => `/reception/registrations/${registrationId}/approve`,
     REJECT_REGISTRATION: (registrationId: string) => `/reception/registrations/${registrationId}/reject`,
     ME: "/reception/me",
@@ -350,6 +352,7 @@ export const ENDPOINTS = {
   APPOINTMENTS: {
     LIST: "/appointments",              // real — GET list, POST create (same path as old)
     UPCOMING: "/appointments/upcoming", // real
+    PAGE: "/appointments/page", // real — one page + total + pill counts (F-023)
     TODAY: "/appointments/today",       // real
     GET: (id: string) => `/appointments/${id}`, // real
     UPDATE: (id: string) => `/appointments/${id}`, // real — PATCH {notes?, patient_complaint?, appointment_type?}
