@@ -1,10 +1,10 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Search, ChevronDown, ChevronRight } from "lucide-react";
 import { Input, PatientListSkeleton } from "@/components/ui";
-import { useDoctorPatients, usePatientPermissions, useClinics } from "@/lib/hooks";
+import { useDoctorPatients, usePatientPermissions } from "@/lib/hooks";
 
 function calcAge(dob?: string): number | null {
   if (!dob) return null;
@@ -101,20 +101,11 @@ function PatientRowDetail({ patientId, registrationStatus }: { patientId: string
 
 export default function DoctorPatientsPage() {
   const { patients, isLoading } = useDoctorPatients();
-  const { clinics } = useClinics();
   const searchParams = useSearchParams();
   const [search, setSearch] = useState(searchParams.get("q") ?? "");
   const [visitDate, setVisitDate] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const router = useRouter();
-
-  const clinicMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const c of clinics) {
-      if (c.clinic_id) map.set(c.clinic_id, c.clinic_name);
-    }
-    return map;
-  }, [clinics]);
 
   const filtered = patients
     .filter((p) => `${p.first_name} ${p.last_name} ${p.email} ${p.mrn || ""}`.toLowerCase().includes(search.toLowerCase()))
@@ -178,8 +169,8 @@ export default function DoctorPatientsPage() {
             {filtered.map((p) => {
               const age = calcAge(p.date_of_birth);
               const lastVisit = p.last_visit_date ?? p.last_prs?.completed_at ?? null;
-              const clinicId = p.clinic_id ?? p.primary_clinic_id;
-              const clinicLabel = p.clinic_name || (clinicId ? clinicMap.get(clinicId) : null) || p.clinic_city || "—";
+              // clinic_name comes on each /patients row — no clinic-list fetch (API audit F-030).
+              const clinicLabel = p.clinic_name || p.clinic_city || "—";
               const isExpanded = expandedId === p.id;
               return (
                 <Fragment key={p.id}>

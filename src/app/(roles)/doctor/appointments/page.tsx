@@ -1,12 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Search, Eye } from "lucide-react";
-import apiClient from "@/lib/api/client";
-import { ENDPOINTS } from "@/lib/api/endpoints";
-import { STATUS_LABEL, STATUS_TONE, isSupersededCancellation } from "@/lib/appointmentStatus";
-import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
+import { appointmentsService } from "@/lib/api/services/appointments.service";
+import { STATUS_LABEL, STATUS_TONE } from "@/lib/appointmentStatus";
 import { getDeviceSessionLabel } from "@/lib/utils/sessionType";
 import type { Appointment, AppointmentStatus } from "@/types/domain.types";
 
@@ -19,6 +17,8 @@ import type { Appointment, AppointmentStatus } from "@/types/domain.types";
 // follow_up/protocol_followup are likewise filtered by appointment_type so a
 // doctor can isolate those visit kinds regardless of their current status.
 type FilterValue = AppointmentStatus | "all" | "device_sessions" | "follow_up" | "protocol_followup";
+
+const PAGE_SIZE = 50;
 
 const STATUS_FILTERS: FilterValue[] = [
   "all", "follow_up", "protocol_followup", "paid", "checked_in", "in_progress", "completed", "cancelled", "device_sessions",
@@ -90,52 +90,57 @@ export default function DoctorAppointmentsPage() {
   const [dateTo,       setDateTo]       = useState("");
   const [selId,        setSelId]        = useState<string | null>(null);
 
-  const fetchAppointments = useCallback(async (from: string) => {
+  // One server page (API audit F-029): pill, date range and search are
+  // applied in SQL, superseded cancellations excluded, sorted date then time.
+  // Used to fetch 200 rows (the cap — later appointments silently missing,
+  // device sessions included only to be dropped here) and filter client-side.
+  const [page,       setPage]       = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total,      setTotal]      = useState(0);
+  const [qDebounced, setQDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setQDebounced(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+  useEffect(() => { setPage(1); }, [status, qDebounced, dateFrom, dateTo]);
+
+  const fetchAppointments = useCallback(async () => {
     setLoading(true);
+    // "all" and the status pills mean "everything except device sessions"
+    // (a CA runs those); the type pills select exactly one type.
+    const typeFilter = status === "device_sessions" ? "device_session"
+      : status === "follow_up" || status === "protocol_followup" ? status
+      : undefined;
     try {
-      const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, {
-        params: { date_from: from || undefined, limit: 200 },
+      const res = await appointmentsService.page({
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+        appointment_type: typeFilter,
+        exclude_appointment_type: typeFilter ? undefined : "device_session",
+        status: typeFilter || status === "all" ? undefined : status,
+        search: qDebounced || undefined,
+        page,
+        page_size: PAGE_SIZE,
       });
-      setAppointments(Array.isArray(data) ? data : []);
+      setAppointments(res.appointments);
+      setTotal(res.total);
+      setTotalPages(res.totalPages);
     } catch {
       setAppointments([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [status, dateFrom, dateTo, qDebounced, page]);
 
-  useEffect(() => { fetchAppointments(dateFrom); }, [dateFrom, fetchAppointments]);
+  useEffect(() => { fetchAppointments(); }, [fetchAppointments]);
 
   useEffect(() => {
-    const onAppointmentEvent = () => fetchAppointments(dateFrom);
+    const onAppointmentEvent = () => fetchAppointments();
     window.addEventListener("sse:appointment", onAppointmentEvent);
     return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
-  }, [fetchAppointments, dateFrom]);
+  }, [fetchAppointments]);
 
-  const filtered = useMemo(() => {
-    const query = q.toLowerCase();
-    return [...appointments]
-      .filter((a) => !isSupersededCancellation(a))
-      .filter((a) => {
-        if (status === "device_sessions") return a.appointment_type === "device_session";
-        if (status === "follow_up") return a.appointment_type === "follow_up";
-        if (status === "protocol_followup") return a.appointment_type === "protocol_followup";
-        return a.appointment_type !== "device_session" && (status === "all" || a.status === status);
-      })
-      .filter((a) => !query || `${a.appointment_id} ${a.patient_name ?? ""} ${a.patient_mrn ?? ""} ${a.appointment_type ?? ""}`.toLowerCase().includes(query))
-      // appointment_date is already a plain "YYYY-MM-DD" string (see
-      // fmtDate above) — lexicographic comparison sorts/bounds it correctly
-      // without parsing into a Date, and sidesteps timezone drift entirely.
-      .filter((a) => !dateFrom || (a.appointment_date || "") >= dateFrom)
-      .filter((a) => !dateTo || (a.appointment_date || "") <= dateTo)
-      .sort((a, b) => {
-        // Date-wise then time-wise, chronological (soonest first) — was
-        // sorting newest-date-first, which mixed dates and times in a way
-        // that didn't read as a straightforward schedule.
-        const dc = (a.appointment_date || "").localeCompare(b.appointment_date || "");
-        return dc !== 0 ? dc : (a.start_time || "").localeCompare(b.start_time || "");
-      });
-  }, [appointments, status, q, dateFrom, dateTo]);
+  const filtered = appointments;
 
   useEffect(() => {
     if (!selId && filtered.length > 0) setSelId(filtered[0].appointment_id);
@@ -144,28 +149,13 @@ export default function DoctorAppointmentsPage() {
   const sel = filtered.find((a) => a.appointment_id === selId) ?? filtered[0] ?? null;
   const locked = sel ? ["completed", "cancelled"].includes(sel.status) : false;
 
-  const [modalityByProtocol, setModalityByProtocol] = useState<Record<string, string | null>>({});
-
-  useEffect(() => {
-    const ids = [...new Set(
-      appointments
-        .filter((a) => a.appointment_type === "device_session" && a.protocol_id)
-        .map((a) => a.protocol_id as string)
-    )].filter((id) => !(id in modalityByProtocol));
-    if (ids.length === 0) return;
-    ids.forEach((pid) => {
-      treatmentProtocolService.getProtocolDetail(pid)
-        .then((p) => setModalityByProtocol((prev) => ({ ...prev, [pid]: p.modality ?? null })))
-        .catch(() => setModalityByProtocol((prev) => ({ ...prev, [pid]: null })));
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appointments]);
-
+  // modality rides on every appointment row (backend joins the protocol's
+  // device) — no per-protocol detail fetch (API audit F-029, was 15 calls).
   const apptTypeLabel = useCallback((appt: Appointment): string =>
     appt.appointment_type === "device_session"
-      ? getDeviceSessionLabel(appt.protocol_id ? modalityByProtocol[appt.protocol_id] : null)
+      ? getDeviceSessionLabel(appt.modality ?? null)
       : (appt.appointment_type ?? "").replace(/_/g, " "),
-    [modalityByProtocol],
+    [],
   );
 
   return (
@@ -350,6 +340,40 @@ export default function DoctorAppointmentsPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+        {totalPages > 1 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-neutral-100">
+            <p className="text-xs text-neutral-500">
+              Showing page {Math.min(page, totalPages)} of {totalPages} · {total} records
+            </p>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="px-3 py-1 rounded-lg text-xs font-medium text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+              >
+                Prev
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setPage(n)}
+                  className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
+                    n === page ? "bg-brand-gradient text-white" : "text-neutral-600 hover:bg-neutral-100"
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="px-3 py-1 rounded-lg text-xs font-medium text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+              >
+                Next
+              </button>
             </div>
           </div>
         )}

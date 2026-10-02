@@ -155,7 +155,7 @@ export const appointmentsService = {
   /** One server page + total + pill counts (GET /appointments/page, API
    * audit F-023) — the reception table's data source. */
   async page(params: {
-    clinic_id?: string; doctor_name?: string; status?: string; appointment_type?: string;
+    clinic_id?: string; doctor_name?: string; status?: string; appointment_type?: string; exclude_appointment_type?: string;
     date_from?: string; date_to?: string; search?: string; page: number; page_size: number;
   }): Promise<{
     appointments: Appointment[]; total: number; totalPages: number;
@@ -170,8 +170,9 @@ export const appointmentsService = {
     };
   },
 
-  async getUpcoming(): Promise<Appointment[]> {
-    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.UPCOMING);
+  /** patientId (patients.patient_id) narrows to one patient (F-031). */
+  async getUpcoming(patientId?: string): Promise<Appointment[]> {
+    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.UPCOMING, { params: patientId ? { patient_id: patientId } : undefined });
     return extractList(data);
   },
 

@@ -292,11 +292,16 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
   const autoStartedRef = useRef(false);
   useEffect(() => {
     if (recordState !== "no-record" || mode !== "doctor" || lockedForSession) return;
+    // A consultation (main) anamnesis must belong to an appointment — the
+    // backend rejects it otherwise (422 ANAMNESIS_APPOINTMENT_REQUIRED), so
+    // don't auto-fire a request that can't succeed when no consultation is
+    // selected (API audit F-035: it fired on every patient-page open).
+    if (assessmentStage === "main" && !appointmentId) return;
     if (autoStartedRef.current) return;
     autoStartedRef.current = true;
     handleStartOnBehalf();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recordState, mode, lockedForSession]);
+  }, [recordState, mode, lockedForSession, assessmentStage, appointmentId]);
 
   // ── per-question auto-save (600 ms debounce) ──────────────────────────────
   const handleChange = useCallback((questionId: string, value: string | null, values: string[] | null) => {

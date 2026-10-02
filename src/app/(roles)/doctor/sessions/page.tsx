@@ -27,17 +27,16 @@ export default function DoctorSessionsPage() {
     let cancelled = false;
     (async () => {
       try {
-        const protocols = await treatmentProtocolService.listProtocols({ status: "active" });
-        const withSessions = await Promise.all(
-          protocols.map(async (protocol) => {
-            const detail = await treatmentProtocolService.getProtocolDetail(protocol.protocol_id).catch(() => null);
-            const sessions = (detail?.sessions ?? []).slice().sort((a, b) => (a.session_number ?? 0) - (b.session_number ?? 0));
+        // One call: protocols + their device sessions (API audit F-034) —
+        // was a full detail fetch per protocol.
+        const protocols = await treatmentProtocolService.listProtocolsWithSessions({ status: "active" });
+        const withSessions = protocols.map((protocol) => {
+            const sessions = protocol.sessions.slice().sort((a, b) => (a.session_number ?? 0) - (b.session_number ?? 0));
             // The device session currently "up" — the earliest one that
             // hasn't finished yet (in progress or still not started).
             const current = sessions.find((s) => !isSessionFinished(s.status)) ?? sessions[sessions.length - 1] ?? null;
             return { protocol, sessions, current };
-          })
-        );
+          });
         if (!cancelled) setRows(withSessions);
       } finally {
         if (!cancelled) setIsLoading(false);

@@ -138,15 +138,15 @@ export default function DoctorDashboard() {
   const fetchAppointments = useCallback(async (from: Date, to: Date) => {
     try {
       const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, {
-        params: { date_from: toDateStr(from), date_to: toDateStr(to), limit: 100 },
+        // doctor_id on a device_session row records the prescribing doctor
+        // (scheduling/service.py::_generate_appointments), but a clinical
+        // assistant runs the session — nothing here is theirs to open. Drop
+        // them server-side (API audit F-028): downloading and discarding them
+        // pushed real visits past the row limit in Month view.
+        params: { date_from: toDateStr(from), date_to: toDateStr(to), exclude_appointment_type: "device_session", limit: 500 },
       });
       const list: Appointment[] = Array.isArray(data) ? data : [];
-      // doctor_id on a device_session row records the prescribing doctor
-      // (scheduling/service.py::_generate_appointments) so the wider
-      // /appointments query correctly returns it, but a clinical assistant
-      // runs the session, not the doctor — nothing here is theirs to open,
-      // so it doesn't belong on this dashboard's calendar or upcoming list.
-      setAppointments(list.filter((a) => a.appointment_type !== "device_session"));
+      setAppointments(list);
     } catch { setAppointments([]); }
   }, []);
 

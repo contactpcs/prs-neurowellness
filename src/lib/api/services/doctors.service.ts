@@ -1,4 +1,4 @@
-import apiClient, { getDiseaseCatalog } from "../client";
+import apiClient, { getDiseaseCatalog, getStoredUser } from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type { DoctorDashboard, PatientListItem, PatientDetail, AnamnesisRecord } from "@/types/domain.types";
 import type { ProtocolRead } from "@/types/treatmentProtocol.types";
@@ -64,6 +64,15 @@ function mapPatient(p: Record<string, unknown>): PatientListItem {
   };
 }
 
+// Own doctor_id from the stored /auth/me snapshot; /auth/me only if absent
+// (API audit F-044 — profile open/save each re-fetched /auth/me for it).
+async function myDoctorId(): Promise<string | undefined> {
+  const stored = getStoredUser()?.doctor_id;
+  if (stored) return String(stored);
+  const { data } = await apiClient.get(ENDPOINTS.USERS.PROFILE);
+  return data?.doctor_id ? String(data.doctor_id) : undefined;
+}
+
 export const doctorsService = {
   // NOT AVAILABLE — no aggregate endpoint, no self doctor_id resolvable from a bare URL.
   async getDashboard(): Promise<DoctorDashboard> {
@@ -108,18 +117,15 @@ export const doctorsService = {
       scaleIds = disease?.scales?.map((s) => s.scale_id) ?? disease?.scale_ids ?? [];
       if (scaleIds.length === 0) throw new Error(`No scales found for disease ${payload.disease_id}`);
     }
-    const results = await Promise.all(
-      scaleIds.map((scale_id) =>
-        apiClient.post(ENDPOINTS.DOCTORS.GRANT_ASSESSMENT(patientId), {
-          patient_id: patientId,
-          scale_id,
-          disease_id: payload.disease_id,
-          assessment_stage: "main_clinical",
-          assignment_reason: "doctor_override",
-        })
-      )
-    );
-    return results.map((r) => r.data);
+    // One request, all-or-nothing (API audit F-042) — was one POST per scale.
+    const { data } = await apiClient.post(ENDPOINTS.PRS.PERMISSIONS_BULK, {
+      patient_id: patientId,
+      scale_ids: scaleIds,
+      disease_id: payload.disease_id,
+      assessment_stage: "main_clinical",
+      assignment_reason: "doctor_override",
+    });
+    return data;
   },
 
   // Own profile — the doctor-role equivalent of reception.service.ts's
@@ -127,8 +133,7 @@ export const doctorsService = {
   // PATCH is self-scoped server-side (assert_staff_self, staff/router.py)
   // so this can never touch another doctor's row.
   async getMyProfile(): Promise<Record<string, unknown>> {
-    const me = await apiClient.get(ENDPOINTS.USERS.PROFILE);
-    const doctorId = me.data.doctor_id;
+    const doctorId = await myDoctorId();
     if (!doctorId) throw new Error("No doctor record for this account.");
     const { data } = await apiClient.get(ENDPOINTS.DOCTORS.ME(doctorId));
     return data;
@@ -166,16 +171,14 @@ export const doctorsService = {
       throw new Error("None of the changed fields can be saved yet — this needs a database change.");
     }
 
-    const me = await apiClient.get(ENDPOINTS.USERS.PROFILE);
-    const doctorId = me.data.doctor_id;
+    const doctorId = await myDoctorId();
     if (!doctorId) throw new Error("No doctor record for this account.");
     const { data } = await apiClient.patch(ENDPOINTS.DOCTORS.ME(doctorId), mapped);
     return data;
   },
 
   async updateAvailability(status: "available" | "unavailable"): Promise<unknown> {
-    const me = await apiClient.get(ENDPOINTS.USERS.PROFILE);
-    const doctorId = me.data.doctor_id;
+    const doctorId = await myDoctorId();
     if (!doctorId) throw new Error("No doctor record for this account.");
     const { data } = await apiClient.patch(ENDPOINTS.DOCTORS.ME(doctorId), {
       availability_status: status === "available" ? "available" : "on_leave",

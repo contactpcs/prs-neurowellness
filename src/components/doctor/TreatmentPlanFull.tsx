@@ -11,7 +11,6 @@ import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
 import type { ClinicalSessionTab } from "@/lib/hooks/usePatientClinicalSessions";
 import type { ProtocolRead, ProtocolDetail } from "@/types/treatmentProtocol.types";
 import type { AnamnesisRecord, Appointment, AssessmentInstance, PatientDetail } from "@/types/domain.types";
-import type { DeviceSessionDetail } from "@/types/deviceSession.types";
 import { loadTreatmentPlan, saveTreatmentPlan, type TreatmentPlanData } from "@/lib/utils/treatmentPlanStore";
 import { deviceSessionLabel } from "@/lib/utils/deviceSessionStatus";
 
@@ -169,7 +168,7 @@ export function TreatmentPlanFull({
   const [anamnesis, setAnamnesis] = useState<AnamnesisRecord | null>(null);
   const [prsByVisit, setPrsByVisit] = useState<Record<string, AssessmentInstance[]>>({});
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [deviceSessionsById, setDeviceSessionsById] = useState<Record<string, DeviceSessionDetail>>({});
+  const [deviceSessionsById, setDeviceSessionsById] = useState<Record<string, { session_status: string | null; feedback_answers: Record<string, unknown> | null; adverse_event_count: number }>>({});
   const [edit, setEdit] = useState(false);
 
   const active = protocols.find((p) => p.status === "active") ?? protocols[protocols.length - 1] ?? null;
@@ -186,45 +185,45 @@ export function TreatmentPlanFull({
       setProtocols(list.slice().sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? "")));
       const act = list.find((p) => p.status === "active") ?? list[list.length - 1] ?? null;
 
-      const [detail, latestAnamnesis, apptRes] = await Promise.all([
+      // Per-visit summaries — one request per clinical session (Consultation/
+      // Follow-up/Protocol Follow-up only; small, bounded list). The latest
+      // one's anamnesis is reused instead of fetching that summary twice;
+      // appointments are this patient's only (API audit F-038: was the
+      // clinic's first 200 rows, 301 KB, filtered here — later visits
+      // silently missing once the clinic passed 200 appointments).
+      const [detail, apptRes, summaries] = await Promise.all([
         act ? treatmentProtocolService.getProtocolDetail(act.protocol_id).catch(() => null) : Promise.resolve(null),
-        doctorsService.getVisitSummary(patientId, clinicalSessions[clinicalSessions.length - 1]?.appointment.appointment_id ?? "").then((s) => s.anamnesis).catch(() => null),
-        appointmentsService.list({ limit: 200 }).catch(() => ({ appointments: [] as Appointment[], total: 0 })),
+        appointmentsService.list({ patient_id: patientId, limit: 500 }).catch(() => ({ appointments: [] as Appointment[], total: 0 })),
+        Promise.all(
+          clinicalSessions.map((s) =>
+            doctorsService.getVisitSummary(patientId, s.appointment.appointment_id).catch(() => null),
+          ),
+        ),
       ]);
       if (cancelled) return;
       setActiveDetail(detail);
-      setAnamnesis(latestAnamnesis ?? null);
-      setAppointments(apptRes.appointments.filter((a) => (a.patient_public_id ?? a.patient_id) === patientId));
+      setAnamnesis(summaries[summaries.length - 1]?.anamnesis ?? null);
+      setAppointments(apptRes.appointments);
       setPlan(act ? loadTreatmentPlan(act.protocol_id, defaultPlan(act)) : defaultPlan(null));
-
-      // Per-visit PRS instances, from the real visit-summary endpoint — one
-      // request per clinical session (Consultation/Follow-up/Protocol
-      // Follow-up only; small, bounded list).
-      const prsEntries = await Promise.all(
-        clinicalSessions.map(async (s) => {
-          try {
-            const summary = await doctorsService.getVisitSummary(patientId, s.appointment.appointment_id);
-            return [s.appointment.appointment_id, (summary.prs_instances ?? []) as unknown as AssessmentInstance[]] as const;
-          } catch {
-            return [s.appointment.appointment_id, [] as AssessmentInstance[]] as const;
-          }
-        }),
-      );
-      if (cancelled) return;
-      setPrsByVisit(Object.fromEntries(prsEntries));
+      setPrsByVisit(Object.fromEntries(clinicalSessions.map((s, i) => [
+        s.appointment.appointment_id,
+        ((summaries[i]?.prs_instances ?? []) as unknown as AssessmentInstance[]),
+      ])));
 
       // Tolerance/adverse-event tally from real device session records —
       // only for sessions that actually ran.
+      // One call for the whole protocol (API audit F-043) — was a full
+      // device-session detail fetch per completed/in-progress session.
       const deviceApptIds = (detail?.sessions ?? [])
         .filter((s) => ["completed", "in_progress"].includes(s.status))
         .map((s) => s.appointment_id);
-      const deviceEntries = await Promise.all(
-        deviceApptIds.map(async (id) => {
-          try { return [id, await deviceSessionService.get(id)] as const; } catch { return null; }
-        }),
-      );
+      const tallies: Awaited<ReturnType<typeof deviceSessionService.listProtocolSummaries>> = act && deviceApptIds.length
+        ? await deviceSessionService.listProtocolSummaries(act.protocol_id).catch(() => ({}))
+        : {};
       if (cancelled) return;
-      setDeviceSessionsById(Object.fromEntries(deviceEntries.filter((e): e is [string, DeviceSessionDetail] => e !== null)));
+      setDeviceSessionsById(Object.fromEntries(
+        deviceApptIds.filter((id) => tallies[id]).map((id) => [id, tallies[id]]),
+      ));
 
       setIsLoading(false);
     })();
@@ -269,8 +268,8 @@ export function TreatmentPlanFull({
   const pct = planned ? Math.round((completed / planned) * 100) : 0;
 
   const deviceRecords = Object.values(deviceSessionsById);
-  const tolerated = deviceRecords.filter((d) => d.feedback?.answers.comfort === "comfortable" || d.feedback?.answers.felt_after === "better").length;
-  const withAdverseEvent = deviceRecords.filter((d) => d.adverse_events.length > 0).length;
+  const tolerated = deviceRecords.filter((d) => d.feedback_answers?.comfort === "comfortable" || d.feedback_answers?.felt_after === "better").length;
+  const withAdverseEvent = deviceRecords.filter((d) => d.adverse_event_count > 0).length;
   const stoppedEarly = deviceRecords.filter((d) => d.session_status === "stopped_early").length;
 
   const latestScoreRow = scaleGrid[0]?.last ?? null;

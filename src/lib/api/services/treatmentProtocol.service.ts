@@ -1,4 +1,4 @@
-import apiClient from "../client";
+import apiClient, { getCatalog } from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type {
   DeviceCompanyRead, DeviceRead, ConditionRead, DiagnosisRead, DiagnosisResolution,
@@ -61,15 +61,18 @@ export const treatmentProtocolService = {
     return data;
   },
 
+  // Steps 2-6 read reference.* catalogs (no write path in the API) -> shared
+  // 5-min cache keyed by params (API audit F-039: dosing was fetched 22x in
+  // one wizard run, diagnoses 12x, placements 8x).
   // ─── Step 2 — Condition ───
   async listConditions(deviceId?: string): Promise<ConditionRead[]> {
-    const { data } = await apiClient.get(ENDPOINTS.NEUROMOD.CONDITIONS, { params: { device_id: deviceId } });
+    const { data } = await getCatalog(ENDPOINTS.NEUROMOD.CONDITIONS, { params: { device_id: deviceId } });
     return Array.isArray(data) ? data : [];
   },
 
   // ─── Step 3 — Diagnosis ───
   async listDiagnoses(params: { conditionIds?: string[]; deviceId?: string; q?: string; skip?: number; limit?: number }): Promise<DiagnosisRead[]> {
-    const { data } = await apiClient.get(ENDPOINTS.NEUROMOD.DIAGNOSES, {
+    const { data } = await getCatalog(ENDPOINTS.NEUROMOD.DIAGNOSES, {
       params: {
         condition_id: params.conditionIds?.length ? params.conditionIds : undefined,
         device_id: params.deviceId,
@@ -89,7 +92,7 @@ export const treatmentProtocolService = {
 
   // ─── Step 4 — Placement ───
   async listPlacements(deviceId: string, conditionId?: string): Promise<PlacementRead[]> {
-    const { data } = await apiClient.get(ENDPOINTS.NEUROMOD.PLACEMENTS, { params: { device_id: deviceId, condition_id: conditionId } });
+    const { data } = await getCatalog(ENDPOINTS.NEUROMOD.PLACEMENTS, { params: { device_id: deviceId, condition_id: conditionId } });
     return Array.isArray(data) ? data : [];
   },
 
@@ -130,7 +133,7 @@ export const treatmentProtocolService = {
 
   // ─── Step 5 — Dosing ───
   async listDosing(deviceId: string, conditionId?: string, placementId?: string): Promise<DosingRead[]> {
-    const { data } = await apiClient.get(ENDPOINTS.NEUROMOD.DOSING, {
+    const { data } = await getCatalog(ENDPOINTS.NEUROMOD.DOSING, {
       params: { device_id: deviceId, condition_id: conditionId, placement_id: placementId },
     });
     return Array.isArray(data) ? data : [];
@@ -138,7 +141,7 @@ export const treatmentProtocolService = {
 
   // ─── Step 6 — Scales ───
   async listScales(conditionIds?: string[]): Promise<ScaleRead[]> {
-    const { data } = await apiClient.get(ENDPOINTS.NEUROMOD.SCALES, {
+    const { data } = await getCatalog(ENDPOINTS.NEUROMOD.SCALES, {
       params: { condition_id: conditionIds?.length ? conditionIds : undefined },
       paramsSerializer: { indexes: null },
     });
@@ -162,6 +165,16 @@ export const treatmentProtocolService = {
       params: { plan_id: params?.planId, instance_id: params?.instanceId, patient_id: params?.patientId, status: params?.status, skip: params?.skip ?? 0, limit: params?.limit ?? 50 },
     });
     return Array.isArray(data) ? data : [];
+  },
+
+  /** Protocols + each one's device sessions (same list as detail.sessions)
+   * in one call — API audit F-034, was 1 detail call per protocol. */
+  async listProtocolsWithSessions(params?: { status?: string; patientId?: string; limit?: number; allTypes?: boolean }): Promise<(ProtocolRead & { sessions: ProtocolDetail["sessions"] })[]> {
+    // allTypes: every appointment of each protocol (= /{id}/sessions), not just device sessions (F-037).
+    const { data } = await apiClient.get(ENDPOINTS.TREATMENT_PROTOCOLS.LIST, {
+      params: { status: params?.status, patient_id: params?.patientId, include_sessions: true, sessions_all_types: params?.allTypes || undefined, skip: 0, limit: params?.limit ?? 200 },
+    });
+    return Array.isArray(data) ? data.map((p) => ({ ...p, sessions: p.sessions ?? [] })) : [];
   },
 
   async getProtocolDetail(protocolId: string): Promise<ProtocolDetail> {

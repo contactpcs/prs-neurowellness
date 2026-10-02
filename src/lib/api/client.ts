@@ -98,16 +98,19 @@ export function getStoredUser(): Record<string, unknown> | null {
 // failed request is not cached.
 const CATALOG_TTL_MS = 5 * 60_000;
 const catalogs = new Map<string, { at: number; p: Promise<AxiosResponse> }>();
-function getCatalog(url: string): Promise<AxiosResponse> {
-  const hit = catalogs.get(url);
+/** Shared 5-min cache for read-only reference data, keyed by URL + params. */
+export function getCatalog(url: string, config?: Parameters<typeof apiClient.get>[1]): Promise<AxiosResponse> {
+  const key = `${url}?${JSON.stringify(config?.params ?? {})}`;
+  const hit = catalogs.get(key);
   if (hit && Date.now() - hit.at < CATALOG_TTL_MS) return hit.p;
-  const p = apiClient.get(url);
-  catalogs.set(url, { at: Date.now(), p });
-  p.catch(() => { catalogs.delete(url); });
+  const p = apiClient.get(url, config);
+  catalogs.set(key, { at: Date.now(), p });
+  p.catch(() => { catalogs.delete(key); });
   return p;
 }
 export const getDiseaseCatalog = () => getCatalog(ENDPOINTS.PRS.CONDITIONS);
-export const getAnamnesisCatalog = () => getCatalog(ENDPOINTS.ANAMNESIS.QUESTIONS);
+export const getAnamnesisCatalog = (type?: string) =>
+  getCatalog(type ? `${ENDPOINTS.ANAMNESIS.QUESTIONS}?type=${encodeURIComponent(type)}` : ENDPOINTS.ANAMNESIS.QUESTIONS);
 
 /** The logged-in patient's own patients.patient_id, from the /auth/me
  * snapshot every login/restore path stores. Falls back to GET /patients
@@ -131,6 +134,8 @@ export function clearSessionAndSignalLogout() {
 }
 
 apiClient.interceptors.request.use(async (config) => {
+  // Any write may change what a recent GET returned — drop the de-dup window.
+  if (config.method && config.method.toLowerCase() !== "get") recentGets.clear();
   // The refresh cookie is scoped to /api/v1/auth, so only auth calls need
   // credentials mode on (login/new-password set it, refresh/logout use it).
   if (config.url?.startsWith("/auth/")) config.withCredentials = true;
@@ -202,5 +207,48 @@ apiClient.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// ponytail: identical GETs (same URL + params) started within GET_DEDUPE_MS
+// share one request — screens mount several components/tabs that each fetch
+// the same patient, appointments, catalog... in the same second (API audit
+// F-033: doctor patient page 47 requests, many 2x within 1 s). Cleared on any
+// write (request interceptor above) and on any live SSE event, so it never
+// serves data older than a known change; each caller gets its own deep copy.
+// Skipped for auth calls, downloads (responseType), custom headers and
+// abortable requests. Upgrade path: a real query cache (react-query/SWR).
+const GET_DEDUPE_MS = 3000;
+const recentGets = new Map<string, { at: number; p: Promise<AxiosResponse> }>();
+export function clearGetCache(): void { recentGets.clear(); }
+if (typeof window !== "undefined") window.addEventListener("sse:notification", clearGetCache);
+
+const rawGet = apiClient.get.bind(apiClient);
+apiClient.get = ((url: string, config?: Parameters<typeof rawGet>[1]) => {
+  if (url.startsWith("/auth/") || config?.responseType || config?.headers || config?.signal) return rawGet(url, config);
+  const key = `${url}?${JSON.stringify(config?.params ?? {})}`;
+  const hit = recentGets.get(key);
+  let p: Promise<AxiosResponse>;
+  if (hit && Date.now() - hit.at < GET_DEDUPE_MS) {
+    p = hit.p;
+  } else {
+    p = rawGet(url, config);
+    recentGets.set(key, { at: Date.now(), p });
+    p.catch(() => recentGets.delete(key));
+  }
+  return p.then((r) => ({ ...r, data: structuredClone(r.data) }));
+}) as typeof apiClient.get;
+
+/** Fire-and-forget write that survives the page closing (fetch keepalive) —
+ * used only to flush queued autosaves on tab hide/close (saveBatcher). */
+export async function sendKeepalive(method: "POST" | "PATCH", url: string, body: unknown): Promise<void> {
+  const token = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN) : null;
+  recentGets.clear();
+  const res = await fetch(`${API_BASE_URL}${url}`, {
+    method,
+    keepalive: true,
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`keepalive ${method} ${url} -> ${res.status}`);
+}
 
 export default apiClient;

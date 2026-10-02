@@ -28,7 +28,8 @@ import {
   usePatientScoresSummary,
   usePatientAnamnesis,
 } from "@/lib/hooks";
-import { useUpcomingAppointments } from "@/lib/hooks/useAppointments";
+import { appointmentsService } from "@/lib/api/services/appointments.service";
+import type { Appointment } from "@/types/domain.types";
 import { useGoBack } from "@/lib/hooks/useGoBack";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { patientFilesService, type PatientFile } from "@/lib/api/services/patientFiles.service";
@@ -86,7 +87,12 @@ export default function DoctorPatientSummaryPage() {
   const { patient, isLoading: patientLoading, isError: patientError, error: patientErrorMessage } = useDoctorPatient(id);
   const { instances: scoreInstances, total: totalAssessments } = usePatientScoresSummary(id);
   const { record: anamnesisRecord } = usePatientAnamnesis(id, "main");
-  const { upcoming } = useUpcomingAppointments();
+  // This patient's upcoming visits only (F-031) — was the doctor's whole
+  // 14-day list (105 rows / 154 KB) filtered down to one patient here.
+  const [upcoming, setUpcoming] = useState<Appointment[]>([]);
+  useEffect(() => {
+    appointmentsService.getUpcoming(id).then(setUpcoming).catch(() => setUpcoming([]));
+  }, [id]);
   const dispatch = useAppDispatch();
   const prescribedMedicines = useAppSelector(selectPatientMedicines(id));
   // Load from the backend (SQL/v1/96) — this page can be opened directly.

@@ -212,6 +212,7 @@ export const ENDPOINTS = {
     CONDITION: (id: string) => `/prs/conditions/${encodeURIComponent(id)}`, // NOT AVAILABLE — no per-disease detail endpoint
     QUESTION_OPTIONS: (questionId: string) => `/prs/questions/${questionId}/options`, // NOT AVAILABLE
     PERMISSIONS: "/patient-scale-assignments",    // real (closest equivalent — see permissions.service.ts)
+    PERMISSIONS_BULK: "/patient-scale-assignments/bulk", // real — several scales, one transaction (F-042)
     MY_PERMISSIONS: "/prs/permissions/my",        // NOT AVAILABLE — no self patient_id resolvable from a bare URL
     PATIENT_PERMISSIONS: (patientId: string) => `/patients/${patientId}/scale-assignments`, // real
     PATIENT_INSTANCES: (patientId: string) => `/patients/${patientId}/prs-instances`, // real — GET ?assessment_stage=
@@ -388,6 +389,7 @@ export const ENDPOINTS = {
   DEVICE_SESSIONS: {
     MY_PENDING_SCALES: "/me/device-session-scales",
     MY_SCALE_SUMMARIES: "/me/device-session-scale-summaries", // real — per-session scale counts (F-012)
+    PROTOCOL_SUMMARIES: (protocolId: string) => `/treatment-protocols/${protocolId}/device-session-summaries`, // real — tally inputs per session (F-043)
     DETAIL: (appointmentId: string) => `/device-sessions/${appointmentId}`,
     DEVICE_INFO: (appointmentId: string) => `/device-sessions/${appointmentId}/device-info`,
     CHECKLIST: (appointmentId: string) => `/device-sessions/${appointmentId}/checklist`,

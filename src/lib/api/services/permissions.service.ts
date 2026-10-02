@@ -21,18 +21,16 @@ export const permissionsService = {
    * patient-scale-assignment per scale_id. Returns the first created row. */
   async grantPermission(payload: { patient_id: string; disease_id: string; scale_ids?: string[] }): Promise<Permission> {
     const scaleIds = payload.scale_ids ?? [];
-    const created = await Promise.all(
-      scaleIds.map((scale_id) =>
-        apiClient.post(ENDPOINTS.PRS.PERMISSIONS, {
-          patient_id: payload.patient_id,
-          scale_id,
-          disease_id: payload.disease_id,
-          assessment_stage: "main_clinical",
-          assignment_reason: "doctor_override",
-        })
-      )
-    );
-    return mapAssignment(created[0]?.data ?? {});
+    if (scaleIds.length === 0) return mapAssignment({});
+    // One request, all-or-nothing (API audit F-042) — was one POST per scale.
+    const { data } = await apiClient.post(ENDPOINTS.PRS.PERMISSIONS_BULK, {
+      patient_id: payload.patient_id,
+      scale_ids: scaleIds,
+      disease_id: payload.disease_id,
+      assessment_stage: "main_clinical",
+      assignment_reason: "doctor_override",
+    });
+    return mapAssignment((Array.isArray(data) ? data[0] : null) ?? {});
   },
 
   // Own patient_id from the stored /auth/me snapshot (getMyPatientId).

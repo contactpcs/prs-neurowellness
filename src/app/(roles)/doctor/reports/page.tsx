@@ -25,9 +25,11 @@ export default function DoctorReportsPage() {
     let cancelled = false;
     (async () => {
       try {
+        // Active protocols come with all their appointments in one call
+        // (API audit F-037) — was a /{id}/sessions call per protocol.
         const [{ patients }, activeProtocols] = await Promise.all([
           doctorsService.getPatients(),
-          treatmentProtocolService.listProtocols({ status: "active" }),
+          treatmentProtocolService.listProtocolsWithSessions({ status: "active", allTypes: true }),
         ]);
         if (cancelled) return;
         setTotalPatients(patients.length);
@@ -35,11 +37,7 @@ export default function DoctorReportsPage() {
 
         const now = new Date();
         const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-        const allSessions = await Promise.all(
-          activeProtocols.map((p) => treatmentProtocolService.listProtocolSessions(p.protocol_id).catch(() => []))
-        );
-        if (cancelled) return;
-        const flat = allSessions.flat();
+        const flat = activeProtocols.flatMap((p) => p.sessions);
         const inMonth = flat.filter((s) => (s.appointment_date || "").startsWith(monthKey));
         setSessionsThisMonth(inMonth.filter((s) => s.status === "completed").length);
         setMissedThisMonth(inMonth.filter((s) => s.status === "missed").length);

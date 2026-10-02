@@ -31,6 +31,14 @@ export const deviceSessionService = {
   /** Every patient_app scale still open across all of the caller's own
    * device sessions — powers the patient dashboard's "scales sent to you"
    * widget. Patient-only; no appointment id needed. */
+  /** Status, feedback answers and adverse-event count for every device
+   * session of a protocol, keyed by appointment_id — one call (F-043). */
+  async listProtocolSummaries(protocolId: string): Promise<Record<string, { session_status: string | null; feedback_answers: Record<string, unknown> | null; adverse_event_count: number }>> {
+    const { data } = await apiClient.get(ENDPOINTS.DEVICE_SESSIONS.PROTOCOL_SUMMARIES(protocolId));
+    const rows: { appointment_id: string; session_status: string | null; feedback_answers: Record<string, unknown> | null; adverse_event_count: number }[] = Array.isArray(data) ? data : [];
+    return Object.fromEntries(rows.map((r) => [String(r.appointment_id), r]));
+  },
+
   /** Scale counts for every one of the caller's device sessions, keyed by
    * appointment_id — one call instead of listScales() per session. */
   async listMyScaleSummaries(): Promise<Record<string, { total: number; completed: number; actionable: boolean }>> {

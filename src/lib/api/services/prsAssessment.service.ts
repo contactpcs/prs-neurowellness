@@ -1,4 +1,5 @@
-import apiClient, { getDiseaseCatalog } from "../client";
+import apiClient, { getDiseaseCatalog, sendKeepalive } from "../client";
+import { createSaveBatcher } from "../saveBatcher";
 import { ENDPOINTS } from "../endpoints";
 
 // POST /prs-assessment-instances returns the full AssessmentStartRead
@@ -134,6 +135,16 @@ export type PrsQuestionOptionsResult = {
   max?: number;
   options: PrsQuestionOption[];
 };
+
+// Per-answer autosaves, batched per PRS instance (API audit F-040).
+const prsAnswers = createSaveBatcher<{ question_id: string; given_response: string }>({
+  windowMs: 2000,
+  idOf: (r) => r.question_id,
+  send: async (instanceId, responses, keepalive) => {
+    if (keepalive) return sendKeepalive("POST", ENDPOINTS.PRS.ASSESSMENT_SAVE_RESPONSE(instanceId), { responses });
+    await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_SAVE_RESPONSE(instanceId), { responses });
+  },
+});
 
 export const prsAssessmentService = {
   /** Composed from GET /prs-catalog/diseases — each disease row now carries
@@ -272,9 +283,9 @@ export const prsAssessmentService = {
     value: number | string,
     _label?: string | null
   ): Promise<void> {
-    await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_SAVE_RESPONSE(instanceId), {
-      responses: [{ question_id: questionId, given_response: String(value) }],
-    });
+    // Queued and sent in batches (F-040) — one request per ~2 s instead of
+    // one per answer; resolves when the batch carrying this answer lands.
+    return prsAnswers.enqueue(instanceId, { question_id: questionId, given_response: String(value) });
   },
 
   /** Real: GET /prs-assessment-instances/{id}/responses — returns saved
@@ -327,10 +338,21 @@ export const prsAssessmentService = {
       question_id,
       given_response: String(v),
     }));
-    const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_SUBMIT(instanceId), {
-      responses: responseList,
-      finalize_scale_id: scaleId,
-    });
-    return unwrap<unknown>(data);
+    // Answers still queued for this instance ride along with the finalize
+    // (one request; explicit submit values win). Scoring reads the stored
+    // answers server-side, so the result is identical to saving them first.
+    const pending = await prsAnswers.drain(instanceId);
+    const submitted = new Set(responseList.map((r) => r.question_id));
+    try {
+      const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_SUBMIT(instanceId), {
+        responses: [...pending.items.filter((r) => !submitted.has(r.question_id)), ...responseList],
+        finalize_scale_id: scaleId,
+      });
+      pending.done();
+      return unwrap<unknown>(data);
+    } catch (err) {
+      pending.done(err);
+      throw err;
+    }
   },
 };
