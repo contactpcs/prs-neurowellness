@@ -114,6 +114,7 @@ export const ENDPOINTS = {
   STAFF: {
     DASHBOARD: "/staff/dashboard", // NOT AVAILABLE — composed client-side with defaults
     PATIENTS: "/patients",         // real — RLS-scoped to the staff member's clinic
+    PATIENTS_COUNT: "/patients/count", // real — same filters/scope, just the number (F-045)
     PATIENTS_PENDING: "/patients", // real (same endpoint) — filtered client-side by registration_status
     REGISTER_PATIENT: "/patients", // real — POST, payload reshaped (see staff.service.ts)
     PATIENT: (patientId: string) => `/patients/${patientId}`, // real

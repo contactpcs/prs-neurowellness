@@ -6,7 +6,6 @@ import { Users, ClipboardCheck, Activity, Calendar } from "lucide-react";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
 import { staffService } from "@/lib/api/services/staff.service";
-import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { getDeviceSessionLabel } from "@/lib/utils/sessionType";
 import { PageSkeleton, Card, CardContent, Button } from "@/components/ui";
 import { isSupersededCancellation } from "@/lib/appointmentStatus";
@@ -74,14 +73,15 @@ export default function CADashboard() {
     const params: Record<string, unknown> = { limit: 200, date_from: date, date_to: date };
 
     Promise.all([
-      staffService.getDashboard().catch(() => ({ patient_count: 0, pending_count: 0 })),
+      // Counts only (F-045) — getDashboard() downloaded every patient.
+      staffService.getPatientCount().then((patient_count) => ({ patient_count })).catch(() => ({ patient_count: 0 })),
       // getDashboard()'s own pending_count counts anyone still mid-registration
       // wizard (registration_status !== "registration_complete") — a much
       // broader, wrong-for-this-card definition than an actual pending
       // approval. getPendingPatients() is the same approval_status=pending
       // AND registration_status=registration_complete query the /approvals
       // page itself uses, so the two numbers can no longer disagree.
-      staffService.getPendingPatients().catch(() => ({ patients: [], total: 0 })),
+      staffService.getPendingCount().then((total) => ({ total })).catch(() => ({ total: 0 })),
       apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, { params: { ...params, appointment_type: "device_session" } }).catch(() => ({ data: [] })),
       apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, { params: { ...params, appointment_type: "protocol_followup" } }).catch(() => ({ data: [] })),
     ]).then(([dash, pending, deviceRes, followUpRes]) => {
@@ -105,24 +105,6 @@ export default function CADashboard() {
       });
   }, [sessions]);
 
-  const [modalityByProtocol, setModalityByProtocol] = useState<Record<string, string | null>>({});
-
-  useEffect(() => {
-    // Only the visible top 10 rows are ever rendered, so only their
-    // protocols need a modality lookup — bounded, not scanning all sessions.
-    const ids = [...new Set(
-      upcoming.slice(0, 10)
-        .filter((s) => s.appointment_type === "device_session" && s.protocol_id)
-        .map((s) => s.protocol_id as string)
-    )].filter((id) => !(id in modalityByProtocol));
-    if (ids.length === 0) return;
-    ids.forEach((pid) => {
-      treatmentProtocolService.getProtocolDetail(pid)
-        .then((p) => setModalityByProtocol((prev) => ({ ...prev, [pid]: p.modality ?? null })))
-        .catch(() => setModalityByProtocol((prev) => ({ ...prev, [pid]: null })));
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [upcoming]);
 
   if (isLoading) return <PageSkeleton />;
 
@@ -201,7 +183,7 @@ export default function CADashboard() {
                     <p className="text-sm font-semibold text-neutral-900 truncate">{s.patient_name || "—"}</p>
                     <p className="text-xs text-neutral-500 mt-0.5">
                       {s.appointment_type === "device_session"
-                        ? `${getDeviceSessionLabel(s.protocol_id ? modalityByProtocol[s.protocol_id] : null)}${s.session_number ? ` ${s.session_number}` : ""}`
+                        ? `${getDeviceSessionLabel((s as { modality?: string | null }).modality ?? null)}${s.session_number ? ` ${s.session_number}` : ""}`
                         : "Protocol Follow-up"}
                     </p>
                   </div>

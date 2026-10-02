@@ -25,7 +25,7 @@ export type BadgeKey =
   | "doctorUnreadNotifications" | "patientUnreadNotifications";
 
 const FETCHERS: Record<BadgeKey, () => Promise<number>> = {
-  patientApprovals: async () => (await staffService.getPendingPatients()).total,
+  patientApprovals: () => staffService.getPendingCount(),
   receptionPatientApprovals: () => receptionService.getPendingCount(),
   staffRequests: async () => (await staffRequestsService.list({ status: "pending" })).length,
   staffApprovals: async () => (await staffRequestsService.list({ status: "pending" })).length,

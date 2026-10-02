@@ -75,6 +75,20 @@ export const staffService = {
    * up here with nothing the CA can actually do about it — every
    * approve/reject click 400s with no visible reason until this filter
    * keeps them off the list in the first place. */
+  /** Counts only (F-045) — was the full patient list downloaded to count it. */
+  async getPatientCount(): Promise<number> {
+    const { data } = await apiClient.get(ENDPOINTS.STAFF.PATIENTS_COUNT);
+    return data?.count ?? 0;
+  },
+
+  /** Same definition as getPendingPatients(): approval pending AND wizard complete. */
+  async getPendingCount(): Promise<number> {
+    const { data } = await apiClient.get(ENDPOINTS.STAFF.PATIENTS_COUNT, {
+      params: { approval_status: "pending", registration_status: "registration_complete" },
+    });
+    return data?.count ?? 0;
+  },
+
   async getPendingPatients(_params?: { page?: number; limit?: number }): Promise<{ patients: PatientListItem[]; total: number }> {
     const { data } = await apiClient.get(ENDPOINTS.STAFF.PATIENTS, {
       params: { approval_status: "pending", registration_status: "registration_complete" },
