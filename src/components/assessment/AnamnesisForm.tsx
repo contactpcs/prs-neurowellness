@@ -289,14 +289,20 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
   // appeared — pure friction, since starting has no meaningful choice for
   // the doctor to make (it just creates/resumes the record). Fires once
   // recordState settles on "no-record" for a doctor who isn't locked out.
+  // A "main" (consultation) anamnesis requires an appointment_id server-side
+  // (ANAMNESIS_APPOINTMENT_REQUIRED) — auto-starting without one just traded
+  // the old click-to-discover-the-error for an immediate one, so this only
+  // fires once that context is actually available (or isn't needed at all,
+  // for a non-"main" stage).
   const autoStartedRef = useRef(false);
   useEffect(() => {
     if (recordState !== "no-record" || mode !== "doctor" || lockedForSession) return;
+    if (assessmentStage === "main" && !appointmentId) return;
     if (autoStartedRef.current) return;
     autoStartedRef.current = true;
     handleStartOnBehalf();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recordState, mode, lockedForSession]);
+  }, [recordState, mode, lockedForSession, assessmentStage, appointmentId]);
 
   // ── per-question auto-save (600 ms debounce) ──────────────────────────────
   const handleChange = useCallback((questionId: string, value: string | null, values: string[] | null) => {
@@ -465,13 +471,19 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
   }
 
   if (recordState === "no-record" && mode === "doctor") {
-    // Not locked: the auto-start effect above fires immediately, so this
-    // only ever shows for an instant, or if that start failed (error set).
-    // Locked (consultation already completed): genuinely nothing to start.
+    // Three distinct reasons this renders instead of the form:
+    //  - no appointment context yet (needsAppointment): a "main" anamnesis
+    //    needs appointment_id server-side; auto-start deliberately doesn't
+    //    fire until the caller actually has one (open from a session, not
+    //    just the bare patient page).
+    //  - locked: consultation already completed, genuinely nothing to start.
+    //  - otherwise: the auto-start effect fires immediately, so this only
+    //    ever shows for an instant, or if that start failed (error set).
+    const needsAppointment = assessmentStage === "main" && !appointmentId && !lockedForSession;
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">
         <div className="w-14 h-14 rounded-full bg-neutral-100 flex items-center justify-center">
-          {lockedForSession || error ? (
+          {lockedForSession || error || needsAppointment ? (
             <Stethoscope className="w-7 h-7 text-neutral-400" />
           ) : (
             <Loader2 className="w-7 h-7 text-primary-500 animate-spin" />
@@ -479,14 +491,22 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
         </div>
         <div>
           <p className="font-semibold text-neutral-800">
-            {lockedForSession ? "Anamnesis not started" : error ? "Could not start anamnesis" : "Loading anamnesis…"}
+            {lockedForSession
+              ? "Anamnesis not started"
+              : needsAppointment
+                ? "No active consultation"
+                : error
+                  ? "Could not start anamnesis"
+                  : "Loading anamnesis…"}
           </p>
           <p className="text-sm text-neutral-500 mt-1">
             {lockedForSession
               ? "No anamnesis was recorded for this consultation."
-              : error
-                ? "Something went wrong opening this consultation's anamnesis."
-                : "Starting it pre-fills the previous consultation's answers."}
+              : needsAppointment
+                ? "Open this patient from a session to record their consultation anamnesis."
+                : error
+                  ? "Something went wrong opening this consultation's anamnesis."
+                  : "Starting it pre-fills the previous consultation's answers."}
           </p>
         </div>
         {error && <p className="text-sm text-red-600 max-w-xs">{error}</p>}
