@@ -95,9 +95,24 @@ export function ReceptionBookAppointmentModal({
 
   const todayStr = toDateStr(new Date(now));
 
+  // ponytail: per-open cache of slot / planned-follow-up reads. Picking type,
+  // patient and date flips the same doctor+date key away and back, which
+  // re-fetched identical data up to 4x per booking (API audit F-026). 60 s
+  // max staleness; the server still rejects a slot taken meanwhile.
+  const readCache = useRef(new Map<string, { at: number; data: unknown }>());
+  const cachedGet = useCallback(async (url: string, params: Record<string, unknown>) => {
+    const key = `${url}?${JSON.stringify(params)}`;
+    const hit = readCache.current.get(key);
+    if (hit && Date.now() - hit.at < 60_000) return hit.data;
+    const { data } = await apiClient.get(url, { params });
+    readCache.current.set(key, { at: Date.now(), data });
+    return data;
+  }, []);
+
   // Reset to a fresh form (today, no selections) each time it opens.
   useEffect(() => {
     if (!isOpen) return;
+    readCache.current.clear();
     const today = toDateStr(new Date());
     setSearch(""); setPatient(initialPatient ?? null); setSlot(null);
     setDate(prefill && prefill.date >= today ? prefill.date : today);
@@ -155,10 +170,10 @@ export function ReceptionBookAppointmentModal({
     if (!isOpen || !isPlanned || !patient) return;
     let cancelled = false;
     setLoadingPlanned(true);
-    apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, {
-      params: { patient_id: patient.id, appointment_type: apptType, status: "planned", date_from: toDateStr(new Date()), limit: 100 },
+    cachedGet(ENDPOINTS.APPOINTMENTS.LIST, {
+      patient_id: patient.id, appointment_type: apptType, status: "planned", date_from: toDateStr(new Date()), limit: 100,
     })
-      .then(({ data }) => {
+      .then((data) => {
         if (cancelled) return;
         const rows: Appointment[] = (Array.isArray(data) ? data : [])
           .sort((a: Appointment, b: Appointment) =>
@@ -169,7 +184,7 @@ export function ReceptionBookAppointmentModal({
       .catch(() => { if (!cancelled) setPlanned([]); })
       .finally(() => { if (!cancelled) setLoadingPlanned(false); });
     return () => { cancelled = true; };
-  }, [isOpen, isPlanned, apptType, patient]);
+  }, [isOpen, isPlanned, apptType, patient?.id, cachedGet]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Locked to the planned follow-up's own day (and its doctor).
   useEffect(() => {
@@ -189,20 +204,16 @@ export function ReceptionBookAppointmentModal({
     if (!isOpen || !date || (isDevice ? !deviceId : !slotDoctorId)) { setSlots([]); return; }
     setLoadingSlots(true);
     try {
-      const { data } = isDevice
-        ? await apiClient.get(ENDPOINTS.CLINIC_DEVICE.AVAILABILITY(clinicId, deviceId), {
-            params: { from_date: date, to_date: date },
-          })
-        : await apiClient.get(ENDPOINTS.SCHEDULE.SLOTS(slotDoctorId), {
-            params: { from_date: date, to_date: date, include_unavailable: true },
-          });
+      const data = isDevice
+        ? await cachedGet(ENDPOINTS.CLINIC_DEVICE.AVAILABILITY(clinicId, deviceId), { from_date: date, to_date: date })
+        : await cachedGet(ENDPOINTS.SCHEDULE.SLOTS(slotDoctorId), { from_date: date, to_date: date, include_unavailable: true });
       setSlots(Array.isArray(data) ? data : []);
     } catch {
       setSlots([]);
     } finally {
       setLoadingSlots(false);
     }
-  }, [isOpen, isDevice, deviceId, clinicId, slotDoctorId, date]);
+  }, [isOpen, isDevice, deviceId, clinicId, slotDoctorId, date, cachedGet]);
 
   useEffect(() => { setSlot(null); fetchSlots(); }, [fetchSlots]);
 
@@ -269,6 +280,7 @@ export function ReceptionBookAppointmentModal({
       else onBooked();
     } catch (e: any) {
       setError(e?.response?.data?.error?.message ?? e?.response?.data?.detail ?? e?.message ?? "Booking failed");
+      readCache.current.clear(); // the failure may be a slot taken meanwhile — re-read for real
       fetchSlots();
     } finally {
       setBusy(false);

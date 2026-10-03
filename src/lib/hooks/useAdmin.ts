@@ -226,16 +226,18 @@ export function useAdminStaff() {
 export function useAdminPatients() {
   const [patients, setPatients] = useState<AdminPatient[]>([]);
   const [total, setTotal] = useState(0);
+  const [counts, setCounts] = useState<Record<"all" | "approved" | "pending" | "rejected", number> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetch = useCallback(async (params?: { clinic_id?: string; status?: string; search?: string; skip?: number; limit?: number }) => {
+  const fetch = useCallback(async (params?: Parameters<typeof adminService.getPatients>[0]) => {
     setIsLoading(true);
     setError(null);
     try {
-      const { patients: list, total: count } = await adminService.getPatients(params);
+      const { patients: list, total: count, counts: tabCounts } = await adminService.getPatients(params);
       setPatients(list);
       setTotal(count);
+      if (tabCounts) setCounts(tabCounts);
     } catch (e: any) {
       setError(e?.response?.data?.detail || "Failed to load patients");
     } finally {
@@ -279,5 +281,5 @@ export function useAdminPatients() {
     setPatients((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
-  return { patients, total, isLoading, error, fetch, registerPatient, updatePatient, togglePatientActive, approvePatient, rejectPatient, deletePatient };
+  return { patients, total, counts, isLoading, error, fetch, registerPatient, updatePatient, togglePatientActive, approvePatient, rejectPatient, deletePatient };
 }

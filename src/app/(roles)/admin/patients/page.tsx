@@ -1,17 +1,20 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import {
   Users, Search, X, Check, XCircle, Trash2, Edit2,
   Clock, Building2, Calendar, Plus, RefreshCw, FileText, ShieldCheck, Power, PowerOff,
 } from "lucide-react";
 import { useAdminPatients, useAdminClinics } from "@/lib/hooks";
 import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
+import { Pager } from "@/components/ui/Pager";
 import { consentService, type ConsentRecord } from "@/lib/api/services/consent.service";
 import { filesService, type PatientFile } from "@/lib/api/services/files.service";
 import { adminService } from "@/lib/api/services/admin.service";
 import { PatientJourneySections, type PatientJourneyDetail } from "@/components/admin/PatientJourneySections";
 import type { AdminClinic, AdminPatient } from "@/types/admin.types";
+
+const PAGE_SIZE = 20;
 
 const CLINIC_STATUS_STYLES: Record<AdminClinic["status"], string> = {
   setup: "bg-amber-100 text-amber-700",
@@ -450,7 +453,7 @@ function PatientDetailModal({ patient, clinic }: { patient: AdminPatient; clinic
 // ─── Page ─────────────────────────────────────────────────────────
 
 export default function AdminPatientsPage() {
-  const { patients, isLoading, error, fetch, registerPatient, updatePatient, togglePatientActive, approvePatient, rejectPatient, deletePatient } = useAdminPatients();
+  const { patients, total, counts, isLoading, error, fetch, registerPatient, updatePatient, togglePatientActive, approvePatient, rejectPatient, deletePatient } = useAdminPatients();
   const { clinics, fetch: fetchClinics } = useAdminClinics();
 
   const [tab, setTab] = useState<"all" | "pending" | "approved" | "rejected">("all");
@@ -464,32 +467,43 @@ export default function AdminPatientsPage() {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => { fetch(); fetchClinics(); }, [fetch, fetchClinics]);
+  // One server page of the open tab (+ tab counts), clinic filter and search
+  // applied in SQL — was every patient on the platform filtered here, with
+  // Pending/Rejected always empty (API audit F-062 / BUG-APPR).
+  const [page, setPage] = useState(1);
+  const [qDebounced, setQDebounced] = useState("");
+  const [everLoaded, setEverLoaded] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setQDebounced(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+  useEffect(() => { setPage(1); }, [tab, clinicFilter, qDebounced]);
+  const load = useCallback(async () => {
+    await fetch({
+      approval_view: tab, clinic_id: clinicFilter === "all" ? undefined : clinicFilter, search: qDebounced,
+      page, page_size: PAGE_SIZE, with_counts: true,
+    });
+    setEverLoaded(true);
+  }, [fetch, tab, clinicFilter, qDebounced, page]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { fetchClinics(); }, [fetchClinics]);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   async function handleRefresh() {
     setRefreshing(true);
-    try { await Promise.all([fetch(), fetchClinics()]); } finally { setRefreshing(false); }
+    try { await Promise.all([load(), fetchClinics()]); } finally { setRefreshing(false); }
   }
 
-  const pendingCount  = patients.filter((p) => p.approval_status === "pending").length;
-  const approvedCount = patients.filter((p) => p.approval_status === "approved").length;
-  const rejectedCount = patients.filter((p) => p.approval_status === "rejected").length;
+  const pendingCount  = counts?.pending ?? 0;
+  const approvedCount = counts?.approved ?? 0;
+  const rejectedCount = counts?.rejected ?? 0;
 
-  const filtered = patients.filter((p) => {
-    const name = `${p.first_name} ${p.last_name}`.toLowerCase();
-    const matchesSearch =
-      name.includes(search.toLowerCase()) ||
-      p.email.toLowerCase().includes(search.toLowerCase()) ||
-      (p.mrn ?? "").toLowerCase().includes(search.toLowerCase());
-    const matchesClinic = clinicFilter === "all" || p.clinic_id === clinicFilter;
-    const matchesTab = tab === "all" || p.approval_status === tab;
-    return matchesSearch && matchesClinic && matchesTab;
-  });
+  const filtered = patients;
 
   async function handleApprove(id: string) {
     setProcessingId(id);
     setActionError(null);
-    try { await approvePatient(id); } catch (e: any) {
+    try { await approvePatient(id); await load(); } catch (e: any) {
       setActionError(e?.response?.data?.detail || "Failed to approve patient");
     } finally { setProcessingId(null); }
   }
@@ -497,7 +511,7 @@ export default function AdminPatientsPage() {
   async function handleReject(id: string) {
     setProcessingId(id);
     setActionError(null);
-    try { await rejectPatient(id); } catch (e: any) {
+    try { await rejectPatient(id); await load(); } catch (e: any) {
       setActionError(e?.response?.data?.detail || "Failed to reject patient");
     } finally { setProcessingId(null); }
   }
@@ -516,7 +530,7 @@ export default function AdminPatientsPage() {
   const clinicOptions = clinics.map((c) => ({ value: c.clinic_id, label: c.clinic_name }));
   const clinicById = new Map(clinics.map((c) => [c.clinic_id, c]));
 
-  if (isLoading) return <PatientsSkeleton />;
+  if (isLoading && !everLoaded) return <PatientsSkeleton />;
 
   return (
     <div className="space-y-6">
@@ -524,7 +538,7 @@ export default function AdminPatientsPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">Patients</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{patients.length} total patients</p>
+          <p className="text-sm text-neutral-500 mt-0.5">{counts?.all ?? total} total patients</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -551,7 +565,7 @@ export default function AdminPatientsPage() {
       {/* Tabs */}
       <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1 w-fit">
         {([
-          { key: "all",      label: "All",      count: patients.length },
+          { key: "all",      label: "All",      count: counts?.all ?? 0 },
           { key: "pending",  label: "Pending",  count: pendingCount  },
           { key: "approved", label: "Approved", count: approvedCount },
           { key: "rejected", label: "Rejected", count: rejectedCount },
@@ -740,6 +754,7 @@ export default function AdminPatientsPage() {
           </div>
         )}
       </Card>
+      <Pager page={page} totalPages={totalPages} total={total} noun="patients" onPage={setPage} />
 
       {/* Register modal */}
       <Modal isOpen={showRegister} onClose={() => setShowRegister(false)} title="Register Patient">

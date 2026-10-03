@@ -109,6 +109,12 @@ export function getCatalog(url: string, config?: Parameters<typeof apiClient.get
   return p;
 }
 export const getDiseaseCatalog = () => getCatalog(ENDPOINTS.PRS.CONDITIONS);
+/** Clinic id -> name labels for staff/patient lists (API audit F-054).
+ * Cleared on any write to /clinics or /clinic-requests (request interceptor). */
+export const getClinicNamesCatalog = () => getCatalog(ENDPOINTS.ADMIN.CLINICS);
+function clearCatalog(url: string) {
+  for (const key of catalogs.keys()) if (key.startsWith(`${url}?`)) catalogs.delete(key);
+}
 export const getAnamnesisCatalog = (type?: string) =>
   getCatalog(type ? `${ENDPOINTS.ANAMNESIS.QUESTIONS}?type=${encodeURIComponent(type)}` : ENDPOINTS.ANAMNESIS.QUESTIONS);
 
@@ -135,7 +141,10 @@ export function clearSessionAndSignalLogout() {
 
 apiClient.interceptors.request.use(async (config) => {
   // Any write may change what a recent GET returned — drop the de-dup window.
-  if (config.method && config.method.toLowerCase() !== "get") recentGets.clear();
+  if (config.method && config.method.toLowerCase() !== "get") {
+    recentGets.clear();
+    if (/^\/(clinics|clinic-requests)\b/.test(config.url ?? "")) clearCatalog(ENDPOINTS.ADMIN.CLINICS);
+  }
   // The refresh cookie is scoped to /api/v1/auth, so only auth calls need
   // credentials mode on (login/new-password set it, refresh/logout use it).
   if (config.url?.startsWith("/auth/")) config.withCredentials = true;

@@ -1,4 +1,4 @@
-import apiClient, { getAnamnesisCatalog } from "../client";
+import apiClient, { getAnamnesisCatalog, getClinicNamesCatalog } from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type {
   AdminDashboard,
@@ -144,19 +144,20 @@ export const adminService = {
 
   // ─── Dashboard — no aggregate endpoint, composed from real counts ───
   async getDashboard(): Promise<AdminDashboard> {
-    const [clinicsRes, patientsRes] = await Promise.all([
+    // Patient total via /patients/count — was every patient on the platform
+    // downloaded to take .length (API audit F-061).
+    const [clinicsRes, patientsCountRes] = await Promise.all([
       apiClient.get(ENDPOINTS.ADMIN.CLINICS),
-      apiClient.get(ENDPOINTS.ADMIN.PATIENTS),
+      apiClient.get(ENDPOINTS.STAFF.PATIENTS_COUNT),
     ]);
     const clinics = (Array.isArray(clinicsRes.data) ? clinicsRes.data : []).map(mapClinic);
-    const patients = Array.isArray(patientsRes.data) ? patientsRes.data : [];
     return {
       stats: {
         total_clinics: clinics.length,
         total_doctors: 0,
         total_receptionists: 0,
         total_clinical_assistants: 0,
-        total_patients: patients.length,
+        total_patients: patientsCountRes.data?.count ?? 0,
         pending_approvals: 0,
         active_assessments: 0,
       },
@@ -241,7 +242,7 @@ export const adminService = {
       apiClient.get("/doctors", { params }),
       apiClient.get("/clinical-assistants", { params }),
       apiClient.get("/receptionists", { params }),
-      apiClient.get(ENDPOINTS.ADMIN.CLINICS),
+      getClinicNamesCatalog(),
     ]);
 
     const clinicNameById = new Map<string, string>();
@@ -294,7 +295,7 @@ export const adminService = {
       : `/receptionists/${id}`;
     const [{ data }, clinicsRes] = await Promise.all([
       apiClient.get(path),
-      apiClient.get(ENDPOINTS.ADMIN.CLINICS).catch(() => ({ data: [] as unknown[] })),
+      getClinicNamesCatalog().catch(() => ({ data: [] as unknown[] })),
     ]);
     const clinicNameById = new Map<string, string>();
     if (Array.isArray(clinicsRes.data)) {
@@ -413,16 +414,30 @@ export const adminService = {
   },
 
   // ─── Patients ───
-  async getPatients(params?: { clinic_id?: string; status?: string; search?: string; skip?: number; limit?: number }): Promise<{ patients: AdminPatient[]; total: number }> {
+  /** With `page`, one server page of GET /patients/page (server search,
+   * total = all matches; API audit F-053); without, every patient. */
+  async getPatients(params?: {
+    clinic_id?: string; status?: string; search?: string; skip?: number; limit?: number; page?: number; page_size?: number;
+    approval_view?: "all" | "approved" | "pending" | "rejected"; with_counts?: boolean;
+  }): Promise<{ patients: AdminPatient[]; total: number; counts?: Record<"all" | "approved" | "pending" | "rejected", number> }> {
+    const paged = params?.page !== undefined;
     const [res, clinicsRes] = await Promise.all([
-      apiClient.get(ENDPOINTS.ADMIN.PATIENTS, { params }),
-      apiClient.get(ENDPOINTS.ADMIN.CLINICS).catch(() => ({ data: [] as unknown[] })),
+      paged
+        ? apiClient.get(`${ENDPOINTS.ADMIN.PATIENTS}/page`, {
+            params: {
+              clinic_id: params.clinic_id, search: params.search || undefined, page: params.page, page_size: params.page_size,
+              approval_view: params.approval_view, with_counts: params.with_counts || undefined,
+            },
+          })
+        : apiClient.get(ENDPOINTS.ADMIN.PATIENTS, { params }),
+      getClinicNamesCatalog().catch(() => ({ data: [] as unknown[] })),
     ]);
     const clinicNameById = new Map<string, string>();
     if (Array.isArray(clinicsRes.data)) {
       for (const c of clinicsRes.data as Record<string, unknown>[]) clinicNameById.set(String(c.clinic_id), String(c.clinic_name ?? ""));
     }
-    const list: Record<string, unknown>[] = Array.isArray(res.data) ? res.data : [];
+    const raw = paged ? res.data?.items : res.data;
+    const list: Record<string, unknown>[] = Array.isArray(raw) ? raw : [];
     const patients: AdminPatient[] = list.map((p) => {
       const clinicId = (p.primary_clinic_id as string) ?? undefined;
       return {
@@ -436,7 +451,9 @@ export const adminService = {
       gender: (p.gender as string) ?? undefined,
       clinic_id: clinicId,
       clinic_name: clinicId ? clinicNameById.get(clinicId) ?? clinicId : undefined,
-      approval_status: "approved" as const,
+      // Real status (was hard-coded "approved", so Pending/Rejected tabs
+      // were always empty — BUG-APPR); staff-registered "not_required" = approved.
+      approval_status: p.approval_status === "pending" || p.approval_status === "rejected" ? p.approval_status : "approved",
       registration_status: (p.registration_status as string) ?? undefined,
       mrn: (p.mrn as string) ?? undefined,
       registered_at: (p.registration_completed_at as string) ?? undefined,
@@ -444,7 +461,7 @@ export const adminService = {
       is_active: (p.profile_is_active as boolean) ?? true,
       };
     });
-    return { patients, total: patients.length };
+    return { patients, total: paged ? res.data?.total ?? 0 : patients.length, counts: paged ? res.data?.counts ?? undefined : undefined };
   },
 
   async registerPatient(payload: { email: string; first_name: string; last_name: string; phone?: string; gender?: string; dob?: string; address?: string; primary_clinic_id: string; emergency_contact_name?: string; emergency_contact_phone?: string }): Promise<AdminPatient> {

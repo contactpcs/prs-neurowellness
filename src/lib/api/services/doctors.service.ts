@@ -193,6 +193,20 @@ export const doctorsService = {
     return Array.isArray(data) ? data : [];
   },
 
+  /** Every clinic doctor's weekly schedule in one call, keyed by doctor_id
+   * (API audit F-052). Clinic-bound roles always get their own clinic. */
+  async listClinicWeeklySchedules(clinicId?: string): Promise<Record<string, { day_of_week: number; start_time: string; end_time: string; slot_duration_minutes: number }[]>> {
+    const { data } = await apiClient.get("/doctor-weekly-schedules", { params: { clinic_id: clinicId } });
+    return Object.fromEntries((Array.isArray(data) ? data : []).map((d) => [String(d.doctor_id), d.schedules]));
+  },
+
+  /** Every clinic doctor's schedule overrides in one call, keyed by
+   * doctor_id (API audit F-056). */
+  async listClinicScheduleOverrides(clinicId?: string): Promise<Record<string, { override_id: string; override_date: string; is_available: boolean; reason: string | null }[]>> {
+    const { data } = await apiClient.get("/doctor-schedule-overrides", { params: { clinic_id: clinicId } });
+    return Object.fromEntries((Array.isArray(data) ? data : []).map((d) => [String(d.doctor_id), d.overrides]));
+  },
+
   /** Real: GET /doctors/{id}/schedule-overrides — single-date exceptions
    * (leave/holiday or a special one-off availability window). Note the
    * backend's ScheduleOverrideRead doesn't expose start_time/end_time even

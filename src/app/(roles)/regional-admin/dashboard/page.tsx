@@ -15,7 +15,8 @@ import { clinicRequestsService } from "@/lib/api/services/clinicRequests.service
 import type { ClinicRequest } from "@/lib/api/services/clinicRequests.service";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { doctorsService } from "@/lib/api/services/doctors.service";
-import { paymentsService, type Payment } from "@/lib/api/services/payments.service";
+import { paymentsService, type Payment, type PaymentSummary } from "@/lib/api/services/payments.service";
+import { staffService } from "@/lib/api/services/staff.service";
 import { inventoryService, type InventoryItem } from "@/lib/api/services/inventory.service";
 import { storeService, type Product, type StoreOrder } from "@/lib/api/services/store.service";
 import type { AdminClinic, AdminStaffMember, AdminPatient } from "@/types/admin.types";
@@ -51,7 +52,6 @@ const PAYMENT_STATUS_COLORS: Record<Payment["status"], { bar: string; badge: str
 const LOW_STOCK_THRESHOLD = 5;
 
 interface DoctorSchedule { day_of_week: number; start_time: string; end_time: string; slot_duration_minutes: number }
-interface ClinicPayment extends Payment { clinic_id: string }
 interface ClinicInventoryItem extends InventoryItem { clinic_id: string }
 
 function DashboardSkeleton() {
@@ -87,10 +87,11 @@ export default function RegionalAdminDashboardPage() {
   const [allClinics, setAllClinics] = useState<AdminClinic[]>([]);
   const [allStaff, setAllStaff] = useState<AdminStaffMember[]>([]);
   const [allPatients, setAllPatients] = useState<AdminPatient[]>([]);
+  const [patientCount, setPatientCount] = useState(0);
   const [allStaffRequests, setAllStaffRequests] = useState<StaffRequest[]>([]);
   const [allClinicRequests, setAllClinicRequests] = useState<ClinicRequest[]>([]);
   const [allAppointments, setAllAppointments] = useState<Appointment[]>([]);
-  const [allPayments, setAllPayments] = useState<ClinicPayment[]>([]);
+  const [paymentSummary, setPaymentSummary] = useState<PaymentSummary>({ total_count: 0, by_status: [], recent: [] });
   const [allInventory, setAllInventory] = useState<ClinicInventoryItem[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [allOrders, setAllOrders] = useState<StoreOrder[]>([]);
@@ -100,47 +101,57 @@ export default function RegionalAdminDashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
 
+  // One call per dataset for the region, or for the selected clinic — was
+  // every list once PER CLINIC (+ weekly schedule per doctor), with the
+  // clinic's oldest 100 appointments, so Today/Upcoming were empty (F-058).
+  // The selector re-runs these bounded calls instead of filtering a full
+  // download.
+  const [loadedOnce, setLoadedOnce] = useState(false);
   async function load() {
     if (!user?.region_id) return;
     setError(null);
+    const clinicId = selectedClinicId ?? undefined;
+    const today = new Date().toISOString().slice(0, 10);
+    const tomorrow = new Date(Date.parse(today) + 86_400_000).toISOString().slice(0, 10);
     try {
-      const clinicList = await adminService.getClinics({ region_id: user.region_id });
-      setAllClinics(clinicList);
-
-      const [staffResults, patientResults, staffRequests, clinicRequests, appointmentResults, paymentResults, inventoryResults, orderResults, productsRes] = await Promise.all([
-        Promise.all(clinicList.map((c) => adminService.getStaff({ clinic_id: c.clinic_id }))),
-        Promise.all(clinicList.map((c) => adminService.getPatients({ clinic_id: c.clinic_id }))),
+      const [clinicList, staffRes, patientCountRes, staffRequests, clinicRequests, todayRes, upcomingRes, paymentsRes, inventoryRes, orderRes, productsRes, schedulesRes] = await Promise.all([
+        loadedOnce ? Promise.resolve(allClinics) : adminService.getClinics({ region_id: user.region_id }),
+        adminService.getStaff(clinicId ? { clinic_id: clinicId } : undefined),
+        staffService.getPatientCount(clinicId),
         staffRequestsService.list({ status: "pending" }),
         clinicRequestsService.list({ region_id: user.region_id, status: "pending" }),
-        Promise.all(clinicList.map((c) => appointmentsService.list({ clinic_id: c.clinic_id }))),
-        Promise.all(clinicList.map((c) => paymentsService.list({ clinic_id: c.clinic_id }))),
-        Promise.all(clinicList.map((c) => inventoryService.list({ clinic_id: c.clinic_id }))),
-        Promise.all(clinicList.map((c) => storeService.listOrders({ clinic_id: c.clinic_id }))),
+        appointmentsService.list({ clinic_id: clinicId, date_from: today, date_to: today, limit: 500 }),
+        appointmentsService.list({ clinic_id: clinicId, date_from: tomorrow, limit: 5 }),
+        paymentsService.summary({ clinic_id: clinicId }),
+        inventoryService.list({ clinic_id: clinicId }),
+        storeService.listOrders({ clinic_id: clinicId }),
         storeService.listProducts(),
+        doctorsService.listClinicWeeklySchedules(clinicId),
       ]);
-
-      const staffList = staffResults.flatMap((r) => r.staff);
-      setAllStaff(staffList);
-      setAllPatients(patientResults.flatMap((r) => r.patients));
+      setAllClinics(clinicList);
+      setAllStaff(staffRes.staff);
+      setPatientCount(patientCountRes);
       setAllStaffRequests(staffRequests);
       setAllClinicRequests(clinicRequests);
-      setAllAppointments(appointmentResults.flatMap((r) => r.appointments));
-      setAllPayments(paymentResults.flatMap((res, i) => res.map((p) => ({ ...p, clinic_id: clinicList[i].clinic_id }))));
-      setAllInventory(inventoryResults.flatMap((res, i) => res.map((item) => ({ ...item, clinic_id: clinicList[i].clinic_id }))));
-      setAllOrders(orderResults.flat());
+      setAllAppointments([...todayRes.appointments, ...upcomingRes.appointments]);
+      setPaymentSummary(paymentsRes);
+      setAllInventory(inventoryRes as ClinicInventoryItem[]);
+      setAllOrders(orderRes);
       setProducts(productsRes);
-
-      const doctors = staffList.filter((s) => s.role === "doctor");
-      const scheduleResults = await Promise.all(doctors.map((d) => doctorsService.listWeeklySchedules(d.id)));
-      const scheduleMap: Record<string, DoctorSchedule[]> = {};
-      doctors.forEach((d, i) => { scheduleMap[d.id] = scheduleResults[i]; });
-      setDoctorSchedules(scheduleMap);
+      setDoctorSchedules(schedulesRes);
+      // ponytail: patient list only to name the latest orders; drop when
+      // store-order rows carry patient_name.
+      if (orderRes.length > 0) setAllPatients((await adminService.getPatients(clinicId ? { clinic_id: clinicId } : undefined)).patients);
+      setLoadedOnce(true);
     } catch (e: any) {
       setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Failed to load dashboard");
     }
   }
 
-  useEffect(() => { setIsLoading(true); load().finally(() => setIsLoading(false)); }, [user?.region_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!loadedOnce) setIsLoading(true);
+    load().finally(() => setIsLoading(false));
+  }, [user?.region_id, selectedClinicId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -149,17 +160,13 @@ export default function RegionalAdminDashboardPage() {
 
   if (isLoading) return <DashboardSkeleton />;
 
-  // ── Scope every section to the selected clinic, or the whole region when
-  // none is selected — all source data is already tagged with clinic_id
-  // from the fan-out fetch above, so this is a pure client-side filter,
-  // no re-fetch needed on selector change.
+  // ── Data is already fetched for the selected clinic (or the region);
+  // these filters only keep a stale render consistent while it reloads.
   const clinics = selectedClinicId ? allClinics.filter((c) => c.clinic_id === selectedClinicId) : allClinics;
   const staff = selectedClinicId ? allStaff.filter((s) => s.clinic_id === selectedClinicId) : allStaff;
-  const patients = selectedClinicId ? allPatients.filter((p) => p.clinic_id === selectedClinicId) : allPatients;
   const staffRequestsScoped = selectedClinicId ? allStaffRequests.filter((r) => r.clinic_id === selectedClinicId) : allStaffRequests;
   const clinicRequestsScoped = selectedClinicId ? allClinicRequests.filter((r) => r.clinic_id === selectedClinicId) : allClinicRequests;
   const appointments = selectedClinicId ? allAppointments.filter((a) => a.clinic_id === selectedClinicId) : allAppointments;
-  const payments = selectedClinicId ? allPayments.filter((p) => p.clinic_id === selectedClinicId) : allPayments;
   const inventory = selectedClinicId ? allInventory.filter((i) => i.clinic_id === selectedClinicId) : allInventory;
   const orders = selectedClinicId ? allOrders.filter((o) => o.clinic_id === selectedClinicId) : allOrders;
 
@@ -173,7 +180,7 @@ export default function RegionalAdminDashboardPage() {
   const stats = [
     { label: "Clinics",                href: "/regional-admin/clinics",         value: clinics.length,                icon: Building2,      color: "text-indigo-600", bg: "bg-indigo-50" },
     { label: "Staff Members",          href: "/regional-admin/staff",           value: staff.length,                  icon: UserCog,        color: "text-blue-600",   bg: "bg-blue-50" },
-    { label: "Patients",               href: "/regional-admin/patients",        value: patients.length,               icon: Users,          color: "text-green-600",  bg: "bg-green-50" },
+    { label: "Patients",               href: "/regional-admin/patients",        value: patientCount,                  icon: Users,          color: "text-green-600",  bg: "bg-green-50" },
     { label: "Staff Approvals",        href: "/regional-admin/staff-approvals", value: staffRequestsScoped.length,    icon: ClipboardCheck, color: "text-amber-600",  bg: "bg-amber-50",  sublabel: "pending" },
     { label: "Clinic Requests",        href: "/regional-admin/clinics",         value: clinicRequestsScoped.length,   icon: ClipboardList,  color: "text-purple-600", bg: "bg-purple-50", sublabel: "pending" },
     { label: "Clinics Missing Admin",  href: "/regional-admin/clinics",         value: clinicsMissingAdmin,           icon: AlertTriangle,  color: "text-red-600",    bg: "bg-red-50" },
@@ -190,12 +197,14 @@ export default function RegionalAdminDashboardPage() {
   const todayDow = new Date().getDay();
 
   // ── Payments ──
-  const totalCollected = payments.filter((p) => p.status === "paid" || p.status === "waived").reduce((sum, p) => sum + Number(p.amount), 0);
-  const pendingAmount = payments.filter((p) => p.status === "pending").reduce((sum, p) => sum + Number(p.amount), 0);
+  const statusTotal = (status: string) => paymentSummary.by_status.find((s) => s.status === status);
+  const totalCollected = (statusTotal("paid")?.amount ?? 0) + (statusTotal("waived")?.amount ?? 0);
+  const pendingAmount = statusTotal("pending")?.amount ?? 0;
+  const paymentCount = paymentSummary.total_count;
   const paymentStatusCounts = (["pending", "paid", "waived", "failed", "refunded"] as const).map((status) => ({
-    status, count: payments.filter((p) => p.status === status).length,
+    status, count: statusTotal(status)?.count ?? 0,
   })).filter((s) => s.count > 0);
-  const recentPayments = [...payments].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")).slice(0, 5);
+  const recentPayments = paymentSummary.recent;
 
   // ── Inventory (flagged low-stock) ──
   const lowStockItems = inventory.filter((i) => i.quantity < LOW_STOCK_THRESHOLD);
@@ -401,19 +410,19 @@ export default function RegionalAdminDashboardPage() {
                 <p className="text-xs text-neutral-500">Pending</p>
               </div>
               <div>
-                <p className="text-xl font-bold text-neutral-900">{payments.length}</p>
+                <p className="text-xl font-bold text-neutral-900">{paymentCount}</p>
                 <p className="text-xs text-neutral-500">Total payments</p>
               </div>
             </div>
 
-            {payments.length === 0 ? (
+            {paymentCount === 0 ? (
               <p className="text-sm text-neutral-500 text-center py-4">{selectedClinicId ? "No payments recorded for this clinic yet" : "No payments recorded across your region yet"}</p>
             ) : (
               <>
                 <div>
                   <div className="flex h-3 rounded-full overflow-hidden bg-neutral-100">
                     {paymentStatusCounts.map((s) => (
-                      <div key={s.status} className={PAYMENT_STATUS_COLORS[s.status].bar} style={{ flexBasis: `${(s.count / payments.length) * 100}%` }} title={`${s.status}: ${s.count}`} />
+                      <div key={s.status} className={PAYMENT_STATUS_COLORS[s.status].bar} style={{ flexBasis: `${(s.count / paymentCount) * 100}%` }} title={`${s.status}: ${s.count}`} />
                     ))}
                   </div>
                   <div className="flex flex-wrap gap-3 mt-2">
@@ -428,7 +437,7 @@ export default function RegionalAdminDashboardPage() {
                 <div className="divide-y divide-neutral-100 border border-neutral-100 rounded-lg overflow-hidden">
                   {recentPayments.map((p) => (
                     <div key={p.payment_id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                      <span className="text-neutral-700">{p.currency} {p.amount}{p.payment_method ? ` · ${p.payment_method}` : ""}{!selectedClinicId && <> · {clinicName(p.clinic_id)}</>}</span>
+                      <span className="text-neutral-700">{p.currency} {p.amount}{p.payment_method ? ` · ${p.payment_method}` : ""}{!selectedClinicId && p.clinic_id && <> · {clinicName(p.clinic_id)}</>}</span>
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${PAYMENT_STATUS_COLORS[p.status].badge}`}>{p.status}</span>
                     </div>
                   ))}

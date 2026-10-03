@@ -157,9 +157,14 @@ export const appointmentsService = {
   async page(params: {
     clinic_id?: string; doctor_name?: string; status?: string; appointment_type?: string; exclude_appointment_type?: string;
     date_from?: string; date_to?: string; search?: string; page: number; page_size: number;
+    doctor_id?: string; exclude_superseded?: boolean; date_order?: "asc" | "desc"; period_today?: string;
   }): Promise<{
     appointments: Appointment[]; total: number; totalPages: number;
-    counts: { all: number; by_status: Record<string, number>; by_type: Record<string, number> };
+    counts: {
+      all: number; by_status: Record<string, number>; by_type: Record<string, number>;
+      /** Only with period_today (admin tabs, F-055). */
+      by_period?: { past: number; today: number; upcoming: number };
+    };
   }> {
     const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.PAGE, { params });
     return {

@@ -83,10 +83,11 @@ export default function ReceptionistProfilePage() {
   const saveChanges = async () => {
     setSaving(true);
     try {
-      await receptionService.updateMyProfile(form);
+      // PATCH returns the same MyProfileResponse as GET — use it instead of
+      // re-reading the profile (API audit F-027).
+      setProfile(await receptionService.updateMyProfile(form));
       setEditing(false);
       setToast("Profile changes saved.");
-      load();
     } catch {
       setToast("Failed to save changes.");
     } finally {

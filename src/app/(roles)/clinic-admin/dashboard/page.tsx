@@ -9,11 +9,12 @@ import {
 import { useAuth } from "@/lib/hooks";
 import { Card, CardContent, Skeleton } from "@/components/ui";
 import { adminService } from "@/lib/api/services/admin.service";
+import { staffService } from "@/lib/api/services/staff.service";
 import { staffRequestsService } from "@/lib/api/services/staffRequests.service";
 import { storeService, type Product, type StoreOrder } from "@/lib/api/services/store.service";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { doctorsService } from "@/lib/api/services/doctors.service";
-import { paymentsService, type Payment } from "@/lib/api/services/payments.service";
+import { paymentsService, type Payment, type PaymentSummary } from "@/lib/api/services/payments.service";
 import { inventoryService, type InventoryItem } from "@/lib/api/services/inventory.service";
 import type { AdminClinic, AdminStaffMember, AdminPatient } from "@/types/admin.types";
 import type { Appointment } from "@/types/domain.types";
@@ -96,10 +97,11 @@ export default function ClinicAdminDashboardPage() {
   const [clinic, setClinic] = useState<AdminClinic | null>(null);
   const [staff, setStaff] = useState<AdminStaffMember[]>([]);
   const [patients, setPatients] = useState<AdminPatient[]>([]);
+  const [patientCount, setPatientCount] = useState(0);
   const [pendingRequests, setPendingRequests] = useState(0);
   const [orders, setOrders] = useState<StoreOrder[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [payments, setPayments] = useState<Payment[]>([]);
+  const [paymentSummary, setPaymentSummary] = useState<PaymentSummary>({ total_count: 0, by_status: [], recent: [] });
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [doctorSchedules, setDoctorSchedules] = useState<Record<string, DoctorSchedule[]>>({});
@@ -112,32 +114,36 @@ export default function ClinicAdminDashboardPage() {
     const clinicId = user.clinic_id;
     setError(null);
     try {
-      const [clinicRes, staffRes, patientsRes, requestsRes, ordersRes, appointmentsRes, paymentsRes, inventoryRes, productsRes] = await Promise.all([
+      // Today's rows + the next 5 — a bare list() returned the clinic's
+      // oldest 100 appointments, so these panels were always empty (F-049).
+      const today = new Date().toISOString().slice(0, 10);
+      const tomorrow = new Date(Date.parse(today) + 86_400_000).toISOString().slice(0, 10);
+      const [clinicRes, staffRes, patientCountRes, requestsRes, ordersRes, todayRes, upcomingRes, paymentsRes, inventoryRes, productsRes, schedulesRes] = await Promise.all([
         adminService.getClinic(clinicId),
         adminService.getStaff({ clinic_id: clinicId }),
-        adminService.getPatients({ clinic_id: clinicId }),
+        staffService.getPatientCount(),
         staffRequestsService.list({ clinic_id: clinicId }),
         storeService.listOrders({ clinic_id: clinicId }),
-        appointmentsService.list({ clinic_id: clinicId }),
-        paymentsService.list({ clinic_id: clinicId }),
+        appointmentsService.list({ clinic_id: clinicId, date_from: today, date_to: today, limit: 500 }),
+        appointmentsService.list({ clinic_id: clinicId, date_from: tomorrow, limit: 5 }),
+        paymentsService.summary({ clinic_id: clinicId }),
         inventoryService.list({ clinic_id: clinicId }),
         storeService.listProducts(),
+        doctorsService.listClinicWeeklySchedules(clinicId),
       ]);
       setClinic(clinicRes);
       setStaff(staffRes.staff);
-      setPatients(patientsRes.patients);
+      setPatientCount(patientCountRes);
       setPendingRequests(requestsRes.filter((r) => r.status === "pending" || r.status === "under_review").length);
       setOrders(ordersRes);
-      setAppointments(appointmentsRes.appointments);
-      setPayments(paymentsRes);
+      setAppointments([...todayRes.appointments, ...upcomingRes.appointments]);
+      setPaymentSummary(paymentsRes);
       setInventory(inventoryRes);
       setProducts(productsRes);
-
-      const doctors = staffRes.staff.filter((s) => s.role === "doctor");
-      const scheduleResults = await Promise.all(doctors.map((d) => doctorsService.listWeeklySchedules(d.id)));
-      const scheduleMap: Record<string, DoctorSchedule[]> = {};
-      doctors.forEach((d, i) => { scheduleMap[d.id] = scheduleResults[i]; });
-      setDoctorSchedules(scheduleMap);
+      setDoctorSchedules(schedulesRes);
+      // ponytail: patient list only to name the latest orders; drop when
+      // store-order rows carry patient_name.
+      if (ordersRes.length > 0) setPatients((await adminService.getPatients({ clinic_id: clinicId })).patients);
     } catch (e: any) {
       setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Failed to load dashboard");
     }
@@ -157,7 +163,7 @@ export default function ClinicAdminDashboardPage() {
 
   const stats = [
     { label: "Staff Members",   value: staff.length,             icon: UserCog,      color: "text-blue-600",   bg: "bg-blue-50",   href: "/clinic-admin/staff" },
-    { label: "Patients",        value: patients.length,          icon: Users,        color: "text-green-600",  bg: "bg-green-50",  href: "/clinic-admin/patients" },
+    { label: "Patients",        value: patientCount,             icon: Users,        color: "text-green-600",  bg: "bg-green-50",  href: "/clinic-admin/patients" },
     { label: "Staff Requests",  value: pendingRequests,          icon: ClipboardList,color: "text-amber-600",  bg: "bg-amber-50",  href: "/clinic-admin/staff-requests", sublabel: "pending" },
     { label: "Store Orders",    value: openOrders,               icon: ShoppingBag,  color: "text-purple-600", bg: "bg-purple-50", href: "/clinic-admin/store-orders",   sublabel: "in progress" },
     { label: "Clinic Status",   value: clinic ? STATUS_LABELS[clinic.status] : "—", icon: Building2, color: statusColor.color, bg: statusColor.bg, href: "/clinic-admin/my-clinic", isText: true },
@@ -185,12 +191,14 @@ export default function ClinicAdminDashboardPage() {
   const doctors = staff.filter((s) => s.role === "doctor");
 
   // ── Payments ──
-  const totalCollected = payments.filter((p) => p.status === "paid" || p.status === "waived").reduce((sum, p) => sum + Number(p.amount), 0);
-  const pendingAmount = payments.filter((p) => p.status === "pending").reduce((sum, p) => sum + Number(p.amount), 0);
+  const statusTotal = (status: string) => paymentSummary.by_status.find((s) => s.status === status);
+  const totalCollected = (statusTotal("paid")?.amount ?? 0) + (statusTotal("waived")?.amount ?? 0);
+  const pendingAmount = statusTotal("pending")?.amount ?? 0;
+  const paymentCount = paymentSummary.total_count;
   const paymentStatusCounts = (["pending", "paid", "waived", "failed", "refunded"] as const).map((status) => ({
-    status, count: payments.filter((p) => p.status === status).length,
+    status, count: statusTotal(status)?.count ?? 0,
   })).filter((s) => s.count > 0);
-  const recentPayments = [...payments].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")).slice(0, 5);
+  const recentPayments = paymentSummary.recent;
 
   // ── Inventory ──
   const productName = (id: string) => products.find((p) => p.product_id === id)?.name ?? id;
@@ -380,12 +388,12 @@ export default function ClinicAdminDashboardPage() {
                 <p className="text-xs text-neutral-500">Pending</p>
               </div>
               <div>
-                <p className="text-xl font-bold text-neutral-900">{payments.length}</p>
+                <p className="text-xl font-bold text-neutral-900">{paymentCount}</p>
                 <p className="text-xs text-neutral-500">Total payments</p>
               </div>
             </div>
 
-            {payments.length === 0 ? (
+            {paymentCount === 0 ? (
               <p className="text-sm text-neutral-500 text-center py-4">No payments recorded for this clinic yet</p>
             ) : (
               <>
@@ -395,7 +403,7 @@ export default function ClinicAdminDashboardPage() {
                       <div
                         key={s.status}
                         className={PAYMENT_STATUS_COLORS[s.status].bar}
-                        style={{ flexBasis: `${(s.count / payments.length) * 100}%` }}
+                        style={{ flexBasis: `${(s.count / paymentCount) * 100}%` }}
                         title={`${s.status}: ${s.count}`}
                       />
                     ))}

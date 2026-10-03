@@ -76,8 +76,8 @@ export const staffService = {
    * approve/reject click 400s with no visible reason until this filter
    * keeps them off the list in the first place. */
   /** Counts only (F-045) — was the full patient list downloaded to count it. */
-  async getPatientCount(): Promise<number> {
-    const { data } = await apiClient.get(ENDPOINTS.STAFF.PATIENTS_COUNT);
+  async getPatientCount(clinicId?: string): Promise<number> {
+    const { data } = await apiClient.get(ENDPOINTS.STAFF.PATIENTS_COUNT, { params: { clinic_id: clinicId } });
     return data?.count ?? 0;
   },
 

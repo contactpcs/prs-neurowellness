@@ -149,6 +149,12 @@ export interface PaymentLogsParams {
   offset?: number;
 }
 
+export interface PaymentSummary {
+  total_count: number;
+  by_status: { status: string; count: number; amount: number }[];
+  recent: (Payment & { clinic_id?: string | null })[];
+}
+
 export const paymentsService = {
   get: async (id: string): Promise<Payment> => {
     const { data } = await apiClient.get(`/payments/${id}`);
@@ -158,6 +164,12 @@ export const paymentsService = {
   list: async (params: { clinic_id: string }): Promise<Payment[]> => {
     const { data } = await apiClient.get("/payments", { params });
     return Array.isArray(data) ? data : [];
+  },
+
+  /** Totals per status + 5 latest, without downloading every payment (API audit F-050). */
+  summary: async (params: { clinic_id?: string }): Promise<PaymentSummary> => {
+    const { data } = await apiClient.get("/payments/summary", { params });
+    return data;
   },
 
   waive: async (id: string, reason?: string): Promise<Payment> => {

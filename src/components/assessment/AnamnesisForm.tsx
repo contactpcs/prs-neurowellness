@@ -473,10 +473,14 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
     // Not locked: the auto-start effect above fires immediately, so this
     // only ever shows for an instant, or if that start failed (error set).
     // Locked (consultation already completed): genuinely nothing to start.
+    // No consultation selected for a main anamnesis: auto-start is skipped
+    // (it can only 422), so say where to start it instead of spinning
+    // forever (API audit BUG-ANAM).
+    const needsConsultation = !lockedForSession && assessmentStage === "main" && !appointmentId;
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">
         <div className="w-14 h-14 rounded-full bg-neutral-100 flex items-center justify-center">
-          {lockedForSession || error ? (
+          {lockedForSession || error || needsConsultation ? (
             <Stethoscope className="w-7 h-7 text-neutral-400" />
           ) : (
             <Loader2 className="w-7 h-7 text-primary-500 animate-spin" />
@@ -484,11 +488,13 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
         </div>
         <div>
           <p className="font-semibold text-neutral-800">
-            {lockedForSession ? "Anamnesis not started" : error ? "Could not start anamnesis" : "Loading anamnesis…"}
+            {lockedForSession || needsConsultation ? "Anamnesis not started" : error ? "Could not start anamnesis" : "Loading anamnesis…"}
           </p>
           <p className="text-sm text-neutral-500 mt-1">
             {lockedForSession
               ? "No anamnesis was recorded for this consultation."
+              : needsConsultation
+                ? "Open a consultation for this patient to start the anamnesis."
               : error
                 ? "Something went wrong opening this consultation's anamnesis."
                 : "Starting it pre-fills the previous consultation's answers."}

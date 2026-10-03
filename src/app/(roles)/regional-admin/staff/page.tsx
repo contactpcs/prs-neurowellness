@@ -376,11 +376,15 @@ export default function RegionalAdminStaffPage() {
     if (!user?.region_id) return;
     setError(null);
     try {
-      const regionClinics = await adminService.getClinics({ region_id: user.region_id });
+      // Staff for the whole region in one set of calls (RLS scopes a regional
+      // admin to their region) — was getStaff once per clinic (API audit F-059).
+      const [regionClinics, staffRes, approvedRequests] = await Promise.all([
+        adminService.getClinics({ region_id: user.region_id }),
+        adminService.getStaff(),
+        staffRequestsService.list({ status: "approved" }),
+      ]);
       setClinics(regionClinics);
-      const results = await Promise.all(regionClinics.map((c) => adminService.getStaff({ clinic_id: c.clinic_id })));
-      setStaff(results.flatMap((r) => r.staff));
-      const approvedRequests = await staffRequestsService.list({ status: "approved" });
+      setStaff(staffRes.staff);
       setStaffRequests(approvedRequests.filter((r) => !r.fulfilled_profile_id));
     } catch (e: any) {
       setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Failed to load staff");

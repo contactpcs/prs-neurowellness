@@ -17,6 +17,8 @@ import {
   type RevenueGroupBy,
 } from "@/lib/api/services/payments.service";
 
+const HISTORY_PAGE_SIZE = 25;
+
 type RangeKey = "7d" | "30d" | "90d" | "12m" | "all";
 
 const RANGE_OPTIONS: { value: RangeKey; label: string; days?: number; groupBy: RevenueGroupBy }[] = [
@@ -114,6 +116,11 @@ export function PaymentsHistorySection() {
   }, [range]);
 
   const [history, setHistory] = useState<PaymentHistoryDetail[]>([]);
+  // 25 per page; one extra row tells whether a next page exists
+  // (/payments/history returns no total). Was a flat limit=100 that hid
+  // everything older (API audit F-057).
+  const [historyPage, setHistoryPage] = useState(1);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const [revenueByPurpose, setRevenueByPurpose] = useState<RevenueByPurposePoint[]>([]);
   const [topPatients, setTopPatients] = useState<PatientRevenueTotal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -142,7 +149,12 @@ export function PaymentsHistorySection() {
   // a search refetches 1 call, not 3 (API audit F-024).
   async function loadHistory() {
     try {
-      setHistory(await paymentsService.getHistory({ status: status || undefined, search: debouncedSearch || undefined, date_from: dateFrom, limit: 100 }));
+      const rows = await paymentsService.getHistory({
+        status: status || undefined, search: debouncedSearch || undefined, date_from: dateFrom,
+        limit: HISTORY_PAGE_SIZE + 1, offset: (historyPage - 1) * HISTORY_PAGE_SIZE,
+      });
+      setHasMoreHistory(rows.length > HISTORY_PAGE_SIZE);
+      setHistory(rows.slice(0, HISTORY_PAGE_SIZE));
     } catch (e: any) { failed(e); }
   }
   async function loadSummaries() {
@@ -180,7 +192,9 @@ export function PaymentsHistorySection() {
     });
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setError(null); run(loadHistory); }, [status, debouncedSearch, dateFrom]);
+  useEffect(() => { setHistoryPage(1); }, [status, debouncedSearch, dateFrom]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setError(null); run(loadHistory); }, [status, debouncedSearch, dateFrom, historyPage]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { run(loadSummaries); }, [groupBy, dateFrom]);
 
@@ -411,6 +425,15 @@ export function PaymentsHistorySection() {
               </div>
             </div>
           </Card>
+        )}
+        {(historyPage > 1 || hasMoreHistory) && (
+          <div className="flex items-center justify-end gap-1.5 pt-3">
+            <button onClick={() => setHistoryPage((p) => Math.max(1, p - 1))} disabled={historyPage <= 1}
+              className="px-3 py-1 rounded-lg text-xs font-medium text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 disabled:hover:bg-transparent transition-colors">Prev</button>
+            <span className="text-xs text-neutral-500 px-2">Page {historyPage}</span>
+            <button onClick={() => setHistoryPage((p) => p + 1)} disabled={!hasMoreHistory}
+              className="px-3 py-1 rounded-lg text-xs font-medium text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 disabled:hover:bg-transparent transition-colors">Next</button>
+          </div>
         )}
       </div>
 
