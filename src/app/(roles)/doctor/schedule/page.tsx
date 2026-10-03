@@ -88,6 +88,21 @@ export default function DoctorSchedulePage() {
   const [showEditSched,   setShowEditSched]   = useState(false);
   const [showAddOverride, setShowAddOverride] = useState(false);
 
+  // ?edit=weekly / ?edit=override (doctor dashboard quick actions) open the
+  // matching modal directly — only once the existing template has loaded,
+  // since EditScheduleModal seeds its form from it on mount.
+  useEffect(() => {
+    if (loadingSchedule) return;
+    const params = new URLSearchParams(window.location.search);
+    const edit = params.get("edit");
+    if (edit === "weekly") setShowEditSched(true);
+    else if (edit === "override") setShowAddOverride(true);
+    else return;
+    params.delete("edit");
+    const qs = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  }, [loadingSchedule]);
+
   // ── Data fetchers ──────────────────────────────────────────────────────────
 
   const fetchSchedule = useCallback(async () => {

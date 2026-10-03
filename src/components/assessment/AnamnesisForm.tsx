@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
-import { CheckCircle, AlertCircle, Stethoscope, Loader2 } from "lucide-react";
+import { CheckCircle, AlertCircle, Stethoscope, Loader2, Save } from "lucide-react";
 import { anamnesisService, withResponses } from "@/lib/api/services/anamnesis.service";
 import { AnamnesisReadOnlyView } from "@/components/assessment/AnamnesisReadOnlyView";
 import { useAppDispatch } from "@/store/hooks";
@@ -562,7 +562,24 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
         </div>
       )}
 
-      {/* Header */}
+      {/* Editing a completed record: Save sits where Edit was in the
+          read-only view (AnamnesisReadOnlyView's header row). */}
+      {editing ? (
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-2xl font-bold text-neutral-900">Anamnesis</h2>
+          <div className="flex items-center gap-3">
+            {saving && (
+              <span className="flex items-center gap-1.5 text-xs text-neutral-400">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Auto-saving…
+              </span>
+            )}
+            <Button onClick={handleSubmit} isLoading={submitting}>
+              <Save className="w-4 h-4" /> Save
+            </Button>
+          </div>
+        </div>
+      ) : (
+      /* Header */
       <div className="bg-primary-50 border border-primary-200 rounded-xl px-5 py-4 flex items-center gap-3.5">
         <span className="text-2xl flex-shrink-0">🩺</span>
         <div className="flex-1">
@@ -577,6 +594,7 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
           <p className="text-xs text-neutral-500 mt-0.5">Patient Symptoms &amp; Medical History</p>
         </div>
       </div>
+      )}
 
       {/* Error */}
       {error && (
@@ -626,8 +644,8 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
         </div>
       ))}
 
-      {/* Footer — patient in_progress only */}
-      {!readOnly && (
+      {/* Footer — first-time fill only; an edit saves from the top row */}
+      {!readOnly && !editing && (
         <div className="bg-white rounded-xl border border-neutral-200 shadow-sm px-5 py-4 flex items-center justify-end gap-3">
           {saving && (
             <span className="flex items-center gap-1.5 text-xs text-neutral-400 mr-auto">

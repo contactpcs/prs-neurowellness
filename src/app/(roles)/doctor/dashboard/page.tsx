@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Search, ChevronLeft, ChevronRight, CalendarDays, Phone, MessageSquare, Eye, Siren,
+  Search, ChevronLeft, ChevronRight, CalendarDays, CalendarX, Eye,
 } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import apiClient from "@/lib/api/client";
@@ -13,6 +13,7 @@ import { BookingModal } from "@/components/appointments/BookingModal";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { getDeviceSessionLabel } from "@/lib/utils/sessionType";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { buttonVariants } from "@/components/ui/Button";
 import type { Appointment, AvailabilitySlot } from "@/types/domain.types";
 
 // ─── types ────────────────────────────────────────────────────────
@@ -487,20 +488,17 @@ export default function DoctorDashboard() {
         </div>
 
         <div className="bg-white rounded-2xl border border-neutral-200 shadow-card p-4 flex flex-col gap-2.5">
-          <h2 className="text-sm font-semibold text-neutral-900">Emergency Services</h2>
-          <button className="flex items-center justify-center gap-2 h-[38px] rounded-lg bg-danger-500 text-white font-semibold text-xs hover:bg-danger-700 transition-colors">
-            <Siren className="w-[15px] h-[15px] flex-shrink-0" />
-            Contact Emergency Services
-          </button>
-          <div className="h-px bg-neutral-100 my-0.5" />
-          <button className="flex items-center gap-2.5 h-[34px] px-3 rounded-lg bg-white border border-neutral-200 text-neutral-700 font-medium text-xs hover:bg-neutral-50 transition-colors">
-            <Phone className="w-3.5 h-3.5 flex-shrink-0" />
-            Contact Receptionist
-          </button>
-          <button className="flex items-center gap-2.5 h-[34px] px-3 rounded-lg bg-white border border-neutral-200 text-neutral-700 font-medium text-xs hover:bg-neutral-50 transition-colors">
-            <MessageSquare className="w-3.5 h-3.5 flex-shrink-0" />
-            Contact Clinical Assistant
-          </button>
+          <h2 className="text-base font-semibold text-neutral-900">Quick Actions</h2>
+          <div className="flex flex-col gap-2">
+            <Link href="/doctor/schedule?edit=weekly" className={buttonVariants({ className: "w-full" })}>
+              <CalendarDays className="w-4 h-4 flex-shrink-0" />
+              Set Weekly Schedule
+            </Link>
+            <Link href="/doctor/schedule?edit=override" className={buttonVariants({ className: "w-full" })}>
+              <CalendarX className="w-4 h-4 flex-shrink-0" />
+              Add Date Override
+            </Link>
+          </div>
         </div>
       </div>
 
