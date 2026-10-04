@@ -31,12 +31,17 @@ const RECONNECT_MAX_MS = 60_000;
  *
  * Backs off from 5 s to 60 s while the server can't be reached (Redis down
  * answers the ticket call with 503). Returns a handle rather than the
- * EventSource, since the underlying source is replaced on every reconnect. */
-export function openEventStream(onMessage: (msg: SSEMessage) => void): { close: () => void } {
+ * EventSource, since the underlying source is replaced on every reconnect.
+ *
+ * A push is sent once and never replayed, so anything pushed while the stream
+ * was down is missed. onReconnect fires each time the stream comes back, for
+ * the caller to reload what it shows from the server. */
+export function openEventStream(onMessage: (msg: SSEMessage) => void, onReconnect?: () => void): { close: () => void } {
   let source: EventSource | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
   let delay = RECONNECT_MIN_MS;
+  let hasConnected = false;
 
   const scheduleReconnect = () => {
     if (stopped) return;
@@ -54,6 +59,8 @@ export function openEventStream(onMessage: (msg: SSEMessage) => void): { close: 
       es.onopen = () => {
         delay = RECONNECT_MIN_MS;
         console.info("[live] connected — popups active");
+        if (hasConnected) onReconnect?.();
+        hasConnected = true;
       };
       es.onmessage = (event) => {
         try {

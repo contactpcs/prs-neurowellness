@@ -9,7 +9,7 @@ import { TOKEN_REFRESH_SKEW_MS, clearSessionAndSignalLogout, isTokenExpired, ref
 import { openEventStream } from "@/lib/sse";
 import { showNotificationToast } from "@/components/providers/NotificationToast";
 import { logout } from "@/store/slices/authSlice";
-import { notificationReceived } from "@/store/slices/notificationsSlice";
+import { fetchNotifications, invalidateNotifications, notificationReceived } from "@/store/slices/notificationsSlice";
 
 // Pages that don't need a session — a stale/expired token cleanup should
 // never force-navigate someone away from these (e.g. mid self-registration
@@ -48,17 +48,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isRestoring || !sessionUserId) return;
     if (!localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN)) return;
-    const source = openEventStream((msg) => {
-      dispatch(notificationReceived(msg));
-      // Minimal popup for every live notification, in every portal.
-      showNotificationToast(msg);
-      // Generic fan-out for any live count that needs to refresh (sidebar nav
-      // badges) — every message type, not just appointment-specific ones.
-      window.dispatchEvent(new CustomEvent("sse:notification", { detail: msg }));
-      if (msg.type === "appointment") {
-        window.dispatchEvent(new CustomEvent("sse:appointment", { detail: msg }));
-      }
-    });
+    const source = openEventStream(
+      (msg) => {
+        dispatch(notificationReceived(msg));
+        // Minimal popup for every live notification, in every portal.
+        showNotificationToast(msg);
+        // Generic fan-out for any live count that needs to refresh (sidebar nav
+        // badges) — every message type, not just appointment-specific ones.
+        window.dispatchEvent(new CustomEvent("sse:notification", { detail: msg }));
+        if (msg.type === "appointment") {
+          window.dispatchEvent(new CustomEvent("sse:appointment", { detail: msg }));
+        }
+      },
+      // Whatever was pushed while the stream was down is gone, but the
+      // notifications themselves are saved: reload them, and tell every live
+      // badge and list to refetch.
+      () => {
+        dispatch(invalidateNotifications());
+        dispatch(fetchNotifications());
+        window.dispatchEvent(new Event("sse:notification"));
+        window.dispatchEvent(new Event("sse:appointment"));
+      },
+    );
     return () => source.close();
   }, [isRestoring, sessionUserId, dispatch]);
 
