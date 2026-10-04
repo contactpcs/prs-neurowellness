@@ -108,6 +108,9 @@ export const ENDPOINTS = {
     PRESCRIBED_MEDICINE: (medicineId: string) => `/prescribed-medicines/${medicineId}`,
     // real (SQL/v1/99) — GET list (newest first), POST {category, note_text, appointment_id?}. Append-only, no update/delete.
     CLINICAL_NOTES: (patientId: string) => `/patients/${patientId}/clinical-notes`,
+    // real (SQL/v1/106) — GET ?actor_id=&limit= — who did what for this patient, newest first.
+    // doctor/admin: full trail. clinical_assistant: no protocol lifecycle steps, no change diffs.
+    CLINICAL_ACTIVITY: (patientId: string) => `/patients/${patientId}/clinical-activity`,
   },
 
   // ─── Staff ───

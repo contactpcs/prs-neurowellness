@@ -8,6 +8,7 @@ import { Card, CardContent, Badge, PageLoader, Button, DetailFieldList } from "@
 import { deviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
 import { SessionReviewPanel } from "@/components/doctor/SessionReviewPanel";
 import { PlacementMap } from "@/app/(roles)/doctor/patients/[id]/treatment-protocol/wizard/PlacementMap";
+import { useWorkspaceBase } from "@/lib/hooks/useWorkspaceBase";
 import type { ProtocolRead, ProtocolDetail, ProtocolSessionRead } from "@/types/treatmentProtocol.types";
 
 function fmtDate(iso?: string | null): string {
@@ -259,6 +260,7 @@ export function ProtocolFacts({ detail, title }: { detail: ProtocolDetail; title
  * page title around it). One component, one data-fetch, two call sites. */
 export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patientId: string; showHeader?: boolean }) {
   const router = useRouter();
+  const { base, canPrescribe } = useWorkspaceBase();
 
   const [allProtocols, setAllProtocols] = useState<ProtocolRead[]>([]);
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
@@ -420,12 +422,14 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
                 {active?.patient_name || "This patient"} has no treatment protocol assigned. Assign a protocol once the assessment stage is complete.
               </p>
             </div>
-            <button
-              onClick={() => router.push(`/doctor/patients/${patientId}/treatment-protocol/wizard?mode=new`)}
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-orange-500 text-white font-semibold text-sm hover:bg-orange-600 transition-colors"
-            >
-              <Plus className="h-4 w-4" />Start New Treatment Protocol
-            </button>
+            {canPrescribe && (
+              <button
+                onClick={() => router.push(`${base}/patients/${patientId}/treatment-protocol/wizard?mode=new`)}
+                className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-orange-500 text-white font-semibold text-sm hover:bg-orange-600 transition-colors"
+              >
+                <Plus className="h-4 w-4" />Start New Treatment Protocol
+              </button>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -434,7 +438,7 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
               cancelled) — nothing left to modify, so the very first thing on
               the page is a plain, unmissable "start the next one" action,
               not buried inside the old course's own card. */}
-          {active && !canModify && (
+          {active && !canModify && canPrescribe && (
             <Card className="border-orange-200 bg-orange-50/60">
               <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
@@ -445,7 +449,7 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
                 </div>
                 <Button
                   className="bg-orange-500 hover:bg-orange-600 flex-shrink-0"
-                  onClick={() => router.push(`/doctor/patients/${patientId}/treatment-protocol/wizard?mode=new`)}
+                  onClick={() => router.push(`${base}/patients/${patientId}/treatment-protocol/wizard?mode=new`)}
                 >
                   <Plus className="h-4 w-4" />Start New Treatment Protocol
                 </Button>
@@ -499,7 +503,7 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
                       <Button variant="outline" onClick={() => { setTab("history"); setHistoryDetailId(null); }}>
                         View Protocol History
                       </Button>
-                      {canModify && canComplete && (
+                      {canModify && canComplete && canPrescribe && (
                         <Button variant="outline" isLoading={completing} onClick={onMarkComplete}>
                           Mark Protocol Complete
                         </Button>
@@ -507,7 +511,7 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
                       {canModify && (
                         <Button
                           className="bg-orange-500 hover:bg-orange-600"
-                          onClick={() => router.push(`/doctor/patients/${patientId}/treatment-protocol/wizard?mode=modify&protocolId=${active.protocol_id}`)}
+                          onClick={() => router.push(`${base}/patients/${patientId}/treatment-protocol/wizard?mode=modify&protocolId=${active.protocol_id}`)}
                         >
                           Modify Protocol
                         </Button>
@@ -515,10 +519,10 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
                       {/* A patient may run several protocols side by side
                           (backend SQL/v1/90) — a new one opens its own
                           instance instead of amending this one. */}
-                      {canModify && (
+                      {canModify && canPrescribe && (
                         <Button
                           variant="outline"
-                          onClick={() => router.push(`/doctor/patients/${patientId}/treatment-protocol/wizard?mode=new`)}
+                          onClick={() => router.push(`${base}/patients/${patientId}/treatment-protocol/wizard?mode=new`)}
                         >
                           <Plus className="h-4 w-4" />Start New Treatment Protocol
                         </Button>
@@ -695,6 +699,7 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
  * so the child table stays identical to the Treatment Protocol panel's own. */
 export function DeviceSessionsPanel({ patientId, hideSuperseded = false, showHeader = true }: { patientId: string; hideSuperseded?: boolean; showHeader?: boolean }) {
   const router = useRouter();
+  const { base, canPrescribe } = useWorkspaceBase();
   const [protocols, setProtocols] = useState<ProtocolRead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [openProtocolId, setOpenProtocolId] = useState<string | null>(null);
@@ -789,12 +794,14 @@ export function DeviceSessionsPanel({ patientId, hideSuperseded = false, showHea
                 Sessions are generated from a treatment protocol — assign one first.
               </p>
             </div>
-            <button
-              onClick={() => router.push(`/doctor/patients/${patientId}/treatment-protocol/wizard?mode=new`)}
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-orange-500 text-white font-semibold text-sm hover:bg-orange-600 transition-colors"
-            >
-              <Plus className="h-4 w-4" />Start New Treatment Protocol
-            </button>
+            {canPrescribe && (
+              <button
+                onClick={() => router.push(`${base}/patients/${patientId}/treatment-protocol/wizard?mode=new`)}
+                className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-orange-500 text-white font-semibold text-sm hover:bg-orange-600 transition-colors"
+              >
+                <Plus className="h-4 w-4" />Start New Treatment Protocol
+              </button>
+            )}
           </CardContent>
         </Card>
       ) : visibleProtocols.length === 0 ? (

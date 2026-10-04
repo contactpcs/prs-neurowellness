@@ -9,6 +9,7 @@ import {
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { clinicDevicesService } from "@/lib/api/services/clinicDevices.service";
 import { useAuth, useGoBack } from "@/lib/hooks";
+import { useWorkspaceBase } from "@/lib/hooks/useWorkspaceBase";
 import { Card, CardContent, Input, Select, Button, PageSkeleton } from "@/components/ui";
 import { PlacementMap } from "./PlacementMap";
 import { PatientClinicalSnapshot } from "@/components/doctor/PatientClinicalSnapshot";
@@ -109,7 +110,8 @@ export default function TreatmentProtocolWizardPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
-  const goToWorkspace = useGoBack(`/doctor/patients/${patientId}?section=treatment-protocol`);
+  const { base } = useWorkspaceBase();
+  const goToWorkspace = useGoBack(`${base}/patients/${patientId}?section=treatment-protocol`);
 
   const mode = searchParams.get("mode") === "modify" ? "modify" : "new";
   const priorProtocolId = searchParams.get("protocolId");
@@ -781,7 +783,7 @@ export default function TreatmentProtocolWizardPage() {
                 </div>
               ))}
             </div>
-            <Button className="mt-2" onClick={() => router.push(`/doctor/patients/${patientId}?section=treatment-protocol`)}>
+            <Button className="mt-2" onClick={() => router.push(`${base}/patients/${patientId}?section=treatment-protocol`)}>
               View Treatment Protocol
             </Button>
           </CardContent>

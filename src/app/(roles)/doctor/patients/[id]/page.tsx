@@ -33,6 +33,7 @@ import { usePatientVisitSummary } from "@/lib/hooks/usePatientVisitSummary";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import type { ProtocolRead } from "@/types/treatmentProtocol.types";
 import { TreatmentPlanFull } from "@/components/doctor/TreatmentPlanFull";
+import { ClinicalActivityPanel } from "@/components/doctor/ClinicalActivityPanel";
 import { isFinalReportGenerated, markFinalReportGenerated } from "@/lib/utils/finalReportLock";
 
 function statusClass(status: Permission["status"]): string {
@@ -69,6 +70,7 @@ const SECTION_LABELS: Record<string, string> = {
   sessions: "Sessions",
   "treatment-plan": "Treatment Plan",
   "final-report": "Final Report",
+  activity: "Activity Log",
 };
 
 const MEDICINE_TIMINGS = ["Morning", "Afternoon", "Evening", "Night", "Twice daily", "Three times daily", "As needed"];
@@ -97,6 +99,7 @@ function buildSections(
     { id: "sessions", name: "Sessions", status: null },
     { id: "treatment-plan", name: "Treatment Plan", status: treatmentPlanLocked ? "locked" : null },
     { id: "final-report", name: "Final Report", status: null },
+    { id: "activity", name: "Activity Log", status: null },
   ];
 }
 
@@ -133,6 +136,11 @@ export default function DoctorPatientDetailPage() {
     ? clinicalSessions.findIndex((s) => s.appointment.appointment_id === sessionId)
     : clinicalSessions.findIndex((s) => s.appointment.appointment_type === "initial");
   const currentSession = currentSessionIdx >= 0 ? clinicalSessions[currentSessionIdx] : null;
+  // The appointment a PRS started from this view is taken under. The first
+  // Consultation has no ?session= in the URL, so sessionId alone left its
+  // PRS unlinked — and the backend now refuses a staff PRS with no
+  // appointment (PRS_APPOINTMENT_REQUIRED).
+  const visitAppointmentId = currentSession?.appointment.appointment_id ?? sessionId;
   // Per-visit bundle for the currently selected toggle — anamnesis here is
   // that visit's own (or null, "no anamnesis taken"), never the patient-wide
   // "latest" usePatientAnamnesis returns. Refetches on toggle switch so
@@ -442,7 +450,7 @@ export default function DoctorPatientDetailPage() {
                   </span>
                 </div>
                 <button
-                  onClick={() => router.push(`/doctor/patients/${id}/assessment/${nextAssessment.permission_id}${sessionId ? `?session=${sessionId}` : ""}`)}
+                  onClick={() => router.push(`/doctor/patients/${id}/assessment/${nextAssessment.permission_id}${visitAppointmentId ? `?session=${visitAppointmentId}` : ""}`)}
                   className="px-6 py-3 bg-orange-500 text-white font-semibold text-base rounded-full hover:bg-orange-600 transition-colors flex items-center gap-2 flex-shrink-0"
                 >
                   ▶ {isAssessmentStarted(nextAssessment) ? "Continue" : "Start"}
@@ -801,6 +809,8 @@ export default function DoctorPatientDetailPage() {
                 />
               ) : selectedSection === "sessions" ? (
                 <DeviceSessionsPanel patientId={id} />
+              ) : selectedSection === "activity" ? (
+                <ClinicalActivityPanel patientId={id} />
               ) : selectedSection === "notes" ? (
                 <div className="space-y-4">
                   <div>
@@ -1016,7 +1026,7 @@ export default function DoctorPatientDetailPage() {
                                 {started ? "In Progress" : "Pending"}
                               </span>
                             </div>
-                            <Link href={`/doctor/patients/${id}/assessment/${a.permission_id}${sessionId ? `?session=${sessionId}` : ""}`}>
+                            <Link href={`/doctor/patients/${id}/assessment/${a.permission_id}${visitAppointmentId ? `?session=${visitAppointmentId}` : ""}`}>
                               <Button size="sm" variant={started ? "primary" : "secondary"}>
                                 <PlayCircle className="h-4 w-4" /> {started ? "Continue" : "Start Assessment"}
                               </Button>

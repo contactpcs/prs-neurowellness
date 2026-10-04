@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { AssessmentSkeleton } from "@/components/ui";
 import { AssessmentUI } from "@/components/assessment/AssessmentUI";
 import { useAssessmentSTT } from "@/lib/hooks/useAssessmentSTT";
@@ -95,6 +95,10 @@ function toPrsScaleQuestion(q: PrsAssessmentQuestion, allQuestions: PrsAssessmen
 export default function ClinicalAssistantOnBehalfAssessmentPage() {
   const { id: patientId, permissionId } = useParams<{ id: string; permissionId: string }>();
   const router = useRouter();
+  // The consultation (appointment) this PRS is taken under. The backend
+  // refuses a staff-taken PRS without one (PRS_APPOINTMENT_REQUIRED).
+  const sessionId = useSearchParams().get("session");
+  const workspaceHref = `/clinical-assistant/patients/${patientId}?section=prs${sessionId ? `&session=${sessionId}` : ""}`;
 
   const [scales, setScales] = useState<LoadedScale[]>([]);
   const [currentScaleIndex, setCurrentScaleIndex] = useState(0);
@@ -125,6 +129,7 @@ export default function ClinicalAssistantOnBehalfAssessmentPage() {
           disease_id: permission.disease_id,
           taken_by: "doctor_on_behalf",
           patient_id: patientId,
+          appointment_id: sessionId ?? undefined,
         });
 
         // This (patient, disease) was already completed once — the backend
@@ -293,7 +298,7 @@ export default function ClinicalAssistantOnBehalfAssessmentPage() {
         await Promise.all(
           skipped.map((s) => prsAssessmentService.submitAssessment(s.instance_id, s.scale_id, {})),
         );
-        router.push(`/clinical-assistant/patients/${patientId}`);
+        router.push(workspaceHref);
         router.refresh();
       } else {
         setCurrentScaleIndex((i) => i + 1);
@@ -424,7 +429,7 @@ export default function ClinicalAssistantOnBehalfAssessmentPage() {
       languageOptions={[...PRS_LANGUAGES]}
       onLanguageChange={handleLanguageChange}
       isLanguageSwitching={isLanguageSwitching}
-      backHref={`/clinical-assistant/patients/${patientId}`}
+      backHref={workspaceHref}
     />
   );
 }

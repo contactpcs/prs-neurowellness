@@ -10,6 +10,7 @@ export { notificationsService } from "./notifications.service";
 export { permissionsService } from "./permissions.service";
 export { scoresService } from "./scores.service";
 export { reportsService } from "./reports.service";
+export { clinicalActivityService } from "./clinicalActivity.service";
 export { doctorNotesService } from "./doctorNotes.service";
 export { anamnesisService } from "./anamnesis.service";
 export { usersService } from "./users.service";

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { GitCompareArrows } from "lucide-react";
 import { usePatientClinicalSessions, type ClinicalSessionTab } from "@/lib/hooks/usePatientClinicalSessions";
+import { useWorkspaceBase } from "@/lib/hooks/useWorkspaceBase";
 
 function fmtDate(d: string): string {
   if (!d) return "—";
@@ -20,15 +21,16 @@ export function SessionTabsBar({
   patientId, activeSessionId, onCompare,
 }: { patientId: string; activeSessionId?: string | null; onCompare?: () => void }) {
   const router = useRouter();
+  const { base } = useWorkspaceBase();
   const { sessions, isLoading } = usePatientClinicalSessions(patientId);
 
   if (isLoading || sessions.length === 0) return null;
 
   function openTab(t: ClinicalSessionTab) {
     if (t.appointment.appointment_type === "initial") {
-      router.push(`/doctor/patients/${patientId}`);
+      router.push(`${base}/patients/${patientId}`);
     } else {
-      router.push(`/doctor/patients/${patientId}?session=${t.appointment.appointment_id}`);
+      router.push(`${base}/patients/${patientId}?session=${t.appointment.appointment_id}`);
     }
   }
 
