@@ -29,8 +29,8 @@ const RECONNECT_MAX_MS = 60_000;
  * access token is renewed by the ordinary request path (client.ts) on the way,
  * instead of live updates silently stopping until the page is reloaded.
  *
- * Backs off from 5 s to 60 s while the server can't be reached (Redis down
- * answers the ticket call with 503). Returns a handle rather than the
+ * Backs off from 5 s to 60 s while the server can't be reached (it answers
+ * the ticket call with 503 when it cannot store one). Returns a handle rather than the
  * EventSource, since the underlying source is replaced on every reconnect.
  *
  * A push is sent once and never replayed, so anything pushed while the stream
@@ -76,7 +76,7 @@ export function openEventStream(onMessage: (msg: SSEMessage) => void, onReconnec
         scheduleReconnect();
       };
     } catch (err) {
-      // 503 = backend can't reach Redis; 401 = session expired (client.ts renews it).
+      // 503 = backend can't issue a ticket right now; 401 = session expired (client.ts renews it).
       const status = (err as { response?: { status?: number } })?.response?.status;
       console.warn(`[live] no stream ticket (HTTP ${status ?? "network error"}) — retrying in ${Math.round(delay / 1000)}s`);
       scheduleReconnect();
