@@ -19,6 +19,9 @@ export interface PatientListItem {
   approval_status?: string;
   /** Set only on a rejected self-registration (approvals queue). */
   rejection_reason?: string | null;
+  /** Registration checks a self-registration failed, which is why it waits
+   * for review instead of being approved automatically (approvals queue). */
+  risk_flags?: string[];
   assigned_at?: string;
   registered_at?: string;
   created_at?: string;

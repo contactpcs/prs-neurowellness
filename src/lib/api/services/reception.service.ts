@@ -95,6 +95,7 @@ function mapRegistrations(all: Record<string, unknown>[]): PatientListItem[] {
         phone: isEmail ? undefined : (r.contact as string) ?? undefined,
         status: (r.status as string) ?? undefined,
         rejection_reason: (r.rejection_reason as string | null) ?? null,
+        risk_flags: Array.isArray(r.risk_flags) ? (r.risk_flags as string[]) : [],
         created_at: (r.submitted_on as string) ?? undefined,
         registered_at: (r.submitted_on as string) ?? undefined,
         doctor_id: null,

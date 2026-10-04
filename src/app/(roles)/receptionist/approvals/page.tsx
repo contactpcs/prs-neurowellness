@@ -10,6 +10,16 @@ import type { PatientListItem } from "@/types/domain.types";
 
 const PAGE_SIZE = 20;
 
+// Why the registration checks held a self-registration back for review
+// (backend: patients/registration_risk.py). An unknown code is shown as-is.
+const RISK_FLAG_LABELS: Record<string, string> = {
+  duplicate_patient: "Possible duplicate patient",
+  ip_velocity: "Many signups from one network",
+  suspicious_name: "Name looks like a test entry",
+  implausible_dob: "Date of birth looks wrong",
+  completed_too_fast: "Form filled unusually fast",
+};
+
 function fmtDate(iso?: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" });
@@ -161,6 +171,7 @@ export default function ReceptionistApprovalsPage() {
                 const initials = (p.first_name?.[0] || p.full_name?.[0] || "?").toUpperCase() +
                                  (p.last_name?.[0] || p.full_name?.split(" ")[1]?.[0] || "").toUpperCase();
                 const isActioning = actionLoading === p.id;
+                const reviewReasons = (p.risk_flags ?? []).map((f) => RISK_FLAG_LABELS[f] ?? f).join(" · ");
                 return (
                   <div key={p.id} className="grid gap-3 items-center px-5 py-3 border-b border-neutral-100 last:border-0" style={{ gridTemplateColumns: "1.5fr 1.6fr 1.1fr 1fr 190px" }}>
                     <Link href={`/receptionist/patients/${p.id}`} className="flex items-center gap-2.5 min-w-0 group">
@@ -172,9 +183,16 @@ export default function ReceptionistApprovalsPage() {
                     <span className="text-xs text-neutral-600 truncate">{p.email || p.phone || "—"}</span>
                     <span className="text-xs text-neutral-500">{fmtDate(p.registered_at ?? p.created_at)}</span>
                     {tab === "pending" ? (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-warning-50 text-warning-700 w-fit">
-                        Pending
-                      </span>
+                      <div className="min-w-0">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-warning-50 text-warning-700 w-fit">
+                          Pending
+                        </span>
+                        {reviewReasons && (
+                          <p className="text-[11px] text-warning-700 mt-1 truncate" title={reviewReasons}>
+                            {reviewReasons}
+                          </p>
+                        )}
+                      </div>
                     ) : (
                       <div className="min-w-0">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-danger-50 text-danger-700 w-fit">
