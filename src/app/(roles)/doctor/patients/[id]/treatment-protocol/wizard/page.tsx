@@ -1047,7 +1047,7 @@ export default function TreatmentProtocolWizardPage() {
         ) : (
           <Button disabled={pushing} onClick={handlePush}>
             {pushing && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
-            {mode === "modify" ? "Push Updated Protocol" : "Push Treatment Protocol"}
+            {mode === "modify" ? "Push Updated Protocol" : "Save Treatment Protocol"}
           </Button>
         )}
       </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { appointmentsService } from "@/lib/api/services";
@@ -9,6 +9,7 @@ import { doctorsService } from "@/lib/api/services/doctors.service";
 import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
 import { useDeviceSession, usePatientScoresSummary, useAuth, useGoBack } from "@/lib/hooks";
 import { useSidebar } from "@/contexts/SidebarContext";
+import { extractErrorMessage } from "@/lib/api/errors";
 import { Button, Card, CardHeader, CardContent, PageSkeleton, DetailFieldList, Input, Select } from "@/components/ui";
 import { PlacementMap } from "@/app/(roles)/doctor/patients/[id]/treatment-protocol/wizard/PlacementMap";
 import { SignatureCapture } from "@/components/deviceSession/SignatureCapture";
@@ -112,6 +113,12 @@ export default function DeviceSessionChecklistPage() {
   const [patientConsent, setPatientConsent] = useState<Record<string, boolean>>({});
   const [caDeclaration, setCaDeclaration] = useState<Record<string, boolean>>({});
   const [isStarting, setIsStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  // The form is seeded from the saved session once, on first load. Every
+  // later save (tapping to sign, Start) reloads `session`, and re-seeding
+  // then would replace ticks the CA has made on this page with whatever the
+  // server echoed back — e.g. Device Fit cleared right after a signature.
+  const hydratedFromSession = useRef(false);
 
   useEffect(() => {
     if (!appointmentId) return;
@@ -178,7 +185,8 @@ export default function DeviceSessionChecklistPage() {
   }, [deviceInfo, session]);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session || hydratedFromSession.current) return;
+    hydratedFromSession.current = true;
     setDeviceBrand(session.device_brand ?? deviceInfo?.device_name ?? "");
     setDeviceSerial(session.device_serial_number ?? deviceInfo?.device_unit_serial_number ?? "");
     setProceedWithoutPayment(session.payment_verified === false && !!session.payment_override_reason);
@@ -235,6 +243,24 @@ export default function DeviceSessionChecklistPage() {
   const allDeviceFitChecked = DEVICE_FIT_ITEMS.every((i) => deviceFit[i.code]);
   const allPatientConsentChecked = PATIENT_CONSENT_STATEMENTS.every((s) => patientConsent[s.code]);
   const allCaDeclarationChecked = CA_DECLARATION_STATEMENTS.every((s) => caDeclaration[s.code]);
+  // One tick for every confirm box on the page (montage, contraindications,
+  // device fit, patient consent, CA declaration) so the CA doesn't have to
+  // scroll through and tick each section. The per-section ticks still work
+  // and stay in sync; both signatures are still captured separately below.
+  const allAgreed = montageVerified && allContraindicationsChecked && allDeviceFitChecked
+    && allPatientConsentChecked && allCaDeclarationChecked;
+  const setAllAgreed = (checked: boolean) => {
+    setMontageVerified(checked);
+    setContraindications(Object.fromEntries(CONTRAINDICATION_ITEMS.map((i) => [i.code, checked])));
+    setDeviceFit(Object.fromEntries(DEVICE_FIT_ITEMS.map((i) => [i.code, checked])));
+    // A signed block is locked in — unticking can't un-sign it, so leave it.
+    if (!session?.patient_consent) {
+      setPatientConsent(Object.fromEntries(PATIENT_CONSENT_STATEMENTS.map((s) => [s.code, checked])));
+    }
+    if (!session?.ca_declaration) {
+      setCaDeclaration(Object.fromEntries(CA_DECLARATION_STATEMENTS.map((s) => [s.code, checked])));
+    }
+  };
   // "Paid" on the underlying appointment (a real payment record via the
   // Razorpay webhook, per scheduling's AppointmentStatusUpdate) satisfies
   // this step on its own — session.payment_verified only exists to record
@@ -260,6 +286,8 @@ export default function DeviceSessionChecklistPage() {
   if (!allContraindicationsChecked) missing.push("Contraindication checklist");
   if (!allDeviceFitChecked) missing.push("Device fit checklist");
   if (!allPatientConsentChecked || !allCaDeclarationChecked) missing.push("Consent & declaration");
+  if (!session?.patient_consent) missing.push("Patient signature");
+  if (!session?.ca_declaration) missing.push("Clinical Assistant signature");
 
   const canStart = missing.length === 0;
 
@@ -312,8 +340,17 @@ export default function DeviceSessionChecklistPage() {
     await saveChecklist({ ...currentChecklistFields(), ca_declaration: block });
   };
 
+  // Already started (e.g. the CA came back to this page) — starting again
+  // is an invalid transition server-side, so go straight to the live view.
+  const alreadyRunning = session?.session_status === "in_progress" || session?.session_status === "paused";
+
   const handleStart = async () => {
+    if (alreadyRunning) {
+      router.push(`/clinical-assistant/device-sessions/${appointmentId}/live`);
+      return;
+    }
     setIsStarting(true);
+    setStartError(null);
     try {
       await persistChecklist();
       if (isTvns && tvnsSettingsComplete && !session?.tvns_settings) {
@@ -328,6 +365,8 @@ export default function DeviceSessionChecklistPage() {
       }
       await start();
       router.push(`/clinical-assistant/device-sessions/${appointmentId}/live`);
+    } catch (err) {
+      setStartError(extractErrorMessage(err, "Could not start the session. Please try again."));
     } finally {
       setIsStarting(false);
     }
@@ -600,6 +639,26 @@ export default function DeviceSessionChecklistPage() {
           </Card>
 
           <Card>
+            <CardContent>
+              <label className="flex items-start gap-2.5 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allAgreed}
+                  onChange={(e) => setAllAgreed(e.target.checked)}
+                  className="mt-0.5 h-4 w-4"
+                />
+                <span>
+                  <span className="font-semibold text-neutral-900">Agree All</span>
+                  <span className="block text-xs text-neutral-500 mt-0.5">
+                    Confirms montage verification, the contraindication &amp; device fit checklists, the patient
+                    consent and the Clinical Assistant declaration below. Patient and Clinical Assistant signatures are still required.
+                  </span>
+                </span>
+              </label>
+            </CardContent>
+          </Card>
+
+          <Card>
             <CardHeader><h3 className="text-sm font-semibold text-neutral-900">4. Montage Verification</h3></CardHeader>
             <CardContent>
               <label className="flex items-start gap-2 text-sm">
@@ -680,7 +739,7 @@ export default function DeviceSessionChecklistPage() {
                 {session?.patient_consent && <p className="text-xs text-success-600 flex items-center gap-1"><ShieldCheck className="h-3.5 w-3.5" /> Signed</p>}
               </div>
               <div className="space-y-2">
-                <p className="text-xs font-semibold text-neutral-500 uppercase">CA declaration</p>
+                <p className="text-xs font-semibold text-neutral-500 uppercase">Clinical Assistant declaration</p>
                 <ul className="text-sm text-neutral-600 list-disc pl-5 space-y-1">
                   {CA_DECLARATION_STATEMENTS.map((s) => <li key={s.code}>{s.label}</li>)}
                 </ul>
@@ -715,12 +774,17 @@ export default function DeviceSessionChecklistPage() {
         }`}
       >
         <div>
-          <p className="text-sm font-semibold text-neutral-900">{canStart ? "Ready to start" : "Not ready yet"}</p>
-          {!canStart && <p className="text-xs text-neutral-400">Missing: {missing.join(", ")}</p>}
+          <p className="text-sm font-semibold text-neutral-900">
+            {alreadyRunning ? "Session in progress" : canStart ? "Ready to start" : "Not ready yet"}
+          </p>
+          {!alreadyRunning && !canStart && <p className="text-xs text-neutral-400">Missing: {missing.join(", ")}</p>}
+          {startError && <p className="text-xs text-danger-600 mt-0.5">{startError}</p>}
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={goBack}>Back to Queue</Button>
-          <Button onClick={handleStart} isLoading={isStarting} disabled={!canStart}>Start Session</Button>
+          <Button onClick={handleStart} isLoading={isStarting} disabled={!alreadyRunning && !canStart}>
+            {alreadyRunning ? "Open Live Session" : "Start Session"}
+          </Button>
         </div>
       </div>
     </div>
