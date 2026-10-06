@@ -51,8 +51,11 @@ export interface AdminClinic {
   clinic_admin_id: string | null;
   is_main_branch: boolean;
   address?: string;
+  full_address?: string;
+  google_maps_url?: string;
   city?: string;
   state?: string;
+  pincode?: string;
   country?: string;
   phone?: string;
   email?: string;
@@ -92,8 +95,12 @@ export interface CreateClinicPayload {
   clinic_type: "anava_owned" | "partner" | "mobile";
   region_id: string;
   address?: string;
+  full_address?: string;
+  /** https only — the backend rejects any other scheme. "" clears it. */
+  google_maps_url?: string;
   city?: string;
   state?: string;
+  pincode?: string;
   phone?: string;
   email?: string;
 }

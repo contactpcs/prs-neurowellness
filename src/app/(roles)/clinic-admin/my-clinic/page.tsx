@@ -40,6 +40,7 @@ function EditClinicForm({ clinic, onSubmit, onClose }: {
   const [form, setForm] = useState({
     clinic_name: clinic.clinic_name, address: clinic.address ?? "", city: clinic.city ?? "",
     state: clinic.state ?? "", phone: clinic.phone ?? "", email: clinic.email ?? "",
+    full_address: clinic.full_address ?? "", pincode: clinic.pincode ?? "", google_maps_url: clinic.google_maps_url ?? "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,7 +65,7 @@ function EditClinicForm({ clinic, onSubmit, onClose }: {
         <label className="block text-xs font-medium text-neutral-600 mb-1">Clinic Name *</label>
         <Input value={form.clinic_name} onChange={(e) => setForm((p) => ({ ...p, clinic_name: e.target.value }))} required />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <div>
           <label className="block text-xs font-medium text-neutral-600 mb-1">City</label>
           <Input value={form.city} onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))} />
@@ -73,10 +74,30 @@ function EditClinicForm({ clinic, onSubmit, onClose }: {
           <label className="block text-xs font-medium text-neutral-600 mb-1">State</label>
           <Input value={form.state} onChange={(e) => setForm((p) => ({ ...p, state: e.target.value }))} />
         </div>
+        <div>
+          <label className="block text-xs font-medium text-neutral-600 mb-1">Pincode</label>
+          <Input value={form.pincode} onChange={(e) => setForm((p) => ({ ...p, pincode: e.target.value }))} />
+        </div>
       </div>
       <div>
         <label className="block text-xs font-medium text-neutral-600 mb-1">Address</label>
         <Input value={form.address} onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))} />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-neutral-600 mb-1">Full Address</label>
+        <Input value={form.full_address} onChange={(e) => setForm((p) => ({ ...p, full_address: e.target.value }))} />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-neutral-600 mb-1">Google Maps Link</label>
+        {/* https only — the backend rejects any other scheme */}
+        <Input
+          type="url"
+          pattern="https://.+"
+          title="Paste the Google Maps share link, starting with https://"
+          placeholder="https://maps.app.goo.gl/…"
+          value={form.google_maps_url}
+          onChange={(e) => setForm((p) => ({ ...p, google_maps_url: e.target.value.trim() }))}
+        />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
