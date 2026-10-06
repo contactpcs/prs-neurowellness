@@ -368,6 +368,7 @@ export function SessionReviewPanel({
                 <Rows
                   items={[
                     ["Activities", detail.activities.flatMap((a) => a.activities).map(humanize).join(", ") || "—"],
+                    ...(detail.activities.some((a) => a.free_text) ? [["Other", detail.activities.map((a) => a.free_text).filter(Boolean).join("; ")] as [string, string]] : []),
                     ...(detail.activities.some((a) => a.note) ? [["Notes", detail.activities.map((a) => a.note).filter(Boolean).join("; ")] as [string, string]] : []),
                   ]}
                 />

@@ -1,5 +1,6 @@
 "use client";
 
+import { extractErrorMessage } from "@/lib/api/errors";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -70,6 +71,7 @@ export default function DeviceSessionLivePage() {
   const [noteText, setNoteText] = useState("");
   const [activitySelection, setActivitySelection] = useState<CognitiveActivity[]>([]);
   const [activityFreeText, setActivityFreeText] = useState("");
+  const [activityError, setActivityError] = useState<string | null>(null);
   const [feedbackComfort, setFeedbackComfort] = useState<"comfortable" | "tolerable" | "uncomfortable" | null>(null);
   const [feedbackFeltAfter, setFeedbackFeltAfter] = useState<"better" | "no_change" | "worse" | null>(null);
   const [feedbackNextIntensity, setFeedbackNextIntensity] = useState<"decrease" | "keep_same" | "increase" | null>(null);
@@ -106,6 +108,9 @@ export default function DeviceSessionLivePage() {
     ?? protocol?.prescribed_duration_min
     ?? 0;
   const rampSec = protocol?.ramp_seconds ?? 0;
+  // Biothm's tDCS unit has no impedance readout, so there is nothing for
+  // the CA to type in — hide the reading input (and its save) for it.
+  const hideImpedance = /biothm/i.test(protocol?.company_name ?? "") && /tdcs/i.test(protocol?.modality ?? "");
   const totalSeconds = prescribedDuration * 60 + rampSec * 2;
 
   // Ticks once a second so `remaining` (and therefore canComplete's
@@ -248,7 +253,7 @@ export default function DeviceSessionLivePage() {
               }`}
             >
               <Icon className="h-4 w-4 flex-shrink-0" />
-              <span className="flex-1">{s.label}</span>
+              <span className="flex-1">{s.key === "device-fit" && hideImpedance ? "Device" : s.label}</span>
               {count !== undefined && count > 0 && <span className="text-xs text-neutral-400">{count}</span>}
             </button>
           );
@@ -348,6 +353,7 @@ export default function DeviceSessionLivePage() {
                     <p className="text-xs text-neutral-400">Loading device details…</p>
                   )}
                 </div>
+                {!hideImpedance && (<>
                 <div>
                   <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2.5">Electrode impedance check</p>
                   <div className="flex items-end gap-3">
@@ -365,6 +371,7 @@ export default function DeviceSessionLivePage() {
                 <Button size="sm" onClick={() => setDeviceFit(deviceFitChecklist, impedance ? Number(impedance) : undefined)}>
                   <Gauge className="h-3.5 w-3.5" /> Save reading
                 </Button>
+                </>)}
               </CardContent></Card>
             )}
 
@@ -482,11 +489,21 @@ export default function DeviceSessionLivePage() {
                   <Input placeholder="Other activity (free text)" value={activityFreeText} onChange={(e) => setActivityFreeText(e.target.value)} />
                   <Button
                     size="sm"
-                    disabled={activitySelection.length === 0 && !activityFreeText}
-                    onClick={async () => { await recordActivity(activitySelection, activityFreeText || undefined); setActivitySelection([]); setActivityFreeText(""); }}
+                    disabled={activitySelection.length === 0 && !activityFreeText.trim()}
+                    onClick={async () => {
+                      setActivityError(null);
+                      try {
+                        await recordActivity(activitySelection, activityFreeText.trim() || undefined);
+                        setActivitySelection([]);
+                        setActivityFreeText("");
+                      } catch (err) {
+                        setActivityError(extractErrorMessage(err, "Could not log the activity. Please try again."));
+                      }
+                    }}
                   >
                     <Dumbbell className="h-3.5 w-3.5" /> Log activities
                   </Button>
+                  {activityError && <p className="text-xs text-danger-600">{activityError}</p>}
                 </CardContent></Card>
                 {session.activities.length > 0 && (
                   <div>
@@ -495,7 +512,7 @@ export default function DeviceSessionLivePage() {
                       {session.activities.map((a) => (
                         <div key={a.activity_record_id} className="bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5">
                           <p className="text-sm text-neutral-800">
-                            {a.activities.map((v) => ACTIVITY_OPTIONS.find((o) => o.value === v)?.label ?? v).join(", ")}
+                            {a.activities.map((v) => ACTIVITY_OPTIONS.find((o) => o.value === v)?.label ?? (String(v) === "other" ? "Other" : v)).join(", ")}
                           </p>
                           {a.free_text && <p className="text-xs text-neutral-500 mt-1">{a.free_text}</p>}
                         </div>
@@ -532,7 +549,7 @@ export default function DeviceSessionLivePage() {
                       {linked ? (
                         <span className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-success-700 bg-success-50 border border-success-200 rounded-full px-2.5 py-1">
                           <CheckCheck className="h-3.5 w-3.5" />
-                          {sc.delivery_mode === "ca_administered" ? "Administered by CA" : "Completed by patient"}
+                          {sc.delivery_mode === "ca_administered" ? "Administered by Clinical Assistant" : "Completed by patient"}
                         </span>
                       ) : awaitingPatient ? (
                         <span className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1">
