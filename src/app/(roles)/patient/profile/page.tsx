@@ -390,6 +390,23 @@ function MedicalFilesSection({ patientId, clinicId }: { patientId?: string; clin
       .finally(() => setLoading(false));
   }, [patientId]);
 
+  // A patient's upload shows up in the list once it has been checked and moved
+  // to the patient records bucket (about a minute); until then it is not
+  // listed. Look again every few seconds after an upload until it appears.
+  const [awaitingUpload, setAwaitingUpload] = useState(false);
+  useEffect(() => {
+    if (!patientId || !awaitingUpload) return;
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries += 1;
+      patientFilesService.list(patientId).then((list) => {
+        setFiles(list);
+        if (tries >= 15) setAwaitingUpload(false);
+      }).catch(() => {});
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [patientId, awaitingUpload]);
+
   const onPick = () => fileInputRef.current?.click();
 
   const onFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -400,7 +417,8 @@ function MedicalFilesSection({ patientId, clinicId }: { patientId?: string; clin
     setUploading(true);
     try {
       const uploaded = await patientFilesService.upload(patientId, clinicId, file, documentType);
-      setFiles((prev) => [uploaded, ...prev]);
+      if (uploaded.status === "scanning") setAwaitingUpload(true);
+      else setFiles((prev) => [uploaded, ...prev]);
     } catch (err: any) {
       setError(extractErrorMessage(err, "Upload failed"));
     } finally {
