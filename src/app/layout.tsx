@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { StoreProvider } from "@/store/provider";
 import { AuthProvider } from "@/components/providers";
+import { NotificationToaster } from "@/components/providers/NotificationToast";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <StoreProvider>
             <AuthProvider>
               {children}
+              <NotificationToaster />
             </AuthProvider>
           </StoreProvider>
         </ThemeProvider>

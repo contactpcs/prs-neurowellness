@@ -74,10 +74,13 @@ export default function PatientSessionAssessmentPage() {
           return;
         }
 
-        // Gate: the scale row must be pushed to the patient and not done.
+        // Gate: the scale row must be pushed to the patient, not done, and
+        // not frozen (its protocol was amended before this was answered —
+        // the server hard-rejects a submission against it, so send the
+        // patient back before they waste time filling it out).
         const rows = await deviceSessionService.listScales(appointmentId);
         const row = rows.find((r) => r.protocol_scale_id === protocolScaleId);
-        if (!row || row.delivery_mode !== "patient_app" || row.status === "completed") {
+        if (!row || row.delivery_mode !== "patient_app" || row.status === "completed" || row.status === "frozen") {
           router.replace(backHref);
           return;
         }
@@ -93,6 +96,7 @@ export default function PatientSessionAssessmentPage() {
           taken_by: "patient",
           patient_id: appt.patient_public_id ?? appt.patient_id,
           appointment_id: appointmentId,
+          scale_id: resolved.scaleId,
         });
 
         // Disease-level start can return several scales — administer only the
@@ -108,7 +112,14 @@ export default function PatientSessionAssessmentPage() {
             const restored: Record<string, number | string> = {};
             target.questions.forEach((q, idx) => {
               const entry = byQid[q.question_id];
-              if (entry) restored[String(idx)] = entry.response_value ?? entry.given_response;
+              if (entry) {
+                // given_response is the canonical option VALUE — response_value
+                // is scoring POINTS, which can differ for reverse-scored items
+                // and breaks LikertInput's strict option.value match on restore.
+                const raw = entry.given_response;
+                const asNumber = Number(raw);
+                restored[String(idx)] = raw !== null && raw !== "" && !Number.isNaN(asNumber) ? asNumber : raw;
+              }
             });
             setResponses(restored);
           } catch {
@@ -177,16 +188,16 @@ export default function PatientSessionAssessmentPage() {
       await deviceSessionService.completeScale(appointmentId, protocolScaleId, scale.instance_id).catch(() => {});
 
       // device_session_prs_responses is UNIQUE on appointment_id — one link
-      // row per session, ever. _complete_due_scales (backend) sweeps EVERY
-      // scale_result currently scored on this instance and marks all of
-      // them "completed" on device_session_scales in that single call. If
-      // we called this after every scale, the FIRST scale submitted would
-      // claim the once-per-session slot and, because disease-level
-      // instances share scale_results across sibling scales, could sweep
-      // up scales the patient hasn't actually answered yet — that's what
-      // made DASS-21 show "Completed" after only EQ-5D-5L was submitted.
-      // Only call it once every patient_app scale due this session is
-      // actually done, so the sweep is correct when it fires.
+      // row per session, ever, so this can only be called once. The actual
+      // per-scale completion is already handled above by completeScale for
+      // every scale as it's submitted; the backend's _complete_due_scales
+      // now also only touches the one scale_id it's given (previously it
+      // swept every scale_result on the whole disease-level instance, which
+      // could mark an unanswered sibling scale "completed" too — that's
+      // what made DASS-21 show "Completed" after only EQ-5D-5L was
+      // submitted). Still wait until every patient_app scale due this
+      // session is done before creating the once-per-session link record,
+      // so it reflects the scale that closed out the visit.
       if (protocolId && sessionNumber != null) {
         const rows = await deviceSessionService.listScales(appointmentId);
         const stillPending = rows.some(
@@ -200,6 +211,7 @@ export default function PatientSessionAssessmentPage() {
             appointment_id: appointmentId,
             instance_id: scale.instance_id,
             session_number: sessionNumber,
+            scale_id: scale.scale_id,
           });
         }
       }
@@ -252,6 +264,9 @@ export default function PatientSessionAssessmentPage() {
       isResumed={false}
       onAnswer={handleAnswer}
       onPrev={() => setCurrentQuestionIndex((q) => Math.max(0, q - 1))}
+      onQuestionPrev={() => setCurrentQuestionIndex((q) => Math.max(0, q - 1))}
+      onQuestionNext={() => setCurrentQuestionIndex((q) => Math.min(questions.length - 1, q + 1))}
+      onQuestionJump={setCurrentQuestionIndex}
       onSkipSection={finishAndLink}
       onSubmitScale={finishAndLink}
       onNavigateScale={() => {}}

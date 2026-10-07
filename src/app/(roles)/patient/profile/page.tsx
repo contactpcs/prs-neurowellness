@@ -1,23 +1,32 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  User, ShoppingBag, CreditCard, Bell, Settings,
-  Check, X, AlertCircle, Plus, Stethoscope, Edit2,
-  Mail, Phone, FileText, Upload, Download,
+  User,
+  Check, X, AlertCircle, Stethoscope, Edit2, ChevronRight,
+  Mail, Phone, FileText, Upload, Download, ShieldCheck, FileSignature,
 } from "lucide-react";
-import { PageLoader } from "@/components/ui";
+import { PageSkeleton, Modal } from "@/components/ui";
 import { usersService, NoSupportedFieldsError } from "@/lib/api/services/users.service";
 import { authService } from "@/lib/api/services/auth.service";
 import { patientFilesService, type PatientFile } from "@/lib/api/services/patientFiles.service";
+import { consentService, type ConsentRecord, type ConsentTemplate } from "@/lib/api/services/consent.service";
 import { extractErrorMessage } from "@/lib/api/errors";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
-import { fetchMyDoctor, selectMyDoctor } from "@/store/slices/patientsSlice";
-import { useAuth } from "@/lib/hooks";
+import { fetchMyDoctor, selectMyDoctor, invalidateDashboard } from "@/store/slices/patientsSlice";
+import { useAuth, useMyAssessments, usePincodeLookup } from "@/lib/hooks";
 import { computeProfileCompletion } from "@/lib/profileCompletion";
-import { dialCodeForCountry } from "@/lib/countries";
+import { dialCodeForCountry, COUNTRY_OPTIONS } from "@/lib/countries";
+import { LANGUAGE_OPTIONS, languageLabel } from "@/lib/languages";
+
+// Deduped by dial code (US/Canada both +1) — the verify-phone dropdown picks
+// a code, not a country, so a repeated code would collide as a <select> value.
+const DIAL_CODE_OPTIONS = COUNTRY_OPTIONS.filter(
+  (c, i) => COUNTRY_OPTIONS.findIndex((o) => o.dialCode === c.dialCode) === i,
+);
 
 // ─── helpers ──────────────────────────────────────────────────────
 
@@ -49,14 +58,14 @@ const EMPTY_FORM = {
   date_of_birth: "", gender: "",
   government_id: "", id_type: "", language_pref: "",
   address_line1: "", city: "", state: "", country: "", pincode: "",
-  blood_group: "", allergies: "", emergency_contact: "",
+  blood_group: "", allergies: "", emergency_contact: "", emergency_contact_phone: "",
   occupation: "", marital_status: "",
   insurance_provider: "", insurance_policy: "",
   weight_kg: "", height_ft: "", height_in: "",
 };
 
 type FormState = typeof EMPTY_FORM;
-type TabId = "overview" | "files" | "purchases" | "payments" | "notifications" | "settings";
+type TabId = "personal" | "medical" | "verification" | "consents";
 
 // ─── styles ───────────────────────────────────────────────────────
 
@@ -67,24 +76,47 @@ const inputCls =
 const labelCls = "text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-1.5 block";
 
 function FieldInput({
-  label, value, onChange, type = "text", placeholder, readOnly,
+  label, value, onChange, type = "text", placeholder, readOnly, numeric, alpha,
 }: {
   label: string; value: string; onChange: (v: string) => void;
   type?: string; placeholder?: string; readOnly?: boolean;
+  /** Digits only, one optional decimal point (weight, dimensions) — strips
+   * anything else as it's typed rather than validating after the fact, so
+   * a letter or symbol never lands in the field at all. */
+  numeric?: boolean;
+  /** Letters and spaces only (a person's name) — same strip-as-typed approach
+   * as `numeric`. */
+  alpha?: boolean;
 }) {
   return (
     <div>
       <label className={labelCls}>{label}</label>
       <input
         type={type}
+        inputMode={numeric ? "decimal" : undefined}
         className={readOnly ? `${inputCls} bg-neutral-50 cursor-default` : inputCls}
         value={value}
         placeholder={placeholder}
         readOnly={readOnly}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => onChange(numeric ? sanitizeNumeric(e.target.value) : alpha ? sanitizeAlpha(e.target.value) : e.target.value)}
       />
     </div>
   );
+}
+
+// Keeps digits and at most one decimal point — matches how a weight/height
+// field is actually typed, rather than a strict number parse that would
+// reject a bare "72." while the patient is still mid-keystroke on "72.5".
+function sanitizeNumeric(raw: string): string {
+  const cleaned = raw.replace(/[^\d.]/g, "");
+  const firstDot = cleaned.indexOf(".");
+  if (firstDot === -1) return cleaned;
+  return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, "");
+}
+
+// Letters + spaces only — strips digits/symbols as typed for a name field.
+function sanitizeAlpha(raw: string): string {
+  return raw.replace(/[^a-zA-Z\s]/g, "");
 }
 
 // read-only display row (label → value table style)
@@ -97,51 +129,109 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
+const BLOOD_GROUP_OPTIONS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+
+const ID_TYPE_OPTIONS = [
+  { value: "aadhaar",  label: "Aadhaar" },
+  { value: "passport", label: "Passport" },
+];
+
 const TABS: { id: TabId; label: string; Icon: React.ElementType }[] = [
-  { id: "overview",      label: "Overview",      Icon: User        },
-  { id: "files",         label: "Files",         Icon: FileText    },
-  { id: "purchases",     label: "Purchases",     Icon: ShoppingBag },
-  { id: "payments",      label: "Payments",      Icon: CreditCard  },
-  { id: "notifications", label: "Notifications", Icon: Bell        },
-  { id: "settings",      label: "Settings",      Icon: Settings    },
+  { id: "personal",     label: "Personal Information",   Icon: User        },
+  { id: "medical",      label: "Medical History/Files",  Icon: FileText    },
+  { id: "verification", label: "Verification",           Icon: ShieldCheck },
+  { id: "consents",     label: "Consents",                Icon: FileSignature },
 ];
 
 // ─── inline channel verification (Overview tab — Cognito mode only) ─
 // Same two calls the old dedicated /patient/verify-channel screen used;
 // consolidated here per explicit request — no separate page.
-function ChannelVerification({ emailVerified, phoneVerified, country }: { emailVerified?: boolean; phoneVerified?: boolean; country?: string }) {
+function ChannelVerification({
+  emailVerified, phoneVerified, hasEmail, hasPhone, country,
+}: { emailVerified?: boolean; phoneVerified?: boolean; hasEmail: boolean; hasPhone: boolean; country?: string }) {
   const dispatch = useAppDispatch();
-  const missingEmail = emailVerified === false;
-  const missingPhone = phoneVerified === false;
+  // phone_verified/email_verified default to `true` in the auth store when
+  // the backend sends nothing for them (staff accounts never go through
+  // OTP, so "unset" reading as "verified" is the right default there) — but
+  // for a patient with literally no phone/email on file yet, that same
+  // default means "verified" when there is nothing to have verified. Only
+  // treat a channel as missing when it's both present and explicitly
+  // unverified, or entirely absent (needs adding + verifying from scratch).
+  const missingEmail = emailVerified === false || !hasEmail;
+  const missingPhone = phoneVerified === false || !hasPhone;
   const [target, setTarget] = useState<"email" | "phone_number" | null>(
     missingEmail ? "email" : missingPhone ? "phone_number" : null,
   );
-  const [step, setStep] = useState<"value" | "otp">("value");
   const [value, setValue] = useState("");
+  const [otpOpen, setOtpOpen] = useState(false);
   const [otp, setOtp] = useState("");
   const [busy, setBusy] = useState(false);
+  const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resendMessage, setResendMessage] = useState<string | null>(null);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
+  // Defaults from the patient's on-file country but stays editable — a
+  // patient verifying a number for a country other than their registered one
+  // (e.g. an international number) isn't locked out of it.
+  const [dialCode, setDialCode] = useState(dialCodeForCountry(country));
 
   if (!missingEmail && !missingPhone) return null;
   if (!target) return null;
 
   const label = target === "email" ? "email" : "mobile number";
   const otherLabel = target === "email" ? "mobile number" : "email";
-  const dialCode = dialCodeForCountry(country);
   // Cognito needs E.164 (+<dial code><digits>) — country is already known
   // from registration, so the digits-only input is all the patient types;
   // no separate "type your country code" step.
   const fullValue = target === "phone_number" ? `${dialCode}${value.replace(/\D/g, "")}` : value.trim();
 
+  const closeModal = () => { setOtpOpen(false); setOtp(""); setError(null); setResendMessage(null); };
+
   const onSendCode = async () => {
     if (!value.trim()) { setError(`Enter your ${label}`); return; }
+    if (target === "phone_number") {
+      const digits = value.replace(/\D/g, "");
+      // E.164's own national-number bound (7-15 digits) — not a per-country
+      // exact length, since dialCode already varies by the patient's own
+      // country. Catches the actual bug: a 1-2 digit typo or a pasted
+      // non-numeric string was passing straight through to Cognito before,
+      // since the only prior check was "is the field non-empty."
+      if (digits.length < 7 || digits.length > 15) {
+        setError("Enter a valid mobile number");
+        return;
+      }
+    } else if (!/^\S+@\S+\.\S+$/.test(value.trim())) {
+      setError("Enter a valid email address");
+      return;
+    }
     setError(null); setBusy(true);
     try {
       await authService.verifyChannelStart(target, fullValue);
-      setStep("otp");
+      setOtpOpen(true);
     } catch (e: any) {
-      setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Could not send verification code");
+      // Backend already checks profiles for this value up front (before
+      // ever calling Cognito) and raises PHONE_ALREADY_EXISTS/
+      // EMAIL_ALREADY_EXISTS specifically — surfaced as its own popup
+      // instead of folding into the generic inline error line, since "this
+      // number belongs to another account" is a distinct, actionable case
+      // (try a different number) rather than a transient send failure.
+      const code = e?.response?.data?.error?.code;
+      if (code === "PHONE_ALREADY_EXISTS" || code === "EMAIL_ALREADY_EXISTS") {
+        setDuplicateOpen(true);
+      } else {
+        setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Could not send verification code");
+      }
     } finally { setBusy(false); }
+  };
+
+  const onResend = async () => {
+    setError(null); setResendMessage(null); setResending(true);
+    try {
+      await authService.verifyChannelStart(target, fullValue);
+      setResendMessage("Code resent.");
+    } catch (e: any) {
+      setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Could not resend code");
+    } finally { setResending(false); }
   };
 
   const onConfirmWith = async (code: string) => {
@@ -150,8 +240,9 @@ function ChannelVerification({ emailVerified, phoneVerified, country }: { emailV
     try {
       await authService.verifyChannelConfirm(target, code, fullValue);
       dispatch(updateUserInStore(target === "email" ? { email_verified: true } : { phone_verified: true }));
+      closeModal();
       const otherStillMissing = target === "email" ? missingPhone : missingEmail;
-      if (otherStillMissing) { setTarget(target === "email" ? "phone_number" : "email"); setStep("value"); setValue(""); setOtp(""); }
+      if (otherStillMissing) { setTarget(target === "email" ? "phone_number" : "email"); setValue(""); }
       else { setTarget(null); }
     } catch (e: any) {
       setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Incorrect or expired code");
@@ -159,16 +250,16 @@ function ChannelVerification({ emailVerified, phoneVerified, country }: { emailV
   };
 
   return (
-    <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3.5">
-      <div className="flex items-start gap-2.5">
-        {target === "email" ? <Mail className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" /> : <Phone className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-amber-800">Verify your {label}</p>
-          <p className="text-xs text-amber-700 mt-0.5">
-            You signed up with your {otherLabel} — add and verify your {label} too, so you can sign in with either.
-          </p>
+    <>
+      <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3.5">
+        <div className="flex items-start gap-2.5">
+          {target === "email" ? <Mail className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" /> : <Phone className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />}
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-amber-800">Verify your {label}</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              You signed up with your {otherLabel} — add and verify your {label} too, so you can sign in with either.
+            </p>
 
-          {step === "value" && (
             <div className="mt-2 flex items-center gap-2">
               {target === "email" ? (
                 <input
@@ -180,9 +271,15 @@ function ChannelVerification({ emailVerified, phoneVerified, country }: { emailV
                 />
               ) : (
                 <div className="flex items-center gap-1.5 max-w-xs flex-1">
-                  <span className="flex items-center justify-center px-2 py-1.5 rounded-lg border border-amber-300 bg-white text-xs text-amber-700 flex-shrink-0">
-                    {dialCode}
-                  </span>
+                  <select
+                    value={dialCode}
+                    onChange={(e) => setDialCode(e.target.value)}
+                    className="flex items-center justify-center px-1.5 py-1.5 rounded-lg border border-amber-300 bg-white text-xs text-amber-700 flex-shrink-0 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                  >
+                    {DIAL_CODE_OPTIONS.map((c) => (
+                      <option key={c.dialCode} value={c.dialCode}>{c.dialCode}</option>
+                    ))}
+                  </select>
                   <input
                     type="tel"
                     placeholder="XXXXXXXXXX"
@@ -193,30 +290,66 @@ function ChannelVerification({ emailVerified, phoneVerified, country }: { emailV
                 </div>
               )}
               <button onClick={onSendCode} disabled={busy} className="px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50 flex-shrink-0">
-                {busy ? "Sending…" : "Send code"}
+                {busy ? "Sending…" : "Verify"}
               </button>
             </div>
-          )}
 
-          {step === "otp" && (
-            <div className="mt-2 flex items-center gap-2">
-              <input
-                inputMode="numeric" maxLength={6} placeholder="123456" value={otp}
-                onChange={(e) => {
-                  const v = e.target.value.replace(/\D/g, "").slice(0, 6);
-                  setOtp(v);
-                  if (v.length === 6 && !busy) onConfirmWith(v);
-                }}
-                className="flex-1 max-w-[140px] px-2.5 py-1.5 text-xs border border-amber-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
-              />
-              {busy && <span className="text-xs text-amber-700">Confirming…</span>}
-            </div>
-          )}
-
-          {error && <p className="mt-1.5 text-xs text-red-600">{error}</p>}
+            {error && !otpOpen && <p className="mt-1.5 text-xs text-red-600">{error}</p>}
+          </div>
         </div>
       </div>
-    </div>
+
+      <Modal isOpen={otpOpen} onClose={closeModal} title={`Verify your ${label}`}>
+        <div className="space-y-3">
+          <p className="text-sm text-neutral-600">
+            Enter the 6-digit code sent to <span className="font-semibold text-neutral-900">{fullValue}</span>.
+          </p>
+          <input
+            inputMode="numeric" maxLength={6} placeholder="123456" value={otp} autoFocus
+            onChange={(e) => {
+              const v = e.target.value.replace(/\D/g, "").slice(0, 6);
+              setOtp(v);
+              if (v.length === 6 && !busy) onConfirmWith(v);
+            }}
+            className="w-full text-center tracking-[0.5em] text-lg font-semibold px-3 py-2.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-300"
+          />
+          {busy && <p className="text-xs text-neutral-500">Confirming…</p>}
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          {resendMessage && !error && <p className="text-xs text-success-600">{resendMessage}</p>}
+          <div className="flex items-center justify-between pt-1">
+            <button
+              onClick={onResend}
+              disabled={resending || busy}
+              className="text-xs font-semibold text-primary-600 hover:text-primary-700 disabled:opacity-50"
+            >
+              {resending ? "Resending…" : "Resend code"}
+            </button>
+            <button
+              onClick={() => onConfirmWith(otp)}
+              disabled={otp.length !== 6 || busy}
+              className="px-4 py-2 text-xs font-semibold text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50"
+            >
+              Verify
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={duplicateOpen} onClose={() => setDuplicateOpen(false)} title={`${target === "email" ? "Email" : "Phone number"} already in use`}>
+        <div className="space-y-3">
+          <p className="text-sm text-neutral-600">
+            <span className="font-semibold text-neutral-900">{fullValue}</span> is already registered to another account.
+            Enter a different {label} to continue.
+          </p>
+          <button
+            onClick={() => { setDuplicateOpen(false); setValue(""); }}
+            className="px-4 py-2 text-xs font-semibold text-white bg-primary-600 rounded-lg hover:bg-primary-700"
+          >
+            Try a different {label}
+          </button>
+        </div>
+      </Modal>
+    </>
   );
 }
 
@@ -257,6 +390,23 @@ function MedicalFilesSection({ patientId, clinicId }: { patientId?: string; clin
       .finally(() => setLoading(false));
   }, [patientId]);
 
+  // A patient's upload shows up in the list once it has been checked and moved
+  // to the patient records bucket (about a minute); until then it is not
+  // listed. Look again every few seconds after an upload until it appears.
+  const [awaitingUpload, setAwaitingUpload] = useState(false);
+  useEffect(() => {
+    if (!patientId || !awaitingUpload) return;
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries += 1;
+      patientFilesService.list(patientId).then((list) => {
+        setFiles(list);
+        if (tries >= 15) setAwaitingUpload(false);
+      }).catch(() => {});
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [patientId, awaitingUpload]);
+
   const onPick = () => fileInputRef.current?.click();
 
   const onFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -267,7 +417,8 @@ function MedicalFilesSection({ patientId, clinicId }: { patientId?: string; clin
     setUploading(true);
     try {
       const uploaded = await patientFilesService.upload(patientId, clinicId, file, documentType);
-      setFiles((prev) => [uploaded, ...prev]);
+      if (uploaded.status === "scanning") setAwaitingUpload(true);
+      else setFiles((prev) => [uploaded, ...prev]);
     } catch (err: any) {
       setError(extractErrorMessage(err, "Upload failed"));
     } finally {
@@ -364,11 +515,140 @@ function MedicalFilesSection({ patientId, clinicId }: { patientId?: string; clin
   );
 }
 
+// ─── Consents tab — medical treatment + data-use consent records ───
+function ConsentsSection({ patientProfileId }: { patientProfileId?: string }) {
+  const [consents, setConsents] = useState<ConsentRecord[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // Assessment consent forms the patient still has to review & sign — this is
+  // where that action lives now (the patient-dashboard card was removed).
+  const { assessments } = useMyAssessments();
+  const pendingToSign = assessments.filter((a) => a.status === "granted");
+
+  // Clicked consent's document — fetched on demand (not prefetched for every
+  // row) since the template text is only needed once someone asks to see it.
+  const [viewing, setViewing] = useState<ConsentRecord | null>(null);
+  const [viewTemplate, setViewTemplate] = useState<ConsentTemplate | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+  const [viewError, setViewError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!patientProfileId) return;
+    consentService.listForSubject({ patient_id: patientProfileId })
+      .then(setConsents)
+      .catch(() => setError("Failed to load consent records"));
+  }, [patientProfileId]);
+
+  const openConsent = (c: ConsentRecord) => {
+    setViewing(c);
+    setViewTemplate(null);
+    setViewError(null);
+    setViewLoading(true);
+    // patient_onboarding (and the other non-role-split consent types) have a
+    // single row with role=null — patient consent records are never
+    // role-split the way staff-onboarding ones are, so no role param here.
+    consentService.getTemplate(c.consent_type)
+      .then((t) => { if (!t) setViewError("Consent document not found"); setViewTemplate(t); })
+      .catch(() => setViewError("Failed to load consent document"))
+      .finally(() => setViewLoading(false));
+  };
+
+  return (
+    <div>
+      <h2 className="text-base font-bold text-neutral-900 mb-1">Consents</h2>
+      <p className="text-xs text-neutral-400 mb-4">Medical treatment and data-use consents signed with the clinic.</p>
+
+      {error && (
+        <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg text-sm mb-4">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+        </div>
+      )}
+
+      {pendingToSign.length > 0 && (
+        <div className="mb-4 space-y-2">
+          <p className="text-xs font-semibold text-amber-700 uppercase tracking-widest">Awaiting your signature</p>
+          {pendingToSign.map((a) => (
+            <div key={a.permission_id} className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-amber-900 truncate">
+                  {a.disease_name ? `${a.disease_name} assessment consent` : "Medical consent form"}
+                </p>
+                <p className="text-xs text-amber-700 mt-0.5">Review the treatment consent document and sign digitally.</p>
+              </div>
+              <Link
+                href={`/patient/consent/${a.permission_id}`}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white text-xs font-semibold flex-shrink-0 hover:opacity-90 transition-opacity"
+                style={{ background: BRAND }}
+              >
+                Review &amp; sign <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!patientProfileId || consents === null ? (
+        <p className="text-sm text-neutral-400">Loading…</p>
+      ) : consents.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-neutral-200 py-14 text-center text-sm text-neutral-400">
+          No consent records found
+        </div>
+      ) : (
+        <div className="divide-y divide-neutral-100 border border-neutral-200 rounded-xl overflow-hidden">
+          {consents.map((c) => (
+            <button
+              key={c.consent_id}
+              onClick={() => openConsent(c)}
+              className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-50 transition-colors"
+            >
+              <span className="flex items-center gap-2.5 text-sm font-semibold text-neutral-900 capitalize">
+                <FileSignature className="w-4 h-4 flex-shrink-0" style={{ color: BRAND_PRIMARY }} />
+                {c.consent_type.replace(/_/g, " ")}
+              </span>
+              <span className="flex items-center gap-2 flex-shrink-0">
+                {c.signed_at && <span className="text-xs text-neutral-400">{new Date(c.signed_at).toLocaleDateString()}</span>}
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                  c.status === "signed" ? "bg-green-100 text-green-700" : c.status === "revoked" ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-700"
+                }`}>
+                  {c.status}
+                </span>
+                <ChevronRight className="w-3.5 h-3.5 text-neutral-300" />
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <Modal
+        isOpen={!!viewing}
+        onClose={() => setViewing(null)}
+        title={viewTemplate?.title ?? (viewing ? `${viewing.consent_type.replace(/_/g, " ")} consent` : "")}
+      >
+        <div className="space-y-3">
+          {viewing?.signed_at && (
+            <p className="text-xs text-neutral-500">
+              Signed {new Date(viewing.signed_at).toLocaleDateString()}
+            </p>
+          )}
+          {viewLoading ? (
+            <p className="text-sm text-neutral-400">Loading…</p>
+          ) : viewError ? (
+            <p className="text-sm text-red-600">{viewError}</p>
+          ) : (
+            <div className="max-h-96 overflow-y-auto text-sm text-neutral-700 bg-neutral-50 border border-neutral-200 rounded-lg p-4 whitespace-pre-wrap">
+              {viewTemplate?.content}
+            </div>
+          )}
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
 // ─── component ────────────────────────────────────────────────────
 
 export default function PatientProfilePage() {
   return (
-    <Suspense fallback={<PageLoader />}>
+    <Suspense fallback={<PageSkeleton />}>
       <PatientProfile />
     </Suspense>
   );
@@ -386,16 +666,15 @@ function PatientProfile() {
   const [saveError,   setSaveError]   = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const searchParams = useSearchParams();
-  const [activeTab,   setActiveTab]   = useState<TabId>("overview");
+  const [activeTab,   setActiveTab]   = useState<TabId>("personal");
 
-  // Deep-link support: /patient/profile?tab=files opens the Medical History tab.
+  // Deep-link support: /patient/profile?tab=medical opens the Medical History tab.
+  // "files" kept as an alias for pre-existing links built before the tab rename.
   useEffect(() => {
     const t = searchParams.get("tab");
+    if (t === "files") { setActiveTab("medical"); return; }
     if (t && TABS.some((tab) => tab.id === t)) setActiveTab(t as TabId);
   }, [searchParams]);
-  const [settings,    setSettings]    = useState({
-    emailReminders: true, weeklyReport: true, shareData: true, darkMode: false,
-  });
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const originalRef     = useRef<FormState>(EMPTY_FORM);
@@ -422,6 +701,7 @@ function PatientProfile() {
           blood_group:       (d.blood_group    as string) ?? "",
           allergies:         (d.allergies      as string) ?? "",
           emergency_contact: (d.emergency_contact_name as string) ?? "",
+          emergency_contact_phone: (d.emergency_contact_phone as string) ?? "",
           occupation:        (d.occupation     as string) ?? "",
           marital_status:    (d.marital_status as string) ?? "",
           insurance_provider:(d.insurance_provider as string) ?? "",
@@ -439,7 +719,28 @@ function PatientProfile() {
   const set = (field: keyof FormState, value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
+  // Autofill city/state/country once the pincode resolves to a real post
+  // office — same lookup + wiring as the registration form.
+  const { location: pincodeLocation } = usePincodeLookup(isEditing ? form.pincode : undefined);
+  useEffect(() => {
+    if (!pincodeLocation) return;
+    setForm((prev) => ({
+      ...prev,
+      city: pincodeLocation.city,
+      state: pincodeLocation.state,
+      country: pincodeLocation.country,
+    }));
+  }, [pincodeLocation]);
+
   const handleSave = async () => {
+    if (form.id_type === "aadhaar" && form.government_id.length !== 12) {
+      setSaveError("Aadhaar number must be exactly 12 digits.");
+      return;
+    }
+    if (form.emergency_contact_phone.length > 0 && form.emergency_contact_phone.length !== 10) {
+      setSaveError("Emergency contact number must be exactly 10 digits.");
+      return;
+    }
     const diff = buildDiff(form, originalRef.current);
     if (!Object.keys(diff).length) { setIsEditing(false); return; }
     setIsSaving(true); setSaveError(null); setSaveSuccess(false);
@@ -461,6 +762,7 @@ function PatientProfile() {
         blood_group:       (u.blood_group    as string) ?? "",
         allergies:         (u.allergies      as string) ?? "",
         emergency_contact: (u.emergency_contact_name as string) ?? "",
+        emergency_contact_phone: (u.emergency_contact_phone as string) ?? "",
         occupation:        (u.occupation     as string) ?? "",
         marital_status:    (u.marital_status as string) ?? "",
         insurance_provider:(u.insurance_provider as string) ?? "",
@@ -480,6 +782,10 @@ function PatientProfile() {
         gender:        u.gender,
         date_of_birth: u.date_of_birth,
       }));
+      // Dashboard's own profile-completion card reads a separately-cached
+      // (5-min TTL) copy of this same data — without this it keeps showing
+      // whatever it loaded before this save until that TTL expires.
+      dispatch(invalidateDashboard());
       setSaveSuccess(true);
       setIsEditing(false);
     } catch (err) {
@@ -499,7 +805,7 @@ function PatientProfile() {
 
   const handleCancel = () => { setForm(originalRef.current); setSaveError(null); setIsEditing(false); };
 
-  if (!profileRaw && !fetchError) return <PageLoader />;
+  if (!profileRaw && !fetchError) return <PageSkeleton />;
 
   const age         = computeAge(form.date_of_birth);
   const mrn         = (profileRaw?.mrn as string) || "—";
@@ -521,7 +827,7 @@ function PatientProfile() {
             <User className="w-8 h-8 text-white" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold text-neutral-900 leading-tight truncate">{form.full_name || "—"}</h1>
+            <h1 className="text-2xl font-bold text-neutral-900 leading-tight truncate">Welcome, {form.full_name || "—"}</h1>
 
           </div>
         </div>
@@ -580,16 +886,14 @@ function PatientProfile() {
           })}
         </div>
 
-        {/* ── Overview ── */}
-        {activeTab === "overview" && (
+        {/* ── Personal Information ── */}
+        {activeTab === "personal" && (
           <div className="p-6">
             {fetchError && (
               <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg text-sm mb-5">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" /> {fetchError}
               </div>
             )}
-
-            <ChannelVerification emailVerified={user?.email_verified} phoneVerified={user?.phone_verified} country={form.country} />
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {/* Left — Personal Information */}
@@ -612,12 +916,20 @@ function PatientProfile() {
                     <FieldInput label="Full Name"     value={form.full_name}     onChange={(v) => set("full_name", v)} />
                     <FieldInput label="Date of Birth" value={form.date_of_birth} onChange={(v) => set("date_of_birth", v)} type="date" />
                     <FieldInput label="Address"       value={form.address_line1} onChange={(v) => set("address_line1", v)} placeholder="Street address" />
-                    <FieldInput label="Country"       value={form.country}       onChange={(v) => set("country", v)} />
+                    <div>
+                      <label className={labelCls}>Country</label>
+                      <select className={inputCls} value={form.country} onChange={(e) => set("country", e.target.value)}>
+                        <option value="">Select</option>
+                        {COUNTRY_OPTIONS.map((c) => (
+                          <option key={c.name} value={c.name}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
                       <FieldInput label="City"    value={form.city}    onChange={(v) => set("city", v)} />
                       <FieldInput label="State"   value={form.state}   onChange={(v) => set("state", v)} />
                     </div>
-                    <FieldInput label="Pincode"   value={form.pincode}  onChange={(v) => set("pincode", v)} />
+                    <FieldInput label="Pincode"   value={form.pincode}  onChange={(v) => set("pincode", v)} numeric />
                     <div>
                       <label className={labelCls}>Gender</label>
                       <select className={inputCls} value={form.gender} onChange={(e) => set("gender", e.target.value)}>
@@ -629,11 +941,68 @@ function PatientProfile() {
                       </select>
                     </div>
                     <FieldInput label="Occupation"   value={form.occupation}   onChange={(v) => set("occupation", v)} />
-                    <FieldInput label="Marital Status" value={form.marital_status} onChange={(v) => set("marital_status", v)} placeholder="e.g., Single, Married" />
-                    <FieldInput label="Emergency Contact" value={form.emergency_contact} onChange={(v) => set("emergency_contact", v)} placeholder="Name" />
-                    <FieldInput label="Government ID"  value={form.government_id} onChange={(v) => set("government_id", v)} placeholder="e.g., Aadhaar, Passport number" />
-                    <FieldInput label="ID Type"        value={form.id_type}       onChange={(v) => set("id_type", v)} placeholder="e.g., aadhaar, passport" />
-                    <FieldInput label="Language"     value={form.language_pref} onChange={(v) => set("language_pref", v)} />
+                    <div>
+                      <label className={labelCls}>Marital Status</label>
+                      <select className={inputCls} value={form.marital_status} onChange={(e) => set("marital_status", e.target.value)}>
+                        <option value="">Select</option>
+                        <option value="single">Single</option>
+                        <option value="married">Married</option>
+                        <option value="undisclosed">Undisclosed</option>
+                      </select>
+                    </div>
+                    <FieldInput
+                      label="Emergency Contact Name"
+                      value={form.emergency_contact}
+                      onChange={(v) => set("emergency_contact", v)}
+                      placeholder="Full name"
+                      alpha
+                    />
+                    <FieldInput
+                      label="Emergency Contact Number"
+                      value={form.emergency_contact_phone}
+                      onChange={(v) => set("emergency_contact_phone", v.replace(/\D/g, "").slice(0, 10))}
+                      type="tel"
+                      placeholder="10-digit phone number"
+                    />
+                    {form.emergency_contact_phone.length > 0 && form.emergency_contact_phone.length !== 10 && (
+                      <p className="text-xs text-red-600">Emergency contact number must be exactly 10 digits.</p>
+                    )}
+                    <div>
+                      <label className={labelCls}>ID Type</label>
+                      <select
+                        className={inputCls}
+                        value={form.id_type}
+                        onChange={(e) => {
+                          const t = e.target.value;
+                          set("id_type", t);
+                          // Aadhaar is digits-only, exactly 12 — re-sanitize any
+                          // value already typed under a different ID type.
+                          if (t === "aadhaar") set("government_id", form.government_id.replace(/\D/g, "").slice(0, 12));
+                        }}
+                      >
+                        <option value="">Select</option>
+                        {ID_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                    </div>
+                    <FieldInput
+                      label={form.id_type === "aadhaar" ? "Aadhaar Number" : "Government ID"}
+                      value={form.government_id}
+                      onChange={(v) => set("government_id", form.id_type === "aadhaar" ? v.replace(/\D/g, "").slice(0, 12) : v)}
+                      type={form.id_type === "aadhaar" ? "tel" : "text"}
+                      placeholder={form.id_type === "aadhaar" ? "12-digit Aadhaar number" : "e.g., Aadhaar, Passport number"}
+                    />
+                    {form.id_type === "aadhaar" && form.government_id.length > 0 && form.government_id.length !== 12 && (
+                      <p className="text-xs text-red-600">Aadhaar number must be exactly 12 digits.</p>
+                    )}
+                    <div>
+                      <label className={labelCls}>Mother Tongue</label>
+                      <select className={inputCls} value={form.language_pref} onChange={(e) => set("language_pref", e.target.value)}>
+                        <option value="">Select</option>
+                        {LANGUAGE_OPTIONS.map((l) => (
+                          <option key={l.code} value={l.code}>{l.label}</option>
+                        ))}
+                      </select>
+                    </div>
 
                     {saveError && (
                       <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
@@ -673,7 +1042,7 @@ function PatientProfile() {
                     <InfoRow label="Marital Status" value={form.marital_status} />
                     <InfoRow label="Government ID"  value={form.government_id} />
                     <InfoRow label="ID Type"        value={form.id_type} />
-                    <InfoRow label="Language"     value={form.language_pref} />
+                    <InfoRow label="Mother Tongue" value={languageLabel(form.language_pref)} />
                   </div>
                 )}
               </div>
@@ -687,17 +1056,22 @@ function PatientProfile() {
 
                   {isEditing ? (
                     <div className="space-y-3">
-                      <FieldInput label="Weight (KG)"        value={form.weight_kg}         onChange={(v) => set("weight_kg", v)}         placeholder="e.g., 72" />
+                      <FieldInput label="Weight (KG)"        value={form.weight_kg}         onChange={(v) => set("weight_kg", v)}         placeholder="e.g., 72" numeric />
                       <div>
                         <label className={labelCls}>Height</label>
                         <div className="grid grid-cols-2 gap-3">
-                          <input className={inputCls} value={form.height_ft} placeholder="Feet (e.g., 5)"   onChange={(e) => set("height_ft", e.target.value)} />
-                          <input className={inputCls} value={form.height_in} placeholder="Inches (e.g., 10)" onChange={(e) => set("height_in", e.target.value)} />
+                          <input className={inputCls} inputMode="decimal" value={form.height_ft} placeholder="Feet (e.g., 5)"   onChange={(e) => set("height_ft", sanitizeNumeric(e.target.value))} />
+                          <input className={inputCls} inputMode="decimal" value={form.height_in} placeholder="Inches (e.g., 10)" onChange={(e) => set("height_in", sanitizeNumeric(e.target.value))} />
                         </div>
                       </div>
-                      <FieldInput label="Blood Group"        value={form.blood_group}        onChange={(v) => set("blood_group", v)}        placeholder="e.g., O+" />
+                      <div>
+                        <label className={labelCls}>Blood Group</label>
+                        <select className={inputCls} value={form.blood_group} onChange={(e) => set("blood_group", e.target.value)}>
+                          <option value="">Select</option>
+                          {BLOOD_GROUP_OPTIONS.map((bg) => <option key={bg} value={bg}>{bg}</option>)}
+                        </select>
+                      </div>
                       <FieldInput label="Allergies"          value={form.allergies}          onChange={(v) => set("allergies", v)}          placeholder="e.g., Penicillin" />
-                      <FieldInput label="Emergency Contact"  value={form.emergency_contact}  onChange={(v) => set("emergency_contact", v)}  placeholder="Name — Phone" />
                       <FieldInput label="Insurance Provider" value={form.insurance_provider} onChange={(v) => set("insurance_provider", v)} />
                       <FieldInput label="Policy Number"      value={form.insurance_policy}   onChange={(v) => set("insurance_policy", v)} />
                     </div>
@@ -707,7 +1081,8 @@ function PatientProfile() {
                       <InfoRow label="Height"             value={form.height_ft ? `${form.height_ft}′ ${form.height_in || "0"}″` : null} />
                       <InfoRow label="Blood Group"        value={form.blood_group} />
                       <InfoRow label="Allergies"          value={form.allergies} />
-                      <InfoRow label="Emergency Contact"  value={form.emergency_contact} />
+                      <InfoRow label="Emergency Contact Name"   value={form.emergency_contact} />
+                      <InfoRow label="Emergency Contact Number" value={form.emergency_contact_phone} />
                       <InfoRow label="Insurance Provider" value={form.insurance_provider} />
                       <InfoRow label="Policy Number"      value={form.insurance_policy} />
                     </div>
@@ -742,103 +1117,46 @@ function PatientProfile() {
                       No doctor assigned yet
                     </div>
                   )}
-                  <button className="mt-2 text-sm font-medium flex items-center gap-1" style={{ color: BRAND_PRIMARY }}>
-                    <Plus className="w-3.5 h-3.5" /> Add Provider
-                  </button>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* ── Files ── */}
-        {activeTab === "files" && (
+        {/* ── Medical History/Files ── */}
+        {activeTab === "medical" && (
           <div className="p-6">
             <MedicalFilesSection patientId={user?.patient_id} clinicId={user?.clinic_id} />
           </div>
         )}
 
-        {/* ── Purchases ── */}
-        {activeTab === "purchases" && (
+        {/* ── Verification ── */}
+        {activeTab === "verification" && (
           <div className="p-6">
-            <h2 className="text-base font-bold text-neutral-900 mb-5">Purchase History</h2>
-            <div className="rounded-xl border border-dashed border-neutral-200 py-14 text-center text-sm text-neutral-400">
-              No purchase history available
+            <h2 className="text-base font-bold text-neutral-900 mb-4">Verification</h2>
+            <ChannelVerification
+              emailVerified={user?.email_verified}
+              phoneVerified={user?.phone_verified}
+              hasEmail={!!email.trim()}
+              hasPhone={!!phone.trim()}
+              country={form.country}
+            />
+            <div>
+              <InfoRow label="Email"       value={email} />
+              <InfoRow label="Email verified" value={user?.email_verified ? "Yes" : "No"} />
+              <InfoRow label="Phone"       value={phone} />
+              <InfoRow label="Phone verified" value={user?.phone_verified ? "Yes" : "No"} />
             </div>
           </div>
         )}
 
-        {/* ── Payments ── */}
-        {activeTab === "payments" && (
+        {/* ── Consents ── */}
+        {activeTab === "consents" && (
           <div className="p-6">
-            <h2 className="text-base font-bold text-neutral-900 mb-5">Payment & Billing</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-              <div className="rounded-xl border-l-4 border border-neutral-200 p-4" style={{ borderLeftColor: BRAND_PRIMARY }}>
-                <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-1">Current Plan</p>
-                <p className="text-lg font-bold text-neutral-900">Standard</p>
-                <p className="text-xs text-neutral-500 mt-0.5">Clinical Assessment Platform</p>
-              </div>
-              <div className="rounded-xl border-l-4 border border-neutral-200 p-4" style={{ borderLeftColor: BRAND_PRIMARY }}>
-                <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-1">Balance</p>
-                <p className="text-lg font-bold" style={{ color: BRAND_PRIMARY }}>—</p>
-                <p className="text-xs text-neutral-500 mt-0.5">Contact your clinic for billing</p>
-              </div>
-            </div>
-            <div className="rounded-xl border border-neutral-200 overflow-hidden">
-              <div className="grid grid-cols-4 px-4 py-3 bg-neutral-50 border-b border-neutral-100 text-[11px] font-semibold text-neutral-400 uppercase tracking-wide">
-                <span>Date</span><span>Description</span><span>Amount</span><span>Status</span>
-              </div>
-              <div className="py-10 text-center text-sm text-neutral-400">No payment records</div>
-            </div>
+            <ConsentsSection patientProfileId={user?.id} />
           </div>
         )}
 
-        {/* ── Notifications ── */}
-        {activeTab === "notifications" && (
-          <div className="p-6">
-            <h2 className="text-base font-bold text-neutral-900 mb-5">Notification History</h2>
-            <div className="rounded-xl border border-dashed border-neutral-200 py-14 text-center text-sm text-neutral-400">
-              No notifications
-            </div>
-          </div>
-        )}
-
-        {/* ── Settings ── */}
-        {activeTab === "settings" && (
-          <div className="p-6">
-            <h2 className="text-base font-bold text-neutral-900 mb-5">Preferences & Settings</h2>
-            <div className="space-y-3">
-              {([
-                { key: "emailReminders", label: "Email Reminders",         desc: "Get appointment and health notifications" },
-                { key: "weeklyReport",   label: "Weekly Report",           desc: "Receive health summaries every Monday"    },
-                { key: "shareData",      label: "Share Data with Provider", desc: "Allow care team to access your metrics"  },
-                { key: "darkMode",       label: "Dark Mode",               desc: "Enable dark theme (beta)"                },
-              ] as const).map(({ key, label, desc }) => (
-                <div key={key} className="flex items-center justify-between p-4 rounded-xl border border-neutral-200 hover:border-neutral-300 transition-colors">
-                  <div>
-                    <p className="text-sm font-semibold text-neutral-900">{label}</p>
-                    <p className="text-xs text-neutral-400 mt-0.5">{desc}</p>
-                  </div>
-                  <button
-                    onClick={() => setSettings((prev) => ({ ...prev, [key]: !prev[key] }))}
-                    className="w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors"
-                    style={settings[key]
-                      ? { background: BRAND_PRIMARY, borderColor: BRAND_PRIMARY }
-                      : { background: "#fff", borderColor: "#d1d5db" }}
-                  >
-                    {settings[key] && <Check className="w-3 h-3 text-white" />}
-                  </button>
-                </div>
-              ))}
-            </div>
-            <button
-              className="mt-5 w-full py-3 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition-opacity"
-              style={{ background: BRAND }}
-            >
-              Save Settings
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

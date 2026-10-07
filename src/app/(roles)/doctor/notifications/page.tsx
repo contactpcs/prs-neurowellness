@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Bell, Check, Loader2, CheckCheck } from "lucide-react";
-import { Card, PageLoader } from "@/components/ui";
+import { Card, PageSkeleton } from "@/components/ui";
 import { useNotifications } from "@/lib/hooks";
 
 function timeAgo(dateStr: string) {
@@ -61,7 +61,7 @@ export default function DoctorNotificationsPage() {
     }
   };
 
-  if (isLoading && notifications.length === 0) return <PageLoader />;
+  if (isLoading && notifications.length === 0) return <PageSkeleton />;
 
   return (
     <div className="flex flex-col gap-5">

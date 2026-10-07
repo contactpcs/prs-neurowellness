@@ -25,25 +25,40 @@ export type BadgeKey =
   | "doctorUnreadNotifications" | "patientUnreadNotifications";
 
 const FETCHERS: Record<BadgeKey, () => Promise<number>> = {
-  patientApprovals: async () => (await staffService.getPendingPatients()).total,
-  receptionPatientApprovals: async () => (await receptionService.getPendingPatients()).total,
+  patientApprovals: () => staffService.getPendingCount(),
+  receptionPatientApprovals: () => receptionService.getPendingCount(),
   staffRequests: async () => (await staffRequestsService.list({ status: "pending" })).length,
   staffApprovals: async () => (await staffRequestsService.list({ status: "pending" })).length,
   clinicRequests: async () => (await clinicRequestsService.list({ status: "pending" })).length,
   doctorPendingAppointments: async () => (await appointmentsService.list({ status: "selected" })).total,
   receptionUnreadNotifications: async () => receptionService.getUnreadCount(),
-  doctorUnreadNotifications: async () => (await notificationsService.getNotifications({ limit: 1 })).unread_count,
-  patientUnreadNotifications: async () => (await notificationsService.getNotifications({ limit: 1 })).unread_count,
+  doctorUnreadNotifications: () => notificationsService.getUnreadCount(),
+  patientUnreadNotifications: () => notificationsService.getUnreadCount(),
 };
+
+// ponytail: page + sidebar both mount this hook, so the same badge was
+// fetched twice per page load. Callers within REUSE_MS share one request;
+// an SSE push forces a fresh one (only 300 ms reuse, so the second listener
+// of the same event still shares it). Upgrade path: a single badge store.
+const REUSE_MS = 3000;
+const FORCED_REUSE_MS = 300;
+const recent: Partial<Record<BadgeKey, { at: number; p: Promise<number> }>> = {};
+function fetchBadge(k: BadgeKey, forced: boolean): Promise<number> {
+  const hit = recent[k];
+  if (hit && Date.now() - hit.at < (forced ? FORCED_REUSE_MS : REUSE_MS)) return hit.p;
+  const p = FETCHERS[k]();
+  recent[k] = { at: Date.now(), p };
+  return p;
+}
 
 export function useSidebarBadges(keys: BadgeKey[]): Record<string, number> {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const keysSignature = keys.join(",");
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (forced = false) => {
     const results = await Promise.all(
       keys.map(async (k) => {
-        try { return [k, await FETCHERS[k]()] as const; } catch { return [k, 0] as const; }
+        try { return [k, await fetchBadge(k, forced)] as const; } catch { return [k, 0] as const; }
       }),
     );
     setCounts(Object.fromEntries(results));
@@ -53,8 +68,9 @@ export function useSidebarBadges(keys: BadgeKey[]): Record<string, number> {
   useEffect(() => {
     if (keys.length === 0) return;
     refresh();
-    window.addEventListener("sse:notification", refresh);
-    return () => window.removeEventListener("sse:notification", refresh);
+    const onPush = () => refresh(true);
+    window.addEventListener("sse:notification", onPush);
+    return () => window.removeEventListener("sse:notification", onPush);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [keysSignature, refresh]);
 

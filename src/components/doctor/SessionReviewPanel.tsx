@@ -242,8 +242,16 @@ export function SessionReviewPanel({
               items={[
                 ["Device", protocol.device_name || "—"],
                 ["Montage", protocol.placement_summary || protocol.custom_montage?.montage_name || "—"],
-                ["Anode (+)", protocol.placement?.anode_site || "—"],
-                ["Cathode (–)", protocol.placement?.cathode_site || (protocol.placement?.return_sites?.join(", ") ?? "—")],
+                // A protocol uses either a catalogue placement (singular
+                // anode_site/cathode_site/return_sites) or a custom montage
+                // (plural anode_sites/cathode_sites) — never both. Without
+                // this fallback, a custom-montage protocol showed its name
+                // correctly above but blank Anode/Cathode rows here.
+                ["Anode (+)", protocol.placement?.anode_site || protocol.custom_montage?.anode_sites?.[0] || "—"],
+                ["Cathode (–)", protocol.placement?.cathode_site
+                  || (protocol.placement?.return_sites?.join(", ") ?? "")
+                  || protocol.custom_montage?.cathode_sites?.join(", ")
+                  || "—"],
                 ["Prescribed Current", protocol.prescribed_current_ma != null ? `${protocol.prescribed_current_ma} mA` : "—"],
                 ["Actual Current", detail.actual_intensity_ma != null ? `${detail.actual_intensity_ma} mA${detail.intensity_deviates ? " (deviated)" : ""}` : "—"],
                 ["Prescribed Duration", plannedMin != null ? `${plannedMin} min` : "—"],
@@ -360,6 +368,7 @@ export function SessionReviewPanel({
                 <Rows
                   items={[
                     ["Activities", detail.activities.flatMap((a) => a.activities).map(humanize).join(", ") || "—"],
+                    ...(detail.activities.some((a) => a.free_text) ? [["Other", detail.activities.map((a) => a.free_text).filter(Boolean).join("; ")] as [string, string]] : []),
                     ...(detail.activities.some((a) => a.note) ? [["Notes", detail.activities.map((a) => a.note).filter(Boolean).join("; ")] as [string, string]] : []),
                   ]}
                 />
@@ -401,7 +410,10 @@ export function SessionReviewPanel({
                       {humanize(sc.status)}
                     </span>
                     {sc.prs_instance_id && (
-                      <Link href={`/doctor/patients/${patientId}/results?instance_id=${sc.prs_instance_id}`} className="h-7 px-2.5 rounded-md border border-neutral-200 text-[11px] font-semibold text-neutral-700 hover:bg-neutral-50 flex items-center">
+                      <Link
+                        href={`/doctor/patients/${patientId}/results?instance_id=${sc.prs_instance_id}${sc.scale_id ? `&scale_id=${encodeURIComponent(sc.scale_id)}` : ""}`}
+                        className="h-7 px-2.5 rounded-md border border-neutral-200 text-[11px] font-semibold text-neutral-700 hover:bg-neutral-50 flex items-center"
+                      >
                         View Assessment
                       </Link>
                     )}

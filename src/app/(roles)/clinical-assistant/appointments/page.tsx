@@ -14,14 +14,15 @@
  * had nothing to place, and the CA had no route to reach them from.
  */
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, Calendar, ChevronRight, Cpu, Loader2, Search, User } from "lucide-react";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
 import { useAuth } from "@/lib/hooks";
-import { Input, Card, CardContent, PageLoader } from "@/components/ui";
-import { isSupersededCancellation } from "@/lib/appointmentStatus";
+import { Input, Card, CardContent, PageSkeleton } from "@/components/ui";
+
+const PAGE_SIZE = 50;
 
 interface SessionRow {
   appointment_id: string;
@@ -36,6 +37,15 @@ interface SessionRow {
   patient_name: string | null;
   clinic_device_id: string | null;
   protocol_id: string | null;
+  protocol_version_major: number | null;
+  protocol_version_minor: number | null;
+}
+
+// "vN" when minor is 0/absent, else "vN.M" — same convention as the doctor
+// and patient sides (ProtocolRead / patient device-sessions page).
+function versionLabel(major: number | null, minor: number | null): string | null {
+  if (major == null) return null;
+  return minor ? `v${major}.${minor}` : `v${major}`;
 }
 
 const STATUS_TONE: Record<string, string> = {
@@ -60,17 +70,16 @@ const STATUS_LABEL: Record<string, string> = {
   no_show: "No show",
 };
 
-function iso(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
-
 function fmtDate(s: string) {
   return new Date(s + "T00:00:00").toLocaleDateString(undefined, {
     weekday: "short", day: "numeric", month: "short",
   });
 }
 
-type RangeKey = "today" | "week" | "all";
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 export default function ClinicalAssistantAppointmentsPage() {
   const { user } = useAuth();
@@ -78,47 +87,63 @@ export default function ClinicalAssistantAppointmentsPage() {
   const [rows, setRows]         = useState<SessionRow[]>([]);
   const [loading, setLoading]   = useState(true);
   const [err, setErr]           = useState<string | null>(null);
-  const [range, setRange]       = useState<RangeKey>("today");
   const [status, setStatus]     = useState<string>("all");
   const [q, setQ]               = useState("");
+  // Defaults to today onward, not unbounded — with no lower bound, the
+  // backend's ORDER BY appointment_date ASC + LIMIT 200 (repository.py's
+  // AppointmentRepository.list) returns the 200 OLDEST rows across this
+  // clinic's whole history once that many have accumulated, silently
+  // starving out today's and future sessions from ever appearing. Doesn't
+  // collapse to a single day (unlike the CA dashboard's date pill) so the
+  // existing date-range picker below still lets a CA look further ahead.
+  const [dateFrom, setDateFrom] = useState(todayStr);
+  const [dateTo, setDateTo]     = useState("");
+
+  // One server page at a time (API audit F-047): status, date range and
+  // search (patient name / session number) applied in SQL, superseded
+  // cancellations excluded. Used to fetch the first 200 rows from today on
+  // (cap hit: 237 upcoming -> everything after 23 Oct invisible) and filter
+  // them here.
+  const [page, setPage]             = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal]           = useState(0);
+  const [qDebounced, setQDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setQDebounced(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+  useEffect(() => { setPage(1); }, [status, qDebounced, dateFrom, dateTo]);
 
   const fetchRows = useCallback(() => {
     setLoading(true);
     setErr(null);
-
-    const today = new Date();
-    const params: Record<string, unknown> = {
-      // Device sessions only. Without this the CA sees the doctor's
-      // consultations too, which are not theirs to run.
-      appointment_type: "device_session",
-      limit: 200,
-    };
-    if (range === "today") {
-      params.date_from = iso(today);
-      params.date_to = iso(today);
-    } else if (range === "week") {
-      const end = new Date(today);
-      end.setDate(end.getDate() + 7);
-      params.date_from = iso(today);
-      params.date_to = iso(end);
-    }
-
     apiClient
-      .get(ENDPOINTS.APPOINTMENTS.LIST, { params })
-      .then((res: { data: SessionRow[] }) => setRows(Array.isArray(res.data) ? res.data : []))
+      .get(ENDPOINTS.APPOINTMENTS.PAGE, {
+        params: {
+          // Device sessions only — the doctor's consultations aren't the CA's to run.
+          appointment_type: "device_session",
+          status: status === "all" ? undefined : status,
+          search: qDebounced || undefined,
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
+          page,
+          page_size: PAGE_SIZE,
+        },
+      })
+      .then((res: { data: { items?: SessionRow[]; total?: number; total_pages?: number } }) => {
+        setRows(Array.isArray(res.data?.items) ? res.data.items : []);
+        setTotal(res.data?.total ?? 0);
+        setTotalPages(res.data?.total_pages ?? 1);
+      })
       .catch(() => setErr("Couldn't load device sessions."))
       .finally(() => setLoading(false));
-  }, [range]);
+  }, [dateFrom, dateTo, status, qDebounced, page]);
 
   useEffect(() => { fetchRows(); }, [fetchRows]);
 
-  const filtered = useMemo(() => {
-    const query = q.trim().toLowerCase();
-    return rows
-      .filter((r) => !isSupersededCancellation(r))
-      .filter((r) => status === "all" || r.status === status)
-      .filter((r) => !query || `${r.patient_name ?? ""} ${r.session_number ?? ""}`.toLowerCase().includes(query));
-  }, [rows, status, q]);
+  const filtered = rows;
+  const everLoaded = useRef(false);
+  if (!loading) everLoaded.current = true;
 
   // Grouped by day: a CA works through a date, not a flat list, and these rows
   // carry no time to sort within a day anyway.
@@ -132,12 +157,17 @@ export default function ClinicalAssistantAppointmentsPage() {
     return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [filtered]);
 
-  const statuses = useMemo(
-    () => ["all", ...Array.from(new Set(rows.map((r) => r.status)))],
-    [rows],
-  );
+  // Fixed list (not derived from `rows`) so a CA can filter to e.g. "Confirmed"
+  // (paid) even on a day with no paid sessions loaded yet, instead of the pill
+  // only appearing once a matching row happens to already be in view.
+  const statuses = ["all", "planned", "selected", "paid", "checked_in", "in_progress", "completed", "cancelled", "no_show"];
 
-  if (loading) return <PageLoader />;
+  // Filter pills say "Paid" for the paid status — CAs and reception talk about
+  // it as "paid", not the row-badge wording ("Confirmed").
+  const FILTER_LABEL: Record<string, string> = { ...STATUS_LABEL, paid: "Paid" };
+
+  // Skeleton only on first load — filter/search/page changes keep inputs mounted.
+  if (!everLoaded.current) return <PageSkeleton />;
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-5">
@@ -149,17 +179,6 @@ export default function ClinicalAssistantAppointmentsPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {(["today", "week", "all"] as RangeKey[]).map((r) => (
-          <button
-            key={r}
-            onClick={() => setRange(r)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-              range === r ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
-            }`}
-          >
-            {r === "today" ? "Today" : r === "week" ? "Next 7 days" : "All"}
-          </button>
-        ))}
         <div className="flex-1 min-w-[180px]">
           <div className="relative">
             <Search className="h-4 w-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -170,6 +189,31 @@ export default function ClinicalAssistantAppointmentsPage() {
               className="pl-9"
             />
           </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            max={dateTo || undefined}
+            className="h-[38px] px-2.5 rounded-lg border border-neutral-300 bg-white text-sm text-neutral-700 outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+          />
+          <span className="text-xs text-neutral-400">to</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            min={dateFrom || undefined}
+            className="h-[38px] px-2.5 rounded-lg border border-neutral-300 bg-white text-sm text-neutral-700 outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+          />
+          {(dateFrom !== todayStr() || dateTo) && (
+            <button
+              onClick={() => { setDateFrom(todayStr()); setDateTo(""); }}
+              className="h-[38px] px-2.5 rounded-lg text-xs font-medium text-neutral-500 hover:text-neutral-700 hover:bg-neutral-100 transition-colors"
+            >
+              Clear
+            </button>
+          )}
         </div>
       </div>
 
@@ -182,7 +226,7 @@ export default function ClinicalAssistantAppointmentsPage() {
               status === s ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
             }`}
           >
-            {s === "all" ? "All" : STATUS_LABEL[s] ?? s}
+            {s === "all" ? "All" : FILTER_LABEL[s] ?? s}
           </button>
         ))}
       </div>
@@ -195,9 +239,7 @@ export default function ClinicalAssistantAppointmentsPage() {
             <Activity className="h-8 w-8 text-neutral-300 mx-auto mb-3" />
             <p className="text-sm font-semibold text-neutral-900">No device sessions</p>
             <p className="text-sm text-neutral-500 mt-1">
-              {range === "today"
-                ? "Nothing scheduled for today. Try “Next 7 days”."
-                : "No sessions match these filters."}
+              {dateFrom || dateTo ? "No sessions match this date range." : "No sessions match these filters."}
             </p>
           </CardContent>
         </Card>
@@ -236,6 +278,11 @@ export default function ClinicalAssistantAppointmentsPage() {
                     {r.session_number != null && (
                       <span className="text-xs text-neutral-500 shrink-0">Session {r.session_number}</span>
                     )}
+                    {versionLabel(r.protocol_version_major, r.protocol_version_minor) && (
+                      <span className="text-[11px] font-semibold text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded shrink-0">
+                        Protocol {versionLabel(r.protocol_version_major, r.protocol_version_minor)}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 text-xs text-neutral-500">
                     <User className="h-3 w-3" />
@@ -259,6 +306,41 @@ export default function ClinicalAssistantAppointmentsPage() {
           </div>
         </div>
       ))}
+
+      {totalPages > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <p className="text-xs text-neutral-500">
+            Showing page {Math.min(page, totalPages)} of {totalPages} · {total} sessions
+          </p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="px-3 py-1 rounded-lg text-xs font-medium text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+            >
+              Prev
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+              <button
+                key={n}
+                onClick={() => setPage(n)}
+                className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
+                  n === page ? "bg-brand-gradient text-white" : "text-neutral-600 hover:bg-neutral-100"
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="px-3 py-1 rounded-lg text-xs font-medium text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

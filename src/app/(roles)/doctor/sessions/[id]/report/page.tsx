@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useParams } from "next/navigation";
 import { useSessions, useScales } from "@/lib/hooks";
-import { PageLoader, Card, CardContent } from "@/components/ui";
+import { PageSkeleton, Card, CardContent } from "@/components/ui";
 import { ScaleResultCard, RiskAlertBanner, SeverityBadge } from "@/components/assessment";
 import { formatDate } from "@/lib/utils/format";
 
@@ -14,7 +14,7 @@ export default function ReportViewPage() {
 
   useEffect(() => { loadSession(id); }, [id, loadSession]);
 
-  if (!currentSession) return <PageLoader />;
+  if (!currentSession) return <PageSkeleton />;
 
   const responses = currentSession.scale_responses || [];
   const alerts = currentSession.risk_alerts || [];

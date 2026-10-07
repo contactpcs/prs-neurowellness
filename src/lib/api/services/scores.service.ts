@@ -1,4 +1,4 @@
-import apiClient from "../client";
+import apiClient, { getDiseaseCatalog, getMyPatientId } from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type { AssessmentInstance } from "@/types/domain.types";
 
@@ -56,20 +56,39 @@ function parseJsonField<T>(v: unknown, fallback: T): T {
  * InstanceScoreDetail the results pages render: instance fetched
  * separately (disease_name resolved from the catalog), final_result mapped
  * to disease_result, scale names matched from final_result.scale_summaries. */
-export async function fetchInstanceScoreDetail(instanceId: string): Promise<InstanceScoreDetail> {
-  const [resultsRes, instanceRes, diseasesRes] = await Promise.all([
+/** patientId (optional): the public patients.patient_id (the role-table id
+ * used everywhere as GET /patients/{id}), needed ONLY for the disease-
+ * composite fetch below — /patients/{patient_id}/disease-composite resolves
+ * it to a profile id server-side the same way every sibling /patients/{id}/
+ * ... route in prs/router.py does. Pass it whenever the caller already has
+ * it (the doctor results page gets it from the URL). When omitted (the
+ * patient's own "my scores" flow has no patient_id in scope), this resolves
+ * the caller's own patient_id from GET /patients first — the same fallback
+ * anamnesisService.getMyAnamnesis() uses. */
+export async function fetchInstanceScoreDetail(instanceId: string, _patientId?: string): Promise<InstanceScoreDetail> {
+  // /results now carries the instance row and the current as-of disease
+  // composite (backend F-014) — one call instead of three. _patientId is no
+  // longer needed (kept so existing callers compile unchanged).
+  const [resultsRes, diseasesRes] = await Promise.all([
     apiClient.get(ENDPOINTS.PRS.INSTANCE_SCORE(instanceId)),
-    apiClient.get(ENDPOINTS.PRS.ASSESSMENT_INSTANCE(instanceId)).catch(() => ({ data: null })),
-    apiClient.get(ENDPOINTS.PRS.CONDITIONS).catch(() => ({ data: [] })),
+    getDiseaseCatalog().catch(() => ({ data: [] })),
   ]);
 
-  const raw = resultsRes.data as { scale_results?: Record<string, unknown>[]; final_result?: Record<string, unknown> | null };
-  const inst = (instanceRes.data ?? {}) as Record<string, unknown>;
+  const raw = resultsRes.data as {
+    scale_results?: Record<string, unknown>[];
+    final_result?: Record<string, unknown> | null;
+    instance?: Record<string, unknown> | null;
+    disease_composite?: { calculated_value?: number | null; severity_level?: string | null; severity_label?: string | null } | null;
+  };
+  const inst = (raw.instance ?? {}) as Record<string, unknown>;
   const diseases: { disease_id?: string; disease_name?: string }[] = Array.isArray(diseasesRes.data) ? diseasesRes.data : [];
 
   const final = raw.final_result ?? null;
   const summaries = parseJsonField<{ scale_code?: string; scale_name?: string }[]>(final?.scale_summaries, []);
   const nameByCode = new Map(summaries.map((s) => [s.scale_code, s.scale_name]));
+
+  const instDiseaseId = inst.disease_id != null ? String(inst.disease_id) : undefined;
+  const composite = raw.disease_composite ?? null;
 
   const scale_results: ScaleResultDetail[] = (Array.isArray(raw.scale_results) ? raw.scale_results : []).map((sr) => {
     const scaleId = String(sr.scale_id ?? "");
@@ -85,25 +104,34 @@ export async function fetchInstanceScoreDetail(instanceId: string): Promise<Inst
     } as ScaleResultDetail;
   });
 
-  const diseaseId = inst.disease_id != null ? String(inst.disease_id) : undefined;
   return {
     instance: {
       instance_id: instanceId,
-      disease_id: diseaseId,
-      disease_name: diseases.find((d) => d.disease_id === diseaseId)?.disease_name ?? diseaseId,
+      disease_id: instDiseaseId,
+      disease_name: diseases.find((d) => d.disease_id === instDiseaseId)?.disease_name ?? instDiseaseId,
       status: inst.status as string | undefined,
       started_at: inst.started_at as string | undefined,
       completed_at: inst.completed_at as string | undefined,
       initiated_by: inst.initiated_by as string | undefined,
     },
-    disease_result: final
-      ? {
-          disease_score: final.percentage != null ? Number(final.percentage) : undefined,
-          percentage: final.percentage != null ? Number(final.percentage) : undefined,
-          severity_level: (final.overall_severity as string | null) ?? undefined,
-          severity_label: (final.overall_severity_label as string | null) ?? undefined,
-        }
-      : undefined,
+    // The current as-of disease composite (core.disease_composite_scores),
+    // fetched separately above — final.composite_score (prs_final_results)
+    // is a retired per-instance column, permanently null since the as-of-
+    // latest-per-scale model landed. final.percentage is a stale,
+    // never-populated flat-sum ratio, and overall_severity/_label is the
+    // worst SINGLE scale's severity, not the disease-level one — neither is
+    // a substitute.
+    //
+    // Always an object, never undefined: the card renders on `disease_result`
+    // being truthy and falls back to "—" internally when disease_score is
+    // null — an undefined disease_result hides the whole card instead,
+    // which reads as "no results at all" rather than "no composite yet".
+    disease_result: {
+      disease_score: composite?.calculated_value != null ? Number(composite.calculated_value) : undefined,
+      percentage: composite?.calculated_value != null ? Number(composite.calculated_value) : undefined,
+      severity_level: composite?.severity_level ?? undefined,
+      severity_label: composite?.severity_label ?? undefined,
+    },
     scale_results,
   };
 }
@@ -120,52 +148,39 @@ export async function fetchInstanceScoreDetail(instanceId: string): Promise<Inst
  * scale_summaries, so an empty instances list meant "0 of N completed"
  * forever regardless of what the patient actually finished. */
 async function composeMyScoresSummary(): Promise<{ instances: AssessmentInstance[]; total: number; diseases: number }> {
-  const patientsRes = await apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD);
-  const own = Array.isArray(patientsRes.data) ? patientsRes.data[0] : undefined;
-  if (!own?.patient_id) return { instances: [], total: 0, diseases: 0 };
-  const patientId = String(own.patient_id);
+  const patientId = await getMyPatientId();
+  if (!patientId) return { instances: [], total: 0, diseases: 0 };
+  return composePatientScoresSummary(patientId, "main_clinical");
+}
 
-  const instancesRes = await apiClient.get(ENDPOINTS.PRS.PATIENT_INSTANCES(patientId), {
-    params: { assessment_stage: "main_clinical" },
+/** Same summary for an explicit patients.patient_id (doctor/CA views).
+ * assessment_stage omitted → every stage. One call: the backend composes
+ * what this used to build from /prs-instances plus 4 calls per completed
+ * instance (/results, instance, disease catalog, disease-composite) — API
+ * audit fix F-002. Score fields are the current as-of disease composite,
+ * same values as before; in_progress instances carry no scores. */
+async function composePatientScoresSummary(
+  patientId: string,
+  assessmentStage?: string,
+): Promise<{ instances: AssessmentInstance[]; total: number; diseases: number }> {
+  const { data } = await apiClient.get(ENDPOINTS.PRS.PATIENT_SCORES_SUMMARY(patientId), {
+    params: assessmentStage ? { assessment_stage: assessmentStage } : undefined,
   });
-  type InstanceRow = { instance_id?: string; disease_id?: string; status?: string; completed_at?: string };
-  const rows: InstanceRow[] = Array.isArray(instancesRes.data) ? instancesRes.data : [];
-
-  const instances: AssessmentInstance[] = await Promise.all(
-    rows.map(async (r): Promise<AssessmentInstance> => {
-      const instanceId = String(r.instance_id ?? "");
-      // in_progress instances have no final_result yet — /results 404s or
-      // returns nothing scoreable for them, so only fetch it for completed
-      // ones. Their scale_summaries end up empty, which is correct: an
-      // in_progress instance genuinely has no completed scales to show.
-      if (r.status !== "completed" || !instanceId) {
-        return {
-          instance_id: instanceId,
-          disease_id: String(r.disease_id ?? ""),
-          completed_at: r.completed_at,
-        };
-      }
-      try {
-        const detail = await fetchInstanceScoreDetail(instanceId);
-        return {
-          instance_id: instanceId,
-          disease_id: detail.instance.disease_id ?? String(r.disease_id ?? ""),
-          disease_name: detail.instance.disease_name,
-          disease_score: detail.disease_result?.disease_score,
-          severity_level: detail.disease_result?.severity_level,
-          severity_label: detail.disease_result?.severity_label,
-          percentage: detail.disease_result?.percentage,
-          completed_at: r.completed_at,
-          scale_summaries: detail.scale_results,
-        };
-      } catch {
-        return { instance_id: instanceId, disease_id: String(r.disease_id ?? ""), completed_at: r.completed_at };
-      }
-    }),
-  );
-
-  const diseases = new Set(instances.map((i) => i.disease_id)).size;
-  return { instances, total: instances.length, diseases };
+  const orUndef = <T,>(v: T | null | undefined): T | undefined => (v ?? undefined);
+  const rows: Record<string, any>[] = Array.isArray(data?.instances) ? data.instances : [];
+  const instances: AssessmentInstance[] = rows.map((r) => ({
+    instance_id: String(r.instance_id ?? ""),
+    disease_id: String(r.disease_id ?? ""),
+    disease_name: orUndef(r.disease_name),
+    disease_score: orUndef(r.disease_score),
+    severity_level: orUndef(r.severity_level),
+    severity_label: orUndef(r.severity_label),
+    percentage: orUndef(r.percentage),
+    completed_at: orUndef(r.completed_at),
+    scale_summaries: r.status === "completed" ? (r.scale_summaries ?? []) : undefined,
+    appointment_id: r.appointment_id,
+  }));
+  return { instances, total: instances.length, diseases: Number(data?.diseases ?? 0) };
 }
 
 export const scoresService = {
@@ -186,7 +201,7 @@ export const scoresService = {
     return { instances: [], total: 0 };
   },
 
-  async getPatientScoresSummary(_patientId: string): Promise<{ instances: AssessmentInstance[]; total: number; diseases: number }> {
-    return { instances: [], total: 0, diseases: 0 };
+  async getPatientScoresSummary(patientId: string): Promise<{ instances: AssessmentInstance[]; total: number; diseases: number }> {
+    return composePatientScoresSummary(patientId);
   },
 };

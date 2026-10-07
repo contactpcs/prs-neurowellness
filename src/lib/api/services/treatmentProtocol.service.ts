@@ -1,7 +1,8 @@
-import apiClient from "../client";
+import apiClient, { getCatalog } from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type {
   DeviceCompanyRead, DeviceRead, ConditionRead, DiagnosisRead, DiagnosisResolution,
+  DeviceCompanyCreate, DeviceCompanyUpdate, DeviceCreate, DeviceUpdate,
   PlacementRead, ElectrodeValidationRequest, ElectrodeValidationResult,
   DosingRead, ScaleRead, SchedulePreviewRequest, SchedulePreview,
   ProtocolCreate, ProtocolUpdate, ProtocolRead, ProtocolDetail, ProtocolSessionRead,
@@ -39,15 +40,39 @@ export const treatmentProtocolService = {
     return data;
   },
 
+  // ─── Super admin catalogue maintenance (no delete — deactivate instead) ───
+  async createDeviceCompany(body: DeviceCompanyCreate): Promise<DeviceCompanyRead> {
+    const { data } = await apiClient.post(ENDPOINTS.NEUROMOD.DEVICE_COMPANIES, body);
+    return data;
+  },
+
+  async updateDeviceCompany(companyId: string, body: DeviceCompanyUpdate): Promise<DeviceCompanyRead> {
+    const { data } = await apiClient.patch(ENDPOINTS.NEUROMOD.DEVICE_COMPANY(companyId), body);
+    return data;
+  },
+
+  async createDevice(body: DeviceCreate): Promise<DeviceRead> {
+    const { data } = await apiClient.post(ENDPOINTS.NEUROMOD.DEVICES, body);
+    return data;
+  },
+
+  async updateDevice(deviceId: string, body: DeviceUpdate): Promise<DeviceRead> {
+    const { data } = await apiClient.patch(ENDPOINTS.NEUROMOD.DEVICE(deviceId), body);
+    return data;
+  },
+
+  // Steps 2-6 read reference.* catalogs (no write path in the API) -> shared
+  // 5-min cache keyed by params (API audit F-039: dosing was fetched 22x in
+  // one wizard run, diagnoses 12x, placements 8x).
   // ─── Step 2 — Condition ───
   async listConditions(deviceId?: string): Promise<ConditionRead[]> {
-    const { data } = await apiClient.get(ENDPOINTS.NEUROMOD.CONDITIONS, { params: { device_id: deviceId } });
+    const { data } = await getCatalog(ENDPOINTS.NEUROMOD.CONDITIONS, { params: { device_id: deviceId } });
     return Array.isArray(data) ? data : [];
   },
 
   // ─── Step 3 — Diagnosis ───
   async listDiagnoses(params: { conditionIds?: string[]; deviceId?: string; q?: string; skip?: number; limit?: number }): Promise<DiagnosisRead[]> {
-    const { data } = await apiClient.get(ENDPOINTS.NEUROMOD.DIAGNOSES, {
+    const { data } = await getCatalog(ENDPOINTS.NEUROMOD.DIAGNOSES, {
       params: {
         condition_id: params.conditionIds?.length ? params.conditionIds : undefined,
         device_id: params.deviceId,
@@ -67,7 +92,7 @@ export const treatmentProtocolService = {
 
   // ─── Step 4 — Placement ───
   async listPlacements(deviceId: string, conditionId?: string): Promise<PlacementRead[]> {
-    const { data } = await apiClient.get(ENDPOINTS.NEUROMOD.PLACEMENTS, { params: { device_id: deviceId, condition_id: conditionId } });
+    const { data } = await getCatalog(ENDPOINTS.NEUROMOD.PLACEMENTS, { params: { device_id: deviceId, condition_id: conditionId } });
     return Array.isArray(data) ? data : [];
   },
 
@@ -108,7 +133,7 @@ export const treatmentProtocolService = {
 
   // ─── Step 5 — Dosing ───
   async listDosing(deviceId: string, conditionId?: string, placementId?: string): Promise<DosingRead[]> {
-    const { data } = await apiClient.get(ENDPOINTS.NEUROMOD.DOSING, {
+    const { data } = await getCatalog(ENDPOINTS.NEUROMOD.DOSING, {
       params: { device_id: deviceId, condition_id: conditionId, placement_id: placementId },
     });
     return Array.isArray(data) ? data : [];
@@ -116,7 +141,7 @@ export const treatmentProtocolService = {
 
   // ─── Step 6 — Scales ───
   async listScales(conditionIds?: string[]): Promise<ScaleRead[]> {
-    const { data } = await apiClient.get(ENDPOINTS.NEUROMOD.SCALES, {
+    const { data } = await getCatalog(ENDPOINTS.NEUROMOD.SCALES, {
       params: { condition_id: conditionIds?.length ? conditionIds : undefined },
       paramsSerializer: { indexes: null },
     });
@@ -135,11 +160,21 @@ export const treatmentProtocolService = {
     return data;
   },
 
-  async listProtocols(params?: { planId?: string; patientId?: string; status?: string; skip?: number; limit?: number }): Promise<ProtocolRead[]> {
+  async listProtocols(params?: { planId?: string; instanceId?: string; patientId?: string; status?: string; skip?: number; limit?: number }): Promise<ProtocolRead[]> {
     const { data } = await apiClient.get(ENDPOINTS.TREATMENT_PROTOCOLS.LIST, {
-      params: { plan_id: params?.planId, patient_id: params?.patientId, status: params?.status, skip: params?.skip ?? 0, limit: params?.limit ?? 50 },
+      params: { plan_id: params?.planId, instance_id: params?.instanceId, patient_id: params?.patientId, status: params?.status, skip: params?.skip ?? 0, limit: params?.limit ?? 50 },
     });
     return Array.isArray(data) ? data : [];
+  },
+
+  /** Protocols + each one's device sessions (same list as detail.sessions)
+   * in one call — API audit F-034, was 1 detail call per protocol. */
+  async listProtocolsWithSessions(params?: { status?: string; patientId?: string; limit?: number; allTypes?: boolean }): Promise<(ProtocolRead & { sessions: ProtocolDetail["sessions"] })[]> {
+    // allTypes: every appointment of each protocol (= /{id}/sessions), not just device sessions (F-037).
+    const { data } = await apiClient.get(ENDPOINTS.TREATMENT_PROTOCOLS.LIST, {
+      params: { status: params?.status, patient_id: params?.patientId, include_sessions: true, sessions_all_types: params?.allTypes || undefined, skip: 0, limit: params?.limit ?? 200 },
+    });
+    return Array.isArray(data) ? data.map((p) => ({ ...p, sessions: p.sessions ?? [] })) : [];
   },
 
   async getProtocolDetail(protocolId: string): Promise<ProtocolDetail> {
@@ -197,20 +232,34 @@ export const treatmentProtocolService = {
     return Array.isArray(data) ? data : [];
   },
 
-  /** Opens (or reuses) the patient's protocol instance directly — no more
-   *  separate treatment-cycle step. The backend retired core.treatment_cycles
-   *  (58): protocol_instances now carries patient/doctor/clinic itself and
-   *  enforces one open (draft/active) instance per PATIENT, so "Start New
-   *  Treatment Protocol" just means reuse-or-create on that rule.
+  /** Which protocol instance a wizard submit belongs to.
+   *
+   *  A patient may hold several open instances at once (backend SQL/v1/90 —
+   *  e.g. a tDCS course and a taVNS course side by side), so "any open
+   *  instance" is no longer an answer:
+   *   - Modify (supersedesProtocolId set): the amended protocol's OWN
+   *     instance — the backend rejects any other (SUPERSEDES_INSTANCE_MISMATCH).
+   *   - New: an open instance that has no protocol yet (a follow-up episode,
+   *     or one left behind by a push that failed after creating it), else a
+   *     fresh instance. Never an instance that already carries a protocol.
    */
   async resolveOrCreateInstanceId(opts: {
     patientId: string;
     doctorId: string;
     clinicId: string;
+    supersedesProtocolId?: string | null;
   }): Promise<string> {
-    const open = await this.listProtocolInstances({ patientId: opts.patientId });
-    const existing = open.find((i: any) => i.status === "draft" || i.status === "active");
-    if (existing) return existing.instance_id;
+    if (opts.supersedesProtocolId) {
+      const prior = await this.getProtocolDetail(opts.supersedesProtocolId);
+      if (!prior.instance_id) throw new Error("The protocol being modified has no protocol instance");
+      return prior.instance_id;
+    }
+
+    const instances = await this.listProtocolInstances({ patientId: opts.patientId });
+    for (const inst of instances.filter((i: any) => i.status === "draft" || i.status === "active")) {
+      const protocols = await this.listProtocols({ instanceId: inst.instance_id, limit: 1 });
+      if (protocols.length === 0) return inst.instance_id;
+    }
 
     const { data: created } = await apiClient.post(ENDPOINTS.PROTOCOL_INSTANCES.CREATE, {
       patient_id: opts.patientId,

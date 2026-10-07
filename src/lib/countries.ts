@@ -9,6 +9,12 @@ export const COUNTRY_OPTIONS = [
   { name: "Singapore",      dialCode: "+65" },
   { name: "Australia",      dialCode: "+61" },
   { name: "Canada",         dialCode: "+1" },
+  { name: "Nepal",          dialCode: "+977" },
+  { name: "Sri Lanka",      dialCode: "+94" },
+  { name: "China",          dialCode: "+86" },
+  { name: "Japan",          dialCode: "+81" },
+  { name: "France",         dialCode: "+33" },
+  { name: "Russia",         dialCode: "+7" },
 ];
 
 export function dialCodeForCountry(country: string | undefined | null): string {

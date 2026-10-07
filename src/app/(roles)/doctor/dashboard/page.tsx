@@ -4,12 +4,16 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Search, ChevronLeft, ChevronRight, CalendarDays, Phone, MessageSquare, Eye, Siren,
+  Search, ChevronLeft, ChevronRight, CalendarDays, CalendarX, Eye,
 } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
 import { BookingModal } from "@/components/appointments/BookingModal";
+import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
+import { getDeviceSessionLabel } from "@/lib/utils/sessionType";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { buttonVariants } from "@/components/ui/Button";
 import type { Appointment, AvailabilitySlot } from "@/types/domain.types";
 
 // ─── types ────────────────────────────────────────────────────────
@@ -116,6 +120,7 @@ export default function DoctorDashboard() {
   const [bookingSlot,  setBookingSlot]  = useState<AvailabilitySlot | null>(null);
   const [ghost, setGhost] = useState<{ colIdx: number; top: number; height: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
   // ── fetch range per view ──────────────────────────────────────────
 
@@ -134,9 +139,15 @@ export default function DoctorDashboard() {
   const fetchAppointments = useCallback(async (from: Date, to: Date) => {
     try {
       const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.LIST, {
-        params: { date_from: toDateStr(from), date_to: toDateStr(to), limit: 100 },
+        // doctor_id on a device_session row records the prescribing doctor
+        // (scheduling/service.py::_generate_appointments), but a clinical
+        // assistant runs the session — nothing here is theirs to open. Drop
+        // them server-side (API audit F-028): downloading and discarding them
+        // pushed real visits past the row limit in Month view.
+        params: { date_from: toDateStr(from), date_to: toDateStr(to), exclude_appointment_type: "device_session", limit: 500 },
       });
-      setAppointments(Array.isArray(data) ? data : []);
+      const list: Appointment[] = Array.isArray(data) ? data : [];
+      setAppointments(list);
     } catch { setAppointments([]); }
   }, []);
 
@@ -151,8 +162,10 @@ export default function DoctorDashboard() {
   }, [doctorId]);
 
   useEffect(() => {
-    fetchAppointments(fetchRange.from, fetchRange.to);
-    fetchSlots(fetchRange.from, fetchRange.to);
+    Promise.all([
+      fetchAppointments(fetchRange.from, fetchRange.to),
+      fetchSlots(fetchRange.from, fetchRange.to),
+    ]).finally(() => setIsLoading(false));
   }, [fetchRange, fetchAppointments, fetchSlots]);
 
   // Live update via SSE.
@@ -164,6 +177,30 @@ export default function DoctorDashboard() {
     window.addEventListener("sse:appointment", onAppointmentEvent);
     return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
   }, [fetchRange, fetchAppointments, fetchSlots]);
+
+  const [modalityByProtocol, setModalityByProtocol] = useState<Record<string, string | null>>({});
+
+  useEffect(() => {
+    const ids = [...new Set(
+      appointments
+        .filter((a) => a.appointment_type === "device_session" && a.protocol_id)
+        .map((a) => a.protocol_id as string)
+    )].filter((id) => !(id in modalityByProtocol));
+    if (ids.length === 0) return;
+    ids.forEach((pid) => {
+      treatmentProtocolService.getProtocolDetail(pid)
+        .then((p) => setModalityByProtocol((prev) => ({ ...prev, [pid]: p.modality ?? null })))
+        .catch(() => setModalityByProtocol((prev) => ({ ...prev, [pid]: null })));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointments]);
+
+  const apptTypeLabel = useCallback((appt: Appointment): string =>
+    appt.appointment_type === "device_session"
+      ? getDeviceSessionLabel(appt.protocol_id ? modalityByProtocol[appt.protocol_id] : null)
+      : (appt.appointment_type || appt.reason || "").replace(/_/g, " "),
+    [modalityByProtocol],
+  );
 
   // ── navigation ────────────────────────────────────────────────────
 
@@ -220,20 +257,28 @@ export default function DoctorDashboard() {
     return map;
   }, [slots]);
 
+  // Scoped to today, not every future date — a doctor works through today's
+  // list, not a mixed-date feed of everything still ahead; "All appointments"
+  // (the link next to this widget) is where the rest already lives. A slot
+  // whose start_time has already passed drops off too (found live: a 9:30am
+  // follow-up was still showing at 2pm with nothing done about it) — unless
+  // it's in_progress, which legitimately starts in the past and is still
+  // exactly what the doctor is doing right now.
   const upcoming = useMemo(() => {
     const q = searchQuery.toLowerCase();
+    const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
     return [...appointments]
       .filter((a) => {
-        if ((a.appointment_date || "") < todayStr) return false;
+        if ((a.appointment_date || "") !== todayStr) return false;
         if (a.status === "cancelled" || a.status === "completed") return false;
+        if (a.status !== "in_progress" && a.start_time) {
+          const [h, m] = a.start_time.split(":").map(Number);
+          if (h * 60 + m < nowMins) return false;
+        }
         if (q) return (a.patient_name || "").toLowerCase().includes(q) || (a.reason || "").toLowerCase().includes(q);
         return true;
       })
-      .sort((a, b) => {
-        const dc = (a.appointment_date || "").localeCompare(b.appointment_date || "");
-        return dc !== 0 ? dc : (a.start_time || "").localeCompare(b.start_time || "");
-      })
-      .slice(0, 1);
+      .sort((a, b) => (a.start_time || "").localeCompare(b.start_time || ""));
   }, [appointments, todayStr, searchQuery]);
 
   // ── booking helpers ───────────────────────────────────────────────
@@ -277,7 +322,8 @@ export default function DoctorDashboard() {
   const hours     = Array.from({ length: CAL_END - CAL_START }, (_, i) => CAL_START + i);
   const gridHeight = (CAL_END - CAL_START) * HOUR_PX;
 
-  const doctorName  = user?.first_name || "Doctor";
+  const isDoctor = user?.roles?.includes("doctor");
+  const doctorName = isDoctor ? (user?.first_name || "Doctor") : "Doctor";
   const todayDisplay = today.toLocaleDateString("en-US", {
     weekday: "short", month: "short", day: "numeric", year: "numeric",
   });
@@ -358,7 +404,9 @@ export default function DoctorDashboard() {
       {/* header */}
       <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Welcome back, Dr. {doctorName}!</h1>
+          <h1 className="text-2xl font-bold text-neutral-900">
+            Welcome, {isDoctor ? `Dr. ${doctorName}` : doctorName}!
+          </h1>
           <p className="text-sm text-neutral-500 mt-0.5">Here&apos;s what&apos;s happening in your practice today.</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -383,13 +431,28 @@ export default function DoctorDashboard() {
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-[1fr_300px] mb-5">
         <div className="bg-white rounded-2xl border border-neutral-200 shadow-card overflow-hidden">
           <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100">
-            <h2 className="text-base font-semibold text-neutral-900">Next Appointment</h2>
+            <h2 className="text-base font-semibold text-neutral-900">Upcoming Appointments</h2>
             <Link href="/doctor/appointments" className="text-sm font-medium text-accent hover:underline">
               All appointments →
             </Link>
           </div>
-          <div className="divide-y divide-neutral-100">
-            {upcoming.length === 0 ? (
+          <div className="divide-y divide-neutral-100 max-h-[200px] overflow-y-auto">
+            {isLoading ? (
+              <div className="px-5 py-4 space-y-4">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex items-start justify-between gap-3">
+                    <div className="space-y-2 flex-1">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-4 w-20 rounded-full" />
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <Skeleton className="h-5 w-16" />
+                      <Skeleton className="h-3 w-20" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : upcoming.length === 0 ? (
               <p className="px-6 py-10 text-center text-sm text-neutral-400">No upcoming appointments</p>
             ) : upcoming.map((appt) => (
               <div key={appt.appointment_id} className="px-5 py-4 hover:bg-neutral-50/60 transition-colors">
@@ -403,7 +466,7 @@ export default function DoctorDashboard() {
                     </div>
                     {(appt.appointment_type || appt.reason) && (
                       <span className="inline-block text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-sky-50 text-sky-700">
-                        {(appt.appointment_type || appt.reason || "").replace(/_/g, " ")}
+                        {apptTypeLabel(appt)}
                       </span>
                     )}
                   </div>
@@ -425,20 +488,17 @@ export default function DoctorDashboard() {
         </div>
 
         <div className="bg-white rounded-2xl border border-neutral-200 shadow-card p-4 flex flex-col gap-2.5">
-          <h2 className="text-sm font-semibold text-neutral-900">Emergency Services</h2>
-          <button className="flex items-center justify-center gap-2 h-[38px] rounded-lg bg-danger-500 text-white font-semibold text-xs hover:bg-danger-700 transition-colors">
-            <Siren className="w-[15px] h-[15px] flex-shrink-0" />
-            Contact Emergency Services
-          </button>
-          <div className="h-px bg-neutral-100 my-0.5" />
-          <button className="flex items-center gap-2.5 h-[34px] px-3 rounded-lg bg-white border border-neutral-200 text-neutral-700 font-medium text-xs hover:bg-neutral-50 transition-colors">
-            <Phone className="w-3.5 h-3.5 flex-shrink-0" />
-            Contact Receptionist
-          </button>
-          <button className="flex items-center gap-2.5 h-[34px] px-3 rounded-lg bg-white border border-neutral-200 text-neutral-700 font-medium text-xs hover:bg-neutral-50 transition-colors">
-            <MessageSquare className="w-3.5 h-3.5 flex-shrink-0" />
-            Contact Clinical Assistant
-          </button>
+          <h2 className="text-base font-semibold text-neutral-900">Quick Actions</h2>
+          <div className="flex flex-col gap-2">
+            <Link href="/doctor/schedule?edit=weekly" className={buttonVariants({ className: "w-full" })}>
+              <CalendarDays className="w-4 h-4 flex-shrink-0" />
+              Set Weekly Schedule
+            </Link>
+            <Link href="/doctor/schedule?edit=override" className={buttonVariants({ className: "w-full" })}>
+              <CalendarX className="w-4 h-4 flex-shrink-0" />
+              Add Date Override
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -483,6 +543,18 @@ export default function DoctorDashboard() {
           </div>
         </div>
 
+        {isLoading ? (
+          <div className="p-6 space-y-3">
+            <div className="grid gap-2" style={{ gridTemplateColumns: "52px repeat(7, 1fr)" }}>
+              <div />
+              {Array.from({ length: 7 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
+            </div>
+            <Skeleton className="h-[400px] w-full" />
+          </div>
+        ) : (
+        <>
         {/* ── Week view ── */}
         {view === "Week" && (
           <div className="overflow-x-auto">
@@ -653,6 +725,8 @@ export default function DoctorDashboard() {
               ))}
             </div>
           </div>
+        )}
+        </>
         )}
 
         {/* legend */}

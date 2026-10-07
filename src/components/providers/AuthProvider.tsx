@@ -5,9 +5,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/hooks";
 import { useAppDispatch } from "@/store/hooks";
 import { ROUTES, STORAGE_KEYS } from "@/lib/constants";
-import { clearSessionAndSignalLogout, isTokenExpired } from "@/lib/api/client";
+import { TOKEN_REFRESH_SKEW_MS, clearSessionAndSignalLogout, isTokenExpired, refreshAccessToken } from "@/lib/api/client";
 import { openEventStream } from "@/lib/sse";
-import { notificationReceived } from "@/store/slices/notificationsSlice";
+import { showNotificationToast } from "@/components/providers/NotificationToast";
+import { logout } from "@/store/slices/authSlice";
+import { fetchNotifications, invalidateNotifications, notificationReceived } from "@/store/slices/notificationsSlice";
 
 // Pages that don't need a session — a stale/expired token cleanup should
 // never force-navigate someone away from these (e.g. mid self-registration
@@ -39,21 +41,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // "sse:appointment" window event this dispatches to refetch their own
   // list; everything else just needs the notification bell to update,
   // which the Redux dispatch below handles directly.
+  // Keyed on the user's id, not the user object: a profile save or
+  // refreshUser() replaces the object and used to tear the stream down and
+  // open a new one (new ticket + stream) for the same person (API audit F-017).
+  const sessionUserId = user?.id;
   useEffect(() => {
-    if (isRestoring || !user) return;
-    const token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-    if (!token) return;
-    const source = openEventStream(token, (msg) => {
-      dispatch(notificationReceived(msg));
-      // Generic fan-out for any live count that needs to refresh (sidebar nav
-      // badges) — every message type, not just appointment-specific ones.
-      window.dispatchEvent(new CustomEvent("sse:notification", { detail: msg }));
-      if (msg.type === "appointment") {
-        window.dispatchEvent(new CustomEvent("sse:appointment", { detail: msg }));
-      }
-    });
+    if (isRestoring || !sessionUserId) return;
+    if (!localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN)) return;
+    const source = openEventStream(
+      (msg) => {
+        dispatch(notificationReceived(msg));
+        // Minimal popup for every live notification, in every portal.
+        showNotificationToast(msg);
+        // Generic fan-out for any live count that needs to refresh (sidebar nav
+        // badges) — every message type, not just appointment-specific ones.
+        window.dispatchEvent(new CustomEvent("sse:notification", { detail: msg }));
+        if (msg.type === "appointment") {
+          window.dispatchEvent(new CustomEvent("sse:appointment", { detail: msg }));
+        }
+      },
+      // Whatever was pushed while the stream was down is gone, but the
+      // notifications themselves are saved: reload them, and tell every live
+      // badge and list to refetch.
+      () => {
+        dispatch(invalidateNotifications());
+        dispatch(fetchNotifications());
+        window.dispatchEvent(new Event("sse:notification"));
+        window.dispatchEvent(new Event("sse:appointment"));
+      },
+    );
     return () => source.close();
-  }, [isRestoring, user, dispatch]);
+  }, [isRestoring, sessionUserId, dispatch]);
 
   // Consent/deactivation gate on every page load, not just fresh logins —
   // an inactive staff/receptionist-registered-patient account that
@@ -85,20 +103,93 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("auth:unauthorized", handleUnauthorized);
   }, [router, pathname]);
 
-  // Proactive expiry check — logs out an idle tab even if no API call is
-  // in flight to trigger the 401 path above (client.ts's request
-  // interceptor only catches expiry at call-time). Same public-path
-  // exemption — don't clear a token that a public-flow page didn't ask for.
+  // Proactive renewal — keeps an idle-but-open tab signed in even when no API
+  // call is in flight to trigger the on-demand refresh in client.ts. Only when
+  // the session genuinely can't be renewed (refresh cookie expired or revoked)
+  // is the user logged out. Same public-path exemption — don't touch a token
+  // that a public-flow page didn't ask for.
   useEffect(() => {
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       if (isPublicPath(pathname)) return;
       const token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-      if (token && isTokenExpired(token)) {
-        clearSessionAndSignalLogout();
+      if (token && isTokenExpired(token, TOKEN_REFRESH_SKEW_MS)) {
+        if (!(await refreshAccessToken())) clearSessionAndSignalLogout();
       }
     }, 15000);
     return () => clearInterval(interval);
   }, [pathname]);
+
+  // Multi-tab session synchronization:
+  // The access token and user live in localStorage, and the browser fires
+  // "storage" in every OTHER tab when they change.
+  // 1. If the token was removed (logout in another tab), log out this tab too.
+  // 2. If the token or user changed to a DIFFERENT account (e.g. user logged
+  //    into a patient profile in another tab while this tab was doctor),
+  //    reload this tab immediately so all memory state, caches, sockets,
+  //    and role guards clean-slate sync to the new account.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEYS.ACCESS_TOKEN) {
+        if (e.newValue === null) {
+          dispatch(logout());
+          if (!isPublicPath(pathname)) router.replace(ROUTES.LOGIN);
+          return;
+        }
+      }
+
+      if (e.key === STORAGE_KEYS.USER && e.newValue) {
+        try {
+          const newUser = JSON.parse(e.newValue);
+          if (newUser && user && newUser.id !== user.id) {
+            window.location.reload();
+            return;
+          }
+        } catch {}
+      }
+
+      if (e.key === STORAGE_KEYS.ACCESS_TOKEN && e.newValue) {
+        try {
+          const userStr = localStorage.getItem(STORAGE_KEYS.USER);
+          if (userStr) {
+            const newUser = JSON.parse(userStr);
+            if (newUser && user && newUser.id !== user.id) {
+              window.location.reload();
+              return;
+            }
+          }
+        } catch {}
+      }
+    };
+
+    // When the user switches focus back to this tab, check if another tab
+    // changed the active user while this tab was in the background
+    const onFocus = () => {
+      const token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+      const userStr = localStorage.getItem(STORAGE_KEYS.USER);
+
+      if (!token && user) {
+        dispatch(logout());
+        if (!isPublicPath(pathname)) router.replace(ROUTES.LOGIN);
+        return;
+      }
+
+      if (userStr && user) {
+        try {
+          const storedUser = JSON.parse(userStr);
+          if (storedUser && storedUser.id !== user.id) {
+            window.location.reload();
+          }
+        } catch {}
+      }
+    };
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [dispatch, router, pathname, user]);
 
   return <>{children}</>;
 }

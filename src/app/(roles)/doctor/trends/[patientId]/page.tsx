@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { prsService } from "@/lib/api/services";
 import { useScales } from "@/lib/hooks";
-import { PageLoader, Card, CardContent } from "@/components/ui";
+import { PageSkeleton, Card, CardContent } from "@/components/ui";
 import { SeverityBadge } from "@/components/assessment";
 import { formatDate } from "@/lib/utils/format";
 import type { ScoreHistory } from "@/types/prs.types";
@@ -24,7 +24,7 @@ export default function TrendsPage() {
       .finally(() => setHistoryLoading(false));
   }, [patientId]);
 
-  if (historyLoading) return <PageLoader />;
+  if (historyLoading) return <PageSkeleton />;
 
   // Group history by scale_id
   const grouped = history.reduce<Record<string, ScoreHistory[]>>((acc, h) => {

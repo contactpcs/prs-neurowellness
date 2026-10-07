@@ -83,6 +83,18 @@ export interface RevenueByPurposePoint {
   payment_count: number;
 }
 
+/** Allowed per role (server-enforced): region — super_admin only; clinic —
+ * super_admin + regional_admin; doctor + purpose — every payments role. */
+export type RevenueDimension = "region" | "clinic" | "doctor" | "purpose";
+
+export interface RevenueBreakdownRow {
+  key: string | null; // region/clinic/doctor id or purpose code; null = unattributed
+  label: string | null;
+  parent_label: string | null; // clinic -> its region; doctor -> its clinic(s)
+  total: number;
+  payment_count: number;
+}
+
 export interface PatientRevenueTotal {
   patient_id: string;
   patient_name: string | null;
@@ -137,6 +149,12 @@ export interface PaymentLogsParams {
   offset?: number;
 }
 
+export interface PaymentSummary {
+  total_count: number;
+  by_status: { status: string; count: number; amount: number }[];
+  recent: (Payment & { clinic_id?: string | null })[];
+}
+
 export const paymentsService = {
   get: async (id: string): Promise<Payment> => {
     const { data } = await apiClient.get(`/payments/${id}`);
@@ -146,6 +164,12 @@ export const paymentsService = {
   list: async (params: { clinic_id: string }): Promise<Payment[]> => {
     const { data } = await apiClient.get("/payments", { params });
     return Array.isArray(data) ? data : [];
+  },
+
+  /** Totals per status + 5 latest, without downloading every payment (API audit F-050). */
+  summary: async (params: { clinic_id?: string }): Promise<PaymentSummary> => {
+    const { data } = await apiClient.get("/payments/summary", { params });
+    return data;
   },
 
   waive: async (id: string, reason?: string): Promise<Payment> => {
@@ -177,6 +201,14 @@ export const paymentsService = {
     body: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }
   ): Promise<Payment> => {
     const { data } = await apiClient.post(`/payments/${paymentId}/verify`, body);
+    return data;
+  },
+
+  /** Staff only — cash taken at the counter. Settles the appointment the
+   * same way a completed online payment does (appointment -> paid, payment
+   * log, receipt), with payment_method 'cash'. */
+  recordCash: async (appointmentId: string): Promise<Payment> => {
+    const { data } = await apiClient.post(`/appointments/${appointmentId}/payments/cash`);
     return data;
   },
 
@@ -216,6 +248,11 @@ export const paymentsService = {
   getRevenueSummaryByPurpose: async (params: { group_by: RevenueGroupBy; date_from?: string; date_to?: string }): Promise<RevenueByPurposePoint[]> => {
     const { data } = await apiClient.get("/payments/revenue-summary-by-purpose", { params });
     return Array.isArray(data) ? data : [];
+  },
+
+  getRevenueBreakdown: async (params: { dimension: RevenueDimension; date_from?: string; date_to?: string }): Promise<RevenueBreakdownRow[]> => {
+    const { data } = await apiClient.get("/payments/revenue-breakdown", { params });
+    return Array.isArray(data) ? data.map((r) => ({ ...r, total: Number(r.total) })) : [];
   },
 
   getPatientTotals: async (params?: { date_from?: string; date_to?: string; limit?: number }): Promise<PatientRevenueTotal[]> => {

@@ -93,9 +93,24 @@ export function AppointmentDetailModal({
             <p className="text-base font-semibold text-neutral-900">{a.patient_name ?? "Unknown patient"}</p>
             <p className="text-xs text-neutral-400 mt-0.5">{fmtSessionType(a.appointment_type)}</p>
           </div>
-          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${STATUS_TONE[a.status]}`}>
-            {STATUS_LABEL[a.status]}
-          </span>
+          <div className="flex items-center gap-1.5">
+            {/* rescheduled_from set means THIS row replaced an earlier one —
+                distinct from status === 'rescheduled', which is the OLD,
+                superseded row instead. Without this, a doctor/receptionist
+                has no way to tell a moved appointment apart from a normally-
+                booked one at the same status. */}
+            {a.rescheduled_from && (
+              <span
+                title={a.rescheduled_from_date ? `Originally booked for ${fmtDate(a.rescheduled_from_date)} · ${fmt12(a.rescheduled_from_start_time)}` : undefined}
+                className="text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap bg-purple-100 text-purple-700"
+              >
+                Rescheduled
+              </span>
+            )}
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${STATUS_TONE[a.status]}`}>
+              {STATUS_LABEL[a.status]}
+            </span>
+          </div>
         </div>
 
         <div className="divide-y divide-neutral-100 border border-neutral-200 rounded-lg overflow-hidden text-sm">
@@ -109,6 +124,16 @@ export function AppointmentDetailModal({
             />
           )}
           {scheduledMinutes != null && <DetailRow label="Slot Duration" value={`${scheduledMinutes} min`} />}
+          {a.rescheduled_from && (
+            <DetailRow
+              label="Originally Booked For"
+              value={
+                a.rescheduled_from_date
+                  ? `${fmtDate(a.rescheduled_from_date)} · ${fmt12(a.rescheduled_from_start_time)}`
+                  : "—"
+              }
+            />
+          )}
           <DetailRow icon={User} label="Booked By" value={`${a.booked_by_role.replace(/_/g, " ")}`} />
           {a.reason && <DetailRow icon={FileText} label="Reason" value={a.reason} />}
           {a.patient_complaint && <DetailRow label="Patient Complaint" value={a.patient_complaint} />}

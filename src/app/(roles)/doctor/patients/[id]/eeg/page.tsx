@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import Link from "next/link";
 import { EEGReportList, EEGUploadForm } from "@/components/eeg";
+import { useGoBack } from "@/lib/hooks";
 
 export default function DoctorPatientEEGPage() {
   const { id: patientId } = useParams<{ id: string }>();
+  const goBack = useGoBack(`/doctor/patients/${patientId}`);
   const [refreshKey, setRefreshKey] = useState(0);
   const [showUpload, setShowUpload] = useState(false);
 
@@ -20,12 +21,12 @@ export default function DoctorPatientEEGPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <Link
-            href={`/doctor/patients/${patientId}`}
+          <button
+            onClick={goBack}
             className="text-sm text-blue-600 hover:underline"
           >
-            &larr; Back to patient
-          </Link>
+            &larr; Back
+          </button>
           <h1 className="text-2xl font-bold text-neutral-900 mt-1">EEG Reports</h1>
           <p className="text-sm text-neutral-500">Brain mapping and analysis reports</p>
         </div>

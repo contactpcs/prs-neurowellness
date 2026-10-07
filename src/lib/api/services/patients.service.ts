@@ -1,14 +1,17 @@
-import apiClient from "../client";
+import apiClient, { getDiseaseCatalog, getMyPatientId, getStoredUser } from "../client";
 import { ENDPOINTS } from "../endpoints";
-import type { PatientDashboard, AssessmentPermission } from "@/types/domain.types";
+import type { PatientDashboard, AssessmentPermission, PatientClinic } from "@/types/domain.types";
 
 export const patientsService = {
   /** NOT AVAILABLE as a single aggregate — composed from /auth/me (name/email)
    * and /patients (RLS-scoped to the caller's own record, which also joins
    * the assigned doctor's name/phone/specialization off primary_doctor_id). */
   async getDashboard(): Promise<PatientDashboard> {
+    // Name/email come from the /auth/me snapshot login/restore already
+    // stored; re-fetch only if it is missing.
+    const stored = getStoredUser();
     const [meRes, patientsRes] = await Promise.all([
-      apiClient.get(ENDPOINTS.AUTH.ME),
+      stored ? Promise.resolve({ data: stored }) : apiClient.get(ENDPOINTS.AUTH.ME),
       apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD),
     ]);
     const me = meRes.data as { id: string; first_name: string; last_name: string; email: string };
@@ -28,6 +31,22 @@ export const patientsService = {
         state: own?.state as string | undefined,
         country: own?.country as string | undefined,
         pincode: own?.pincode as string | undefined,
+        // Same "Medical Information" fields the profile page's own GET
+        // /patients/{id} carries — without these the dashboard's completion
+        // card can never reflect them, no matter what's filled in on the
+        // profile page (see profileCompletion.ts's item list).
+        emergency_contact_name: own?.emergency_contact_name as string | undefined,
+        blood_group: own?.blood_group as string | undefined,
+        allergies: own?.allergies as string | undefined,
+        occupation: own?.occupation as string | undefined,
+        marital_status: own?.marital_status as string | undefined,
+        insurance_provider: own?.insurance_provider as string | undefined,
+        insurance_policy: own?.insurance_policy as string | undefined,
+        weight_kg: own?.weight_kg as number | undefined,
+        height_ft: own?.height_ft as number | undefined,
+        height_in: own?.height_in as number | undefined,
+        government_id: own?.government_id as string | undefined,
+        id_type: own?.id_type as string | undefined,
       },
       assigned_doctor: own?.primary_doctor_id ? {
         id: own.primary_doctor_id as string,
@@ -57,21 +76,28 @@ export const patientsService = {
     };
   },
 
+  /** Real — GET /patients/{patient_id}/clinic: the caller's primary clinic
+   * (address, contact, Google Maps link). null when the patient has no id yet. */
+  async getMyClinic(): Promise<PatientClinic | null> {
+    const patientId = await getMyPatientId();
+    if (!patientId) return null;
+    const { data } = await apiClient.get<PatientClinic>(ENDPOINTS.PATIENTS.CLINIC(patientId));
+    return data;
+  },
+
   /** Composed: resolve own patient_id via /patients (RLS-scoped), then group
    * /patients/{id}/scale-assignments (which now carry disease_id) by disease.
    * Disease/scale names come from /prs-catalog/diseases; a disease counts as
    * "completed" when a completed prs-instance exists for it. */
   async getMyAssessments(): Promise<{ permissions: AssessmentPermission[]; total: number }> {
-    const patientsRes = await apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD);
-    const own = Array.isArray(patientsRes.data) ? patientsRes.data[0] : undefined;
-    if (!own?.patient_id) return { permissions: [], total: 0 };
-    const patientId = String(own.patient_id);
+    const patientId = await getMyPatientId();
+    if (!patientId) return { permissions: [], total: 0 };
 
     const [assignRes, diseasesRes, instancesRes] = await Promise.all([
       apiClient.get(ENDPOINTS.PRS.PATIENT_PERMISSIONS(patientId), {
         params: { assessment_stage: "main_clinical" },
       }),
-      apiClient.get(ENDPOINTS.PRS.CONDITIONS).catch(() => ({ data: [] })),
+      getDiseaseCatalog().catch(() => ({ data: [] })),
       apiClient
         .get(ENDPOINTS.PRS.PATIENT_INSTANCES(patientId), {
           params: { assessment_stage: "main_clinical" },
@@ -98,17 +124,25 @@ export const patientsService = {
     const instances: InstanceRow[] = Array.isArray(instancesRes.data) ? instancesRes.data : [];
 
     const diseaseById = new Map(diseases.map((d) => [String(d.disease_id), d]));
-    // A disease can have several prs_assessment_instances over time — every
-    // "Send to patient app" is supposed to resume-or-create exactly one via
-    // start()'s find_in_progress (most-recent-first), but a since-fixed bug
-    // let it create fresh duplicates instead, so some patients have stale
-    // ABANDONED in_progress instances from before that fix that nothing will
-    // ever resume or complete again. Treating "any in_progress instance
-    // blocks completion" (this used to) means those orphans permanently
-    // stick a disease at "pending" even after the patient finishes the
-    // instance that's actually current. Only the MOST RECENT instance per
-    // disease (by started_at, matching find_in_progress's own ordering) is
-    // authoritative — older ones are history, not blockers.
+    // A disease can have several prs_assessment_instances over time.
+    //
+    // "latest wins" was the original rule to avoid stale abandoned instances
+    // (created by a since-fixed duplicate-start bug) from blocking completion.
+    // That rule breaks when a DOCTOR opens a new in_progress instance for a
+    // disease the PATIENT already completed: the doctor's Sep 27 instance is
+    // newer, so it overwrites the Sep 16 completion in latestByDisease and
+    // the patient dashboard permanently shows "In Progress / 0%".
+    //
+    // Fix: completedDiseases scans ALL instances (not just the latest). If
+    // any instance for a disease is completed, the disease is completed for
+    // the patient — one-and-done. inProgressDiseases then explicitly excludes
+    // diseases already in completedDiseases, so the two sets are mutually
+    // exclusive and a doctor-initiated in_progress instance can never shadow
+    // a prior patient completion on the patient-facing dashboard.
+    //
+    // latestByDisease is kept for inProgressDiseases only: a disease with NO
+    // completed instance is still in_progress if its latest instance is
+    // in_progress (the stale-orphan guard still applies there).
     const latestByDisease = new Map<string, InstanceRow>();
     for (const i of instances) {
       if (!i.disease_id) continue;
@@ -118,11 +152,18 @@ export const patientsService = {
         latestByDisease.set(key, i);
       }
     }
-    const inProgressDiseases = new Set(
-      Array.from(latestByDisease.values()).filter((i) => i.status === "in_progress").map((i) => String(i.disease_id)),
-    );
+    // Any completed instance (regardless of age) makes the disease "done".
     const completedDiseases = new Set(
-      Array.from(latestByDisease.values()).filter((i) => i.status === "completed").map((i) => String(i.disease_id)),
+      instances
+        .filter((i) => i.status === "completed" && i.disease_id)
+        .map((i) => String(i.disease_id)),
+    );
+    // Only count as in_progress if the latest instance is in_progress AND
+    // the disease has never been completed (completed takes priority).
+    const inProgressDiseases = new Set(
+      Array.from(latestByDisease.values())
+        .filter((i) => i.status === "in_progress" && !completedDiseases.has(String(i.disease_id)))
+        .map((i) => String(i.disease_id)),
     );
 
     const byDisease = new Map<string, AssignmentRow[]>();
@@ -133,16 +174,46 @@ export const patientsService = {
       byDisease.get(key)!.push(a);
     }
 
-    const permissions: AssessmentPermission[] = Array.from(byDisease.entries()).map(
-      ([diseaseId, rows]) => {
+    const permissions: AssessmentPermission[] = Array.from(byDisease.entries())
+      .filter(([diseaseId, rows]) => {
+        // A device session's "Send to patient app" grants ONE scale at a
+        // time (live/page.tsx's handleSendToPatient) — a CA pushing a
+        // single scale mid-visit creates a patient_scale_assignments row
+        // just like a doctor's real "assign this disease's PRS" action
+        // does, with no way to tell the two apart from the row itself.
+        // Without this, a disease with only 1 of its N catalogue scales
+        // ever pushed through a device session showed on the dashboard as
+        // "N/N complete" the moment that one scale was answered — e.g.
+        // Dementia (8-scale catalogue) reading "Completed, 1 of 1" after
+        // only IADL was ever sent. Only surface a disease here once its
+        // DISTINCT assigned scale count reaches the disease's real
+        // catalogue size (reference.prs_disease_scale_map, via diseasesRes)
+        // — a thin, partial assignment stays invisible on this card rather
+        // than misrepresenting a fragment as the whole assessment.
+        const disease = diseaseById.get(diseaseId);
+        const catalogueSize = disease?.scales?.length ?? 0;
+        const assignedScaleCount = new Set(rows.filter((r) => r.scale_id).map((r) => r.scale_id)).size;
+        return catalogueSize === 0 || assignedScaleCount >= catalogueSize;
+      })
+      .map(([diseaseId, rows]) => {
         const disease = diseaseById.get(diseaseId);
         const scaleNameById = new Map(
           (disease?.scales ?? []).map((s) => [s.scale_id, s.scale_name ?? s.short_name]),
         );
-        const status: AssessmentPermission["status"] = inProgressDiseases.has(diseaseId)
-          ? "granted"
-          : completedDiseases.has(diseaseId)
-            ? "completed"
+        // completed is checked BEFORE in_progress — a disease the patient
+        // already finished stays "completed" on their dashboard even if a
+        // doctor subsequently opened a new in_progress instance for it
+        // (e.g. via "Start Assessment" on the staff portal, which bypasses
+        // find_completed_standalone when newer scale assignments exist).
+        // That new instance is a fresh clinical round for the doctor to
+        // administer; it is not a patient-facing redo of a finished disease.
+        // Checking inProgressDiseases first (the old order) caused the
+        // Sep 27 in_progress instance to override the Sep 16 completed one,
+        // permanently showing "In Progress / 0%" on the patient dashboard.
+        const status: AssessmentPermission["status"] = completedDiseases.has(diseaseId)
+          ? "completed"
+          : inProgressDiseases.has(diseaseId)
+            ? "granted"
             : "granted";
         return {
           permission_id: String(rows[0]?.psa_id ?? diseaseId),
@@ -169,8 +240,7 @@ export const patientsService = {
             ).values(),
           ),
         };
-      },
-    );
+      });
 
     return { permissions, total: permissions.length };
   },

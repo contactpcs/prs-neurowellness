@@ -53,6 +53,8 @@ function normalizePatientListItem(raw: Record<string, unknown>): PatientListItem
     status: (raw.registration_status as string) ?? undefined,
     doctor_id: null,
     doctor_name: (raw.assigned_doctor as string | null) ?? null,
+    last_visit: (raw.last_visit as string | null) ?? null,
+    next_appointment: (raw.next_appointment as string | null) ?? null,
   };
 }
 
@@ -77,73 +79,10 @@ function normalizePatientProfile(raw: Record<string, unknown>): PatientDetail {
   };
 }
 
-export const receptionService = {
-  /** Registration requires an explicit clinic_id in the body — resolved from
-   * the receptionist's own /auth/me, same as the old generic-endpoint flow. */
-  async resolveOwnClinicId(): Promise<string> {
-    const { data } = await apiClient.get(ENDPOINTS.AUTH.ME);
-    if (!data?.clinic_id) throw new Error("Your account has no assigned clinic — cannot register a patient.");
-    return data.clinic_id as string;
-  },
+export type ReceptionListQuery = { page?: number; pageSize?: number; search?: string };
 
-  // ─── Dashboard (composed client-side, no aggregate endpoint) ───
-  async getDashboard(): Promise<StaffDashboard> {
-    const [{ total }, { total: pendingTotal }] = await Promise.all([this.getPatients(), this.getPendingPatients()]);
-    return {
-      patient_count: total,
-      pending_count: pendingTotal,
-      registered_today: 0,
-      upcoming_sessions: [],
-      recent_scores: [],
-    };
-  },
-
-  // ─── Patients (§4.5) ───
-  // The real endpoint only accepts page/page_size — no search or filter
-  // params exist (verified against router.py's list_patients). Search and
-  // status filtering in the UI are applied client-side over the full,
-  // correctly-paginated result set fetched below (looping real page/
-  // page_size calls until pagination.total_items is exhausted), so they
-  // work at any clinic size rather than being capped at one page.
-  async getPatients(): Promise<{ patients: PatientListItem[]; total: number }> {
-    const pageSize = 100;
-    let page = 1;
-    let all: PatientListItem[] = [];
-    let totalItems = Infinity;
-    while (all.length < totalItems) {
-      const { data } = await apiClient.get(ENDPOINTS.RECEPTION.PATIENTS, { params: { page, page_size: pageSize } });
-      const items: Record<string, unknown>[] = Array.isArray(data?.items) ? data.items : [];
-      if (items.length === 0) break;
-      all = all.concat(items.map(normalizePatientListItem));
-      totalItems = data?.pagination?.total_items ?? all.length;
-      page += 1;
-    }
-    return { patients: all, total: totalItems === Infinity ? all.length : totalItems };
-  },
-
-  // ─── Registrations / Approvals queue (§4.6-4.8) ───
-  // `status` is the one real filter param this endpoint supports (verified
-  // against router.py's list_registrations) — pagination is looped the
-  // same way as getPatients() above so the full matching set is returned.
-  async getRegistrations(params?: { status?: "pending" | "approved" | "rejected" }): Promise<{
-    patients: PatientListItem[];
-    total: number;
-  }> {
-    const pageSize = 100;
-    let page = 1;
-    let all: Record<string, unknown>[] = [];
-    let totalItems = Infinity;
-    while (all.length < totalItems) {
-      const { data } = await apiClient.get(ENDPOINTS.RECEPTION.REGISTRATIONS, {
-        params: { page, page_size: pageSize, status: params?.status },
-      });
-      const items: Record<string, unknown>[] = Array.isArray(data?.items) ? data.items : [];
-      if (items.length === 0) break;
-      all = all.concat(items);
-      totalItems = data?.pagination?.total_items ?? all.length;
-      page += 1;
-    }
-    const patients: PatientListItem[] = all.map((r) => {
+function mapRegistrations(all: Record<string, unknown>[]): PatientListItem[] {
+  const patients: PatientListItem[] = all.map((r) => {
       const full = String(r.full_name ?? "");
       const { first, last } = splitName(full);
       const isEmail = r.contact_type === "email";
@@ -155,18 +94,104 @@ export const receptionService = {
         email: isEmail ? String(r.contact ?? "") : "",
         phone: isEmail ? undefined : (r.contact as string) ?? undefined,
         status: (r.status as string) ?? undefined,
+        rejection_reason: (r.rejection_reason as string | null) ?? null,
+        risk_flags: Array.isArray(r.risk_flags) ? (r.risk_flags as string[]) : [],
         created_at: (r.submitted_on as string) ?? undefined,
         registered_at: (r.submitted_on as string) ?? undefined,
         doctor_id: null,
         doctor_name: null,
       };
     });
-    return { patients, total: totalItems === Infinity ? patients.length : totalItems };
+  return patients;
+}
+
+export const receptionService = {
+  /** Registration requires an explicit clinic_id in the body — resolved from
+   * the receptionist's own /auth/me, same as the old generic-endpoint flow. */
+  async resolveOwnClinicId(): Promise<string> {
+    const { data } = await apiClient.get(ENDPOINTS.AUTH.ME);
+    if (!data?.clinic_id) throw new Error("Your account has no assigned clinic — cannot register a patient.");
+    return data.clinic_id as string;
   },
 
-  /** Pending self-registrations only — used by the Approvals screen and the sidebar badge. */
-  async getPendingPatients(): Promise<{ patients: PatientListItem[]; total: number }> {
-    return this.getRegistrations({ status: "pending" });
+  // ─── Dashboard (§ API audit F-019) ───
+  // One call: counts + first 5 actionable registrations, all computed
+  // server-side. Used to download every patient and every pending
+  // registration just to count them.
+  async getDashboard(): Promise<StaffDashboard & { pending_preview: PatientListItem[] }> {
+    const { data } = await apiClient.get(ENDPOINTS.RECEPTION.DASHBOARD);
+    return {
+      patient_count: data?.patient_count ?? 0,
+      pending_count: data?.pending_count ?? 0,
+      registered_today: data?.registered_today ?? 0,
+      upcoming_sessions: [],
+      recent_scores: [],
+      pending_preview: mapRegistrations(Array.isArray(data?.pending_preview) ? data.pending_preview : []),
+    };
+  },
+
+  // ─── Patients (§4.5) ───
+  // One server page per call; search (name/phone/email/MRN/doctor), gender
+  // and doctor (assigned doctor's full name) are applied in SQL (API audit
+  // F-020/F-021). Used to loop every page and filter client-side.
+  async getPatients(params?: ReceptionListQuery & { gender?: string; doctor?: string }): Promise<{
+    patients: PatientListItem[];
+    total: number;
+    totalPages: number;
+  }> {
+    const { data } = await apiClient.get(ENDPOINTS.RECEPTION.PATIENTS, {
+      params: {
+        page: params?.page ?? 1,
+        page_size: params?.pageSize ?? 100,
+        search: params?.search || undefined,
+        gender: params?.gender || undefined,
+        doctor: params?.doctor || undefined,
+      },
+    });
+    const items: Record<string, unknown>[] = Array.isArray(data?.items) ? data.items : [];
+    return {
+      patients: items.map(normalizePatientListItem),
+      total: data?.pagination?.total_items ?? items.length,
+      totalPages: data?.pagination?.total_pages ?? 1,
+    };
+  },
+
+  // ─── Registrations / Approvals queue (§4.6-4.8) ───
+  // One server page per call; status + search applied in SQL.
+  async getRegistrations(params?: ReceptionListQuery & { status?: "pending" | "approved" | "rejected" }): Promise<{
+    patients: PatientListItem[];
+    total: number;
+    totalPages: number;
+  }> {
+    const { data } = await apiClient.get(ENDPOINTS.RECEPTION.REGISTRATIONS, {
+      params: {
+        page: params?.page ?? 1,
+        page_size: params?.pageSize ?? 100,
+        status: params?.status,
+        search: params?.search || undefined,
+      },
+    });
+    const items: Record<string, unknown>[] = Array.isArray(data?.items) ? data.items : [];
+    return {
+      patients: mapRegistrations(items),
+      total: data?.pagination?.total_items ?? items.length,
+      totalPages: data?.pagination?.total_pages ?? 1,
+    };
+  },
+
+  /** Pending self-registrations only — used by the Approvals screen. */
+  async getPendingPatients(params?: ReceptionListQuery) {
+    return this.getRegistrations({ ...params, status: "pending" });
+  },
+
+  /** Rejected self-registrations — the Approvals screen's Rejected tab, where they can be re-approved. */
+  async getRejectedPatients(params?: ReceptionListQuery) {
+    return this.getRegistrations({ ...params, status: "rejected" });
+  },
+
+  /** Sidebar badge: just the number (page_size=1, reads pagination.total_items). */
+  async getPendingCount(): Promise<number> {
+    return (await this.getRegistrations({ status: "pending", pageSize: 1 })).total;
   },
 
   async getPatient(patientId: string): Promise<PatientDetail> {
@@ -178,9 +203,10 @@ export const receptionService = {
     await apiClient.post(ENDPOINTS.RECEPTION.APPROVE_REGISTRATION(registrationId));
   },
 
-  /** Real endpoint takes no rejection reason (see router.py reject_registration) — any reason text is not sent. */
-  async rejectPatient(registrationId: string): Promise<void> {
-    await apiClient.post(ENDPOINTS.RECEPTION.REJECT_REGISTRATION(registrationId));
+  async rejectPatient(registrationId: string, rejectionReason?: string): Promise<void> {
+    await apiClient.post(ENDPOINTS.RECEPTION.REJECT_REGISTRATION(registrationId), {
+      rejection_reason: rejectionReason || undefined,
+    });
   },
 
   // ─── Registration wizard (§4.1-4.4) — real flow requires a Cognito OTP
@@ -192,6 +218,8 @@ export const receptionService = {
     last_name: string;
     dob?: string;
     gender?: string;
+    /** Current flow: the patient's password goes in BEFORE the OTP. */
+    password?: string;
   }): Promise<{ verification_id: string }> {
     const { data } = await apiClient.post(ENDPOINTS.RECEPTION.SEND_CODE, payload);
     return data;
@@ -207,13 +235,20 @@ export const receptionService = {
     return data;
   },
 
-  /** registrationToken comes from verifyCode() above. clinicId is resolved by the caller (receptionist's own clinic). */
+  /** registrationToken is the contact (email/phone). clinicId is resolved by
+   *  the caller (receptionist's own clinic). With `code` (current flow) this
+   *  verifies the OTP and registers the patient in ONE call
+   *  (/reception/registrations/confirm); without it, the legacy two-call flow
+   *  (verifyCode() first, then POST /reception/patients). */
   async registerPatient(
     registrationToken: string,
     clinicId: string,
     payload: RegisterPatientPayload,
+    code?: string,
   ): Promise<PatientListItem> {
-    const { data } = await apiClient.post(ENDPOINTS.RECEPTION.REGISTER_PATIENT, {
+    const endpoint = code ? ENDPOINTS.RECEPTION.CONFIRM_REGISTRATION : ENDPOINTS.RECEPTION.REGISTER_PATIENT;
+    const { data } = await apiClient.post(endpoint, {
+      ...(code ? { code } : {}),
       registration_token: registrationToken,
       personal: {
         first_name: payload.first_name,

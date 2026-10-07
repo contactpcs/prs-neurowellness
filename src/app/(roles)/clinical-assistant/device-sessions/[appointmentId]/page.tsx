@@ -1,20 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { appointmentsService } from "@/lib/api/services";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { doctorsService } from "@/lib/api/services/doctors.service";
 import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
-import { useDeviceSession, usePatientScoresSummary, useAuth } from "@/lib/hooks";
+import { useDeviceSession, usePatientScoresSummary, useAuth, useGoBack } from "@/lib/hooks";
 import { useSidebar } from "@/contexts/SidebarContext";
-import { Button, Card, CardHeader, CardContent, PageLoader, DetailFieldList, Input } from "@/components/ui";
+import { extractErrorMessage } from "@/lib/api/errors";
+import { Button, Card, CardHeader, CardContent, PageSkeleton, DetailFieldList, Input, Select } from "@/components/ui";
 import { PlacementMap } from "@/app/(roles)/doctor/patients/[id]/treatment-protocol/wizard/PlacementMap";
 import { SignatureCapture } from "@/components/deviceSession/SignatureCapture";
 import type { Appointment, PatientDetail } from "@/types/domain.types";
 import type { ProtocolDetail } from "@/types/treatmentProtocol.types";
-import type { ConsentBlock, DeviceSessionChecklistUpdate, DeviceSessionDetail } from "@/types/deviceSession.types";
+import type {
+  ConsentBlock, DeviceInfo, DeviceSessionChecklistUpdate, DeviceSessionDetail,
+  TvnsWavelength, TvnsPattern,
+} from "@/types/deviceSession.types";
+import {
+  TVNS_FREQUENCY_HZ_OPTIONS, TVNS_PULSE_WIDTH_US_OPTIONS, TVNS_DURATION_MIN_OPTIONS, formatTvnsDuration,
+} from "@/types/deviceSession.types";
+import { getDeviceSessionLabel } from "@/lib/utils/sessionType";
 
 /** Mirrors TreatmentProtocolPanel's convention: the wizard writes
  * "Reason: <label> — <note>" into the one free-text notes field the real
@@ -68,14 +76,17 @@ const CA_DECLARATION_STATEMENTS = [
 export default function DeviceSessionChecklistPage() {
   const { appointmentId } = useParams<{ appointmentId: string }>();
   const router = useRouter();
+  const goBack = useGoBack("/clinical-assistant/appointments");
 
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [protocol, setProtocol] = useState<ProtocolDetail | null>(null);
+  const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [patientDetail, setPatientDetail] = useState<PatientDetail | null>(null);
   const [prevSession, setPrevSession] = useState<DeviceSessionDetail | null>(null);
   const [prevAppointmentDate, setPrevAppointmentDate] = useState<string | null>(null);
   const { session, isLoading, saveChecklist, start } = useDeviceSession(appointmentId);
+  const isTvns = protocol?.modality === "tVNS";
   const patientId = appointment?.patient_public_id ?? appointment?.patient_id ?? null;
   const { instances: scoreInstances } = usePatientScoresSummary(patientId ?? "");
   const { user } = useAuth();
@@ -90,12 +101,24 @@ export default function DeviceSessionChecklistPage() {
   const [duration, setDuration] = useState<string>("");
   const [rampUp, setRampUp] = useState<string>("");
   const [rampDown, setRampDown] = useState<string>("");
+  const [tvnsWavelength, setTvnsWavelength] = useState<TvnsWavelength | "">("");
+  const [tvnsPattern, setTvnsPattern] = useState<TvnsPattern | "">("");
+  const [tvnsStrengthPct, setTvnsStrengthPct] = useState<string>("");
+  const [tvnsFrequencyHz, setTvnsFrequencyHz] = useState<string>("");
+  const [tvnsPulseWidthUs, setTvnsPulseWidthUs] = useState<string>("");
+  const [tvnsDurationMin, setTvnsDurationMin] = useState<string>("");
   const [montageVerified, setMontageVerified] = useState(false);
   const [contraindications, setContraindications] = useState<Record<string, boolean>>({});
   const [deviceFit, setDeviceFit] = useState<Record<string, boolean>>({});
   const [patientConsent, setPatientConsent] = useState<Record<string, boolean>>({});
   const [caDeclaration, setCaDeclaration] = useState<Record<string, boolean>>({});
   const [isStarting, setIsStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  // The form is seeded from the saved session once, on first load. Every
+  // later save (tapping to sign, Start) reloads `session`, and re-seeding
+  // then would replace ticks the CA has made on this page with whatever the
+  // server echoed back — e.g. Device Fit cleared right after a signature.
+  const hydratedFromSession = useRef(false);
 
   useEffect(() => {
     if (!appointmentId) return;
@@ -110,9 +133,27 @@ export default function DeviceSessionChecklistPage() {
           setDuration(String(detail.prescribed_duration_min ?? ""));
           setRampUp(String(detail.ramp_seconds ?? ""));
           setRampDown(String(detail.ramp_seconds ?? ""));
+          // tVNS has its own prescribed_* columns (wavelength/pattern/
+          // strength/frequency/pulse-width/duration) — tDCS's current_ma/
+          // duration_min prefill above doesn't apply, so a tVNS protocol
+          // left this whole form blank with nothing for the CA/doctor to
+          // reference, unlike tDCS which always had its prescribed values
+          // to fall back on.
+          if (detail.prescribed_tvns_wavelength) setTvnsWavelength(detail.prescribed_tvns_wavelength);
+          if (detail.prescribed_tvns_pattern) setTvnsPattern(detail.prescribed_tvns_pattern);
+          if (detail.prescribed_tvns_strength_pct != null) setTvnsStrengthPct(String(detail.prescribed_tvns_strength_pct));
+          if (detail.prescribed_tvns_frequency_hz != null) setTvnsFrequencyHz(String(detail.prescribed_tvns_frequency_hz));
+          if (detail.prescribed_tvns_pulse_width_us != null) setTvnsPulseWidthUs(String(detail.prescribed_tvns_pulse_width_us));
+          if (detail.prescribed_tvns_duration_min != null) setTvnsDurationMin(String(detail.prescribed_tvns_duration_min));
         }
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load appointment"));
+    // Independent of session/checklist state (GET /device-sessions/{id}
+    // 404s until the first checklist write lazily creates the header) —
+    // fetches the actual device name + pinned unit serial from the
+    // protocol so this checklist can auto-fill them instead of the CA
+    // picking from a hardcoded brand list and typing a serial by hand.
+    deviceSessionService.getDeviceInfo(appointmentId).then(setDeviceInfo).catch(() => setDeviceInfo(null));
   }, [appointmentId]);
 
   useEffect(() => {
@@ -132,16 +173,36 @@ export default function DeviceSessionChecklistPage() {
     deviceSessionService.get(prev.appointment_id).then(setPrevSession).catch(() => setPrevSession(null));
   }, [protocol, appointment]);
 
+  // Auto-fill from the protocol's actual device once fetched — only when
+  // the checklist hasn't already saved something for this session (the
+  // effect below, keyed on `session`, always wins on reload since a
+  // previously-saved real value must never be overwritten by the default).
   useEffect(() => {
-    if (!session) return;
-    setDeviceBrand(session.device_brand ?? "");
-    setDeviceSerial(session.device_serial_number ?? "");
+    if (!deviceInfo || session) return;
+    setDeviceBrand(deviceInfo.device_name);
+    if (deviceInfo.device_unit_serial_number) setDeviceSerial(deviceInfo.device_unit_serial_number);
+    setDuration(String(deviceInfo.session_duration_minutes));
+  }, [deviceInfo, session]);
+
+  useEffect(() => {
+    if (!session || hydratedFromSession.current) return;
+    hydratedFromSession.current = true;
+    setDeviceBrand(session.device_brand ?? deviceInfo?.device_name ?? "");
+    setDeviceSerial(session.device_serial_number ?? deviceInfo?.device_unit_serial_number ?? "");
     setProceedWithoutPayment(session.payment_verified === false && !!session.payment_override_reason);
     setPaymentOverrideReason(session.payment_override_reason ?? "");
     if (session.actual_intensity_ma != null) setIntensity(String(session.actual_intensity_ma));
     if (session.actual_duration_min != null) setDuration(String(session.actual_duration_min));
     if (session.actual_ramp_up_sec != null) setRampUp(String(session.actual_ramp_up_sec));
     if (session.actual_ramp_down_sec != null) setRampDown(String(session.actual_ramp_down_sec));
+    if (session.tvns_settings) {
+      setTvnsWavelength(session.tvns_settings.wavelength);
+      setTvnsPattern(session.tvns_settings.pattern);
+      setTvnsStrengthPct(String(session.tvns_settings.strength_pct));
+      setTvnsFrequencyHz(String(session.tvns_settings.frequency_hz));
+      setTvnsPulseWidthUs(String(session.tvns_settings.pulse_width_us));
+      setTvnsDurationMin(String(session.tvns_settings.duration_min));
+    }
     setMontageVerified(session.montage_verified);
     setContraindications(session.contraindication_checklist ?? {});
     setDeviceFit(session.device_fit_checklist ?? {});
@@ -156,7 +217,7 @@ export default function DeviceSessionChecklistPage() {
   if (loadError) {
     return <div className="text-sm text-danger-600">{loadError}</div>;
   }
-  if (!appointment || isLoading) return <PageLoader />;
+  if (!appointment || isLoading) return <PageSkeleton />;
 
   // A protocol uses either a catalogue placement (protocol.placement,
   // singular anode_site/cathode_site/return_sites) or a custom montage
@@ -182,22 +243,51 @@ export default function DeviceSessionChecklistPage() {
   const allDeviceFitChecked = DEVICE_FIT_ITEMS.every((i) => deviceFit[i.code]);
   const allPatientConsentChecked = PATIENT_CONSENT_STATEMENTS.every((s) => patientConsent[s.code]);
   const allCaDeclarationChecked = CA_DECLARATION_STATEMENTS.every((s) => caDeclaration[s.code]);
+  // One tick for every confirm box on the page (montage, contraindications,
+  // device fit, patient consent, CA declaration) so the CA doesn't have to
+  // scroll through and tick each section. The per-section ticks still work
+  // and stay in sync; both signatures are still captured separately below.
+  const allAgreed = montageVerified && allContraindicationsChecked && allDeviceFitChecked
+    && allPatientConsentChecked && allCaDeclarationChecked;
+  const setAllAgreed = (checked: boolean) => {
+    setMontageVerified(checked);
+    setContraindications(Object.fromEntries(CONTRAINDICATION_ITEMS.map((i) => [i.code, checked])));
+    setDeviceFit(Object.fromEntries(DEVICE_FIT_ITEMS.map((i) => [i.code, checked])));
+    // A signed block is locked in — unticking can't un-sign it, so leave it.
+    if (!session?.patient_consent) {
+      setPatientConsent(Object.fromEntries(PATIENT_CONSENT_STATEMENTS.map((s) => [s.code, checked])));
+    }
+    if (!session?.ca_declaration) {
+      setCaDeclaration(Object.fromEntries(CA_DECLARATION_STATEMENTS.map((s) => [s.code, checked])));
+    }
+  };
   // "Paid" on the underlying appointment (a real payment record via the
   // Razorpay webhook, per scheduling's AppointmentStatusUpdate) satisfies
   // this step on its own — session.payment_verified only exists to record
-  // a CA's explicit override when the appointment ISN'T paid yet.
-  const paymentOk = appointment.status === "paid"
+  // a CA's explicit override when the appointment ISN'T paid yet. Every
+  // status past "paid" in the appointment state machine (checked_in,
+  // in_progress, completed) can only be reached BY paying first — checking
+  // a patient in is gated on status==='paid' (see appointments/[id]'s
+  // canCheckIn) — so this step must recognize those too, or a session that
+  // already progressed past payment gets incorrectly asked to override it.
+  const paymentOk = ["paid", "checked_in", "in_progress", "completed"].includes(appointment.status)
     || session?.payment_verified
     || (proceedWithoutPayment && paymentOverrideReason.trim().length > 0);
+
+  const tvnsSettingsComplete = !!(
+    tvnsWavelength && tvnsPattern && tvnsStrengthPct && tvnsFrequencyHz && tvnsPulseWidthUs && tvnsDurationMin
+  );
 
   const missing: string[] = [];
   if (!paymentOk) missing.push("Payment verification");
   if (!deviceBrand) missing.push("Device brand");
-  if (!intensity || !duration) missing.push("Stimulation parameters");
+  if (isTvns ? !tvnsSettingsComplete : (!intensity || !duration)) missing.push("Stimulation parameters");
   if (!montageVerified) missing.push("Montage verification");
   if (!allContraindicationsChecked) missing.push("Contraindication checklist");
   if (!allDeviceFitChecked) missing.push("Device fit checklist");
   if (!allPatientConsentChecked || !allCaDeclarationChecked) missing.push("Consent & declaration");
+  if (!session?.patient_consent) missing.push("Patient signature");
+  if (!session?.ca_declaration) missing.push("Clinical Assistant signature");
 
   const canStart = missing.length === 0;
 
@@ -250,12 +340,33 @@ export default function DeviceSessionChecklistPage() {
     await saveChecklist({ ...currentChecklistFields(), ca_declaration: block });
   };
 
+  // Already started (e.g. the CA came back to this page) — starting again
+  // is an invalid transition server-side, so go straight to the live view.
+  const alreadyRunning = session?.session_status === "in_progress" || session?.session_status === "paused";
+
   const handleStart = async () => {
+    if (alreadyRunning) {
+      router.push(`/clinical-assistant/device-sessions/${appointmentId}/live`);
+      return;
+    }
     setIsStarting(true);
+    setStartError(null);
     try {
       await persistChecklist();
+      if (isTvns && tvnsSettingsComplete && !session?.tvns_settings) {
+        await deviceSessionService.recordTvnsSettings(appointmentId, {
+          wavelength: tvnsWavelength as TvnsWavelength,
+          pattern: tvnsPattern as TvnsPattern,
+          strength_pct: Number(tvnsStrengthPct),
+          frequency_hz: Number(tvnsFrequencyHz),
+          pulse_width_us: Number(tvnsPulseWidthUs),
+          duration_min: Number(tvnsDurationMin),
+        });
+      }
       await start();
       router.push(`/clinical-assistant/device-sessions/${appointmentId}/live`);
+    } catch (err) {
+      setStartError(extractErrorMessage(err, "Could not start the session. Please try again."));
     } finally {
       setIsStarting(false);
     }
@@ -265,16 +376,21 @@ export default function DeviceSessionChecklistPage() {
     <div className="space-y-5 max-w-6xl pb-24">
       <div className="flex items-center gap-3 flex-wrap">
         <button
-          onClick={() => router.push("/clinical-assistant/appointments")}
+          onClick={goBack}
           className="flex items-center gap-1.5 text-sm text-primary-700 hover:text-primary-900 transition-colors flex-shrink-0"
         >
           <ArrowLeft className="h-4 w-4" /> Back to Queue
         </button>
         <span className="text-neutral-300">|</span>
-        <h1 className="text-lg font-bold text-neutral-900">Device Session · {appointment.patient_name}</h1>
+        <h1 className="text-lg font-bold text-neutral-900">{getDeviceSessionLabel(protocol?.modality)} · {appointment.patient_name}</h1>
         {appointment.session_number != null && (
           <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-primary-50 text-primary-700">
             Session {appointment.session_number} of {protocol?.session_count ?? "—"}
+          </span>
+        )}
+        {protocol && (
+          <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-600">
+            Protocol {protocol.version_minor ? `v${protocol.version_major}.${protocol.version_minor}` : `v${protocol.version_major}`}
           </span>
         )}
         <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${appointment.status === "paid" ? "bg-green-50 text-green-700" : "bg-neutral-100 text-neutral-600"}`}>
@@ -352,8 +468,19 @@ export default function DeviceSessionChecklistPage() {
                     doctor: protocol.doctor_name,
                     modality: protocol.modality,
                     device: protocol.device_name,
-                    current_ma: protocol.prescribed_current_ma,
-                    duration_min: protocol.prescribed_duration_min,
+                    ...(isTvns
+                      ? {
+                          tvns_wavelength: protocol.prescribed_tvns_wavelength,
+                          tvns_pattern: protocol.prescribed_tvns_pattern,
+                          tvns_strength_pct: protocol.prescribed_tvns_strength_pct,
+                          tvns_frequency_hz: protocol.prescribed_tvns_frequency_hz,
+                          tvns_pulse_width_us: protocol.prescribed_tvns_pulse_width_us,
+                          tvns_duration_min: protocol.prescribed_tvns_duration_min,
+                        }
+                      : {
+                          current_ma: protocol.prescribed_current_ma,
+                          duration_min: protocol.prescribed_duration_min,
+                        }),
                     ramp_seconds: protocol.ramp_seconds,
                     sessions_per_week: protocol.sessions_per_week,
                     session: appointment.session_number
@@ -401,39 +528,133 @@ export default function DeviceSessionChecklistPage() {
           <Card>
             <CardHeader><h3 className="text-sm font-semibold text-neutral-900">2. Device & Brand for This Session</h3></CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex flex-wrap gap-2">
-                {["Sooma", "Marbles", "Biothm", "Other"].map((brand) => (
-                  <button
-                    key={brand}
-                    onClick={() => setDeviceBrand(brand)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                      deviceBrand === brand ? "bg-primary-100 border-primary-400 text-primary-800" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"
-                    }`}
-                  >
-                    {brand}
-                  </button>
-                ))}
-              </div>
-              <Input label="Device unit / serial no." value={deviceSerial} onChange={(e) => setDeviceSerial(e.target.value)} />
+              {/* Editable, bound to the same `deviceBrand` state that's
+                  actually persisted to the checklist (currentChecklistFields)
+                  below — the read-only display this replaced showed
+                  deviceInfo.device_name but never let the CA see or correct
+                  what would really get logged, and left "Device brand" stuck
+                  as permanently missing whenever getDeviceInfo 404s (no unit
+                  pinned to the protocol). */}
+              <Input
+                label="Device brand"
+                value={deviceBrand}
+                onChange={(e) => setDeviceBrand(e.target.value)}
+                placeholder={deviceInfo ? undefined : "Enter the device brand used for this session"}
+                hint={deviceInfo ? "From this patient's prescribed protocol — edit if a different unit was used." : "No device on file for this protocol — enter which one this session ran on."}
+              />
+              {deviceInfo?.device_unit_serial_number ? (
+                <div>
+                  <p className="text-xs font-medium text-neutral-500 mb-1">Device unit / serial no.</p>
+                  <p className="text-sm text-neutral-900 bg-neutral-50 border border-neutral-200 rounded-lg px-3.5 py-2.5">
+                    {deviceInfo.device_unit_serial_number}
+                  </p>
+                </div>
+              ) : (
+                <Input
+                  label="Device unit / serial no."
+                  value={deviceSerial}
+                  onChange={(e) => setDeviceSerial(e.target.value)}
+                  hint="No specific unit pinned to this protocol — enter which physical unit this session ran on."
+                />
+              )}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader><h3 className="text-sm font-semibold text-neutral-900">3. Stimulation Parameters</h3></CardHeader>
-            <CardContent className="grid grid-cols-2 gap-3">
-              <Input label="Intensity (mA)" type="number" value={intensity} onChange={(e) => setIntensity(e.target.value)}
-                hint={prescribedIntensity != null ? `Protocol: ${prescribedIntensity} mA` : undefined} />
-              <Input label="Duration (min)" type="number" value={duration} onChange={(e) => setDuration(e.target.value)}
-                hint={prescribedDuration != null ? `Protocol: ${prescribedDuration} min` : undefined} />
-              <Input label="Ramp up (s)" type="number" value={rampUp} onChange={(e) => setRampUp(e.target.value)}
-                hint={prescribedRamp != null ? `Protocol: ${prescribedRamp} s` : undefined} />
-              <Input label="Ramp down (s)" type="number" value={rampDown} onChange={(e) => setRampDown(e.target.value)}
-                hint={prescribedRamp != null ? `Protocol: ${prescribedRamp} s` : undefined} />
-              {(intensityDeviates || durationDeviates || rampUpDeviates || rampDownDeviates) && (
-                <p className="col-span-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                  Deviation from protocol — this will be recorded in the session log.
-                </p>
-              )}
+            {isTvns ? (
+              <CardContent className="grid grid-cols-2 gap-3">
+                <Select
+                  label="Wavelength"
+                  value={tvnsWavelength}
+                  onChange={(e) => setTvnsWavelength(e.target.value as TvnsWavelength)}
+                  placeholder="Select wavelength"
+                  options={[{ value: "alternant", label: "Alternant" }, { value: "biphasic", label: "Biphasic" }]}
+                  disabled={!!session?.tvns_settings}
+                />
+                <Select
+                  label="Pattern"
+                  value={tvnsPattern}
+                  onChange={(e) => setTvnsPattern(e.target.value as TvnsPattern)}
+                  placeholder="Select pattern"
+                  options={[
+                    { value: "continuous", label: "Continuous" },
+                    { value: "modulation", label: "Modulation" },
+                    { value: "intermittent", label: "Intermittent" },
+                  ]}
+                  disabled={!!session?.tvns_settings}
+                />
+                <Input
+                  label="Strength (%)" type="number" min={0} max={100} value={tvnsStrengthPct}
+                  onChange={(e) => setTvnsStrengthPct(e.target.value)}
+                  disabled={!!session?.tvns_settings}
+                />
+                <Select
+                  label="Frequency (Hz)"
+                  value={tvnsFrequencyHz}
+                  onChange={(e) => setTvnsFrequencyHz(e.target.value)}
+                  placeholder="Select frequency"
+                  options={TVNS_FREQUENCY_HZ_OPTIONS.map((hz) => ({ value: String(hz), label: `${hz} Hz` }))}
+                  disabled={!!session?.tvns_settings}
+                />
+                <Select
+                  label="Pulse width (µs)"
+                  value={tvnsPulseWidthUs}
+                  onChange={(e) => setTvnsPulseWidthUs(e.target.value)}
+                  placeholder="Select pulse width"
+                  options={TVNS_PULSE_WIDTH_US_OPTIONS.map((us) => ({ value: String(us), label: `${us} µs` }))}
+                  disabled={!!session?.tvns_settings}
+                />
+                <Select
+                  label="Duration"
+                  value={tvnsDurationMin}
+                  onChange={(e) => setTvnsDurationMin(e.target.value)}
+                  placeholder="Select duration"
+                  options={TVNS_DURATION_MIN_OPTIONS.map((min) => ({ value: String(min), label: formatTvnsDuration(min) }))}
+                  disabled={!!session?.tvns_settings}
+                />
+                {session?.tvns_settings && (
+                  <p className="col-span-2 text-xs text-neutral-400">
+                    Settings already recorded for this session and cannot be changed here.
+                  </p>
+                )}
+              </CardContent>
+            ) : (
+              <CardContent className="grid grid-cols-2 gap-3">
+                <Input label="Intensity (mA)" type="number" value={intensity} onChange={(e) => setIntensity(e.target.value)}
+                  hint={prescribedIntensity != null ? `Protocol: ${prescribedIntensity} mA` : undefined} />
+                <Input label="Duration (min)" type="number" value={duration} onChange={(e) => setDuration(e.target.value)}
+                  hint={prescribedDuration != null ? `Protocol: ${prescribedDuration} min` : undefined} />
+                <Input label="Ramp up (s)" type="number" value={rampUp} onChange={(e) => setRampUp(e.target.value)}
+                  hint={prescribedRamp != null ? `Protocol: ${prescribedRamp} s` : undefined} />
+                <Input label="Ramp down (s)" type="number" value={rampDown} onChange={(e) => setRampDown(e.target.value)}
+                  hint={prescribedRamp != null ? `Protocol: ${prescribedRamp} s` : undefined} />
+                {(intensityDeviates || durationDeviates || rampUpDeviates || rampDownDeviates) && (
+                  <p className="col-span-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    Deviation from protocol — this will be recorded in the session log.
+                  </p>
+                )}
+              </CardContent>
+            )}
+          </Card>
+
+          <Card>
+            <CardContent>
+              <label className="flex items-start gap-2.5 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allAgreed}
+                  onChange={(e) => setAllAgreed(e.target.checked)}
+                  className="mt-0.5 h-4 w-4"
+                />
+                <span>
+                  <span className="font-semibold text-neutral-900">Agree All</span>
+                  <span className="block text-xs text-neutral-500 mt-0.5">
+                    Confirms montage verification, the contraindication &amp; device fit checklists, the patient
+                    consent and the Clinical Assistant declaration below. Patient and Clinical Assistant signatures are still required.
+                  </span>
+                </span>
+              </label>
             </CardContent>
           </Card>
 
@@ -518,7 +739,7 @@ export default function DeviceSessionChecklistPage() {
                 {session?.patient_consent && <p className="text-xs text-success-600 flex items-center gap-1"><ShieldCheck className="h-3.5 w-3.5" /> Signed</p>}
               </div>
               <div className="space-y-2">
-                <p className="text-xs font-semibold text-neutral-500 uppercase">CA declaration</p>
+                <p className="text-xs font-semibold text-neutral-500 uppercase">Clinical Assistant declaration</p>
                 <ul className="text-sm text-neutral-600 list-disc pl-5 space-y-1">
                   {CA_DECLARATION_STATEMENTS.map((s) => <li key={s.code}>{s.label}</li>)}
                 </ul>
@@ -553,12 +774,17 @@ export default function DeviceSessionChecklistPage() {
         }`}
       >
         <div>
-          <p className="text-sm font-semibold text-neutral-900">{canStart ? "Ready to start" : "Not ready yet"}</p>
-          {!canStart && <p className="text-xs text-neutral-400">Missing: {missing.join(", ")}</p>}
+          <p className="text-sm font-semibold text-neutral-900">
+            {alreadyRunning ? "Session in progress" : canStart ? "Ready to start" : "Not ready yet"}
+          </p>
+          {!alreadyRunning && !canStart && <p className="text-xs text-neutral-400">Missing: {missing.join(", ")}</p>}
+          {startError && <p className="text-xs text-danger-600 mt-0.5">{startError}</p>}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => router.push("/clinical-assistant/appointments")}>Back to Queue</Button>
-          <Button onClick={handleStart} isLoading={isStarting} disabled={!canStart}>Start Session</Button>
+          <Button variant="outline" onClick={goBack}>Back to Queue</Button>
+          <Button onClick={handleStart} isLoading={isStarting} disabled={!alreadyRunning && !canStart}>
+            {alreadyRunning ? "Open Live Session" : "Start Session"}
+          </Button>
         </div>
       </div>
     </div>

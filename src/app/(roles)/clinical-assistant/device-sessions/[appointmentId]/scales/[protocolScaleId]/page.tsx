@@ -64,13 +64,14 @@ export default function CaAdministerScalePage() {
 
         const resolved = await prsAssessmentService.resolveDiseaseAndScaleId(scaleCode);
         if (!resolved) throw new Error(`No PRS disease maps to ${scaleCode} — cannot render this scale`);
-        const { diseaseId } = resolved;
+        const { diseaseId, scaleId } = resolved;
 
         const result = await prsAssessmentService.startAssessment({
           disease_id: diseaseId,
           taken_by: "doctor_on_behalf",
           patient_id: patientId,
           appointment_id: appointmentId,
+          scale_id: scaleId,
         });
 
         // Disease-level start can return several scales (e.g. Depression/
@@ -89,7 +90,12 @@ export default function CaAdministerScalePage() {
             target.questions.forEach((q, idx) => {
               const entry = byQid[q.question_id];
               if (entry) {
-                restored[String(idx)] = entry.response_value ?? entry.given_response;
+                // given_response is the canonical option VALUE — response_value
+                // is scoring POINTS, which can differ for reverse-scored items
+                // and breaks LikertInput's strict option.value match on restore.
+                const raw = entry.given_response;
+                const asNumber = Number(raw);
+                restored[String(idx)] = raw !== null && raw !== "" && !Number.isNaN(asNumber) ? asNumber : raw;
               }
             });
             setResponses(restored);
@@ -170,13 +176,12 @@ export default function CaAdministerScalePage() {
       // or doctor could see it as belonging to this session.
       //
       // device_session_prs_responses is UNIQUE on appointment_id (one link
-      // per session, ever), and the backend sweep (_complete_due_scales)
-      // marks EVERY scale currently scored on this instance as complete in
-      // one shot — not just this one. Calling it after every scale would
-      // let the first submit claim the once-per-session slot and, since
-      // sibling scales on a disease-level instance share scale_results,
-      // wrongly mark scales the patient/CA hasn't actually done yet. Only
-      // call it once nothing due this session is still pending.
+      // per session, ever), so this can only be called once. The backend's
+      // sweep (_complete_due_scales) is scoped to the one scale_id passed
+      // below, not every scale scored on the instance. Still wait until
+      // nothing due this session is still pending before creating the
+      // once-per-session link record, so it reflects the scale that closed
+      // out the visit.
       const appt = await appointmentsService.getById(appointmentId);
       if (appt.protocol_id && appt.session_number != null) {
         const rows = await deviceSessionService.listScales(appointmentId);
@@ -188,6 +193,7 @@ export default function CaAdministerScalePage() {
             appointment_id: appointmentId,
             instance_id: scale.instance_id,
             session_number: appt.session_number,
+            scale_id: scale.scale_id,
           });
         }
       }
@@ -253,6 +259,9 @@ export default function CaAdministerScalePage() {
       isResumed={false}
       onAnswer={handleAnswer}
       onPrev={() => setCurrentQuestionIndex((q) => Math.max(0, q - 1))}
+      onQuestionPrev={() => setCurrentQuestionIndex((q) => Math.max(0, q - 1))}
+      onQuestionNext={() => setCurrentQuestionIndex((q) => Math.min(totalQuestions - 1, q + 1))}
+      onQuestionJump={setCurrentQuestionIndex}
       onSkipSection={finishAndLink}
       onSubmitScale={finishAndLink}
       onNavigateScale={() => {}}

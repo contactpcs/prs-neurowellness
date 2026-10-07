@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { CalendarDays, Search, RefreshCw, Stethoscope } from "lucide-react";
 import { Card, CardContent, Skeleton } from "@/components/ui";
+import { Pager } from "@/components/ui/Pager";
 import { adminService } from "@/lib/api/services/admin.service";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { doctorsService } from "@/lib/api/services/doctors.service";
@@ -22,6 +23,7 @@ const APPT_STATUS_STYLES: Record<string, string> = {
   rescheduled: "bg-purple-100 text-purple-700",
 };
 
+const PAGE_SIZE = 50;
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 interface DoctorSchedule { day_of_week: number; start_time: string; end_time: string; slot_duration_minutes: number }
@@ -69,81 +71,95 @@ export function AppointmentsSection({ clinicId }: { clinicId: string }) {
   const [search, setSearch] = useState("");
   const [doctorFilter, setDoctorFilter] = useState("all");
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [byPeriod, setByPeriod] = useState({ past: 0, today: 0, upcoming: 0 });
+  const [rowsReady, setRowsReady] = useState(false);
+  const [qDebounced, setQDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setQDebounced(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+  useEffect(() => { setPage(1); }, [tab, doctorFilter, qDebounced, clinicId]);
 
-  async function load() {
+  // Staff + every doctor's schedule/overrides: 1 call each (F-052/F-056),
+  // was 2 calls per doctor in a second round.
+  async function loadClinic() {
+    const [staffRes, schedules, overrides] = await Promise.all([
+      adminService.getStaff({ clinic_id: clinicId }),
+      doctorsService.listClinicWeeklySchedules(clinicId),
+      doctorsService.listClinicScheduleOverrides(clinicId),
+    ]);
+    setStaff(staffRes.staff);
+    setDoctorSchedules(schedules);
+    setDoctorOverrides(overrides);
+  }
+
+  // One server page of the open tab + tab counts (F-055). A bare list()
+  // returned the clinic's OLDEST 100 appointments, so Current/Upcoming were
+  // empty and Past was cut at 100. Superseded cancellations kept, as before.
+  async function loadRows() {
+    const today = new Date().toISOString().slice(0, 10);
+    const shift = (days: number) => new Date(Date.parse(today) + days * 86_400_000).toISOString().slice(0, 10);
+    const range = tab === "current" ? { date_from: today, date_to: today }
+      : tab === "upcoming" ? { date_from: shift(1) }
+      : { date_to: shift(-1), date_order: "desc" as const };
+    // The select holds profile_id (what appointment rows carry); the API takes doctors.doctor_id.
+    const doctorId = doctorFilter === "all" ? undefined : staff.find((d) => (d.profile_id ?? d.id) === doctorFilter)?.id;
+    const res = await appointmentsService.page({
+      clinic_id: clinicId, ...range, doctor_id: doctorId, search: qDebounced || undefined,
+      exclude_superseded: false, period_today: today, page, page_size: PAGE_SIZE,
+    });
+    setAppointments(res.appointments);
+    setTotal(res.total);
+    setTotalPages(res.totalPages);
+    if (res.counts.by_period) setByPeriod(res.counts.by_period);
+    setRowsReady(true);
+  }
+
+  async function load(what: "all" | "rows" = "all") {
     setError(null);
     try {
-      const [appointmentsRes, staffRes] = await Promise.all([
-        appointmentsService.list({ clinic_id: clinicId }),
-        adminService.getStaff({ clinic_id: clinicId }),
-      ]);
-      setAppointments(appointmentsRes.appointments);
-      setStaff(staffRes.staff);
-
-      const doctors = staffRes.staff.filter((s) => s.role === "doctor");
-      const [scheduleResults, overrideResults] = await Promise.all([
-        Promise.all(doctors.map((d) => doctorsService.listWeeklySchedules(d.id))),
-        Promise.all(doctors.map((d) => doctorsService.listScheduleOverrides(d.id))),
-      ]);
-      const scheduleMap: Record<string, DoctorSchedule[]> = {};
-      const overrideMap: Record<string, ScheduleOverride[]> = {};
-      doctors.forEach((d, i) => {
-        scheduleMap[d.id] = scheduleResults[i];
-        overrideMap[d.id] = overrideResults[i];
-      });
-      setDoctorSchedules(scheduleMap);
-      setDoctorOverrides(overrideMap);
+      await Promise.all(what === "all" ? [loadClinic(), loadRows()] : [loadRows()]);
     } catch (e: any) {
       setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Failed to load appointments");
     }
   }
 
-  useEffect(() => { setIsLoading(true); load().finally(() => setIsLoading(false)); }, [clinicId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setIsLoading(true); loadClinic().catch(() => setError("Failed to load appointments")).finally(() => setIsLoading(false)); }, [clinicId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load("rows"); }, [clinicId, tab, doctorFilter, qDebounced, page]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Live update — any appointment/request change at this clinic pushes here via SSE.
+  // Live update — any appointment/request change at this clinic pushes here
+  // via SSE. Only the visible page is re-read; staff/schedules don't change.
   useEffect(() => {
-    const onAppointmentEvent = () => load();
+    const onAppointmentEvent = () => load("rows");
     window.addEventListener("sse:appointment", onAppointmentEvent);
     return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
-  }, [clinicId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [clinicId, tab, doctorFilter, qDebounced, page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleRefresh() {
     setRefreshing(true);
     try { await load(); } finally { setRefreshing(false); }
   }
 
-  if (isLoading) return <AppointmentsSkeleton />;
+  if (isLoading || (!rowsReady && !error)) return <AppointmentsSkeleton />;
 
   const doctors = staff.filter((s) => s.role === "doctor");
 
   const todayStr = new Date().toISOString().slice(0, 10);
-  const currentCount = appointments.filter((a) => a.appointment_date === todayStr).length;
-  const upcomingCount = appointments.filter((a) => a.appointment_date > todayStr).length;
-  const pastCount = appointments.filter((a) => a.appointment_date < todayStr).length;
+  const currentCount = byPeriod.today;
+  const upcomingCount = byPeriod.upcoming;
+  const pastCount = byPeriod.past;
 
-  const filtered = appointments
-    .filter((a) => {
-      if (tab === "current") return a.appointment_date === todayStr;
-      if (tab === "upcoming") return a.appointment_date > todayStr;
-      return a.appointment_date < todayStr;
-    })
-    .filter((a) => doctorFilter === "all" || a.doctor_id === doctorFilter)
-    .filter((a) => {
-      if (!search) return true;
-      return (a.patient_name ?? "").toLowerCase().includes(search.toLowerCase());
-    })
-    .sort((a, b) => {
-      const ad = a.appointment_date ?? "", bd = b.appointment_date ?? "";
-      const dateCmp = tab === "past" ? bd.localeCompare(ad) : ad.localeCompare(bd);
-      return dateCmp || (a.start_time ?? "").localeCompare(b.start_time ?? "");
-    });
+  const filtered = appointments; // tab, doctor, search and order applied server-side
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">Appointments</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{appointments.length} total</p>
+          <p className="text-sm text-neutral-500 mt-0.5">{currentCount + upcomingCount + pastCount} total</p>
         </div>
         <button onClick={handleRefresh} disabled={refreshing} title="Refresh"
           className="p-2.5 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 rounded-lg border border-neutral-200 transition-colors disabled:opacity-50">
@@ -203,6 +219,15 @@ export function AppointmentsSection({ clinicId }: { clinicId: string }) {
                   </button>
                   <p className="text-xs text-neutral-400 mt-0.5">{a.appointment_date} · {a.start_time && a.end_time ? `${timeLabel(a.start_time)}–${timeLabel(a.end_time)}` : "No time booked yet"} · Dr. {a.doctor_name ?? "Unknown"}</p>
                   <p className="text-xs text-neutral-400 capitalize">{a.appointment_type.replace(/_/g, " ")}</p>
+                  {/* a.rescheduled_from: this row replaced an earlier
+                      appointment — distinct from status==='rescheduled',
+                      which is the OLD superseded row instead. */}
+                  {a.rescheduled_from && (
+                    <p className="text-xs text-purple-600 mt-0.5">
+                      ↻ Originally booked for {a.rescheduled_from_date ?? "—"}
+                      {a.rescheduled_from_start_time ? ` · ${timeLabel(a.rescheduled_from_start_time)}` : ""}
+                    </p>
+                  )}
                 </div>
                 <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize flex-shrink-0 ${APPT_STATUS_STYLES[a.status] ?? "bg-neutral-100 text-neutral-600"}`}>
                   {a.status.replace(/_/g, " ")}
@@ -212,6 +237,7 @@ export function AppointmentsSection({ clinicId }: { clinicId: string }) {
           </div>
         )}
       </Card>
+      <Pager page={page} totalPages={totalPages} total={total} noun="appointments" onPage={setPage} />
 
       <div>
         <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">

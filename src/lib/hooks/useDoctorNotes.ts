@@ -3,43 +3,32 @@
 import { useCallback, useEffect } from "react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
-  fetchMyNotes,
-  fetchPatientNote,
-  upsertPatientNote,
-  selectMyDoctorNotes,
-  selectMyDoctorNotesStatus,
-  selectPatientNote,
+  fetchPatientNotes,
+  addPatientNote,
+  selectPatientNotes,
 } from "@/store/slices/doctorNotesSlice";
 
-export function useMyDoctorNotes() {
+export function usePatientNotes(patientId: string) {
   const dispatch = useAppDispatch();
-  const notes    = useAppSelector(selectMyDoctorNotes);
-  const status   = useAppSelector(selectMyDoctorNotesStatus);
+  const entry    = useAppSelector(selectPatientNotes(patientId));
 
   useEffect(() => {
-    dispatch(fetchMyNotes());
-  }, [dispatch]);
-
-  return { notes, isLoading: status === "loading", isReady: status === "succeeded" };
-}
-
-export function usePatientNote(patientId: string) {
-  const dispatch = useAppDispatch();
-  const entry    = useAppSelector(selectPatientNote(patientId));
-
-  useEffect(() => {
-    if (patientId) dispatch(fetchPatientNote(patientId));
+    if (patientId) dispatch(fetchPatientNotes(patientId));
   }, [dispatch, patientId]);
 
-  const save = useCallback(
-    (noteText: string) => dispatch(upsertPatientNote({ patientId, noteText })),
+  const addNote = useCallback(
+    (category: string, noteText: string, appointmentId?: string | null) =>
+      dispatch(addPatientNote({ patientId, category, noteText, appointmentId })).unwrap(),
     [dispatch, patientId],
   );
 
+  const notes = entry?.notes ?? [];
   return {
-    note: entry?.note ?? null,
+    notes,
+    // Most recent note — convenience for a summary view that only wants one.
+    latestNote: notes[0] ?? null,
     isLoading: entry?.status === "loading" || !entry,
     isReady: entry?.status === "succeeded",
-    save,
+    addNote,
   };
 }

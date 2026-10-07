@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, Check, Loader2, CheckCheck, ChevronRight } from "lucide-react";
-import { Card, PageLoader } from "@/components/ui";
+import { Card, PageSkeleton } from "@/components/ui";
 import { useNotifications } from "@/lib/hooks";
 import { patientNotificationHref } from "@/lib/utils/notificationLink";
 
@@ -69,7 +69,7 @@ export default function PatientNotificationsPage() {
     router.push(href);
   };
 
-  if (isLoading && notifications.length === 0) return <PageLoader />;
+  if (isLoading && notifications.length === 0) return <PageSkeleton />;
 
   return (
     <div className="flex flex-col gap-5">

@@ -12,22 +12,36 @@ export interface PatientListItem {
   date_of_birth?: string;
   age?: number;
   gender?: string;
+  weight_kg?: number;
+  blood_group?: string;
   condition?: string;
   status?: string;
   approval_status?: string;
+  /** Set only on a rejected self-registration (approvals queue). */
+  rejection_reason?: string | null;
+  /** Registration checks a self-registration failed, which is why it waits
+   * for review instead of being approved automatically (approvals queue). */
+  risk_flags?: string[];
   assigned_at?: string;
   registered_at?: string;
   created_at?: string;
   clinic_id?: string;
+  primary_clinic_id?: string;
   clinic_name?: string;
   clinic_city?: string;
   doctor_id?: string | null;
   doctor_name?: string | null;
+  /** Reception list only — "YYYY-MM-DD" of the latest completed visit. */
+  last_visit?: string | null;
+  /** Reception list only — soonest upcoming appointment, "YYYY-MM-DD" or
+   *  "YYYY-MM-DDTHH:MM" (no time on a doctor-planned session yet). */
+  next_appointment?: string | null;
   last_prs?: {
     disease_id?: string;
     disease_name?: string;
     completed_at?: string;
   } | null;
+  last_visit_date?: string;
 }
 
 export interface PatientDetail extends PatientListItem {
@@ -37,7 +51,6 @@ export interface PatientDetail extends PatientListItem {
   recent_sessions?: PatientSessionRecord[];
   medical_history?: string;
   emergency_contact?: string;
-  blood_group?: string;
 }
 
 export interface PatientSessionRecord {
@@ -65,6 +78,20 @@ export interface DoctorDashboard {
 
 // ─── Patient domain ───────────────────────────────────────────────
 
+/** GET /patients/{patient_id}/clinic — the patient's primary clinic. */
+export interface PatientClinic {
+  clinic_id: string;
+  clinic_name: string;
+  full_address: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
+  phone: string | null;
+  email: string | null;
+  google_maps_url: string | null;
+}
+
 export interface PatientDashboard {
   profile: {
     id: string;
@@ -80,6 +107,18 @@ export interface PatientDashboard {
     state?: string;
     country?: string;
     pincode?: string;
+    emergency_contact_name?: string;
+    blood_group?: string;
+    allergies?: string;
+    occupation?: string;
+    marital_status?: string;
+    insurance_provider?: string;
+    insurance_policy?: string;
+    weight_kg?: number;
+    height_ft?: number;
+    height_in?: number;
+    government_id?: string;
+    id_type?: string;
   };
   assigned_doctor?: {
     id: string;
@@ -203,6 +242,10 @@ export interface AssessmentInstance {
   percentage?: number;
   completed_at?: string;
   scale_summaries?: ScaleResultSummary[];
+  // Set when this instance came from a device session (a CA/doctor pushing
+  // one scale mid-visit) rather than the standalone "Start assessment"
+  // flow. Null/undefined for a standalone instance.
+  appointment_id?: string | null;
 }
 
 export interface PatientScoreInstance {
@@ -292,7 +335,7 @@ export interface DeviceDayAvailability {
 // 'confirmed' never occur — payment is what confirms a visit now.
 export type AppointmentStatus =
   | "planned" | "selected" | "paid" | "checked_in" | "in_progress"
-  | "completed" | "cancelled" | "no_show" | "rescheduled";
+  | "completed" | "cancelled" | "no_show" | "missed" | "rescheduled";
 
 // Matches backend's APPOINTMENT_TYPES pattern (scheduling/schemas.py) —
 // the only 4 values the API accepts.
@@ -310,6 +353,25 @@ export interface Appointment {
   /** patients.patient_id — GET /doctor/patients/{id} and other patient-scoped
    *  routes expect this, not patient_id above (which is profiles.id). */
   patient_public_id?: string | null;
+  patient_mrn?: string | null;
+  /** Which protocol_plan version this session belongs to. Display as
+   *  `v${protocol_version_major}` when minor is 0, else
+   *  `v${protocol_version_major}.${protocol_version_minor}`. */
+  protocol_version_major?: number | null;
+  protocol_version_minor?: number | null;
+  /** protocol_plan.status of the protocol this row belongs to
+   *  (active/completed/superseded/...). */
+  protocol_status?: string | null;
+  /** What a protocol-born row is for, so a patient running several protocols
+   *  can tell sessions apart. All null for consultations. */
+  device_name?: string | null;
+  modality?: string | null;
+  condition_names?: string[] | null;
+  instance_number?: number | null;
+  session_count?: number | null;
+  /** The protocol instance's doctor — the one to show on a device session,
+   *  which has no doctor_name of its own. */
+  prescribing_doctor_name?: string | null;
   appointment_date: string;
   start_time: string;
   end_time: string;
@@ -325,6 +387,19 @@ export interface Appointment {
   booked_by_role: string;
   created_at: string;
   updated_at: string;
+  /** Set on the appointment that REPLACED an earlier one (this row is the
+   *  result of a reschedule) — the superseded appointment's own id. Null
+   *  for a normally-booked appointment. */
+  rescheduled_from?: string | null;
+  /** Set on the OLD appointment once superseded — points at its
+   *  replacement. Its own status becomes 'rescheduled' at the same time. */
+  rescheduled_to?: string | null;
+  /** Previous slot's own date/time (backend joins these in whenever
+   *  rescheduled_from is set) — lets a list/detail view show "moved from
+   *  <date> <time>" without a second per-appointment fetch. */
+  rescheduled_from_date?: string | null;
+  rescheduled_from_start_time?: string | null;
+  rescheduled_from_end_time?: string | null;
   /** Set only for appointment_type = device_session | protocol_followup —
    *  the protocol course this appointment was generated from (30/32/41).
    *  NULL for a manually-booked consultation. */
@@ -343,6 +418,19 @@ export interface Appointment {
   completed_at?: string | null;
 }
 
+/** GET /me/appointments/history — one row per appointment, newest first,
+ *  with its most recent payment folded in. payment_* is all null for an
+ *  appointment nothing was ever charged for (a still-'planned' protocol row,
+ *  or payment_required=False). */
+export interface AppointmentHistoryEntry extends Appointment {
+  payment_id?: string | null;
+  payment_status?: "pending" | "paid" | "failed" | "waived" | "refunded" | null;
+  payment_amount?: number | null;
+  payment_currency?: string | null;
+  payment_method?: string | null;
+  paid_at?: string | null;
+}
+
 // ─── Anamnesis ────────────────────────────────────────────────────
 
 export interface AnamnesisResponse {
@@ -356,6 +444,10 @@ export interface AnamnesisRecord {
   patient_id: string;
   submitted_by: string | null;
   taken_by: string;
+  /** 1, 2, 3… — each edit (doctor's "Start on Patient's Behalf" on an
+   *  already-completed record) creates a new version rather than
+   *  overwriting the previous one; this is what distinguishes them. */
+  version?: number;
   assessment_stage: "registration" | "main";
   /** The visit this anamnesis was captured/edited during. Null on records
    *  predating this column, and on anamnesis taken outside a booked visit. */

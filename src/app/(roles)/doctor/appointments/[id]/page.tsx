@@ -9,11 +9,14 @@ import {
   XCircle, RotateCcw, AlertOctagon, Pencil, Save, X,
 } from "lucide-react";
 import { useAppointmentDetail } from "@/lib/hooks/useAppointments";
+import { useGoBack } from "@/lib/hooks/useGoBack";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
+import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
-import { SESSION_TYPE_LABEL } from "@/lib/utils/sessionType";
+import { SESSION_TYPE_LABEL, getDeviceSessionLabel } from "@/lib/utils/sessionType";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
+import { AppointmentDetailSkeleton } from "@/components/ui/Skeleton";
 import type { AppointmentStatus, AppointmentType } from "@/types/domain.types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -29,6 +32,7 @@ const STATUS_CONFIG: Record<AppointmentStatus, { label: string; bg: string; text
   completed:   { label: "Completed",       bg: "#f8fafc", text: "#475569", border: "#cbd5e1" },
   cancelled:   { label: "Cancelled",       bg: "#fff1f2", text: "#991b1b", border: "#f87171" },
   no_show:     { label: "No Show",         bg: "#fafafa", text: "#52525b", border: "#a1a1aa" },
+  missed:      { label: "Missed",          bg: "#fafafa", text: "#52525b", border: "#a1a1aa" },
   rescheduled: { label: "Rescheduled",     bg: "#f5f3ff", text: "#4c1d95", border: "#a78bfa" },
 };
 
@@ -58,37 +62,6 @@ function StatusBadge({ status }: { status: AppointmentStatus }) {
     >
       {cfg.label}
     </span>
-  );
-}
-
-// ─── Device session notice ────────────────────────────────────────────────────
-
-function DeviceSessionNotice({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
-        <div className="flex items-start justify-between px-5 py-4 border-b border-neutral-100">
-          <h3 className="text-base font-semibold text-neutral-900">Device Session</h3>
-          <button onClick={onClose} className="p-1 text-neutral-400 hover:text-neutral-600 rounded-lg hover:bg-neutral-100">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="px-5 py-4">
-          <p className="text-sm text-neutral-600">
-            This appointment is a device session. It is started and completed by the clinical assistant running it, not by the doctor.
-          </p>
-        </div>
-        <div className="flex items-center justify-end px-5 py-4 border-t border-neutral-100">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-opacity hover:opacity-90"
-            style={{ background: BRAND }}
-          >
-            Got it
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -245,6 +218,7 @@ function RescheduleModal({
 export default function AppointmentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const goBack = useGoBack("/doctor/appointments");
   const { appointment, checkIn, start, complete, noShow, cancel, reschedule, refresh } = useAppointmentDetail(id);
 
   const [busy,            setBusy]            = useState(false);
@@ -252,15 +226,24 @@ export default function AppointmentDetailPage() {
   const [showCancel,      setShowCancel]      = useState(false);
   const [showReschedule,  setShowReschedule]  = useState(false);
   const [showPay,         setShowPay]         = useState(false);
-  const [showDeviceNotice, setShowDeviceNotice] = useState(false);
   const [editingNotes,    setEditingNotes]    = useState(false);
   const [notesVal,        setNotesVal]        = useState("");
   const [history,         setHistory]         = useState<any[]>([]);
   const [historyLoading,  setHistoryLoading]  = useState(false);
+  const [modality,        setModality]        = useState<string | null>(null);
 
   useEffect(() => {
     if (appointment) setNotesVal(appointment.notes ?? "");
   }, [appointment?.appointment_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!appointment?.protocol_id) { setModality(null); return; }
+    let cancelled = false;
+    treatmentProtocolService.getProtocolDetail(appointment.protocol_id)
+      .then((p) => { if (!cancelled) setModality(p.modality ?? null); })
+      .catch(() => { if (!cancelled) setModality(null); });
+    return () => { cancelled = true; };
+  }, [appointment?.protocol_id]);
 
   const fetchHistory = useCallback(async () => {
     if (!id) return;
@@ -297,11 +280,7 @@ export default function AppointmentDetailPage() {
   };
 
   if (!appointment) {
-    return (
-      <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
-        <div className="w-6 h-6 border-2 border-neutral-200 border-t-sky-400 rounded-full animate-spin" />
-      </div>
-    );
+    return <AppointmentDetailSkeleton />;
   }
 
   const status = appointment.status;
@@ -310,12 +289,21 @@ export default function AppointmentDetailPage() {
   const docId  = appointment.doctor_public_id;
   const patientPublicId = appointment.patient_public_id ?? appointment.patient_id;
 
-  // A device_session has no treating doctor by design (scheduling/service.py
-  // _authorize_transition: "administered by a clinical assistant... has NO
-  // treating doctor"). Only a clinical_assistant/super_admin may start or
-  // complete one, so clicking Start/Complete here (doctor-only route) opens
-  // an explanatory popup instead of hitting the API and surfacing a raw 403.
+  // A device_session still has no treating doctor OF RECORD (doctor_id stays
+  // NULL by design), but a doctor can now run one end-to-end just like a
+  // clinical assistant can — same live workflow, reused as-is rather than
+  // rebuilt under /doctor. Routes into the same screens the CA appointments
+  // list uses (checklist -> live -> summary, by status).
   const isDeviceSession = appointment.appointment_type === "device_session";
+  // status is appointments.status, which never becomes "paused" — pause/
+  // resume are session-local only (device_sessions.session_status), the
+  // appointment itself just stays "in_progress" throughout.
+  const deviceSessionWorkflowHref =
+    status === "in_progress"
+      ? `/clinical-assistant/device-sessions/${appointment.appointment_id}/live`
+      : status === "completed"
+        ? `/clinical-assistant/device-sessions/${appointment.appointment_id}/summary`
+        : `/clinical-assistant/device-sessions/${appointment.appointment_id}`;
 
   // Status-based action availability — mirrors the server's allowed-from
   // matrix (scheduling/service.py::_ALLOWED_FROM) so a visible button never
@@ -328,19 +316,26 @@ export default function AppointmentDetailPage() {
   const canNoShow     = ["selected", "paid", "checked_in"].includes(status);
   const canCancel     = ["planned", "selected", "paid", "checked_in", "in_progress"].includes(status);
   const canReschedule = ["selected", "paid", "checked_in", "in_progress"].includes(status);
+  // Consultation / Follow-up / Protocol Follow-up workspace opens ONLY once
+  // the doctor has clicked "Start Consultation" (status -> in_progress), or
+  // the session is already completed. Check-in / No-Show / Reschedule do NOT
+  // open it. Device sessions are exempt — that link is a read-only review,
+  // not the live workspace.
+  const workspaceLocked = appointment.appointment_type !== "device_session" && !["in_progress", "completed"].includes(status);
 
   const cfg = STATUS_CONFIG[status];
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900">
-      {/* Back nav */}
-      <Link
-        href="/doctor/appointments"
+      {/* Back nav — real navigation history (wherever this was opened from),
+          not always the appointments list */}
+      <button
+        onClick={goBack}
         className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 mb-5 transition-colors"
       >
         <ChevronLeft className="w-4 h-4" />
-        Back to Appointments
-      </Link>
+        Back
+      </button>
 
       <div className="grid gap-5 xl:grid-cols-[1fr_320px]">
         {/* ── Main card ── */}
@@ -352,11 +347,26 @@ export default function AppointmentDetailPage() {
                 <h1 className="text-xl font-bold text-neutral-900">
                   {appointment.patient_name ?? "Patient"}
                 </h1>
-                <p className="text-sm text-neutral-500 mt-0.5 capitalize">
-                  {(appointment.appointment_type ?? "follow_up").replace(/_/g, " ")}
+                <p className="text-sm text-neutral-500 mt-0.5">
+                  {appointment.appointment_type === "device_session"
+                    ? getDeviceSessionLabel(modality)
+                    : SESSION_TYPE_LABEL[appointment.appointment_type ?? "follow_up"]}
                 </p>
               </div>
-              <StatusBadge status={status} />
+              <div className="flex items-center gap-1.5">
+                {/* appointment.rescheduled_from set means THIS row replaced
+                    an earlier one — distinct from status==='rescheduled',
+                    which is the OLD superseded row instead. */}
+                {appointment.rescheduled_from && (
+                  <span
+                    title={appointment.rescheduled_from_date ? `Originally booked for ${fmtDate(appointment.rescheduled_from_date)} · ${fmt12(appointment.rescheduled_from_start_time || "")}` : undefined}
+                    className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-purple-100 text-purple-700"
+                  >
+                    Rescheduled
+                  </span>
+                )}
+                <StatusBadge status={status} />
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -371,7 +381,7 @@ export default function AppointmentDetailPage() {
               <div className="flex items-center gap-2.5 text-sm text-neutral-700">
                 <User className="w-4 h-4 text-neutral-400 flex-shrink-0" />
                 <Link
-                  href={`/doctor/patients/${appointment.patient_public_id ?? appointment.patient_id}`}
+                  href={`/doctor/patients/${appointment.patient_public_id ?? appointment.patient_id}/summary`}
                   className="hover:underline font-medium text-accent"
                 >
                   View patient profile
@@ -405,26 +415,43 @@ export default function AppointmentDetailPage() {
               to this appointment via ?session=. Device Sessions are the one
               exception — those open the read-only session review instead. */}
           <div className="bg-white rounded-2xl border border-neutral-200 p-5">
-            <h2 className="text-sm font-semibold text-neutral-900 mb-1">Clinical Session — {SESSION_TYPE_LABEL[appointment.appointment_type]}</h2>
+            <h2 className="text-sm font-semibold text-neutral-900 mb-1">
+              Clinical Session — {isDeviceSession ? getDeviceSessionLabel(modality) : SESSION_TYPE_LABEL[appointment.appointment_type]}
+            </h2>
             <p className="text-sm text-neutral-500 mb-4">
               {appointment.appointment_type === "device_session"
-                ? "The treatment delivered, device readings, patient response, and safety checks for this device session are recorded read-only by the clinical assistant."
+                ? "The treatment delivered, device readings, patient response, and safety checks for this device session — run it from Actions above, or review what's recorded here."
                 : "Anamnesis, Medical History, PRS, Brain Mapping, Doctor Notes, Diagnosis, and Treatment Protocol are recorded in the patient's clinical workspace."}
               {status === "completed" && appointment.appointment_type !== "device_session" && " This session is complete — its data is frozen; open the workspace to view it or add a new Follow-up for further changes."}
+              {/* workspaceLocked: gates entry until the doctor clicks "Start
+                  Consultation" (status -> in_progress). That action is the
+                  ONLY trigger — check-in / no-show / reschedule leave the
+                  workspace and its tabs inert. Device sessions are exempt:
+                  that link opens a read-only review, not the live workspace. */}
+              {workspaceLocked && " Click “Start Consultation” to open the clinical workspace."}
             </p>
-            <Link
-              href={
-                appointment.appointment_type === "device_session"
-                  ? `/doctor/patients/${patientPublicId}?section=sessions`
-                  : appointment.appointment_type === "initial"
-                    ? `/doctor/patients/${patientPublicId}`
-                    : `/doctor/patients/${patientPublicId}?session=${appointment.appointment_id}`
-              }
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-xs font-semibold"
-              style={{ background: BRAND }}
-            >
-              {appointment.appointment_type === "device_session" ? "Open Session Review" : "Open Clinical Workspace"}
-            </Link>
+            {workspaceLocked ? (
+              <span
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-neutral-100 text-neutral-400 text-xs font-semibold cursor-not-allowed"
+                title="Available once the doctor clicks Start Consultation"
+              >
+                Open Clinical Workspace
+              </span>
+            ) : (
+              <Link
+                href={
+                  appointment.appointment_type === "device_session"
+                    ? `/doctor/patients/${patientPublicId}?section=sessions`
+                    : appointment.appointment_type === "initial"
+                      ? `/doctor/patients/${patientPublicId}`
+                      : `/doctor/patients/${patientPublicId}?session=${appointment.appointment_id}`
+                }
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-xs font-semibold"
+                style={{ background: BRAND }}
+              >
+                {appointment.appointment_type === "device_session" ? "Open Session Review" : "Open Clinical Workspace"}
+              </Link>
+            )}
           </div>
 
           {/* Notes card */}
@@ -537,19 +564,19 @@ export default function AppointmentDetailPage() {
               {canStart && (
                 <ActionBtn
                   icon={Play}
-                  label="Start Consultation"
+                  label={isDeviceSession ? "Run Device Session" : "Start Consultation"}
                   color="brand"
                   busy={busy}
-                  onClick={() => (isDeviceSession ? setShowDeviceNotice(true) : run(start, "Start"))}
+                  onClick={() => (isDeviceSession ? router.push(deviceSessionWorkflowHref) : run(start, "Start"))}
                 />
               )}
               {canComplete && (
                 <ActionBtn
                   icon={CheckSquare}
-                  label="Mark Complete"
+                  label={isDeviceSession ? "Run Device Session" : "Mark Complete"}
                   color="green"
                   busy={busy}
-                  onClick={() => (isDeviceSession ? setShowDeviceNotice(true) : run(complete, "Complete"))}
+                  onClick={() => (isDeviceSession ? router.push(deviceSessionWorkflowHref) : run(complete, "Complete"))}
                 />
               )}
               {canReschedule && (
@@ -595,12 +622,21 @@ export default function AppointmentDetailPage() {
           <div className="bg-white rounded-2xl border border-neutral-200 p-5">
             <h2 className="text-sm font-semibold text-neutral-900 mb-3">Details</h2>
             <dl className="space-y-2 text-xs">
-              <MetaRow label="ID" value={appointment.appointment_id.slice(0, 8) + "…"} />
+              <MetaRow label="MRN" value={appointment.patient_mrn || "—"} />
               <MetaRow label="Status" value={STATUS_CONFIG[status].label} />
+              {appointment.rescheduled_from && (
+                <MetaRow
+                  label="Originally Booked For"
+                  value={appointment.rescheduled_from_date ? `${fmtDate(appointment.rescheduled_from_date)} · ${fmt12(appointment.rescheduled_from_start_time || "")}` : "—"}
+                />
+              )}
               <MetaRow
                 label="Type"
-                value={(appointment.appointment_type ?? "follow_up").replace(/_/g, " ")}
-                capitalize
+                value={
+                  appointment.appointment_type === "device_session"
+                    ? getDeviceSessionLabel(modality)
+                    : SESSION_TYPE_LABEL[appointment.appointment_type ?? "follow_up"]
+                }
               />
               <MetaRow
                 label="Booked by"
@@ -619,7 +655,6 @@ export default function AppointmentDetailPage() {
       </div>
 
       {/* Modals */}
-      {showDeviceNotice && <DeviceSessionNotice onClose={() => setShowDeviceNotice(false)} />}
       {showCancel && (
         <CancelDialog
           busy={busy}

@@ -4,7 +4,7 @@ import { useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Clock, ArrowRight } from "lucide-react";
 import { useSessions, useScales } from "@/lib/hooks";
-import { PageLoader, Button, Card, CardContent } from "@/components/ui";
+import { PageSkeleton, Button, Card, CardContent } from "@/components/ui";
 import type { Scale } from "@/types/prs.types";
 
 export default function SessionOverview() {
@@ -24,7 +24,7 @@ export default function SessionOverview() {
       .filter(Boolean) as Scale[];
   }, [currentSession, scalesById]);
 
-  if (!currentSession) return <PageLoader />;
+  if (!currentSession) return <PageSkeleton />;
 
   const totalMinutes = scales.reduce((sum, s) => sum + s.estimated_minutes, 0);
 

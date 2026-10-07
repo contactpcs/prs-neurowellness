@@ -55,6 +55,9 @@ export interface User {
   // System Fields
   mrn?: string;
   approval_status?: string;
+  /** Why a self-registered patient's registration was turned down — set only
+   *  while approval_status is "rejected" (from GET /auth/me). */
+  rejection_reason?: string | null;
   registered_at?: string;
 
   // Consent gate (backend-v2) — is_active=false until the onboarding
@@ -115,6 +118,10 @@ export interface RegisterData {
   state: string;
   country?: string;
   pincode?: string;
+  // Required by the backend when date_of_birth is under 18.
+  guardian_name?: string;
+  guardian_relationship?: string;
+  guardian_contact?: string;
   consent_responses?: ConsentResponseItem[];
 }
 

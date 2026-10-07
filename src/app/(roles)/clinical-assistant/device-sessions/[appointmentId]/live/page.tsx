@@ -1,17 +1,21 @@
 "use client";
 
+import { extractErrorMessage } from "@/lib/api/errors";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   Gauge, AlertTriangle, FileText, Dumbbell, ClipboardList, MessageSquare,
-  Camera, CalendarCheck, Pause, Square, CheckCircle2, Info,
+  Camera, CalendarCheck, Pause, Square, CheckCircle2, Info, Send, StickyNote,
+  ThumbsUp, Meh, ThumbsDown, TrendingDown, TrendingUp, Minus, Smile, Frown,
+  UploadCloud, CheckCheck,
 } from "lucide-react";
 import { useDeviceSession } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { prsAssessmentService } from "@/lib/api/services/prsAssessment.service";
 import { permissionsService } from "@/lib/api/services/permissions.service";
-import { Button, Card, CardContent, Input, PageLoader } from "@/components/ui";
+import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
+import { Button, Card, CardContent, Input, PageSkeleton } from "@/components/ui";
 import { CountdownTimer } from "@/components/deviceSession/CountdownTimer";
 import { SymptomChipSelector } from "@/components/deviceSession/SymptomChipSelector";
 import { AdverseEventForm } from "@/components/deviceSession/AdverseEventForm";
@@ -19,7 +23,7 @@ import { PauseStopDialog } from "@/components/deviceSession/PauseStopDialog";
 import { EarlyCompletionDialog } from "@/components/deviceSession/EarlyCompletionDialog";
 import type { Appointment } from "@/types/domain.types";
 import type { ProtocolDetail } from "@/types/treatmentProtocol.types";
-import type { CognitiveActivity, ScaleDeliveryMode } from "@/types/deviceSession.types";
+import type { CognitiveActivity, ScaleDeliveryMode, DeviceInfo } from "@/types/deviceSession.types";
 
 const ACTIVITY_OPTIONS: { value: CognitiveActivity; label: string }[] = [
   { value: "sudoku", label: "Sudoku" },
@@ -53,10 +57,12 @@ export default function DeviceSessionLivePage() {
 
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [protocol, setProtocol] = useState<ProtocolDetail | null>(null);
+  const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [activeSection, setActiveSection] = useState<SectionKey>("device-fit");
   const [pauseOpen, setPauseOpen] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
   const [earlyCompletionOpen, setEarlyCompletionOpen] = useState(false);
+  const [completionError, setCompletionError] = useState<string | null>(null);
   const [showAeForm, setShowAeForm] = useState(false);
 
   // Section-local drafts
@@ -65,6 +71,7 @@ export default function DeviceSessionLivePage() {
   const [noteText, setNoteText] = useState("");
   const [activitySelection, setActivitySelection] = useState<CognitiveActivity[]>([]);
   const [activityFreeText, setActivityFreeText] = useState("");
+  const [activityError, setActivityError] = useState<string | null>(null);
   const [feedbackComfort, setFeedbackComfort] = useState<"comfortable" | "tolerable" | "uncomfortable" | null>(null);
   const [feedbackFeltAfter, setFeedbackFeltAfter] = useState<"better" | "no_change" | "worse" | null>(null);
   const [feedbackNextIntensity, setFeedbackNextIntensity] = useState<"decrease" | "keep_same" | "increase" | null>(null);
@@ -80,6 +87,12 @@ export default function DeviceSessionLivePage() {
       const protocolId = appt.protocol_id;
       if (protocolId) setProtocol(await treatmentProtocolService.getProtocolDetail(protocolId));
     });
+    // Independent of session/checklist state — GET /device-sessions/{id}
+    // 404s until the first checklist write lazily creates the header, so
+    // the device name/serial has to come from this separate endpoint to
+    // show up on page load instead of only after the CA has already typed
+    // something into the checklist.
+    deviceSessionService.getDeviceInfo(appointmentId).then(setDeviceInfo).catch(() => setDeviceInfo(null));
   }, [appointmentId]);
 
   useEffect(() => {
@@ -87,8 +100,17 @@ export default function DeviceSessionLivePage() {
     if (session?.impedance_kohm != null) setImpedance(String(session.impedance_kohm));
   }, [session]);
 
-  const prescribedDuration = protocol?.prescribed_duration_min ?? session?.actual_duration_min ?? 0;
+  // The main admin's device-session duration controls the wall-clock session.
+  // Protocol stimulation duration remains a clinical prescription value and
+  // must not make the live timer fall back to a one-minute/default value.
+  const prescribedDuration = deviceInfo?.session_duration_minutes
+    ?? session?.actual_duration_min
+    ?? protocol?.prescribed_duration_min
+    ?? 0;
   const rampSec = protocol?.ramp_seconds ?? 0;
+  // Biothm's tDCS unit has no impedance readout, so there is nothing for
+  // the CA to type in — hide the reading input (and its save) for it.
+  const hideImpedance = /biothm/i.test(protocol?.company_name ?? "") && /tdcs/i.test(protocol?.modality ?? "");
   const totalSeconds = prescribedDuration * 60 + rampSec * 2;
 
   // Ticks once a second so `remaining` (and therefore canComplete's
@@ -121,7 +143,7 @@ export default function DeviceSessionLivePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, totalSeconds, tick]);
 
-  if (!appointment || isLoading || !session) return <PageLoader />;
+  if (!appointment || isLoading || !session) return <PageSkeleton />;
 
   const impedanceTone = (() => {
     const v = Number(impedance);
@@ -195,6 +217,7 @@ export default function DeviceSessionLivePage() {
         taken_by: "patient",
         patient_id: patientId,
         appointment_id: appointmentId,
+        scale_id: scaleId,
       });
       await setScaleDelivery(protocolScaleId, "patient_app" as ScaleDeliveryMode);
     } catch (e: unknown) {
@@ -230,7 +253,7 @@ export default function DeviceSessionLivePage() {
               }`}
             >
               <Icon className="h-4 w-4 flex-shrink-0" />
-              <span className="flex-1">{s.label}</span>
+              <span className="flex-1">{s.key === "device-fit" && hideImpedance ? "Device" : s.label}</span>
               {count !== undefined && count > 0 && <span className="text-xs text-neutral-400">{count}</span>}
             </button>
           );
@@ -265,8 +288,17 @@ export default function DeviceSessionLivePage() {
                 size="sm"
                 onClick={async () => {
                   if (!timerDone) { setEarlyCompletionOpen(true); return; }
-                  await complete();
-                  router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`);
+                  setCompletionError(null);
+                  try {
+                    await complete();
+                    router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`);
+                  } catch (err: any) {
+                    setCompletionError(
+                      err?.response?.data?.error?.message
+                        || err?.response?.data?.detail
+                        || "The session could not be completed."
+                    );
+                  }
                 }}
                 disabled={!canComplete}
                 title={missingGates.length ? `Still needed: ${missingGates.join(", ")}` : undefined}
@@ -277,6 +309,11 @@ export default function DeviceSessionLivePage() {
           </div>
 
           <CountdownTimer remainingSeconds={remaining} totalSeconds={totalSeconds} sessionStatus={session.session_status} />
+          {completionError && (
+            <p className="text-xs text-danger-700 bg-danger-50 border border-danger-200 rounded-lg px-3 py-1.5">
+              {completionError}
+            </p>
+          )}
           {missingGates.length > 0 && (
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
               Still needed before completing: {missingGates.join(", ")}.
@@ -300,10 +337,41 @@ export default function DeviceSessionLivePage() {
         <div className="flex-1 overflow-y-auto p-6">
           <div className="max-w-2xl mx-auto">
             {activeSection === "device-fit" && (
-              <Card><CardContent className="space-y-3 pt-4">
-                <Input label="Impedance reading (kΩ)" type="number" value={impedance} onChange={(e) => setImpedance(e.target.value)} />
-                {impedanceTone && <span className={`inline-block text-xs px-2 py-1 rounded-full border ${impedanceTone.tone}`}>{impedanceTone.label}</span>}
-                <Button size="sm" onClick={() => setDeviceFit(deviceFitChecklist, impedance ? Number(impedance) : undefined)}>Save</Button>
+              <Card><CardContent className="space-y-4 pt-4">
+                <div>
+                  <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2.5">Device</p>
+                  {deviceInfo ? (
+                    <div className="flex items-center justify-between gap-3 bg-neutral-50 border border-neutral-200 rounded-lg px-3.5 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-neutral-900 truncate">{deviceInfo.device_name}</p>
+                        <p className="text-xs text-neutral-500 mt-0.5">
+                          {deviceInfo.device_unit_serial_number ? `Serial ${deviceInfo.device_unit_serial_number}` : "No specific unit pinned to this protocol"}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-neutral-400">Loading device details…</p>
+                  )}
+                </div>
+                {!hideImpedance && (<>
+                <div>
+                  <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2.5">Electrode impedance check</p>
+                  <div className="flex items-end gap-3">
+                    <div className="flex-1">
+                      <Input label="Impedance reading (kΩ)" type="number" value={impedance} onChange={(e) => setImpedance(e.target.value)} />
+                    </div>
+                    {impedanceTone && (
+                      <span className={`inline-flex items-center h-[42px] text-xs font-semibold px-3 rounded-lg border whitespace-nowrap ${impedanceTone.tone}`}>
+                        {impedanceTone.label}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-neutral-400 mt-2">Under 5kΩ is good contact · 5–10kΩ acceptable · above 10kΩ, re-wet sponges or adjust the strap.</p>
+                </div>
+                <Button size="sm" onClick={() => setDeviceFit(deviceFitChecklist, impedance ? Number(impedance) : undefined)}>
+                  <Gauge className="h-3.5 w-3.5" /> Save reading
+                </Button>
+                </>)}
               </CardContent></Card>
             )}
 
@@ -311,13 +379,27 @@ export default function DeviceSessionLivePage() {
               <div className="space-y-4">
                 <Card><CardContent className="pt-4"><SymptomChipSelector onRecord={recordSymptom} /></CardContent></Card>
                 {session.symptoms.length > 0 && (
-                  <div className="space-y-2">
-                    {session.symptoms.map((s) => (
-                      <div key={s.symptom_record_id} className="text-sm border-b border-neutral-100 pb-2">
-                        <span className="font-medium capitalize">{s.symptom.replace(/_/g, " ")}</span> — {s.severity}
-                        {s.note && <span className="text-neutral-400"> · {s.note}</span>}
-                      </div>
-                    ))}
+                  <div>
+                    <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">Logged this session</p>
+                    <div className="space-y-2">
+                      {session.symptoms.map((s) => {
+                        const tone =
+                          s.severity === "severe" ? "bg-danger-50 text-danger-700 border-danger-200"
+                          : s.severity === "moderate" ? "bg-amber-50 text-amber-700 border-amber-200"
+                          : "bg-neutral-100 text-neutral-600 border-neutral-200";
+                        return (
+                          <div key={s.symptom_record_id} className="flex items-start justify-between gap-3 bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-neutral-900 capitalize">{s.symptom.replace(/_/g, " ")}</p>
+                              {s.note && <p className="text-xs text-neutral-500 mt-0.5 truncate">{s.note}</p>}
+                            </div>
+                            <span className={`flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full border capitalize ${tone}`}>
+                              {s.severity}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
@@ -325,16 +407,26 @@ export default function DeviceSessionLivePage() {
 
             {activeSection === "notes" && (
               <div className="space-y-4">
-                <Card><CardContent className="space-y-2 pt-4">
-                  <Input placeholder="Add a note" value={noteText} onChange={(e) => setNoteText(e.target.value)} />
-                  <Button size="sm" disabled={!noteText.trim()} onClick={async () => { await addNote(noteText.trim()); setNoteText(""); }}>Add note</Button>
+                <Card><CardContent className="space-y-2.5 pt-4">
+                  <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Add a clinical note</p>
+                  <Input placeholder="What did you observe?" value={noteText} onChange={(e) => setNoteText(e.target.value)} />
+                  <Button size="sm" disabled={!noteText.trim()} onClick={async () => { await addNote(noteText.trim()); setNoteText(""); }}>
+                    <StickyNote className="h-3.5 w-3.5" /> Add note
+                  </Button>
                 </CardContent></Card>
-                {session.notes.map((n) => (
-                  <div key={n.note_id} className="text-sm border-b border-neutral-100 pb-2">
-                    <p className="text-neutral-800">{n.note_text}</p>
-                    <p className="text-xs text-neutral-400">{new Date(n.recorded_at).toLocaleTimeString()}</p>
+                {session.notes.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">Logged this session</p>
+                    <div className="space-y-2">
+                      {session.notes.map((n) => (
+                        <div key={n.note_id} className="bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5">
+                          <p className="text-sm text-neutral-800">{n.note_text}</p>
+                          <p className="text-xs text-neutral-400 mt-1">{new Date(n.recorded_at).toLocaleTimeString()}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
+                )}
               </div>
             )}
 
@@ -343,47 +435,104 @@ export default function DeviceSessionLivePage() {
                 {showAeForm ? (
                   <AdverseEventForm onRecord={async (body) => { await recordAdverseEvent(body); setShowAeForm(false); }} onCancel={() => setShowAeForm(false)} />
                 ) : (
-                  <Button variant="danger" onClick={() => setShowAeForm(true)}>Record Adverse Event</Button>
+                  <Button variant="danger" onClick={() => setShowAeForm(true)}>
+                    <AlertTriangle className="h-3.5 w-3.5" /> Record Adverse Event
+                  </Button>
                 )}
-                {session.adverse_events.map((ae) => (
-                  <div key={ae.ae_record_id} className="text-sm border-b border-neutral-100 pb-2">
-                    <span className="font-medium capitalize">{ae.event_type.replace(/_/g, " ")}</span> — {ae.severity}
-                    <p className="text-neutral-500">{ae.description}</p>
+                {session.adverse_events.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">Logged this session</p>
+                    <div className="space-y-2">
+                      {session.adverse_events.map((ae) => {
+                        const tone =
+                          ae.severity === "severe" ? "bg-danger-50 text-danger-700 border-danger-200"
+                          : ae.severity === "moderate" ? "bg-amber-50 text-amber-700 border-amber-200"
+                          : "bg-neutral-100 text-neutral-600 border-neutral-200";
+                        return (
+                          <div key={ae.ae_record_id} className="bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5">
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="text-sm font-medium text-neutral-900 capitalize">{ae.event_type.replace(/_/g, " ")}</p>
+                              <span className={`flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full border capitalize ${tone}`}>{ae.severity}</span>
+                            </div>
+                            {ae.description && <p className="text-xs text-neutral-500 mt-1">{ae.description}</p>}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                ))}
+                )}
               </div>
             )}
 
             {activeSection === "activities" && (
-              <Card><CardContent className="space-y-3 pt-4">
-                <div className="flex flex-wrap gap-2">
-                  {ACTIVITY_OPTIONS.map((a) => (
-                    <button
-                      key={a.value}
-                      onClick={() => setActivitySelection((prev) => prev.includes(a.value) ? prev.filter((v) => v !== a.value) : [...prev, a.value])}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                        activitySelection.includes(a.value) ? "bg-primary-100 border-primary-400 text-primary-800" : "bg-white border-neutral-200 text-neutral-600"
-                      }`}
-                    >
-                      {a.label}
-                    </button>
-                  ))}
-                </div>
-                <Input placeholder="Other activity (free text)" value={activityFreeText} onChange={(e) => setActivityFreeText(e.target.value)} />
-                <Button
-                  size="sm"
-                  disabled={activitySelection.length === 0 && !activityFreeText}
-                  onClick={async () => { await recordActivity(activitySelection, activityFreeText || undefined); setActivitySelection([]); setActivityFreeText(""); }}
-                >
-                  Log activities
-                </Button>
-              </CardContent></Card>
+              <div className="space-y-4">
+                <Card><CardContent className="space-y-3.5 pt-4">
+                  <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">What did the patient do during stimulation?</p>
+                  <div className="flex flex-wrap gap-2">
+                    {ACTIVITY_OPTIONS.map((a) => {
+                      const isActive = activitySelection.includes(a.value);
+                      return (
+                        <button
+                          key={a.value}
+                          onClick={() => setActivitySelection((prev) => prev.includes(a.value) ? prev.filter((v) => v !== a.value) : [...prev, a.value])}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                            isActive
+                              ? "bg-primary-50 border-primary-400 text-primary-800 ring-1 ring-primary-400"
+                              : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"
+                          }`}
+                        >
+                          {a.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <Input placeholder="Other activity (free text)" value={activityFreeText} onChange={(e) => setActivityFreeText(e.target.value)} />
+                  <Button
+                    size="sm"
+                    disabled={activitySelection.length === 0 && !activityFreeText.trim()}
+                    onClick={async () => {
+                      setActivityError(null);
+                      try {
+                        await recordActivity(activitySelection, activityFreeText.trim() || undefined);
+                        setActivitySelection([]);
+                        setActivityFreeText("");
+                      } catch (err) {
+                        setActivityError(extractErrorMessage(err, "Could not log the activity. Please try again."));
+                      }
+                    }}
+                  >
+                    <Dumbbell className="h-3.5 w-3.5" /> Log activities
+                  </Button>
+                  {activityError && <p className="text-xs text-danger-600">{activityError}</p>}
+                </CardContent></Card>
+                {session.activities.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">Logged this session</p>
+                    <div className="space-y-2">
+                      {session.activities.map((a) => (
+                        <div key={a.activity_record_id} className="bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5">
+                          <p className="text-sm text-neutral-800">
+                            {a.activities.map((v) => ACTIVITY_OPTIONS.find((o) => o.value === v)?.label ?? (String(v) === "other" ? "Other" : v)).join(", ")}
+                          </p>
+                          {a.free_text && <p className="text-xs text-neutral-500 mt-1">{a.free_text}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             {activeSection === "scales" && (
               <div className="space-y-3">
-                {scaleSendError && <p className="text-xs text-danger-600">{scaleSendError}</p>}
-                {session.scales.length === 0 && <p className="text-sm text-neutral-400">No scales due this session.</p>}
+                {scaleSendError && (
+                  <p className="text-xs text-danger-700 bg-danger-50 border border-danger-200 rounded-lg px-3 py-2">{scaleSendError}</p>
+                )}
+                {session.scales.length === 0 && (
+                  <Card><CardContent className="pt-4">
+                    <p className="text-sm text-neutral-400">No scales due this session.</p>
+                  </CardContent></Card>
+                )}
                 {session.scales.map((sc) => {
                   // "completed" (status advances here once record_device_session_prs
                   // links a finished instance back) is the only truly-done state.
@@ -392,19 +541,22 @@ export default function DeviceSessionLivePage() {
                   const linked = sc.status === "completed" && !!sc.prs_instance_id;
                   const awaitingPatient = sc.delivery_mode === "patient_app" && !linked;
                   return (
-                    <Card key={sc.session_scale_id}><CardContent className="flex items-center justify-between pt-4">
-                      <div>
-                        <p className="text-sm font-medium">{sc.scale_name ?? sc.scale_code ?? sc.protocol_scale_id}</p>
-                        <p className="text-xs text-neutral-400 capitalize">{sc.status.replace(/_/g, " ")}</p>
+                    <Card key={sc.session_scale_id}><CardContent className="flex items-center justify-between gap-3 pt-4">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-neutral-900 truncate">{sc.scale_name ?? sc.scale_code ?? sc.protocol_scale_id}</p>
+                        <p className="text-xs text-neutral-400 capitalize mt-0.5">{sc.status.replace(/_/g, " ")}</p>
                       </div>
                       {linked ? (
-                        <span className="text-xs text-success-600">
-                          {sc.delivery_mode === "ca_administered" ? "Administered by CA — recorded" : "Completed by patient"}
+                        <span className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-success-700 bg-success-50 border border-success-200 rounded-full px-2.5 py-1">
+                          <CheckCheck className="h-3.5 w-3.5" />
+                          {sc.delivery_mode === "ca_administered" ? "Administered by Clinical Assistant" : "Completed by patient"}
                         </span>
                       ) : awaitingPatient ? (
-                        <span className="text-xs text-amber-600">Sent to patient app — awaiting submission</span>
+                        <span className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1">
+                          <Send className="h-3.5 w-3.5" /> Awaiting patient
+                        </span>
                       ) : (
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-shrink-0">
                           <Button
                             size="sm"
                             variant="outline"
@@ -412,7 +564,7 @@ export default function DeviceSessionLivePage() {
                               `/clinical-assistant/device-sessions/${appointmentId}/scales/${sc.protocol_scale_id}?scale_code=${encodeURIComponent(sc.scale_code ?? "")}`
                             )}
                           >
-                            Administer here
+                            <ClipboardList className="h-3.5 w-3.5" /> Administer here
                           </Button>
                           <Button
                             size="sm"
@@ -420,7 +572,7 @@ export default function DeviceSessionLivePage() {
                             isLoading={sendingScaleId === sc.protocol_scale_id}
                             onClick={() => handleSendToPatient(sc.protocol_scale_id, sc.scale_code)}
                           >
-                            Send to patient app
+                            <Send className="h-3.5 w-3.5" /> Send to patient app
                           </Button>
                         </div>
                       )}
@@ -431,37 +583,78 @@ export default function DeviceSessionLivePage() {
             )}
 
             {activeSection === "feedback" && (
-              <Card><CardContent className="space-y-4 pt-4">
+              <Card><CardContent className="space-y-5 pt-4">
                 {session.feedback ? (
-                  <p className="text-sm text-success-600">Feedback recorded.</p>
+                  <div className="flex items-center gap-2 text-success-700 bg-success-50 border border-success-200 rounded-lg px-3 py-2.5">
+                    <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+                    <p className="text-sm font-medium">Feedback recorded.</p>
+                  </div>
                 ) : (
                   <>
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-neutral-500">Comfort with today&apos;s intensity</p>
+                    <div>
+                      <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">Comfort with today&apos;s intensity</p>
                       <div className="flex gap-2">
-                        {(["comfortable", "tolerable", "uncomfortable"] as const).map((v) => (
-                          <button key={v} onClick={() => setFeedbackComfort(v)} className={`px-3 py-1.5 rounded-md text-xs border ${feedbackComfort === v ? "bg-primary-100 border-primary-400" : "border-neutral-200"}`}>{v}</button>
+                        {([
+                          { v: "comfortable", label: "Comfortable", icon: ThumbsUp },
+                          { v: "tolerable", label: "Tolerable", icon: Meh },
+                          { v: "uncomfortable", label: "Uncomfortable", icon: ThumbsDown },
+                        ] as const).map(({ v, label, icon: Icon }) => (
+                          <button
+                            key={v}
+                            onClick={() => setFeedbackComfort(v)}
+                            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                              feedbackComfort === v ? "bg-primary-50 border-primary-400 text-primary-800 ring-1 ring-primary-400" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"
+                            }`}
+                          >
+                            <Icon className="h-4 w-4" /> {label}
+                          </button>
                         ))}
                       </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-neutral-500">How does the patient feel after</p>
+                    <div>
+                      <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">How does the patient feel after</p>
                       <div className="flex gap-2">
-                        {(["better", "no_change", "worse"] as const).map((v) => (
-                          <button key={v} onClick={() => setFeedbackFeltAfter(v)} className={`px-3 py-1.5 rounded-md text-xs border ${feedbackFeltAfter === v ? "bg-primary-100 border-primary-400" : "border-neutral-200"}`}>{v.replace("_", " ")}</button>
+                        {([
+                          { v: "better", label: "Better", icon: Smile },
+                          { v: "no_change", label: "No change", icon: Minus },
+                          { v: "worse", label: "Worse", icon: Frown },
+                        ] as const).map(({ v, label, icon: Icon }) => (
+                          <button
+                            key={v}
+                            onClick={() => setFeedbackFeltAfter(v)}
+                            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                              feedbackFeltAfter === v ? "bg-primary-50 border-primary-400 text-primary-800 ring-1 ring-primary-400" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"
+                            }`}
+                          >
+                            <Icon className="h-4 w-4" /> {label}
+                          </button>
                         ))}
                       </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-neutral-500">Intensity preference for next session</p>
+                    <div>
+                      <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">Intensity preference for next session</p>
                       <div className="flex gap-2">
-                        {(["decrease", "keep_same", "increase"] as const).map((v) => (
-                          <button key={v} onClick={() => setFeedbackNextIntensity(v)} className={`px-3 py-1.5 rounded-md text-xs border ${feedbackNextIntensity === v ? "bg-primary-100 border-primary-400" : "border-neutral-200"}`}>{v.replace("_", " ")}</button>
+                        {([
+                          { v: "decrease", label: "Decrease", icon: TrendingDown },
+                          { v: "keep_same", label: "Keep same", icon: Minus },
+                          { v: "increase", label: "Increase", icon: TrendingUp },
+                        ] as const).map(({ v, label, icon: Icon }) => (
+                          <button
+                            key={v}
+                            onClick={() => setFeedbackNextIntensity(v)}
+                            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                              feedbackNextIntensity === v ? "bg-primary-50 border-primary-400 text-primary-800 ring-1 ring-primary-400" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"
+                            }`}
+                          >
+                            <Icon className="h-4 w-4" /> {label}
+                          </button>
                         ))}
                       </div>
                     </div>
                     <Input placeholder="Patient's own words (optional)" value={feedbackQuote} onChange={(e) => setFeedbackQuote(e.target.value)} />
-                    <Button size="sm" onClick={handleSaveFeedback} disabled={!feedbackComfort || !feedbackFeltAfter || !feedbackNextIntensity}>Save feedback</Button>
+                    <Button size="sm" onClick={handleSaveFeedback} disabled={!feedbackComfort || !feedbackFeltAfter || !feedbackNextIntensity}>
+                      <MessageSquare className="h-3.5 w-3.5" /> Save feedback
+                    </Button>
                   </>
                 )}
               </CardContent></Card>
@@ -469,20 +662,51 @@ export default function DeviceSessionLivePage() {
 
             {activeSection === "media" && (
               <Card><CardContent className="pt-4">
-                <p className="text-sm text-neutral-500">Media capture requires recording consent, then attaching via the files module. Not yet wired to a live camera/upload — placeholder pending backend media storage.</p>
+                <div className="flex flex-col items-center text-center gap-2.5 py-8">
+                  <div className="h-11 w-11 rounded-full bg-neutral-100 flex items-center justify-center">
+                    <UploadCloud className="h-5 w-5 text-neutral-400" />
+                  </div>
+                  <p className="text-sm font-medium text-neutral-700">Media capture not yet available</p>
+                  <p className="text-xs text-neutral-400 max-w-xs">
+                    Requires recording consent, then attaching via the files module — pending backend media storage and live camera/upload wiring.
+                  </p>
+                </div>
               </CardContent></Card>
             )}
 
             {activeSection === "next-session" && (
-              <Card><CardContent className="space-y-3 pt-4">
+              <Card><CardContent className="space-y-3.5 pt-4">
                 {session.next_session_confirmation ? (
-                  <p className="text-sm text-success-600">Next session {session.next_session_confirmation.patient_confirmed ? "confirmed" : "flagged for change"}.</p>
+                  <div className={`flex items-center gap-2 rounded-lg px-3 py-2.5 border ${
+                    session.next_session_confirmation.patient_confirmed
+                      ? "text-success-700 bg-success-50 border-success-200"
+                      : "text-amber-700 bg-amber-50 border-amber-200"
+                  }`}>
+                    <CalendarCheck className="h-4 w-4 flex-shrink-0" />
+                    <p className="text-sm font-medium">
+                      Next session {session.next_session_confirmation.patient_confirmed ? "confirmed" : "flagged for change"}.
+                    </p>
+                  </div>
                 ) : (
                   <>
-                    <p className="text-sm text-neutral-600">Ask the patient to confirm their next session slot.</p>
+                    <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Ask the patient to confirm their next session slot</p>
                     <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => setNextConfirmed(true)}>Patient confirmed</Button>
-                      <Button size="sm" variant="outline" onClick={() => setNextConfirmed(false)}>Needs change</Button>
+                      <button
+                        onClick={() => setNextConfirmed(true)}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                          nextConfirmed === true ? "bg-success-50 border-success-400 text-success-800 ring-1 ring-success-400" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"
+                        }`}
+                      >
+                        <CheckCircle2 className="h-4 w-4" /> Patient confirmed
+                      </button>
+                      <button
+                        onClick={() => setNextConfirmed(false)}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                          nextConfirmed === false ? "bg-amber-50 border-amber-400 text-amber-800 ring-1 ring-amber-400" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"
+                        }`}
+                      >
+                        <AlertTriangle className="h-4 w-4" /> Needs change
+                      </button>
                     </div>
                     {nextConfirmed !== null && (
                       <Button size="sm" onClick={() => confirmNextSession({ patient_confirmed: nextConfirmed })}>Save</Button>
@@ -506,9 +730,18 @@ export default function DeviceSessionLivePage() {
         isOpen={earlyCompletionOpen}
         onClose={() => setEarlyCompletionOpen(false)}
         onConfirm={async (reason) => {
-          await complete(reason);
-          setEarlyCompletionOpen(false);
-          router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`);
+          setCompletionError(null);
+          try {
+            await complete(reason);
+            setEarlyCompletionOpen(false);
+            router.push(`/clinical-assistant/device-sessions/${appointmentId}/summary`);
+          } catch (err: any) {
+            setCompletionError(
+              err?.response?.data?.error?.message
+                || err?.response?.data?.detail
+                || "The session could not be completed."
+            );
+          }
         }}
       />
     </div>

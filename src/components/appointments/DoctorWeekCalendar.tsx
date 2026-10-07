@@ -51,7 +51,15 @@ function fmt12(t: string): string {
  * any doctor the caller picks — used by staff (receptionist/admin) who need
  * to see a doctor's calendar and book directly into an open slot, without
  * the doctor-only weekly-template/override editing that page also has. */
-export function DoctorWeekCalendar({ doctorId }: { doctorId: string }) {
+export function DoctorWeekCalendar({
+  doctorId, onSlotClick,
+}: {
+  doctorId: string;
+  /** When set, clicking a free slot hands it to the caller (e.g. the
+   * receptionist's booking + payment modal) instead of opening the built-in
+   * BookingModal. */
+  onSlotClick?: (slot: AvailabilitySlot, doctorId: string) => void;
+}) {
   const today = new Date();
   const todayStr = toDateStr(today);
 
@@ -167,7 +175,11 @@ export function DoctorWeekCalendar({ doctorId }: { doctorId: string }) {
                       <button
                         key={slot.start_time}
                         disabled={!slot.is_available}
-                        onClick={() => slot.is_available && setBookingSlot(slot)}
+                        onClick={() => {
+                          if (!slot.is_available) return;
+                          if (onSlotClick) onSlotClick(slot, doctorId);
+                          else setBookingSlot(slot);
+                        }}
                         title={slot.is_available ? `Book ${fmt12(slot.start_time)} – ${fmt12(slot.end_time)}` : "Already booked"}
                         className={`w-full text-[11px] font-medium px-1.5 py-1 rounded-md text-center transition-all ${
                           slot.is_available

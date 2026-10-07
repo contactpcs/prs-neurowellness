@@ -2,27 +2,37 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
-  Bell, Search, Calendar, CheckCircle, Clock, ChevronRight,
-  User, MessageSquare, PlayCircle, ClipboardList, TrendingUp,
+  Bell, Calendar, CheckCircle, Clock, ChevronRight,
+  User, PlayCircle, ClipboardList,
   FileText, Zap, Check, Circle, Upload, CreditCard,
+  MapPin, Phone, Mail, ExternalLink,
 } from "lucide-react";
 import {
   usePatientDashboard,
   useMyAssessments,
   useMyAnamnesis,
   useMyScoresSummary,
-  useMyDoctorNotes,
+  useAuth,
 } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
+import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
+import { patientsService } from "@/lib/api/services/patients.service";
+import type { PendingPatientScale } from "@/types/deviceSession.types";
+import { useSidebarBadges } from "@/lib/hooks/useSidebarBadges";
 import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
 import { PatientDashboardSkeleton } from "@/components/ui";
 import { VerifyChannelBanner } from "@/components/auth/VerifyChannelBanner";
 import { computeProfileCompletion } from "@/lib/profileCompletion";
+import { isSupersededCancellation } from "@/lib/appointmentStatus";
+import { appointmentDoctorName, getDeviceSessionLabel, protocolContextLine } from "@/lib/utils/sessionType";
+import { doctorLabel } from "@/lib/utils/doctorLabel";
 import type {
   AssessmentPermission,
   AssessmentInstance,
   Appointment,
+  PatientClinic,
 } from "@/types/domain.types";
 
 function formatShortDate(iso?: string | null): string {
@@ -38,12 +48,6 @@ function getDayOfMonth(iso?: string | null): string {
 function getMonthAbbr(iso?: string | null): string {
   if (!iso) return "";
   return new Date(iso).toLocaleDateString("en-US", { month: "short" }).toUpperCase();
-}
-
-function daysUntil(iso?: string | null): number | null {
-  if (!iso) return null;
-  const diff = new Date(iso).getTime() - Date.now();
-  return Math.ceil(diff / (1000 * 60 * 60 * 24));
 }
 
 function formatTime(time?: string | null): string {
@@ -62,23 +66,51 @@ export default function PatientDashboardPage() {
 }
 
 function PatientDashboard() {
+  const router = useRouter();
+  const { patientUnreadNotifications: unreadNotifications = 0 } = useSidebarBadges(["patientUnreadNotifications"]);
   const { dashboard, isLoading: dashLoading } = usePatientDashboard();
+  const { user } = useAuth();
   const { assessments, isLoading: assessLoading } = useMyAssessments();
   const { record: anamnesisRecord } = useMyAnamnesis("registration");
   const { summary } = useMyScoresSummary();
-  const { notes: doctorNotes } = useMyDoctorNotes();
 
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [deviceSessions, setDeviceSessions] = useState<Appointment[]>([]);
   const [payingId, setPayingId] = useState<string | null>(null);
 
   const reloadAppointments = () => appointmentsService.getUpcoming().then(setAppointments).catch(() => {});
+  // getUpcoming() only ever returns future/active rows, so a completed count
+  // off it is always 0 — the doctor card's "Sessions done" needs the full
+  // (past-inclusive) device-session history instead.
+  const reloadDeviceSessions = () =>
+    appointmentsService.myDeviceSessions()
+      .then((all) => setDeviceSessions(all.filter((a) => a.appointment_type === "device_session" && !isSupersededCancellation(a))))
+      .catch(() => {});
 
-  useEffect(() => { reloadAppointments(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { reloadAppointments(); reloadDeviceSessions(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [pendingDeviceScales, setPendingDeviceScales] = useState<PendingPatientScale[]>([]);
+  useEffect(() => {
+    deviceSessionService.listMyPendingScales().then(setPendingDeviceScales).catch(() => {});
+  }, []);
+
+  const [clinic, setClinic] = useState<PatientClinic | null>(null);
+  useEffect(() => {
+    patientsService.getMyClinic().then(setClinic).catch(() => {});
+  }, []);
+
+  // modality/device/conditions come on the appointment row itself — no
+  // per-protocol detail fetch.
+  const apptTypeLabel = (appt: Appointment): string =>
+    appt.appointment_type === "device_session"
+      ? getDeviceSessionLabel(appt.modality)
+      : (appt.appointment_type?.replace(/_/g, " ") ?? "");
 
   // Live update — a request approval pushes here via SSE.
   useEffect(() => {
-    window.addEventListener("sse:appointment", reloadAppointments);
-    return () => window.removeEventListener("sse:appointment", reloadAppointments);
+    const onAppointmentEvent = () => { reloadAppointments(); reloadDeviceSessions(); };
+    window.addEventListener("sse:appointment", onAppointmentEvent);
+    return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (dashLoading || assessLoading) return <PatientDashboardSkeleton />;
@@ -88,33 +120,50 @@ function PatientDashboard() {
   const fullName = profile?.full_name ?? "";
   const firstName = fullName ? fullName.split(" ")[0] : "User";
 
-  const pendingAssessments   = assessments.filter((a) => a.status === "granted");
-  const completedAssessments = assessments.filter((a) => a.status === "completed");
-  const hasAnyAssessments    = assessments.length > 0;
-  const scoreInstances = summary?.instances ?? [];
+  const pendingAssessments = assessments.filter((a) => a.status === "granted");
+  // assessments (getMyAssessments) already excludes a disease whose
+  // patient_scale_assignments don't yet cover its full PRS catalogue — a
+  // device session's "Send to patient app" grants one scale at a time, and
+  // without this a disease with e.g. 1 of 8 catalogue scales ever pushed
+  // read as "Completed, 1 of 1" the moment that lone scale was answered.
+  // scoreInstances (from a separate endpoint, prs_assessment_instances) has
+  // no assignment-coverage concept of its own, so it's filtered down to the
+  // same disease set here — otherwise the "no pending, show last completed"
+  // fallback below could still pick up that same thin instance directly.
+  const assessedDiseaseIds = new Set(assessments.map((a) => a.disease_id));
+  const scoreInstances = (summary?.instances ?? []).filter((i) => assessedDiseaseIds.has(i.disease_id));
 
   const upcomingAppts = appointments
-    .filter((a) => ["selected", "paid", "checked_in", "in_progress"].includes(a.status))
-    .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+    // "planned" included: a device_session/protocol_followup born from a
+    // treatment protocol starts here with a date but no claimed time slot
+    // (scheduling/service.py — "doctor set a DATE at protocol setup. No
+    // slot yet, no hold"). Excluding it meant these sessions were invisible
+    // on the dashboard until the patient already knew to go claim a slot
+    // from somewhere else — nothing here ever prompted them to.
+    .filter((a) => ["planned", "selected", "paid", "checked_in", "in_progress"].includes(a.status))
+    .sort((a, b) => new Date(a.start_at || `${a.appointment_date}T00:00:00`).getTime() - new Date(b.start_at || `${b.appointment_date}T00:00:00`).getTime());
 
   const nextAppt = upcomingAppts[0];
-  const daysToNext = nextAppt ? daysUntil(nextAppt.start_at) : null;
   const unpaidAppts = upcomingAppts.filter((a) => a.status === "selected");
   const hasUnpaidAppt = unpaidAppts.length > 0;
 
   const completedAppts = appointments.filter((a) => a.status === "completed").length;
   const totalPlannedAppts = appointments.length;
+  const completedDeviceSessions = deviceSessions.filter((a) => a.status === "completed").length;
+  const totalDeviceSessions = deviceSessions.length;
 
-  const { percent: profilePct, items: profileItems } = computeProfileCompletion(profile);
+  const { percent: profilePct, items: profileItems } = computeProfileCompletion(profile, {
+    email_verified: user?.email_verified, phone_verified: user?.phone_verified,
+  });
   const remainingFields = profileItems.filter((i) => !i.done).length;
 
-  const prsProgress =
-    scoreInstances.length > 0 ? Math.round(scoreInstances[0].percentage ?? 0) : 0;
-
-  const treatmentPct = Math.round(
-    ((completedAppts + completedAssessments.length * 2) /
-      Math.max(totalPlannedAppts + assessments.length * 2, 1)) * 100,
-  );
+  // Whole-PRS completion, not question-level: of every PRS the doctor has
+  // ever assigned (one AssessmentPermission row per disease), what fraction
+  // is "completed". 2 assigned, 1 done -> 50%, regardless of how far along
+  // the still-pending one's questions are.
+  const totalAssignedPrs = assessments.length;
+  const completedPrs = assessments.filter((a) => a.status === "completed").length;
+  const prsProgress = totalAssignedPrs > 0 ? Math.round((completedPrs / totalAssignedPrs) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-neutral-900">
@@ -122,18 +171,10 @@ function PatientDashboard() {
       {/* Header */}
       <div className="pb-3 flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <h1 className="text-lg font-bold text-gray-900 truncate">Welcome back, {firstName}!</h1>
+          <h1 className="text-lg font-bold text-gray-900 truncate">Welcome , {firstName}!</h1>
           <p className="text-xs text-gray-500 mt-0.5 hidden sm:block">Here's your wellness summary for today.</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="relative hidden sm:block">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search appointments, reports..."
-              className="pl-8 pr-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs w-48 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
           <button className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-700">
             <Calendar className="w-3.5 h-3.5 text-blue-500" />
             {new Date().toLocaleDateString("en-US", {
@@ -141,12 +182,15 @@ function PatientDashboard() {
             })}
           </button>
           <div className="relative">
-            <button className="p-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50">
+            <button
+              onClick={() => router.push("/patient/notifications")}
+              className="p-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+            >
               <Bell className="w-4 h-4 text-gray-600" />
             </button>
-            {doctorNotes.length > 0 && (
+            {unreadNotifications > 0 && (
               <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full text-white text-[10px] flex items-center justify-center">
-                {doctorNotes.length}
+                {unreadNotifications}
               </span>
             )}
           </div>
@@ -169,11 +213,14 @@ function PatientDashboard() {
                   {nextAppt ? (
                     <>
                       <h2 className="text-base font-bold leading-tight">
-                        Your next session is in {daysToNext} day{daysToNext !== 1 ? "s" : ""}
+                        Here is your next session
                       </h2>
                       <p className="text-blue-100 mt-0.5 text-xs">
-                        {nextAppt.appointment_type?.replace(/_/g, " ")} · Anava Clinic
+                        {apptTypeLabel(nextAppt)} · Anava Clinic
                       </p>
+                      {protocolContextLine(nextAppt) && (
+                        <p className="text-blue-100/90 mt-0.5 text-[11px] truncate">{protocolContextLine(nextAppt)}</p>
+                      )}
                     </>
                   ) : (
                     <>
@@ -188,21 +235,6 @@ function PatientDashboard() {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                {nextAppt && (
-                  <div className="bg-white/20 rounded-lg px-3 py-2 text-center text-white">
-                    <p className="text-[10px] font-medium text-blue-100 uppercase tracking-wide mb-0.5">
-                      Next
-                    </p>
-                    <p className="text-base font-bold leading-tight">
-                      {new Date(nextAppt.start_at).toLocaleDateString("en-US", {
-                        month: "short", day: "numeric",
-                      })}
-                    </p>
-                    <p className="text-[10px] text-blue-100 mt-0.5">
-                      {formatTime(nextAppt.start_time)}
-                    </p>
-                  </div>
-                )}
                 {nextAppt?.status === "selected" && (
                   <button
                     onClick={() => setPayingId(nextAppt.appointment_id)}
@@ -211,15 +243,27 @@ function PatientDashboard() {
                     Pay Now
                   </button>
                 )}
-                {doctor && (
-                  <div className="bg-white/10 rounded-lg px-3 py-2 hidden sm:flex items-center gap-2 text-white">
-                    <div className="w-7 h-7 rounded-full bg-white/80 flex items-center justify-center flex-shrink-0">
-                      <User className="w-3.5 h-3.5 text-blue-500" />
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-blue-100">Your Doctor</p>
-                      <p className="font-semibold text-xs">{doctor.full_name}</p>
-                    </div>
+                {nextAppt?.status === "planned" && (nextAppt.appointment_type === "device_session" || nextAppt.appointment_type === "protocol_followup") && (
+                  <button
+                    onClick={() => router.push(`/patient/appointments/${nextAppt.appointment_id}?claim=1`)}
+                    className="bg-white text-[#09172E] rounded-lg px-3.5 py-2 text-xs font-semibold hover:bg-blue-50 transition-colors"
+                  >
+                    Select Slot
+                  </button>
+                )}
+                {nextAppt && (
+                  <div className="bg-white/20 rounded-lg px-3 py-2 text-center text-white">
+                    <p className="text-[10px] font-medium text-blue-100 uppercase tracking-wide mb-0.5">
+                      Next
+                    </p>
+                    <p className="text-base font-bold leading-tight">
+                      {new Date(nextAppt.start_at || `${nextAppt.appointment_date}T00:00:00`).toLocaleDateString("en-US", {
+                        month: "short", day: "numeric",
+                      })}
+                    </p>
+                    <p className="text-[10px] text-blue-100 mt-0.5">
+                      {nextAppt.status === "planned" ? "No time booked yet" : formatTime(nextAppt.start_time)}
+                    </p>
                   </div>
                 )}
               </div>
@@ -227,8 +271,9 @@ function PatientDashboard() {
           </div>
         )}
 
-        {/* Action Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Action Cards — auto-fit so the row always fills the width whether
+            the optional "Pay for upcoming sessions" card is present or not. */}
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
           {/* Profile completion */}
           <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex flex-col">
             <div className="flex items-center justify-between mb-2">
@@ -263,50 +308,7 @@ function PatientDashboard() {
             )}
           </div>
 
-          {/* Consent / pending assessment */}
-          <div className={`bg-white rounded-xl p-4 border shadow-sm flex flex-col ${
-            pendingAssessments.length > 0 ? "border-blue-200" : "border-gray-100"
-          }`}>
-            <div className="flex items-center justify-between mb-2">
-              <FileText className="w-4 h-4 text-blue-500" />
-              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                pendingAssessments.length > 0
-                  ? "text-red-600 bg-red-50"
-                  : hasAnyAssessments
-                    ? "text-green-700 bg-green-50"
-                    : "text-neutral-500 bg-neutral-100"
-              }`}>
-                {pendingAssessments.length > 0
-                  ? "Action needed"
-                  : hasAnyAssessments
-                    ? "Up to date"
-                    : "Not assigned"}
-              </span>
-            </div>
-            <h3 className="text-sm font-semibold text-gray-900">Sign medical consent form</h3>
-            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-              {pendingAssessments.length > 0
-                ? "Required before your next assessment session. Review the treatment consent document and sign digitally."
-                : hasAnyAssessments
-                  ? "All consent forms are up to date."
-                  : "No assessments assigned yet. Your doctor will assign one when ready."}
-            </p>
-            {pendingAssessments.length > 0 && nextAppt && (
-              <div className="mt-2 flex items-center gap-1.5 text-[10px] text-orange-600 bg-orange-50 rounded-lg px-2.5 py-1.5">
-                <Clock className="w-3 h-3 flex-shrink-0" />
-                <span>Due before {formatShortDate(nextAppt.start_at)} — your session cannot proceed without this.</span>
-              </div>
-            )}
-            {pendingAssessments.length > 0 && (
-              <Link
-                href={`/patient/consent/${pendingAssessments[0].permission_id}`}
-                className="mt-auto w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium"
-                style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
-              >
-                Review &amp; sign <ChevronRight className="w-3.5 h-3.5" />
-              </Link>
-            )}
-          </div>
+          {/* Consent signing lives in Profile → Consents now — no dashboard card. */}
 
           {/* Pay for upcoming sessions */}
           {hasUnpaidAppt && (
@@ -348,7 +350,7 @@ function PatientDashboard() {
             </div>
             <h3 className="text-sm font-semibold text-gray-900">Request an appointment</h3>
             <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-              Book your next session or consultation{doctor ? ` with Dr. ${doctor.last_name}` : ""} using our AI-powered smart scheduler.
+              Book your next session or consultation{doctor ? ` with Dr. ${doctor.last_name}` : ""} using our smart scheduler.
             </p>
             <div className="mt-2 flex items-center gap-1 text-[10px] text-gray-500">
               <Zap className="w-3 h-3 text-orange-400" />
@@ -381,42 +383,6 @@ function PatientDashboard() {
           </div>
         </div>
 
-        {/* Stats Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatCard
-            icon={<CheckCircle className="w-4 h-4 text-blue-500" />}
-            label="Sessions completed"
-            value={completedAppts.toString()}
-            sub={totalPlannedAppts > 0 ? `of ${totalPlannedAppts} planned` : "No sessions yet"}
-          />
-          <StatCard
-            icon={<TrendingUp className="w-4 h-4 text-orange-500" />}
-            label="Treatment progress"
-            value={`${treatmentPct}%`}
-            sub="On track"
-            highlight
-          />
-          <StatCard
-            icon={<ClipboardList className="w-4 h-4 text-orange-500" />}
-            label="PRS assessment"
-            value={
-              scoreInstances.length > 0 ? `${prsProgress}%`
-                : pendingAssessments.length > 0 ? "Pending" : "—"
-            }
-            sub={
-              pendingAssessments.length > 0 ? "Due soon"
-                : scoreInstances[0]?.completed_at
-                  ? `Last: ${formatShortDate(scoreInstances[0].completed_at)}`
-                  : "No data"
-            }
-          />
-          <StatCard
-            icon={<FileText className="w-4 h-4 text-green-500" />}
-            label="New reports"
-            value={scoreInstances.length.toString()}
-            sub={scoreInstances.length > 0 ? "Ready to view" : "No new reports"}
-          />
-        </div>
 
         {/* Middle row: Appointments + Clinician */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -424,7 +390,10 @@ function PatientDashboard() {
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">Upcoming appointments</h3>
-              <button className="text-xs text-blue-600 flex items-center gap-0.5 hover:underline">
+              <button
+                onClick={() => router.push("/patient/appointments")}
+                className="text-xs text-blue-600 flex items-center gap-0.5 hover:underline"
+              >
                 View all <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -439,19 +408,25 @@ function PatientDashboard() {
                   <div key={appt.appointment_id} className="px-4 py-2.5 flex items-center gap-3">
                     <div className="text-center w-8 flex-shrink-0">
                       <p className="text-sm font-bold text-gray-900 leading-none">
-                        {getDayOfMonth(appt.start_at)}
+                        {getDayOfMonth(appt.start_at || appt.appointment_date)}
                       </p>
                       <p className="text-[10px] font-medium text-gray-400">
-                        {getMonthAbbr(appt.start_at)}
+                        {getMonthAbbr(appt.start_at || appt.appointment_date)}
                       </p>
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-gray-900 truncate">
-                        {appt.reason ?? appt.appointment_type?.replace(/_/g, " ")}
+                        {appt.reason ?? apptTypeLabel(appt)}
                       </p>
+                      {protocolContextLine(appt) && (
+                        <p className="text-[10px] text-gray-600 mt-0.5 truncate">{protocolContextLine(appt)}</p>
+                      )}
                       <p className="text-[10px] text-gray-500 mt-0.5">
-                        {formatTime(appt.start_time)}
-                        {appt.doctor_name ? ` · Dr. ${appt.doctor_name.split(" ").pop()}` : ""}
+                        {/* "planned" (protocol-born device_session/follow-up)
+                            carries a date and no time yet — the patient picks
+                            the slot; saying so beats a blank time column. */}
+                        {appt.status === "planned" ? "No time booked yet" : formatTime(appt.start_time)}
+                        {appointmentDoctorName(appt) ? ` · ${doctorLabel(appointmentDoctorName(appt))}` : ""}
                         {" · In-person"}
                       </p>
                     </div>
@@ -466,6 +441,15 @@ function PatientDashboard() {
                           <CreditCard className="w-3 h-3" /> Pay now
                         </button>
                       )}
+                      {appt.status === "planned" && (appt.appointment_type === "device_session" || appt.appointment_type === "protocol_followup") && (
+                        <button
+                          onClick={() => router.push(`/patient/appointments/${appt.appointment_id}?claim=1`)}
+                          className="flex items-center gap-1 text-[10px] font-semibold text-white px-2 py-1 rounded-md hover:opacity-90"
+                          style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
+                        >
+                          <Calendar className="w-3 h-3" /> Select slot
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -473,7 +457,8 @@ function PatientDashboard() {
             )}
           </div>
 
-          {/* Assigned clinician */}
+          {/* Assigned clinician, with the clinic's address/map beneath */}
+          <div className="flex flex-col gap-3">
           {doctor ? (
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100">
@@ -487,28 +472,21 @@ function PatientDashboard() {
                     <User className="w-5 h-5 text-blue-400" />
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-gray-900">{doctor.full_name}</p>
+                    <p className="text-sm font-bold text-gray-900">{doctorLabel(doctor.full_name)}</p>
                     <p className="text-xs text-gray-500">{doctor.specialization ?? "Neurologist"}</p>
                     {doctor.phone && <p className="text-[10px] text-gray-400">{doctor.phone}</p>}
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-1 mt-3 text-center">
+                <div className="grid grid-cols-2 gap-1 mt-3 text-center">
                   <div>
-                    <p className="text-base font-bold text-gray-900">{completedAppts}</p>
+                    <p className="text-base font-bold text-gray-900">{completedDeviceSessions}</p>
                     <p className="text-[10px] text-gray-500">Sessions done</p>
                   </div>
                   <div>
-                    <p className="text-base font-bold text-gray-900">{totalPlannedAppts}</p>
+                    <p className="text-base font-bold text-gray-900">{totalDeviceSessions}</p>
                     <p className="text-[10px] text-gray-500">Total planned</p>
                   </div>
-                  <div>
-                    <p className="text-base font-bold text-gray-900">{daysToNext ?? "—"}</p>
-                    <p className="text-[10px] text-gray-500">Days to next</p>
-                  </div>
                 </div>
-                <button className="mt-3 w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium" style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}>
-                  <MessageSquare className="w-3.5 h-3.5" /> Message Dr. {doctor.last_name}
-                </button>
               </div>
             </div>
           ) : (
@@ -519,7 +497,54 @@ function PatientDashboard() {
               </div>
             </div>
           )}
+          {clinic && <ClinicLocationCard clinic={clinic} />}
+          </div>
         </div>
+
+        {/* Scales sent to you from a live device session — separate from
+            the disease-level PrsAssessmentCard below; these are pushed by a
+            CA/doctor mid- or post-session (device_session_scales,
+            delivery_mode='patient_app') rather than assigned up front. */}
+        {pendingDeviceScales.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                <ClipboardList className="w-4 h-4 text-blue-500" /> Scales sent to you
+              </h3>
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                {pendingDeviceScales.length}
+              </span>
+            </div>
+            <div className="divide-y divide-gray-50">
+              {pendingDeviceScales.map((sc) => (
+                <button
+                  key={sc.session_scale_id}
+                  onClick={() =>
+                    router.push(
+                      `/patient/device-sessions/${sc.appointment_id}/assessment/${sc.protocol_scale_id}?scale_code=${encodeURIComponent(sc.scale_code ?? "")}`,
+                    )
+                  }
+                  className="w-full px-4 py-2.5 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-gray-900 truncate">
+                      {sc.scale_name ?? sc.scale_code ?? "Assessment scale"}
+                    </p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">
+                      {sc.session_number != null ? `Session ${sc.session_number} · ` : ""}
+                      {formatShortDate(sc.appointment_date)}
+                    </p>
+                  </div>
+                  <span className="flex items-center gap-1 text-[10px] font-semibold text-white px-2 py-1 rounded-md flex-shrink-0"
+                    style={{ background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" }}
+                  >
+                    {sc.status === "in_progress" ? "Continue" : "Start"} <ChevronRight className="w-3 h-3" />
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Bottom row: PRS Assessment + Treatment Progress */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -531,27 +556,11 @@ function PatientDashboard() {
 
           {/* Treatment Progress */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <div className="px-4 py-3 border-b border-gray-100">
               <h3 className="text-sm font-semibold text-gray-900">Treatment progress</h3>
-              <button className="text-xs text-blue-600 hover:underline">Details →</button>
             </div>
             <div className="px-4 py-3 space-y-3">
-              <ProgressBar
-                label="tDCS sessions"
-                value={completedAppts}
-                max={Math.max(totalPlannedAppts, 10)}
-                showCount
-                maxDisplay={Math.max(totalPlannedAppts, 10)}
-              />
-              <ProgressBar
-                label="EEG brain mapping"
-                value={completedAssessments.filter((a) => a.disease_name?.toLowerCase().includes("eeg")).length}
-                max={2}
-                showCount
-                maxDisplay={2}
-              />
               <ProgressBar label="PRS assessment" value={prsProgress} max={100} unit="%" />
-              <ProgressBar label="Profile setup" value={profilePct} max={100} unit="%" />
             </div>
             {completedAppts > 0 && !hasUnpaidAppt && (
               <div className="mx-4 mb-3 bg-green-50 border border-green-100 rounded-lg px-3 py-2 flex items-center gap-2">
@@ -582,23 +591,61 @@ function PatientDashboard() {
 
 // ─── Sub-components ───────────────────────────────────────────────
 
-function StatCard({ icon, label, value, sub, highlight }: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  sub?: string;
-  highlight?: boolean;
-}) {
+/** Patient's primary clinic (GET /patients/{id}/clinic) — address, contact
+ * and an embedded Google Map. google_maps_url is whatever the clinic_admin
+ * pasted: an /maps/embed URL is used as the iframe src directly; any other
+ * link (share link, place URL) can't be framed, so the map embeds by address
+ * and the link is kept for "Open in Google Maps". */
+function ClinicLocationCard({ clinic }: { clinic: PatientClinic }) {
+  const address =
+    clinic.full_address ||
+    [clinic.address, clinic.city, clinic.state, clinic.pincode].filter(Boolean).join(", ");
+  const query = encodeURIComponent([clinic.clinic_name, address].filter(Boolean).join(", "));
+  const mapsUrl = clinic.google_maps_url?.trim() || null;
+  const isEmbedUrl = !!mapsUrl && mapsUrl.includes("/maps/embed");
+  const embedSrc = isEmbedUrl ? mapsUrl! : `https://www.google.com/maps?q=${query}&output=embed`;
+  const openHref = mapsUrl && !isEmbedUrl ? mapsUrl : `https://www.google.com/maps/search/?api=1&query=${query}`;
+
   return (
-    <div className={`bg-white rounded-xl p-4 border shadow-sm ${
-      highlight ? "border-gray-200" : "border-gray-100"
-    }`}>
-      <div className="flex items-center gap-1.5 mb-1.5">
-        {icon}
-        <p className="text-sm text-gray-500">{label}</p>
+    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
+        <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide flex items-center gap-1">
+          <MapPin className="w-3 h-3" /> Your clinic
+        </p>
+        <span className="text-[10px] text-gray-400 font-mono truncate" title={clinic.clinic_id}>
+          ID: {clinic.clinic_id}
+        </span>
       </div>
-      <p className="text-xl font-[750] text-gray-700">{value}</p>
-      {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+      <div className="px-4 py-3 space-y-1">
+        <p className="text-sm font-bold text-gray-900">{clinic.clinic_name}</p>
+        {address && <p className="text-xs text-gray-600">{address}</p>}
+        {clinic.phone && (
+          <p className="text-[10px] text-gray-500 flex items-center gap-1">
+            <Phone className="w-3 h-3" /> {clinic.phone}
+          </p>
+        )}
+        {clinic.email && (
+          <p className="text-[10px] text-gray-500 flex items-center gap-1">
+            <Mail className="w-3 h-3" /> {clinic.email}
+          </p>
+        )}
+      </div>
+      <iframe
+        title={`Map of ${clinic.clinic_name}`}
+        src={embedSrc}
+        className="w-full h-48 border-0"
+        allowFullScreen
+        loading="lazy"
+        referrerPolicy="strict-origin-when-cross-origin"
+      />
+      <a
+        href={openHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center justify-center gap-1 text-xs text-blue-600 py-2 border-t border-gray-100 hover:underline"
+      >
+        Open in Google Maps <ExternalLink className="w-3 h-3" />
+      </a>
     </div>
   );
 }
@@ -680,17 +727,6 @@ function PrsAssessmentCard({ pending, instances, doctor }: {
             </div>
             <span className="text-[10px] font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full">Completed</span>
           </div>
-          {last.percentage != null && (
-            <div>
-              <div className="flex justify-between text-[10px] mb-1">
-                <span className="text-gray-500">Overall progress</span>
-                <span className="font-semibold text-gray-900">{Math.round(last.percentage)}% complete</span>
-              </div>
-              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.round(last.percentage)}%` }} />
-              </div>
-            </div>
-          )}
           {last.scale_summaries && last.scale_summaries.length > 0 && (
             <div className="space-y-1 pt-0.5">
               {last.scale_summaries.map((s, i) => (

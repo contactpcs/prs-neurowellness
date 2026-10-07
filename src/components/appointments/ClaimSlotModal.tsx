@@ -44,7 +44,7 @@ export function ClaimSlotModal({ isOpen, onClose, appointmentId, appointmentType
         </div>
 
         {appointmentType === "device_session" ? (
-          <DeviceTimelinePicker appointmentId={appointmentId} onClaimed={onClaimed} />
+          <DeviceTimelinePicker appointmentId={appointmentId} plannedDate={plannedDate} onClaimed={onClaimed} />
         ) : (
           <DoctorSlotList appointmentId={appointmentId} plannedDate={plannedDate} onClose={onClose} onClaimed={onClaimed} />
         )}

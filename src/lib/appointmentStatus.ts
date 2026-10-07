@@ -7,7 +7,7 @@ import type { AppointmentStatus } from "@/types/domain.types";
 
 export const APPOINTMENT_STATUSES: AppointmentStatus[] = [
   "planned", "selected", "paid", "checked_in", "in_progress",
-  "completed", "cancelled", "no_show", "rescheduled",
+  "completed", "cancelled", "no_show", "missed", "rescheduled",
 ];
 
 export const STATUS_LABEL: Record<AppointmentStatus, string> = {
@@ -19,6 +19,7 @@ export const STATUS_LABEL: Record<AppointmentStatus, string> = {
   completed: "Completed",
   cancelled: "Cancelled",
   no_show: "No Show",
+  missed: "Missed",
   rescheduled: "Rescheduled",
 };
 
@@ -33,6 +34,7 @@ export const STATUS_TONE: Record<AppointmentStatus, string> = {
   completed: "bg-success-100 text-success-700",
   cancelled: "bg-danger-100 text-danger-700",
   no_show: "bg-danger-100 text-danger-700",
+  missed: "bg-neutral-200 text-neutral-700",
   rescheduled: "bg-neutral-100 text-neutral-700",
 };
 
@@ -47,6 +49,7 @@ export const STATUS_DOT: Record<AppointmentStatus, string> = {
   completed: "#16a34a",
   cancelled: "#ef4444",
   no_show: "#ef4444",
+  missed: "#a3a3a3",
   rescheduled: "#a3a3a3",
 };
 

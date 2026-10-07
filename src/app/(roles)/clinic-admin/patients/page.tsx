@@ -1,12 +1,13 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import {
   Users, Search, X, Check, Trash2, Edit2,
   Calendar, Plus, RefreshCw, FileText, ShieldCheck, Power, PowerOff,
 } from "lucide-react";
 import { useAuth, useAdminPatients } from "@/lib/hooks";
 import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
+import { Pager } from "@/components/ui/Pager";
 import { consentService, type ConsentRecord } from "@/lib/api/services/consent.service";
 import { filesService, type PatientFile } from "@/lib/api/services/files.service";
 import { adminService } from "@/lib/api/services/admin.service";
@@ -14,6 +15,8 @@ import { PatientJourneySections, type PatientJourneyDetail } from "@/components/
 import type { AdminPatient } from "@/types/admin.types";
 
 // Matches patients/service.py _REGISTRATION_STEPS exactly.
+const PAGE_SIZE = 20;
+
 const REGISTRATION_STEPS: { key: string; label: string }[] = [
   { key: "demographics_complete", label: "Demographics" },
   { key: "consent_signed", label: "Consent Signed" },
@@ -335,7 +338,7 @@ function PatientDetailModal({ patient }: { patient: AdminPatient }) {
 
 export default function ClinicAdminPatientsPage() {
   const { user } = useAuth();
-  const { patients, isLoading, error, fetch, registerPatient, updatePatient, togglePatientActive, deletePatient } = useAdminPatients();
+  const { patients, total, isLoading, error, fetch, registerPatient, updatePatient, togglePatientActive, deletePatient } = useAdminPatients();
 
   const [search, setSearch] = useState("");
   const [showRegister, setShowRegister] = useState(false);
@@ -354,28 +357,41 @@ export default function ClinicAdminPatientsPage() {
     } finally { setProcessingId(null); }
   }
 
-  useEffect(() => { if (user?.clinic_id) fetch({ clinic_id: user.clinic_id }); }, [fetch, user?.clinic_id]);
+  // One server page + server search (name, phone, email, MRN, doctor) —
+  // used to download every clinic patient and filter here (API audit F-053).
+  const [page, setPage] = useState(1);
+  const [qDebounced, setQDebounced] = useState("");
+  const [everLoaded, setEverLoaded] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setQDebounced(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+  useEffect(() => { setPage(1); }, [qDebounced]);
+  const load = useCallback(async () => {
+    if (!user?.clinic_id) return;
+    await fetch({ clinic_id: user.clinic_id, search: qDebounced, page, page_size: PAGE_SIZE });
+    setEverLoaded(true);
+  }, [fetch, user?.clinic_id, qDebounced, page]);
+  useEffect(() => { load(); }, [load]);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   async function handleRefresh() {
     setRefreshing(true);
-    try { if (user?.clinic_id) await fetch({ clinic_id: user.clinic_id }); } finally { setRefreshing(false); }
+    try { await load(); } finally { setRefreshing(false); }
   }
 
-  const filtered = patients.filter((p) => {
-    const name = `${p.first_name} ${p.last_name}`.toLowerCase();
-    return name.includes(search.toLowerCase()) || p.email.toLowerCase().includes(search.toLowerCase()) || (p.mrn ?? "").toLowerCase().includes(search.toLowerCase());
-  });
+  const filtered = patients;
 
   const initials = (p: AdminPatient) => [p.first_name?.[0], p.last_name?.[0]].filter(Boolean).join("").toUpperCase() || "?";
 
-  if (isLoading) return <PatientsSkeleton />;
+  if (isLoading && !everLoaded) return <PatientsSkeleton />;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">Patients</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{patients.length} patient{patients.length !== 1 ? "s" : ""} at your clinic</p>
+          <p className="text-sm text-neutral-500 mt-0.5">{total} patient{total !== 1 ? "s" : ""} at your clinic</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={handleRefresh} disabled={refreshing} title="Refresh"
@@ -399,16 +415,16 @@ export default function ClinicAdminPatientsPage() {
           className="w-full pl-9 pr-4 py-2 text-sm border border-neutral-200 rounded-lg bg-white" />
       </div>
 
-      <Card>
+      <Card className="overflow-hidden">
         {filtered.length === 0 ? (
           <CardContent className="py-16 text-center">
             <Users className="h-10 w-10 text-neutral-300 mx-auto mb-3" />
             <p className="text-sm font-medium text-neutral-600">No patients found</p>
           </CardContent>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[calc(100vh-220px)]">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-white">
                 <tr className="border-b border-neutral-100">
                   <th className="text-left px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">Patient</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">DOB / Gender</th>
@@ -472,6 +488,7 @@ export default function ClinicAdminPatientsPage() {
           </div>
         )}
       </Card>
+      <Pager page={page} totalPages={totalPages} total={total} noun="patients" onPage={setPage} />
 
       <Modal isOpen={showRegister} onClose={() => setShowRegister(false)} title="Register Patient">
         {user?.clinic_id && <RegisterPatientForm clinicId={user.clinic_id} onSubmit={registerPatient} onClose={() => setShowRegister(false)} />}

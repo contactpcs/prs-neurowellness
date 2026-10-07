@@ -136,6 +136,16 @@ export default function PatientAssessmentPage() {
           patient_id: permission.patient_id,
         });
 
+        // This (patient, disease) was already completed once — the backend
+        // returned that completed instance read-only rather than a fresh
+        // blank one (submitting against it would 400 anyway). Send the
+        // patient straight to their existing results instead of rendering
+        // an editable form for an assessment they already finished.
+        if (result.is_readonly_completed) {
+          router.replace(`/patient/results/${result.instance_id}`);
+          return;
+        }
+
         if (result.scales.length === 0) throw new Error("No scales found for this assessment");
 
         setInstanceId(result.instance_id);
@@ -161,10 +171,17 @@ export default function PatientAssessmentPage() {
               scale.question_ids.forEach((qid, idx) => {
                 const entry = byQid[qid];
                 if (entry) {
-                  scaleMap[String(idx)] =
-                    entry.response_value !== null && entry.response_value !== undefined
-                      ? entry.response_value
-                      : entry.given_response;
+                  // given_response is the canonical option VALUE as sent to
+                  // saveResponse (String(value)) — response_value is the
+                  // scoring POINTS for that answer, a different number for
+                  // reverse-scored items. Restoring response_value here
+                  // broke both the selected-option highlight (LikertInput
+                  // compares strictly against option.value) and skip-logic
+                  // (computeHiddenQuestionIndices looks up option.value too)
+                  // whenever an item's points didn't equal its value.
+                  const raw = entry.given_response;
+                  const asNumber = Number(raw);
+                  scaleMap[String(idx)] = raw !== null && raw !== "" && !Number.isNaN(asNumber) ? asNumber : raw;
                 }
               });
               if (Object.keys(scaleMap).length > 0) {
@@ -178,7 +195,13 @@ export default function PatientAssessmentPage() {
             );
             if (firstIncompleteIdx >= 0) {
               setCurrentScaleIndex(firstIncompleteIdx);
-              setCurrentQuestionIndex(0);
+              const resumedScale = loadedScales[firstIncompleteIdx];
+              const resumedScaleResponses = restoredResponses[resumedScale.scale_id] ?? {};
+              const hidden = computeHiddenQuestionIndices(resumedScale.questions, resumedScaleResponses);
+              const firstUnansweredIdx = resumedScale.questions.findIndex(
+                (_, idx) => !hidden.has(idx) && resumedScaleResponses[String(idx)] === undefined,
+              );
+              setCurrentQuestionIndex(firstUnansweredIdx >= 0 ? firstUnansweredIdx : 0);
             }
           } catch {
             // If restoring saved responses fails, continue from the beginning
@@ -239,6 +262,13 @@ export default function PatientAssessmentPage() {
       setCurrentScaleIndex((i) => i - 1);
       setCurrentQuestionIndex(0);
     }
+  };
+
+  const handleQuestionNext = () => {
+    setCurrentQuestionIndex((prev) => Math.min(prev + 1, totalQuestions - 1));
+  };
+  const handleQuestionPrev = () => {
+    setCurrentQuestionIndex((prev) => Math.max(prev - 1, 0));
   };
 
   const handleLanguageChange = async (code: string) => {
@@ -383,6 +413,9 @@ export default function PatientAssessmentPage() {
       isResumed={isResumed}
       onAnswer={handleAnswer}
       onPrev={handlePrev}
+      onQuestionNext={handleQuestionNext}
+      onQuestionPrev={handleQuestionPrev}
+      onQuestionJump={setCurrentQuestionIndex}
       onSkipSection={handleSkipSection}
       onSubmitScale={handleSubmitScale}
       onNavigateScale={(idx) => {

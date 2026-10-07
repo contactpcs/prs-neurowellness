@@ -8,11 +8,11 @@ import { doctorsService } from "@/lib/api/services/doctors.service";
 import { patientFilesService, type PatientFile } from "@/lib/api/services/patientFiles.service";
 import { extractErrorMessage } from "@/lib/api/errors";
 import type { InstanceScoreDetail } from "@/lib/api/services/scores.service";
-import type { Appointment, AppointmentStatus } from "@/types/domain.types";
+import type { Appointment } from "@/types/domain.types";
 
-type Tab = "appointments" | "reports" | "prs" | "sessions" | "final-reports";
+export type Tab = "appointments" | "reports" | "prs" | "sessions" | "final-reports";
 
-const REPORT_TYPE_OPTIONS = [
+export const REPORT_TYPE_OPTIONS = [
   { value: "blood_test",     label: "Blood test" },
   { value: "scan",           label: "Scan" },
   { value: "mri",            label: "MRI" },
@@ -52,18 +52,6 @@ function severityBg(level?: string) {
   }
 }
 
-const APPT_BADGE: Record<string, string> = {
-  planned:     "bg-gray-100 text-gray-600",
-  selected:    "bg-amber-100 text-amber-700",
-  paid:        "bg-green-100 text-green-700",
-  checked_in:  "bg-blue-100 text-blue-700",
-  in_progress: "bg-blue-200 text-blue-900",
-  cancelled:   "bg-red-100 text-red-700",
-  no_show:     "bg-gray-100 text-gray-600",
-  completed:   "bg-slate-100 text-slate-600",
-  rescheduled: "bg-purple-100 text-purple-700",
-};
-
 const PERM_BADGE: Record<string, string> = {
   granted:   "bg-blue-50 text-blue-700",
   completed: "bg-green-50 text-green-700",
@@ -88,8 +76,8 @@ function SectionError({ msg }: { msg: string }) {
   );
 }
 
-export function PatientHistoryPanel({ patientId, clinicId }: { patientId: string; clinicId?: string }) {
-  const [tab, setTab] = useState<Tab>("appointments");
+export function PatientHistoryPanel({ patientId, clinicId, initialTab }: { patientId: string; clinicId?: string; initialTab?: Tab }) {
+  const [tab, setTab] = useState<Tab>(initialTab ?? "appointments");
 
   // Real, working sources — same ones the rest of the doctor patient-detail
   // page already relies on. The old standalone /history page hit stub
@@ -104,7 +92,6 @@ export function PatientHistoryPanel({ patientId, clinicId }: { patientId: string
 
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo,   setFilterDateTo]   = useState("");
-  const [filterStatus,   setFilterStatus]   = useState<AppointmentStatus | "">("");
 
   const [drillOpen,    setDrillOpen]    = useState<string | null>(null);
   const [drillData,    setDrillData]    = useState<Record<string, InstanceScoreDetail>>({});
@@ -185,11 +172,17 @@ export function PatientHistoryPanel({ patientId, clinicId }: { patientId: string
     }
   }, [patientId, drillOpen, drillData]);
 
+  // Medical History is a record of what actually happened, not a
+  // scheduling view — planned/cancelled/no_show/etc rows (and, once a
+  // treatment protocol version is superseded, the appointments generated
+  // under it) are noise here, not history. Appointments/follow-ups/device
+  // sessions are all just Appointment rows differing by appointment_type,
+  // so one status check covers all three.
   const filteredAppts = appointments
+    .filter((a) => a.status === "completed")
     .filter((a) => {
       if (filterDateFrom && a.appointment_date < filterDateFrom) return false;
       if (filterDateTo   && a.appointment_date > filterDateTo)   return false;
-      if (filterStatus   && a.status !== filterStatus)            return false;
       return true;
     })
     .sort((a, b) => (b.appointment_date ?? "").localeCompare(a.appointment_date ?? ""));
@@ -254,19 +247,9 @@ export function PatientHistoryPanel({ patientId, clinicId }: { patientId: string
                   className="text-sm border border-neutral-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
                 />
               </div>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value as AppointmentStatus | "")}
-                className="text-sm border border-neutral-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
-              >
-                <option value="">All Statuses</option>
-                {(["planned","selected","paid","checked_in","in_progress","completed","cancelled","no_show","rescheduled"] as const).map((s) => (
-                  <option key={s} value={s}>{statusLabel(s)}</option>
-                ))}
-              </select>
-              {(filterDateFrom || filterDateTo || filterStatus) && (
+              {(filterDateFrom || filterDateTo) && (
                 <button
-                  onClick={() => { setFilterDateFrom(""); setFilterDateTo(""); setFilterStatus(""); }}
+                  onClick={() => { setFilterDateFrom(""); setFilterDateTo(""); }}
                   className="text-xs text-red-500 hover:text-red-700 transition-colors"
                 >
                   Clear
@@ -280,11 +263,11 @@ export function PatientHistoryPanel({ patientId, clinicId }: { patientId: string
             {apptLoading ? <SectionSkeleton /> : apptErr ? <SectionError msg={apptErr} /> : filteredAppts.length === 0 ? (
               <div className="px-6 py-12 text-center text-sm text-neutral-400">No appointments found</div>
             ) : (
-              <div className="overflow-x-auto bg-white">
+              <div className="overflow-auto max-h-[calc(100vh-380px)] bg-white">
                 <table className="w-full">
-                  <thead>
+                  <thead className="sticky top-0 z-10 bg-white">
                     <tr className="border-b border-neutral-100">
-                      {["Date", "Time", "Type", "Reason", "Status"].map((h) => (
+                      {["Date", "Time", "Type", "Reason"].map((h) => (
                         <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">{h}</th>
                       ))}
                     </tr>
@@ -296,11 +279,6 @@ export function PatientHistoryPanel({ patientId, clinicId }: { patientId: string
                         <td className="px-5 py-3 text-sm text-neutral-600 whitespace-nowrap">{fmt12(a.start_time)}</td>
                         <td className="px-5 py-3 text-sm text-neutral-600 capitalize">{(a.appointment_type || "—").replace(/_/g, " ")}</td>
                         <td className="px-5 py-3 text-sm text-neutral-600 max-w-[200px] truncate">{a.reason || "—"}</td>
-                        <td className="px-5 py-3">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${APPT_BADGE[a.status] ?? "bg-gray-100 text-gray-600"}`}>
-                            {statusLabel(a.status)}
-                          </span>
-                        </td>
                       </tr>
                     ))}
                   </tbody>

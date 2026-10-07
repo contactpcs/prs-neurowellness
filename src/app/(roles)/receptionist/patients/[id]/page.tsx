@@ -1,7 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
-import Link from "next/link";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, User, Mail, Phone, Calendar, MapPin,
@@ -12,10 +11,12 @@ import { staffService } from "@/lib/api/services/staff.service";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { adminService } from "@/lib/api/services/admin.service";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
-import { useReceptionPatient, useClinics } from "@/lib/hooks";
-import { Card, CardHeader, CardContent, PageLoader } from "@/components/ui";
+import { useReceptionPatient, useAuth } from "@/lib/hooks";
+import { ReceptionBookAppointmentModal } from "@/components/appointments/ReceptionBookAppointmentModal";
+import { isSupersededCancellation } from "@/lib/appointmentStatus";
+import { Card, CardHeader, CardContent, PatientDetailSkeleton } from "@/components/ui";
 import { PatientJourneySections, type PatientJourneyDetail } from "@/components/admin/PatientJourneySections";
-import type { DoctorListItem, Appointment } from "@/types/domain.types";
+import type { DoctorListItem, Appointment, PatientListItem } from "@/types/domain.types";
 
 const TABS = ["Overview", "Appointments", "Timeline"] as const;
 type Tab = (typeof TABS)[number];
@@ -105,16 +106,26 @@ export default function PatientDetailPage() {
   const [apptsLoading, setApptsLoading] = useState(true);
 
   const { patient, isLoading: patientLoading, refresh: refreshPatient } = useReceptionPatient(id);
-  const { clinics } = useClinics();
+  const { user } = useAuth();
   const isLoading = patientLoading || doctorsLoading;
+  const [showBooking, setShowBooking] = useState(false);
+  // This page's patient, pre-selected in the booking modal (route id is the
+  // patients.patient_id the booking API expects). Memoised so the modal
+  // doesn't reset its form on every render.
+  const bookingPatient = useMemo<PatientListItem | null>(
+    () => (patient ? { ...patient, id } : null),
+    [patient, id],
+  );
 
-  useEffect(() => {
+  const loadAppointments = useCallback(() => {
     setApptsLoading(true);
     appointmentsService.list({ patient_id: id, limit: 100 })
       .then((res) => setAppointments(res.appointments))
       .catch(() => setAppointments([]))
       .finally(() => setApptsLoading(false));
   }, [id]);
+
+  useEffect(() => { loadAppointments(); }, [loadAppointments]);
 
   useEffect(() => {
     setJourneyDetail(null);
@@ -125,12 +136,11 @@ export default function PatientDetailPage() {
   const registrationStatus = journeyDetail?.registration_status as string | undefined;
   const currentStepIndex = REGISTRATION_STEPS.findIndex((s) => s.key === registrationStatus);
 
-  // Resolve clinic name reactively.
-  const resolvedClinic: string | null = (() => {
-    if (!patient?.clinic_id) return null;
-    const match = clinics.find((c) => c.clinic_id === patient.clinic_id);
-    return match?.clinic_name || match?.city || null;
-  })();
+  // Clinic name comes with the registration record (/patients/{id}) — no
+  // separate clinic-list fetch (API audit F-022).
+  const resolvedClinic: string | null = patient?.clinic_id
+    ? ((journeyDetail?.clinic_name as string | null | undefined) ?? null)
+    : null;
 
   useEffect(() => {
     receptionService.getDoctors()
@@ -176,9 +186,9 @@ export default function PatientDetailPage() {
   const handleReject = async () => {
     setActionLoading("reject");
     try {
-      // Real endpoint has no rejection-reason field — rejectReason isn't transmitted.
-      await receptionService.rejectPatient(id);
+      await receptionService.rejectPatient(id, rejectReason);
       setRejectModal(false);
+      setRejectReason("");
       refreshPatient();
       showToast("Patient registration rejected.", true);
     } catch {
@@ -188,7 +198,7 @@ export default function PatientDetailPage() {
     }
   };
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PatientDetailSkeleton />;
   if (!patient)  return (
     <div className="text-center py-20 text-neutral-400">Patient not found.</div>
   );
@@ -207,6 +217,16 @@ export default function PatientDetailPage() {
           {toast.ok ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
           {toast.msg}
         </div>
+      )}
+
+      {user?.clinic_id && (
+        <ReceptionBookAppointmentModal
+          isOpen={showBooking}
+          clinicId={user.clinic_id}
+          initialPatient={bookingPatient}
+          onClose={() => setShowBooking(false)}
+          onBooked={() => { setShowBooking(false); loadAppointments(); }}
+        />
       )}
 
       {/* Patient header */}
@@ -245,12 +265,14 @@ export default function PatientDetailPage() {
             >
               <ArrowLeft className="h-4 w-4" /> Back
             </button>
-            <Link
-              href="/receptionist/appointments"
-              className="h-[38px] px-4 rounded-lg bg-brand-gradient text-white text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-1.5 whitespace-nowrap"
+            <button
+              onClick={() => setShowBooking(true)}
+              disabled={isPending || !user?.clinic_id}
+              title={isPending ? "Approve this patient's registration before booking" : undefined}
+              className="h-[38px] px-4 rounded-lg bg-brand-gradient text-white text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-1.5 whitespace-nowrap disabled:opacity-50"
             >
               <CalendarPlus className="h-4 w-4" /> Book Appointment
-            </Link>
+            </button>
           </div>
         </CardContent>
       </Card>
@@ -490,7 +512,8 @@ export default function PatientDetailPage() {
                     <span key={h} className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide">{h}</span>
                   ))}
                 </div>
-                {[...appointments]
+                {appointments
+                  .filter((a) => !isSupersededCancellation(a))
                   .sort((a, b) => b.appointment_date.localeCompare(a.appointment_date))
                   .map((a) => (
                     <div key={a.appointment_id} className="grid gap-3 items-center px-5 py-3 border-b border-neutral-100 last:border-0" style={{ gridTemplateColumns: "1.2fr 1.2fr 1fr 1fr" }}>

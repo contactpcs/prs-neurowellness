@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useSessions } from "@/lib/hooks";
+import { useSessions, useGoBack } from "@/lib/hooks";
 import { doctorsService } from "@/lib/api/services";
-import { Button, Input, Card, CardContent, PageLoader } from "@/components/ui";
+import { Button, Card, CardContent, PageSkeleton } from "@/components/ui";
 import { ConditionSelector } from "@/components/assessment";
 import { Clock, ChevronLeft } from "lucide-react";
 import { useAppDispatch } from "@/store/hooks";
@@ -14,14 +14,10 @@ import { invalidateDoctorPatients, fetchDoctorPatients, fetchDoctorPatient } fro
 export default function AssignAssessmentPage() {
   const { id: patientId } = useParams<{ id: string }>();
   const router = useRouter();
+  const goBack = useGoBack(`/doctor/patients/${patientId}?section=prs`);
   const dispatch = useAppDispatch();
   const { conditions, currentCondition, loadConditions, loadConditionDetail, resetConditionDetail } = useSessions();
   const [selectedCondition, setSelectedCondition] = useState<string | null>(null);
-  const [mode, setMode] = useState<"self" | "clinician_administered" | "voice">("self");
-  const [title, setTitle] = useState("");
-  const [notes, setNotes] = useState("");
-  const [instructions, setInstructions] = useState("");
-  const [dueDate, setDueDate] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
 
@@ -39,7 +35,7 @@ export default function AssignAssessmentPage() {
   }, [resetConditionDetail]);
 
   const safeConditions = Array.isArray(conditions) ? conditions : [];
-  if (safeConditions.length === 0) return <PageLoader />;
+  if (safeConditions.length === 0) return <PageSkeleton />;
 
   const handleAssign = async () => {
     if (!selectedCondition) return;
@@ -74,11 +70,11 @@ export default function AssignAssessmentPage() {
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
         <button
-          onClick={() => router.push(`/doctor/patients/${patientId}?section=prs`)}
+          onClick={goBack}
           className="flex items-center gap-1.5 text-sm font-medium text-neutral-600 hover:text-neutral-900 transition-colors"
         >
           <ChevronLeft className="w-4 h-4" />
-          Back to Patient
+          Back
         </button>
       </div>
 
@@ -116,40 +112,6 @@ export default function AssignAssessmentPage() {
 
       {selectedCondition && (
         <>
-          <Card>
-            <CardContent className="space-y-4">
-              <h3 className="font-medium text-neutral-900">Session Details</h3>
-              <Input label="Session Title (optional)" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Depression Assessment — March 2026" />
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-1">Mode</label>
-                <div className="flex gap-3">
-                  {[
-                    { value: "self" as const, label: "Patient Self-Report" },
-                    { value: "clinician_administered" as const, label: "Clinician Administered" },
-                    { value: "voice" as const, label: "Voice Assisted" },
-                  ].map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => setMode(opt.value)}
-                      className={`px-4 py-2 rounded-lg text-sm border transition-colors ${mode === opt.value ? "border-primary-500 bg-primary-50 text-primary-700" : "border-neutral-200 text-neutral-600 hover:bg-neutral-50"}`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <Input label="Due Date (optional)" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-1">Clinical Notes (internal)</label>
-                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none" placeholder="Notes visible only to clinicians..." />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-1">Patient Instructions</label>
-                <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={2} className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none" placeholder="Instructions shown to the patient..." />
-              </div>
-            </CardContent>
-          </Card>
-
           {assignError && (
             <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3">{assignError}</p>
           )}

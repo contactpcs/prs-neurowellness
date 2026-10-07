@@ -4,30 +4,19 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CalendarDays, Clock, Plus,
-  ChevronRight, Loader2, RefreshCw, Syringe, ClipboardList,
+  ChevronRight, Loader2, RefreshCw, Lock, History,
 } from "lucide-react";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { BookAppointmentModal } from "@/components/appointments/BookAppointmentModal";
 import { PatientMonthCalendar } from "@/components/appointments/PatientMonthCalendar";
 import { STATUS_LABEL, ACTIVE_APPOINTMENT_STATUSES, isSupersededCancellation } from "@/lib/appointmentStatus";
-import type { Appointment, AppointmentType } from "@/types/domain.types";
+import { appointmentDoctorName, getDeviceSessionLabel, protocolContextLine, SESSION_TYPE_LABEL } from "@/lib/utils/sessionType";
+import { doctorLabel } from "@/lib/utils/doctorLabel";
+import type { Appointment, AppointmentHistoryEntry, AppointmentType } from "@/types/domain.types";
 
 function todayStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function KpiCard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub?: string }) {
-  return (
-    <div className="bg-white rounded-xl p-4 border border-neutral-100 shadow-sm">
-      <div className="flex items-center gap-1.5 mb-1.5">
-        {icon}
-        <p className="text-sm text-neutral-500">{label}</p>
-      </div>
-      <p className="text-xl font-bold text-neutral-800">{value}</p>
-      {sub && <p className="text-xs text-neutral-400 mt-0.5">{sub}</p>}
-    </div>
-  );
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -42,6 +31,14 @@ const STATUS_COLOR: Record<string, string> = {
   rescheduled: "bg-yellow-50 text-yellow-700",
 };
 
+const PAYMENT_STATUS_COLOR: Record<string, string> = {
+  pending:  "bg-amber-50 text-amber-700",
+  paid:     "bg-green-50 text-green-700",
+  failed:   "bg-red-50 text-red-600",
+  waived:   "bg-blue-50 text-blue-700",
+  refunded: "bg-neutral-100 text-neutral-500",
+};
+
 function fmtDate(d?: string | null) {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
@@ -50,6 +47,10 @@ function fmtTime(t?: string | null) {
   if (!t) return "";
   return t.slice(0, 5);
 }
+function fmtMoney(n?: number | null, currency?: string | null) {
+  if (n == null) return null;
+  return `${currency === "INR" || !currency ? "₹" : currency + " "}${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+}
 
 export default function PatientAppointmentsPage() {
   const router = useRouter();
@@ -57,6 +58,8 @@ export default function PatientAppointmentsPage() {
   const [apptLoading, setApptLoading] = useState(true);
   const [showBook, setShowBook]       = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr());
+  const [history, setHistory]           = useState<AppointmentHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
   const loadAppointments = useCallback(async () => {
     setApptLoading(true);
@@ -69,22 +72,55 @@ export default function PatientAppointmentsPage() {
     }
   }, []);
 
-  useEffect(() => { loadAppointments(); }, [loadAppointments]);
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      setHistory(await appointmentsService.myHistory());
+    } catch {
+      // silent
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadAppointments(); loadHistory(); }, [loadAppointments, loadHistory]);
+
+  // modality now comes on the appointment row itself (backend joins the
+  // protocol's device) — no per-protocol detail fetch.
+  const apptTypeLabel = useCallback((appt: Appointment): string =>
+    appt.appointment_type === "device_session"
+      ? getDeviceSessionLabel(appt.modality)
+      : appt.appointment_type
+        ? SESSION_TYPE_LABEL[appt.appointment_type]
+        : "",
+    [],
+  );
 
   useEffect(() => {
-    const onAppointmentEvent = () => loadAppointments();
+    const onAppointmentEvent = () => { loadAppointments(); loadHistory(); };
     window.addEventListener("sse:appointment", onAppointmentEvent);
     return () => window.removeEventListener("sse:appointment", onAppointmentEvent);
-  }, [loadAppointments]);
+  }, [loadAppointments, loadHistory]);
 
   // Drop appointments auto-cancelled by a protocol amendment superseding
   // their protocol — that's the old version's slot being cleared, not a
   // cancellation the patient should see; the new protocol's own appointments
   // carry the current schedule.
   const visibleAppts = useMemo(() => appts.filter((a) => !isSupersededCancellation(a)), [appts]);
+  const visibleHistory = useMemo(() => history.filter((a) => !isSupersededCancellation(a)), [history]);
 
   const now = new Date();
   const upcoming = visibleAppts.filter((a) => {
+    // "planned" (a protocol-born device_session/follow-up with a date but no
+    // claimed time slot yet) has no start_time to compare against `now` —
+    // compare against the date alone (end of that day), same reasoning as
+    // the dashboard/CA appointments list: excluding it hid a session the
+    // patient still needs to act on (pick a slot) until its date arrived.
+    // Once the date itself is past, it's overdue rather than upcoming.
+    if (a.status === "planned") {
+      const dayEnd = new Date(`${a.appointment_date}T23:59:59`);
+      return dayEnd >= now && !["cancelled", "no_show", "completed"].includes(a.status);
+    }
     const d = new Date(`${a.appointment_date}T${a.start_time || "00:00"}`);
     return d >= now && !["cancelled", "no_show", "completed"].includes(a.status);
   });
@@ -97,20 +133,16 @@ export default function PatientAppointmentsPage() {
   );
   const bookableType: AppointmentType | null = hasActiveInitial ? null : hasCompletedInitial ? "follow_up" : "initial";
 
-  // KPIs: soonest upcoming visit the protocol plan calls for, and the
-  // doctor-planned device sessions still ahead.
-  const nextProtocolVisit = useMemo(
+  // Single next-up card (replaces the old two-KPI row): soonest upcoming
+  // appointment of any type. "planned" rows (no start_time) sort by date
+  // alone, at the start of their day, since there's no time to compare yet.
+  const nextAppointment = useMemo(
     () =>
-      upcoming
-        .filter((a) => a.appointment_type === "protocol_followup")
-        .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())[0] ?? null,
-    [upcoming],
-  );
-  const upcomingDeviceSessions = useMemo(
-    () =>
-      upcoming
-        .filter((a) => a.appointment_type === "device_session")
-        .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()),
+      [...upcoming].sort((a, b) => {
+        const at = a.status === "planned" ? `${a.appointment_date}T00:00:00` : a.start_at;
+        const bt = b.status === "planned" ? `${b.appointment_date}T00:00:00` : b.start_at;
+        return new Date(at).getTime() - new Date(bt).getTime();
+      })[0] ?? null,
     [upcoming],
   );
 
@@ -149,21 +181,42 @@ export default function PatientAppointmentsPage() {
         )}
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <KpiCard
-          icon={<ClipboardList className="h-4 w-4 text-purple-500" />}
-          label="Next Protocol Visit"
-          value={nextProtocolVisit ? fmtDate(nextProtocolVisit.appointment_date) : "None scheduled"}
-          sub={nextProtocolVisit ? fmtTime(nextProtocolVisit.start_time) : "Your doctor sets this as your protocol progresses."}
-        />
-        <KpiCard
-          icon={<Syringe className="h-4 w-4 text-orange-500" />}
-          label="Device Sessions Planned"
-          value={String(upcomingDeviceSessions.length)}
-          sub={upcomingDeviceSessions[0] ? `Next: ${fmtDate(upcomingDeviceSessions[0].appointment_date)}` : "None planned by your doctor yet."}
-        />
-      </div>
+      {/* Next appointment — replaces the old two-KPI row with one card
+          showing whatever's actually soonest, any appointment type. */}
+      {nextAppointment ? (
+        <button
+          onClick={() => router.push(`/patient/appointments/${nextAppointment.appointment_id}`)}
+          className="w-full text-left bg-brand-gradient rounded-xl p-4 flex items-center gap-4 hover:opacity-95 transition-opacity"
+        >
+          <div className="bg-white/20 rounded-xl p-2.5 flex-shrink-0">
+            <CalendarDays className="h-5 w-5 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-white/80">Your Next Session</p>
+            <p className="text-lg font-bold text-white mt-0.5">
+              {fmtDate(nextAppointment.appointment_date)}
+              {nextAppointment.status !== "planned" && nextAppointment.start_time ? ` · ${fmtTime(nextAppointment.start_time)}` : ""}
+            </p>
+            <p className="text-sm text-white/90 mt-0.5">
+              {apptTypeLabel(nextAppointment)}
+            </p>
+            {protocolContextLine(nextAppointment) && (
+              <p className="text-xs text-white/80 mt-0.5 truncate">{protocolContextLine(nextAppointment)}</p>
+            )}
+          </div>
+          <ChevronRight className="h-4 w-4 text-white/70 flex-shrink-0" />
+        </button>
+      ) : (
+        <div className="bg-white rounded-xl p-4 border border-neutral-100 shadow-sm flex items-center gap-4">
+          <div className="bg-neutral-100 rounded-xl p-2.5 flex-shrink-0">
+            <CalendarDays className="h-5 w-5 text-neutral-400" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-neutral-700">No upcoming sessions</p>
+            <p className="text-xs text-neutral-400 mt-0.5">Your doctor sets these as your protocol progresses.</p>
+          </div>
+        </div>
+      )}
 
       {/* Calendar + day detail */}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4">
@@ -195,12 +248,48 @@ export default function PatientAppointmentsPage() {
           ) : (
             <div className="space-y-2">
               {dayAppts.map((a) => (
-                <AppointmentRow key={a.appointment_id} appt={a} onClick={() => router.push(`/patient/appointments/${a.appointment_id}`)} />
+                <AppointmentRow key={a.appointment_id} appt={a} typeLabel={apptTypeLabel(a)} onClick={() => router.push(`/patient/appointments/${a.appointment_id}`)} />
               ))}
             </div>
           )}
         </section>
       </div>
+
+      {/* Appointment history — every appointment ever, newest first, with its
+          payment attached. A payment attempt that was abandoned mid-checkout
+          shows here as "Payment Failed" (hold_sweeper.py cancels rather than
+          deletes it) instead of silently disappearing. */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-neutral-900 flex items-center gap-1.5">
+            <History className="h-4 w-4 text-neutral-400" /> Appointment History
+          </h2>
+          <button
+            onClick={loadHistory}
+            className="p-1.5 rounded-lg hover:bg-neutral-100 text-neutral-400 hover:text-neutral-600 transition-colors"
+            title="Refresh"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
+        </div>
+
+        {historyLoading ? (
+          <div className="flex justify-center py-10">
+            <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
+          </div>
+        ) : visibleHistory.length === 0 ? (
+          <div className="bg-white border border-neutral-200 rounded-xl px-4 py-8 text-center">
+            <History className="h-8 w-8 text-neutral-300 mx-auto mb-2" />
+            <p className="text-sm text-neutral-500">No appointments yet.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {visibleHistory.map((a) => (
+              <HistoryRow key={a.appointment_id} appt={a} typeLabel={apptTypeLabel(a)} onClick={() => router.push(`/patient/appointments/${a.appointment_id}`)} />
+            ))}
+          </div>
+        )}
+      </section>
 
       {showBook && bookableType && (
         <BookAppointmentModal
@@ -220,7 +309,7 @@ export default function PatientAppointmentsPage() {
 
 // Whole row navigates to the appointment's detail page — that page is
 // where payment/status/reschedule now live, this list is just a picker.
-function AppointmentRow({ appt, onClick }: { appt: Appointment; onClick: () => void }) {
+function AppointmentRow({ appt, typeLabel, onClick }: { appt: Appointment; typeLabel: string; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -232,11 +321,66 @@ function AppointmentRow({ appt, onClick }: { appt: Appointment; onClick: () => v
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <p className="text-sm font-semibold text-neutral-900">
-            {appt.doctor_name ?? "Your Doctor"}
+            {doctorLabel(appointmentDoctorName(appt))}
           </p>
           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[appt.status] ?? "bg-neutral-100 text-neutral-500"}`}>
             {STATUS_LABEL[appt.status] ?? appt.status.replace(/_/g, " ")}
           </span>
+        </div>
+        <div className="flex items-center gap-3 mt-1 text-xs text-neutral-500">
+          <span className={`flex items-center gap-1 ${appt.appointment_type === "device_session" ? "font-semibold text-orange-600" : ""}`}>
+            <CalendarDays className={`h-3 w-3 ${appt.appointment_type === "device_session" ? "text-orange-500" : ""}`} />
+            {fmtDate(appt.appointment_date)}
+          </span>
+          {appt.start_time && (
+            <span className="flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              {fmtTime(appt.start_time)}
+            </span>
+          )}
+          {typeLabel && <span>{typeLabel}</span>}
+        </div>
+        {protocolContextLine(appt) && (
+          <p className="text-xs text-neutral-500 mt-0.5 truncate">{protocolContextLine(appt)}</p>
+        )}
+        {appt.reason && (
+          <p className="text-xs text-neutral-400 mt-0.5 truncate">{appt.reason}</p>
+        )}
+      </div>
+      <ChevronRight className="h-4 w-4 text-neutral-300 flex-shrink-0" />
+    </button>
+  );
+}
+
+// One row per appointment ever, its most recent payment folded in. A
+// 'selected' row is mid-checkout — locked to this slot, awaiting payment or
+// its hold expiring — so it gets a lock icon instead of the usual chevron;
+// everything else (including an abandoned attempt the sweeper cancelled) is
+// a plain settled row, clickable through to detail like AppointmentRow.
+function HistoryRow({ appt, typeLabel, onClick }: { appt: AppointmentHistoryEntry; typeLabel: string; onClick: () => void }) {
+  const isLocked = appt.status === "selected";
+  const money = fmtMoney(appt.payment_amount, appt.payment_currency);
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left bg-white border border-neutral-200 rounded-xl px-4 py-4 flex items-center gap-4 hover:border-neutral-300 transition-colors"
+    >
+      <div className={`rounded-xl p-2.5 flex-shrink-0 ${isLocked ? "bg-amber-50" : "bg-blue-50"}`}>
+        {isLocked ? <Lock className="h-5 w-5 text-amber-600" /> : <CalendarDays className="h-5 w-5 text-blue-600" />}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-semibold text-neutral-900">
+            {doctorLabel(appointmentDoctorName(appt))}
+          </p>
+          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[appt.status] ?? "bg-neutral-100 text-neutral-500"}`}>
+            {STATUS_LABEL[appt.status] ?? appt.status.replace(/_/g, " ")}
+          </span>
+          {appt.payment_status && (
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${PAYMENT_STATUS_COLOR[appt.payment_status] ?? "bg-neutral-100 text-neutral-500"}`}>
+              {appt.payment_status === "failed" && appt.status === "cancelled" ? "Payment Failed" : appt.payment_status}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3 mt-1 text-xs text-neutral-500">
           <span className="flex items-center gap-1">
@@ -249,12 +393,17 @@ function AppointmentRow({ appt, onClick }: { appt: Appointment; onClick: () => v
               {fmtTime(appt.start_time)}
             </span>
           )}
-          {appt.appointment_type && (
-            <span className="capitalize">{appt.appointment_type.replace(/_/g, " ")}</span>
-          )}
+          {typeLabel && <span>{typeLabel}</span>}
+          {money && <span className="font-medium text-neutral-600">{money}</span>}
         </div>
-        {appt.reason && (
-          <p className="text-xs text-neutral-400 mt-0.5 truncate">{appt.reason}</p>
+        {protocolContextLine(appt) && (
+          <p className="text-xs text-neutral-500 mt-0.5 truncate">{protocolContextLine(appt)}</p>
+        )}
+        {isLocked && (
+          <p className="text-xs text-amber-600 mt-0.5">Slot held — complete payment to confirm.</p>
+        )}
+        {appt.status === "cancelled" && appt.cancellation_reason && (
+          <p className="text-xs text-neutral-400 mt-0.5 truncate">{appt.cancellation_reason}</p>
         )}
       </div>
       <ChevronRight className="h-4 w-4 text-neutral-300 flex-shrink-0" />

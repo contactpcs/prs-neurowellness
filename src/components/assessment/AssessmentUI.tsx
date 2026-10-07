@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import { useGoBack } from "@/lib/hooks";
 import {
   RotateCcw,
   Info,
@@ -58,6 +58,12 @@ interface AssessmentUIProps {
   onSkipSection: () => void;
   onSubmitScale: () => void;
   onNavigateScale: (index: number) => void;
+  /** Unused by this component now (all questions for a scale render at
+   *  once) — kept optional so existing callers that still pass these don't
+   *  need to be touched. */
+  onQuestionPrev?: () => void;
+  onQuestionNext?: () => void;
+  onQuestionJump?: (index: number) => void;
 
   sttEnabled?: boolean;
   onToggleStt?: (enabled: boolean) => void;
@@ -110,8 +116,25 @@ export function AssessmentUI({
   backHref,
   backLabel = "Back to patient details",
 }: AssessmentUIProps) {
+  // Hooks can't be conditional — always call it, but only render the button
+  // (and thus only ever navigate) when a caller actually passed backHref.
+  const goBack = useGoBack(backHref ?? "/");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const currentScale = scales[currentScaleIndex];
+
+  // Submitting a scale (or jumping via the sidebar) swaps in a whole new set
+  // of questions, but the internal overflow-y-auto container (not the
+  // window) keeps whatever scroll position the "Next Section" click left it
+  // at — usually near the bottom, so the new section opens off-screen and
+  // has to be scrolled up manually every time. Also resets the window/page
+  // scroll — on some layouts <main> grows with content instead of the
+  // internal container being the one that actually scrolls, so only
+  // resetting the container left the page itself still scrolled down.
+  useEffect(() => {
+    scrollContainerRef.current?.scrollTo({ top: 0 });
+    window.scrollTo({ top: 0 });
+  }, [currentScaleIndex]);
   const currentScaleResponses = currentScale ? (responses[currentScale.scale_id] ?? {}) : {};
   const hiddenIndices = computeHiddenQuestionIndices(questions, currentScaleResponses);
   const totalQuestions = questions.length - hiddenIndices.size;
@@ -120,6 +143,13 @@ export function AssessmentUI({
     0,
   );
   const questionsRemaining = totalQuestions - questionsAnsweredVisible;
+  // Whether every required, currently-visible question in this scale has an
+  // answer — gates the Submit/Next Scale button so the scale can't be
+  // submitted with a mandatory item left blank.
+  const allRequiredAnswered = questions.every((q, idx) => {
+    if (hiddenIndices.has(idx)) return true;
+    return q.required === false || currentScaleResponses[String(idx)] !== undefined;
+  });
   const scaleNumber = currentScaleIndex + 1;
   const overallProgress =
     totalScales > 0 ? Math.round((completedScaleIds.size / totalScales) * 100) : 0;
@@ -173,7 +203,10 @@ export function AssessmentUI({
           currentIndex={currentScaleIndex}
           completedScaleIds={completedScaleIds}
           responses={responses}
-          onNavigate={(idx) => { onNavigateScale(idx); setSidebarOpen(false); }}
+          onNavigate={(idx) => {
+            onNavigateScale(idx);
+            setSidebarOpen(false);
+          }}
           overallProgress={overallProgress}
         />
       </div>
@@ -183,19 +216,19 @@ export function AssessmentUI({
         {/* Back link */}
         {backHref && (
           <div className="border-b border-neutral-100 px-4 py-2 flex-shrink-0">
-            <Link
-              href={backHref}
+            <button
+              onClick={goBack}
               className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-500 hover:text-neutral-800 transition-colors"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
               {backLabel}
-            </Link>
+            </button>
           </div>
         )}
 
         {/* Resumed Banner */}
         {isResumed && (
-          <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border-b border-amber-200 px-4 py-2.5">
+          <div className="flex items-center gap-1.5 text-xs text-primary-700 bg-primary-50 border-b border-primary-200 px-4 py-2.5">
             <RotateCcw className="h-3.5 w-3.5 shrink-0" />
             Resuming from where you left off
           </div>
@@ -214,15 +247,15 @@ export function AssessmentUI({
             </button>
 
             {/* Scale number badge */}
-            <div className="flex-shrink-0 w-10 h-10 md:w-12 md:h-12 bg-orange-500 rounded-xl flex flex-col items-center justify-center">
+            <div className="flex-shrink-0 w-10 h-10 md:w-12 md:h-12 bg-primary-500 rounded-xl flex flex-col items-center justify-center">
               <span className="text-base md:text-xl font-bold leading-none">{scaleNumber}</span>
-              <span className="text-[9px] md:text-[10px] text-orange-100">of {totalScales}</span>
+              <span className="text-[9px] md:text-[10px] text-primary-100">of {totalScales}</span>
             </div>
 
             {/* Title block */}
             <div className="flex-1 min-w-0">
               {currentScale.disease_type && (
-                <span className="inline-flex items-center px-2 py-0.5 bg-amber-700 text-amber-100 text-xs font-bold rounded uppercase tracking-wide mb-0.5">
+                <span className="inline-flex items-center px-2 py-0.5 bg-primary-700 text-primary-100 text-xs font-bold rounded uppercase tracking-wide mb-0.5">
                   {currentScale.disease_type}
                 </span>
               )}
@@ -270,7 +303,7 @@ export function AssessmentUI({
                 <span>~{currentScale.estimated_duration}</span>
               </div>
             )}
-            <div className="ml-auto flex items-center gap-1 px-2 py-0.5 bg-orange-50 border border-orange-200 rounded-full text-orange-700 text-xs font-medium">
+            <div className="ml-auto flex items-center gap-1 px-2 py-0.5 bg-primary-50 border border-primary-200 rounded-full text-primary-700 text-xs font-medium">
               <CheckCircle className="w-3 h-3 shrink-0" />
               {questionsAnsweredVisible}/{totalQuestions}
             </div>
@@ -288,7 +321,7 @@ export function AssessmentUI({
         )}
 
         {/* Scrollable Questions */}
-        <div className="flex-1 overflow-y-auto">
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
           <div className="max-w-5xl mx-auto px-4 md:px-6 py-4">
             {/* Instructions box */}
             {currentScale.instructions && (
@@ -321,7 +354,7 @@ export function AssessmentUI({
                         <div
                           className={cn(
                             "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold",
-                            isAnswered ? "bg-green-500 text-white" : "bg-orange-500 text-white",
+                            isAnswered ? "bg-green-500 text-white" : "bg-primary-500 text-white",
                           )}
                         >
                           {idx + 1}
@@ -360,14 +393,19 @@ export function AssessmentUI({
         {/* Footer */}
         <div className="bg-slate-50 border-t border-slate-200 px-4 py-3 flex-shrink-0">
           <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-2">
-            <Button variant="outline" size="sm" onClick={onPrev} disabled={isFirstScale}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onPrev}
+              disabled={isFirstScale}
+            >
               <ChevronLeft className="h-4 w-4" />
               <span className="hidden sm:inline">Previous Scale</span>
               <span className="sm:hidden">Prev</span>
             </Button>
 
             <div className="flex items-center gap-2 flex-wrap justify-center">
-              <div className="flex items-center gap-1 text-xs text-amber-600 font-medium">
+              <div className="flex items-center gap-1 text-xs text-primary-600 font-medium">
                 <Info className="w-3.5 h-3.5 shrink-0" />
                 <span>{questionsRemaining} left</span>
               </div>
@@ -426,14 +464,14 @@ export function AssessmentUI({
                 variant="outline"
                 size="sm"
                 onClick={onSkipSection}
-                className="text-orange-600 border-orange-300 hover:bg-orange-50"
+                className="text-primary-600 border-primary-300 hover:bg-primary-50"
               >
                 <SkipForward className="h-4 w-4" />
                 <span className="hidden sm:inline">Skip Scale</span>
               </Button>
             </div>
 
-            <Button onClick={onSubmitScale} isLoading={isSubmitting} size="sm">
+            <Button onClick={onSubmitScale} isLoading={isSubmitting} disabled={!allRequiredAnswered} size="sm">
               <span className="hidden sm:inline">{isLastScale ? "Submit Assessment" : "Next Scale"}</span>
               <span className="sm:hidden">{isLastScale ? "Submit" : "Next"}</span>
               <ChevronRight className="h-4 w-4" />

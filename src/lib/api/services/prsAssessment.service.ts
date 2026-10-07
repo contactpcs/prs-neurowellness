@@ -1,4 +1,5 @@
-import apiClient from "../client";
+import apiClient, { getDiseaseCatalog, sendKeepalive } from "../client";
+import { createSaveBatcher } from "../saveBatcher";
 import { ENDPOINTS } from "../endpoints";
 
 // POST /prs-assessment-instances returns the full AssessmentStartRead
@@ -67,6 +68,11 @@ export type PrsAssessmentScaleResult = {
 export type PrsAssessmentStartResult = {
   instance_id: string;
   is_resumed?: boolean;
+  // True when this (patient, disease, stage) was already completed once
+  // via the standalone dashboard flow — the backend returns that same
+  // completed instance read-only instead of a fresh blank one, and every
+  // scale in it is is_completed=true. Submitting against it 400s.
+  is_readonly_completed?: boolean;
   scales: PrsAssessmentScaleResult[];
 };
 
@@ -130,11 +136,21 @@ export type PrsQuestionOptionsResult = {
   options: PrsQuestionOption[];
 };
 
+// Per-answer autosaves, batched per PRS instance (API audit F-040).
+const prsAnswers = createSaveBatcher<{ question_id: string; given_response: string }>({
+  windowMs: 2000,
+  idOf: (r) => r.question_id,
+  send: async (instanceId, responses, keepalive) => {
+    if (keepalive) return sendKeepalive("POST", ENDPOINTS.PRS.ASSESSMENT_SAVE_RESPONSE(instanceId), { responses });
+    await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_SAVE_RESPONSE(instanceId), { responses });
+  },
+});
+
 export const prsAssessmentService = {
   /** Composed from GET /prs-catalog/diseases — each disease row now carries
    * its scales[] (scale_id, scale_code, scale_name, full_name, short_name). */
   async getConditionDetails(conditionId: string): Promise<PrsConditionDetails> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.CONDITIONS);
+    const { data } = await getDiseaseCatalog();
     const list = unwrap<Record<string, unknown>[]>(data);
     const match = Array.isArray(list)
       ? list.find((d) => d.disease_id === conditionId)
@@ -157,7 +173,7 @@ export const prsAssessmentService = {
    * over the same /prs-catalog/diseases list getConditionDetails already
    * uses is sufficient — first match wins. */
   async resolveDiseaseAndScaleId(scaleCode: string): Promise<{ diseaseId: string; scaleId: string } | null> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.CONDITIONS);
+    const { data } = await getDiseaseCatalog();
     const list = unwrap<Record<string, unknown>[]>(data);
     if (!Array.isArray(list)) return null;
     for (const disease of list) {
@@ -186,6 +202,11 @@ export const prsAssessmentService = {
      *  per-visit bundle. Distinct from session_id — covers any appointment
      *  type, not just a device session. */
     appointment_id?: string;
+    /** Scopes the instance to this ONE scale instead of every scale mapped
+     *  to disease_id — for the device-session "administer this scale" flow,
+     *  whose scale has no patient_scale_assignments row of its own and
+     *  would otherwise pull in the disease's full scale set. */
+    scale_id?: string;
   }): Promise<PrsAssessmentStartResult> {
     if (!payload.patient_id) throw new Error("patient_id is required to start an assessment.");
     const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_START, {
@@ -196,11 +217,13 @@ export const prsAssessmentService = {
       ...(payload.session_id ? { session_id: payload.session_id } : {}),
       ...(payload.cycle_id ? { cycle_id: payload.cycle_id } : {}),
       ...(payload.appointment_id ? { appointment_id: payload.appointment_id } : {}),
+      ...(payload.scale_id ? { scale_id: payload.scale_id } : {}),
     });
     const result = unwrap<PrsAssessmentStartResult>(data);
     return {
       instance_id: result.instance_id,
       is_resumed: result.is_resumed ?? false,
+      is_readonly_completed: result.is_readonly_completed ?? false,
       scales: Array.isArray(result.scales) ? result.scales : [],
     };
   },
@@ -217,6 +240,7 @@ export const prsAssessmentService = {
     return {
       instance_id: result.instance_id,
       is_resumed: result.is_resumed ?? true,
+      is_readonly_completed: result.is_readonly_completed ?? false,
       scales: Array.isArray(result.scales) ? result.scales : [],
     };
   },
@@ -239,6 +263,7 @@ export const prsAssessmentService = {
     return {
       instance_id: result.instance_id,
       is_resumed: result.is_resumed ?? false,
+      is_readonly_completed: result.is_readonly_completed ?? false,
       scales: Array.isArray(result.scales) ? result.scales : [],
     };
   },
@@ -258,9 +283,9 @@ export const prsAssessmentService = {
     value: number | string,
     _label?: string | null
   ): Promise<void> {
-    await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_SAVE_RESPONSE(instanceId), {
-      responses: [{ question_id: questionId, given_response: String(value) }],
-    });
+    // Queued and sent in batches (F-040) — one request per ~2 s instead of
+    // one per answer; resolves when the batch carrying this answer lands.
+    return prsAnswers.enqueue(instanceId, { question_id: questionId, given_response: String(value) });
   },
 
   /** Real: GET /prs-assessment-instances/{id}/responses — returns saved
@@ -313,10 +338,21 @@ export const prsAssessmentService = {
       question_id,
       given_response: String(v),
     }));
-    const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_SUBMIT(instanceId), {
-      responses: responseList,
-      finalize_scale_id: scaleId,
-    });
-    return unwrap<unknown>(data);
+    // Answers still queued for this instance ride along with the finalize
+    // (one request; explicit submit values win). Scoring reads the stored
+    // answers server-side, so the result is identical to saving them first.
+    const pending = await prsAnswers.drain(instanceId);
+    const submitted = new Set(responseList.map((r) => r.question_id));
+    try {
+      const { data } = await apiClient.post(ENDPOINTS.PRS.ASSESSMENT_SUBMIT(instanceId), {
+        responses: [...pending.items.filter((r) => !submitted.has(r.question_id)), ...responseList],
+        finalize_scale_id: scaleId,
+      });
+      pending.done();
+      return unwrap<unknown>(data);
+    } catch (err) {
+      pending.done(err);
+      throw err;
+    }
   },
 };

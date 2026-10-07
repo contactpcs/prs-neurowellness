@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Play, FileText } from "lucide-react";
 import { useSessions, useScales } from "@/lib/hooks";
-import { PageLoader, Button } from "@/components/ui";
+import { PageSkeleton, Button } from "@/components/ui";
 import { RiskAlertBanner, ScaleResultCard } from "@/components/assessment";
 
 export default function CASessionDetailPage() {
@@ -15,7 +15,7 @@ export default function CASessionDetailPage() {
 
   useEffect(() => { loadSession(id); }, [id, loadSession]);
 
-  if (!currentSession) return <PageLoader />;
+  if (!currentSession) return <PageSkeleton />;
 
   const responses = currentSession.scale_responses || [];
   const alerts = currentSession.risk_alerts || [];

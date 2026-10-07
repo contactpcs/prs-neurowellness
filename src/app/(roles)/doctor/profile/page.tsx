@@ -2,16 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  User, DollarSign, Settings, Handshake,
+  User,
   Edit2, Check, X, AlertCircle, CalendarDays, Users, Clock,
-  Shield, KeyRound, Monitor, ClipboardCheck, TrendingUp,
 } from "lucide-react";
-import { PageLoader } from "@/components/ui";
-import { usersService } from "@/lib/api/services/users.service";
+import { PageSkeleton } from "@/components/ui";
+import { doctorsService } from "@/lib/api/services/doctors.service";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
+import { COUNTRY_OPTIONS } from "@/lib/countries";
+import { LANGUAGE_OPTIONS, languageLabel } from "@/lib/languages";
 import type { Appointment } from "@/types/domain.types";
 
 // ─── types ────────────────────────────────────────────────────────
@@ -23,7 +24,7 @@ interface KpiStats {
   pendingToday: number;
 }
 
-type TabId = "overview" | "finance" | "settings" | "partnership";
+type TabId = "overview";
 
 // ─── constants ────────────────────────────────────────────────────
 
@@ -32,10 +33,7 @@ const BRAND    = "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)";
 const BRAND_PX = "#00A1E4";
 
 const TABS: { id: TabId; label: string; Icon: React.ElementType }[] = [
-  { id: "overview",     label: "Overview",    Icon: User       },
-  { id: "finance",      label: "Finance",     Icon: DollarSign },
-  { id: "settings",     label: "Settings",    Icon: Settings   },
-  { id: "partnership",  label: "Partnership", Icon: Handshake  },
+  { id: "overview", label: "Overview", Icon: User },
 ];
 
 // ─── helpers ──────────────────────────────────────────────────────
@@ -84,7 +82,6 @@ export default function DoctorProfilePage() {
   const [saveSuccess,setSaveSuccess]= useState(false);
   const [kpiStats,   setKpiStats]   = useState<KpiStats | null>(null);
   const [activeTab,  setActiveTab]  = useState<TabId>("overview");
-  const [notifPrefs, setNotifPrefs] = useState({ newAppts: true, revenueUpdates: true, platformUpdates: false });
 
   const [form, setForm]   = useState<FormState>(EMPTY_FORM);
   const originalRef       = useRef<FormState>(EMPTY_FORM);
@@ -95,13 +92,11 @@ export default function DoctorProfilePage() {
     const thirtyDaysAgo = toDateStr(addDays(today, -30));
     Promise.all([
       apiClient.get(ENDPOINTS.APPOINTMENTS.TODAY).catch(() => ({ data: [] })),
-      apiClient.get(ENDPOINTS.DOCTORS.DASHBOARD).catch(() => ({ data: { data: {} } })),
       apiClient.get(ENDPOINTS.DOCTORS.PATIENTS, { params: { limit: 100 } }).catch(() => ({ data: { data: [] } })),
-    ]).then(([todayRes, dashRes, patientsRes]) => {
+    ]).then(([todayRes, patientsRes]) => {
       const todayAppts: Appointment[] = Array.isArray(todayRes.data) ? todayRes.data : [];
-      const dashData = dashRes.data?.data ?? {};
       const patientsList: { created_at?: string }[] = patientsRes.data?.data ?? [];
-      const totalPatients: number = dashData.patients_summary?.total ?? patientsList.length;
+      const totalPatients: number = patientsList.length;
       const todayStr = toDateStr(today);
       const newPatients30d = patientsList.filter((p) => {
         if (!p.created_at) return false;
@@ -119,25 +114,25 @@ export default function DoctorProfilePage() {
 
   // ── profile fetch ─────────────────────────────────────────────────
   useEffect(() => {
-    usersService.getProfile()
+    doctorsService.getMyProfile()
       .then((data) => {
         setProfileRaw(data as unknown as Record<string, unknown>);
         const filled: FormState = {
           first_name:          (data.first_name        as string) ?? "",
           last_name:           (data.last_name         as string) ?? "",
-          date_of_birth:       (data.date_of_birth     as string) ?? "",
+          date_of_birth:       (data.dob               as string) ?? "",
           gender:              (data.gender            as string) ?? "",
-          government_id:       (data.government_id     as string) ?? "",
-          id_type:             (data.id_type           as string) ?? "",
-          language_pref:       ((data.language_pref ?? data.primary_language) as string) ?? "",
-          address_line1:       (data.address_line1     as string) ?? "",
+          government_id:       "", // no backing column on doctors — not sent, not saved
+          id_type:             "", // no backing column on doctors — not sent, not saved
+          language_pref:       (data.language_pref     as string) ?? "",
+          address_line1:       (data.address           as string) ?? "",
           city:                (data.city              as string) ?? "",
           state:               (data.state             as string) ?? "",
           country:             (data.country           as string) ?? "",
           pincode:             (data.pincode           as string) ?? "",
-          specialisation:      (data.specialisation    as string) ?? "",
-          hospital:            (data.hospital          as string) ?? "",
-          years_of_experience: String(data.years_of_experience ?? ""),
+          specialisation:      (data.specialization    as string) ?? "",
+          hospital:            (data.hospital_affiliation as string) ?? "",
+          years_of_experience: data.years_of_experience != null ? String(data.years_of_experience) : "",
         };
         setForm(filled);
         originalRef.current = filled;
@@ -153,34 +148,32 @@ export default function DoctorProfilePage() {
     if (!Object.keys(diff).length) { setIsEditing(false); return; }
     setIsSaving(true); setSaveError(null); setSaveSuccess(false);
     try {
-      const updated = await usersService.updateProfile(diff);
+      const updated = await doctorsService.updateMyProfile(diff);
       const freshFilled: FormState = {
         first_name:          (updated.first_name        as string) ?? "",
         last_name:           (updated.last_name         as string) ?? "",
-        date_of_birth:       (updated.date_of_birth     as string) ?? "",
+        date_of_birth:       (updated.dob               as string) ?? "",
         gender:              (updated.gender            as string) ?? "",
-        government_id:       (updated.government_id     as string) ?? "",
-        id_type:             (updated.id_type           as string) ?? "",
-        language_pref:       ((updated.language_pref ?? updated.primary_language) as string) ?? "",
-        address_line1:       (updated.address_line1     as string) ?? "",
+        government_id:       "",
+        id_type:             "",
+        language_pref:       (updated.language_pref     as string) ?? "",
+        address_line1:       (updated.address           as string) ?? "",
         city:                (updated.city              as string) ?? "",
         state:               (updated.state             as string) ?? "",
         country:             (updated.country           as string) ?? "",
         pincode:             (updated.pincode           as string) ?? "",
-        specialisation:      (updated.specialisation    as string) ?? "",
-        hospital:            (updated.hospital          as string) ?? "",
-        years_of_experience: String(updated.years_of_experience ?? ""),
+        specialisation:      (updated.specialization    as string) ?? "",
+        hospital:            (updated.hospital_affiliation as string) ?? "",
+        years_of_experience: updated.years_of_experience != null ? String(updated.years_of_experience) : "",
       };
       setForm(freshFilled); originalRef.current = freshFilled;
       setProfileRaw(updated as unknown as Record<string, unknown>);
       dispatch(updateUserInStore({
         first_name: updated.first_name as string | undefined,
         last_name: updated.last_name as string | undefined,
-        full_name: updated.full_name as string | undefined,
-        specialisation: updated.specialisation as string | undefined,
         city: updated.city as string | undefined,
         gender: updated.gender as string | undefined,
-        date_of_birth: updated.date_of_birth as string | undefined,
+        date_of_birth: updated.dob as string | undefined,
       }));
       setSaveSuccess(true); setIsEditing(false);
     } catch (err) {
@@ -190,7 +183,7 @@ export default function DoctorProfilePage() {
 
   const handleCancel = () => { setForm(originalRef.current); setSaveError(null); setIsEditing(false); };
 
-  if (!profileRaw && !fetchError) return <PageLoader />;
+  if (!profileRaw && !fetchError) return <PageSkeleton />;
 
   const fullName = `Dr. ${form.first_name} ${form.last_name}`.trim().replace(/^Dr\. $/, "—");
   const email    = (profileRaw?.email as string) ?? "—";
@@ -293,14 +286,19 @@ export default function DoctorProfilePage() {
                     </div>
                     <div>
                       <label className={labelCls}>Country</label>
-                      <input className={inputCls} value={form.country} onChange={(e) => set("country", e.target.value)} />
+                      <select className={inputCls} value={form.country} onChange={(e) => set("country", e.target.value)}>
+                        <option value="">Select</option>
+                        {COUNTRY_OPTIONS.map((c) => (
+                          <option key={c.name} value={c.name}>{c.name}</option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <label className={labelCls}>Language Preference</label>
                       <select className={inputCls} value={form.language_pref} onChange={(e) => set("language_pref", e.target.value)}>
                         <option value="">Select</option>
-                        {["en","hi","te","ta","mr","kn","ml"].map((l) => (
-                          <option key={l} value={l}>{l.toUpperCase()}</option>
+                        {LANGUAGE_OPTIONS.map((l) => (
+                          <option key={l.code} value={l.code}>{l.label}</option>
                         ))}
                       </select>
                     </div>
@@ -332,7 +330,7 @@ export default function DoctorProfilePage() {
                         { label: "Years of Experience", value: form.years_of_experience ? `${form.years_of_experience} years` : null },
                         { label: "Clinic / Practice",   value: form.hospital },
                         { label: "Country",             value: form.country },
-                        { label: "Languages",           value: form.language_pref?.toUpperCase() },
+                        { label: "Languages",           value: languageLabel(form.language_pref) },
                         { label: "Status",              value: approvalStatus, colored: true },
                       ].map(({ label, value, colored }) => (
                         <div key={label} className="flex items-center justify-between py-2.5 gap-4">
@@ -400,115 +398,6 @@ export default function DoctorProfilePage() {
           </div>
         )}
 
-        {/* ── Finance ── */}
-        {activeTab === "finance" && (
-          <div className="p-6">
-            <h2 className="text-base font-bold text-neutral-900 mb-5">Revenue &amp; Earnings</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
-              {[
-                { label: "Total Patients",  value: kpiStats?.totalPatients ?? "—", Icon: Users,         color: BRAND_PX },
-                { label: "Today's Appts",   value: kpiStats?.todayAppts    ?? "—", Icon: CalendarDays,  color: BRAND_PX },
-                { label: "New (30d)",       value: kpiStats?.newPatients30d ?? "—", Icon: TrendingUp,    color: BRAND_PX },
-              ].map(({ label, value, Icon, color }) => (
-                <div key={label} className="rounded-xl border border-neutral-200 p-4">
-                  <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-2">{label}</p>
-                  <p className="text-2xl font-bold" style={{ color }}>{value}</p>
-                  <Icon className="w-4 h-4 mt-2 text-neutral-300" />
-                </div>
-              ))}
-            </div>
-
-            <div className="rounded-xl border border-neutral-200 overflow-hidden mb-6">
-              <div className="flex items-center justify-between px-5 py-4 bg-neutral-800">
-                <h3 className="text-sm font-semibold text-white">Recent Transactions</h3>
-                <span className="text-xs text-neutral-400">No records yet</span>
-              </div>
-              <div className="grid grid-cols-4 px-5 py-3 bg-neutral-50 border-b border-neutral-100 text-[11px] font-semibold text-neutral-400 uppercase tracking-wide">
-                <span>Date</span><span>Patient</span><span>Service</span><span>Status</span>
-              </div>
-              <div className="py-10 text-center text-sm text-neutral-400">No transaction records</div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Settings ── */}
-        {activeTab === "settings" && (
-          <div className="p-6">
-            <h2 className="text-base font-bold text-neutral-900 mb-5">Account Settings</h2>
-
-            <div className="space-y-5">
-              {/* Notification Preferences */}
-              <div className="rounded-xl border border-neutral-200 overflow-hidden">
-                <div className="px-5 py-3 bg-neutral-50 border-b border-neutral-100">
-                  <p className="text-sm font-semibold text-neutral-700">Notification Preferences</p>
-                </div>
-                <div className="divide-y divide-neutral-100">
-                  {([
-                    { key: "newAppts",        label: "New Patient Appointments", desc: "Email notification for new bookings"     },
-                    { key: "revenueUpdates",  label: "Revenue Updates",          desc: "Weekly revenue summaries"               },
-                    { key: "platformUpdates", label: "Platform Updates",         desc: "New features and announcements"         },
-                  ] as const).map(({ key, label, desc }) => (
-                    <div key={key} className="flex items-center justify-between px-5 py-4">
-                      <div>
-                        <p className="text-sm font-semibold text-neutral-900">{label}</p>
-                        <p className="text-xs text-neutral-400 mt-0.5">{desc}</p>
-                      </div>
-                      <button
-                        onClick={() => setNotifPrefs((p) => ({ ...p, [key]: !p[key] }))}
-                        className="w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors"
-                        style={notifPrefs[key]
-                          ? { background: BRAND_PX, borderColor: BRAND_PX }
-                          : { background: "#fff", borderColor: "#d1d5db" }}
-                      >
-                        {notifPrefs[key] && <Check className="w-3 h-3 text-white" />}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Security Settings */}
-              <div className="rounded-xl border border-neutral-200 overflow-hidden">
-                <div className="px-5 py-3 bg-neutral-50 border-b border-neutral-100">
-                  <p className="text-sm font-semibold text-neutral-700">Security Settings</p>
-                </div>
-                <div className="divide-y divide-neutral-100">
-                  {[
-                    { Icon: KeyRound, label: "Change Password",           sub: "Last changed: —"         },
-                    { Icon: Shield,   label: "Two-Factor Authentication", sub: "Manage 2FA settings"     },
-                    { Icon: Monitor,  label: "Active Sessions",           sub: "Manage logged-in devices" },
-                  ].map(({ Icon, label, sub }) => (
-                    <button key={label} className="w-full flex items-center gap-4 px-5 py-4 hover:bg-neutral-50 transition-colors text-left">
-                      <Icon className="w-4 h-4 text-neutral-400 flex-shrink-0" />
-                      <div>
-                        <p className="text-sm font-semibold text-neutral-900">{label}</p>
-                        <p className="text-xs text-neutral-400 mt-0.5">{sub}</p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <button
-              className="mt-5 w-full py-3 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition-opacity"
-              style={{ background: BRAND }}
-            >
-              Save Settings
-            </button>
-          </div>
-        )}
-
-        {/* ── Partnership ── */}
-        {activeTab === "partnership" && (
-          <div className="p-6">
-            <h2 className="text-base font-bold text-neutral-900 mb-3">Partnership</h2>
-            <div className="rounded-xl border border-dashed border-neutral-200 py-16 flex flex-col items-center gap-2">
-              <ClipboardCheck className="w-8 h-8 text-neutral-300" />
-              <p className="text-sm text-neutral-400">Partnership details coming soon</p>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

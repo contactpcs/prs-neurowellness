@@ -42,6 +42,12 @@ export const notificationsService = {
     };
   },
 
+  /** Badge count only — one call instead of getNotifications()'s list + count pair. */
+  async getUnreadCount(): Promise<number> {
+    const { data } = await apiClient.get("/notifications/unread-count");
+    return data?.unread_count ?? 0;
+  },
+
   async markAllRead(): Promise<void> {
     await apiClient.patch(ENDPOINTS.NOTIFICATIONS.READ_ALL, { notification_ids: null });
   },

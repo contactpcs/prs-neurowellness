@@ -1,9 +1,9 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight, AlertTriangle } from "lucide-react";
-import { useInstanceScore } from "@/lib/hooks";
-import { PageLoader, Card, CardContent } from "@/components/ui";
+import { useInstanceScore, useGoBack } from "@/lib/hooks";
+import { PageSkeleton, Card, CardContent } from "@/components/ui";
 
 function severityColor(level?: string) {
   switch (level?.toLowerCase()) {
@@ -19,9 +19,11 @@ function severityColor(level?: string) {
 export default function PatientResultDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const goBack = useGoBack("/patient/dashboard");
   const { detail, isLoading } = useInstanceScore(id);
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   if (!detail) {
     return (
@@ -31,24 +33,40 @@ export default function PatientResultDetailPage() {
     );
   }
 
-  const { instance, disease_result, weighted_result, scale_results } = detail;
+  const { instance, disease_result, weighted_result, scale_results: allScaleResults } = detail;
+
+  // GET .../results is instance-scoped (every scale answered under this
+  // disease-level instance so far), not scale-scoped — a device session that
+  // administers just one scale under a shared instance would otherwise show
+  // every OTHER scale answered under that same instance too, with the
+  // disease name as the heading. scale_id, passed only from a single-scale
+  // context (e.g. the device-session "View score" button), narrows this
+  // page down to that one scale without touching the disease-wide view any
+  // other caller (dashboard history, doctor report) relies on.
+  const scaleIdFilter = searchParams.get("scale_id");
+  const scale_results = scaleIdFilter
+    ? allScaleResults.filter((sr: any) => sr.scale_id === scaleIdFilter)
+    : allScaleResults;
+  const singleScale = scaleIdFilter ? scale_results[0] : null;
   const overallResult = weighted_result ?? disease_result;
 
   return (
     <div className="space-y-6">
       {/* Back */}
       <button
-        onClick={() => router.back()}
+        onClick={goBack}
         className="flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-800"
       >
         <ChevronRight className="h-4 w-4 rotate-180" />
-        Back to Results
+        Back
       </button>
 
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-neutral-900">
-          {instance.disease_name ?? "Assessment Results"}
+          {singleScale
+            ? (singleScale.scale_name ?? singleScale.scale_code ?? "Assessment Result")
+            : (instance.disease_name ?? "Assessment Results")}
         </h1>
         {instance.completed_at && (
           <p className="text-sm text-neutral-500 mt-1">
@@ -59,8 +77,9 @@ export default function PatientResultDetailPage() {
         )}
       </div>
 
-      {/* Overall disease score card */}
-      {overallResult && (
+      {/* Overall disease score card — only for the disease-wide view; a
+          single scale's own score is already the card below. */}
+      {!singleScale && overallResult && (
         <Card>
           <CardContent className="flex items-center justify-between gap-4">
             <div className="min-w-0">
@@ -86,10 +105,12 @@ export default function PatientResultDetailPage() {
       {/* Per-scale results */}
       {scale_results.length > 0 && (
         <section className="space-y-3">
-          <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">
-            Scale Breakdown
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {!singleScale && (
+            <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">
+              Scale Breakdown
+            </h2>
+          )}
+          <div className={singleScale ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 md:grid-cols-2 gap-3"}>
             {scale_results.map((sr: any) => (
               <Card key={sr.scale_result_id ?? sr.scale_id}>
                 <CardContent className="space-y-3">
@@ -124,17 +145,12 @@ export default function PatientResultDetailPage() {
                   {/* Subscale scores */}
                   {sr.subscale_scores && Object.keys(sr.subscale_scores).length > 0 && (
                     <div className="border-t pt-2 space-y-1">
-                      {Object.entries(sr.subscale_scores).map(([key, sub]: [string, unknown]) => {
-                        const s = sub as Record<string, unknown>;
-                        return (
-                          <div key={key} className="flex justify-between text-xs">
-                            <span className="text-neutral-500">{(s.name as string) || key}</span>
-                            <span className="font-medium text-neutral-700">
-                              {s.score as number}/{s.max_score as number}
-                            </span>
-                          </div>
-                        );
-                      })}
+                      {Object.entries(sr.subscale_scores).map(([key, sub]: [string, unknown]) => (
+                        <div key={key} className="flex justify-between text-xs">
+                          <span className="text-neutral-500">{key}</span>
+                          <span className="font-medium text-neutral-700">{typeof sub === "number" ? sub : "—"}</span>
+                        </div>
+                      ))}
                     </div>
                   )}
 

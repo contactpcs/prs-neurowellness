@@ -7,11 +7,14 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
 import { Card, CardContent, Button, Input, Skeleton, Modal, DetailFieldList } from "@/components/ui";
+import { Pager } from "@/components/ui/Pager";
 import { adminService } from "@/lib/api/services/admin.service";
 import { consentService, type ConsentRecord } from "@/lib/api/services/consent.service";
 import { filesService, type PatientFile } from "@/lib/api/services/files.service";
 import { PatientJourneySections, type PatientJourneyDetail } from "@/components/admin/PatientJourneySections";
 import type { AdminClinic, AdminPatient } from "@/types/admin.types";
+
+const PAGE_SIZE = 20;
 
 const REGISTRATION_STEPS: { key: string; label: string }[] = [
   { key: "demographics_complete", label: "Demographics" },
@@ -363,20 +366,39 @@ export default function RegionalAdminPatientsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
+  // One server page for the region (RLS) or the picked clinic, with server
+  // search — was every patient of every clinic, one call per clinic, filtered
+  // here (API audit F-060, same as clinic admin F-053).
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [qDebounced, setQDebounced] = useState("");
+  const [everLoaded, setEverLoaded] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setQDebounced(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+  useEffect(() => { setPage(1); }, [qDebounced, clinicFilter]);
+  useEffect(() => {
+    if (user?.region_id) adminService.getClinics({ region_id: user.region_id }).then(setClinics).catch(() => {});
+  }, [user?.region_id]);
+
   const load = useCallback(async () => {
     if (!user?.region_id) return;
     setError(null);
     try {
-      const regionClinics = await adminService.getClinics({ region_id: user.region_id });
-      setClinics(regionClinics);
-      const results = await Promise.all(regionClinics.map((c) => adminService.getPatients({ clinic_id: c.clinic_id })));
-      setPatients(results.flatMap((r) => r.patients));
+      const res = await adminService.getPatients({
+        clinic_id: clinicFilter === "all" ? undefined : clinicFilter, search: qDebounced, page, page_size: PAGE_SIZE,
+      });
+      setPatients(res.patients);
+      setTotal(res.total);
+      setEverLoaded(true);
     } catch (e: any) {
       setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Failed to load patients");
     }
-  }, [user?.region_id]);
+  }, [user?.region_id, clinicFilter, qDebounced, page]);
 
-  useEffect(() => { setIsLoading(true); load().finally(() => setIsLoading(false)); }, [load]);
+  useEffect(() => { if (!everLoaded) setIsLoading(true); load().finally(() => setIsLoading(false)); }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -386,12 +408,7 @@ export default function RegionalAdminPatientsPage() {
   const clinicOptions = clinics.map((c) => ({ value: c.clinic_id, label: c.clinic_name }));
   const clinicById = new Map(clinics.map((c) => [c.clinic_id, c]));
 
-  const filtered = patients.filter((p) => {
-    const name = `${p.first_name} ${p.last_name}`.toLowerCase();
-    const matchesSearch = name.includes(search.toLowerCase()) || p.email.toLowerCase().includes(search.toLowerCase()) || (p.mrn ?? "").toLowerCase().includes(search.toLowerCase());
-    const matchesClinic = clinicFilter === "all" || p.clinic_id === clinicFilter;
-    return matchesSearch && matchesClinic;
-  });
+  const filtered = patients; // clinic, search and paging applied server-side
 
   async function handleRegister(data: { email: string; first_name: string; last_name: string; phone?: string; gender?: string; dob?: string; address?: string; primary_clinic_id: string; emergency_contact_name?: string; emergency_contact_phone?: string }) {
     const created = await adminService.registerPatient(data);
@@ -429,7 +446,7 @@ export default function RegionalAdminPatientsPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">Patients</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{patients.length} patient{patients.length !== 1 ? "s" : ""} across your region</p>
+          <p className="text-sm text-neutral-500 mt-0.5">{total} patient{total !== 1 ? "s" : ""} across your region</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={handleRefresh} disabled={refreshing} title="Refresh"
@@ -459,16 +476,16 @@ export default function RegionalAdminPatientsPage() {
         </select>
       </div>
 
-      <Card>
+      <Card className="overflow-hidden">
         {filtered.length === 0 ? (
           <CardContent className="py-16 text-center">
             <Users className="h-10 w-10 text-neutral-300 mx-auto mb-3" />
             <p className="text-sm font-medium text-neutral-600">No patients found</p>
           </CardContent>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[calc(100vh-240px)]">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-white">
                 <tr className="border-b border-neutral-100">
                   <th className="text-left px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">Patient</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">Clinic</th>
@@ -539,6 +556,7 @@ export default function RegionalAdminPatientsPage() {
           </div>
         )}
       </Card>
+      <Pager page={page} totalPages={totalPages} total={total} noun="patients" onPage={setPage} />
 
       <Modal isOpen={showRegister} onClose={() => setShowRegister(false)} title="Register Patient">
         <RegisterPatientForm clinicOptions={clinicOptions} onSubmit={handleRegister} onClose={() => setShowRegister(false)} />

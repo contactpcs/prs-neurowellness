@@ -9,16 +9,30 @@ import { useSidebar } from "@/contexts/SidebarContext";
 import { authService } from "@/lib/api/services";
 import {
   LayoutDashboard, Users, ClipboardList,
-  UserCircle, LogOut, Brain, ChevronLeft, Menu, Calendar, CalendarDays,
+  UserCircle, LogOut, ChevronLeft, Menu, Calendar, CalendarDays,
   ClipboardCheck, MapPin, Building2, UserCog, Settings, ShieldCheck,
   ShoppingBag, Receipt, Bell, DollarSign, Activity, Syringe, BarChart2, Percent,
+  TrendingUp, Cpu,
 } from "lucide-react";
+import { AnavaLogo } from "./AnavaLogo";
 
 interface NavItem {
   label: string;
   href: string;
   icon: React.ElementType;
   badge?: BadgeKey;
+}
+
+// Links the bottom user card to the role's own Profile route when one
+// exists (platform/regional/clinic admin have no Profile nav item, so this
+// stays a plain non-interactive div for them).
+function UserCard({ href, className, children }: { href?: string; className: string; children: React.ReactNode }) {
+  if (!href) return <div className={className}>{children}</div>;
+  return (
+    <Link href={href} className={cn(className, "hover:bg-white/10 transition-colors")}>
+      {children}
+    </Link>
+  );
 }
 
 const NAV_ITEMS: Record<string, NavItem[]> = {
@@ -40,6 +54,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { label: "Treatment",    href: "/doctor/treatment",    icon: Syringe },
     { label: "Notifications",href: "/doctor/notifications",icon: Bell, badge: "doctorUnreadNotifications" },
     { label: "Reports",      href: "/doctor/reports",      icon: BarChart2 },
+    { label: "Analytics",    href: "/doctor/analytics",    icon: TrendingUp },
     { label: "Settings",     href: "/doctor/settings",     icon: Settings },
     { label: "Profile",      href: "/doctor/profile",      icon: UserCircle },
   ],
@@ -68,6 +83,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { label: "Regions",         href: "/admin/regions",         icon: MapPin },
     { label: "Clinics",         href: "/admin/clinics",         icon: Building2 },
     { label: "Clinic Requests", href: "/admin/clinic-requests", icon: ClipboardList, badge: "clinicRequests" },
+    { label: "Device Catalog",  href: "/admin/device-catalog",  icon: Cpu },
     { label: "Billable Items",  href: "/admin/billable-items",  icon: DollarSign },
     { label: "Fees & Cancellation", href: "/admin/fee-config",  icon: Percent },
     { label: "Payments",        href: "/admin/payments",        icon: Receipt },
@@ -126,6 +142,9 @@ function SidebarInner() {
   const initials = [user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join("").toUpperCase();
   const roleName = isSuperAdmin ? "Admin" : isRegionalAdmin ? "Regional Admin" : isClinicAdmin ? "Clinic Admin" : role.replace(/_/g, " ");
 
+  const profileHref = items.find((i) => i.label === "Profile")?.href;
+  const dashboardHref = items.find((i) => i.label === "Dashboard")?.href ?? "/";
+
   const badgeKeys = items.map((i) => i.badge).filter((b): b is BadgeKey => !!b);
   const badgeCounts = useSidebarBadges(badgeKeys);
 
@@ -172,15 +191,10 @@ function SidebarInner() {
       {/* Logo + toggle */}
       <div className="h-16 border-b border-white/20 flex-shrink-0 flex items-center">
         {expanded ? (
-          <div className="flex items-center gap-2 w-full px-4">
-            <Link href="/" className="flex items-center gap-2 flex-1 min-w-0">
-              <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center flex-shrink-0">
-                <Brain className="h-4 w-4 text-white" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-white leading-tight">Anava</p>
-                <p className="text-[10px] font-semibold text-blue-300 uppercase tracking-widest leading-tight">PRS</p>
-              </div>
+          <div className="flex items-center justify-between w-full px-4">
+            <Link href={dashboardHref} className="flex flex-col items-center gap-0.5 flex-shrink-0">
+              <AnavaLogo className="h-5 w-8" />
+              <p className="text-xs font-bold text-white tracking-[0.15em] leading-none">ANAVA</p>
             </Link>
             <button
               onClick={() => isMobileOpen ? setIsMobileOpen(false) : setIsCollapsed(true)}
@@ -244,7 +258,10 @@ function SidebarInner() {
       {/* User section */}
       <div className="border-t border-white/20 px-2 py-3 flex-shrink-0">
         {expanded ? (
-          <div className="flex items-center gap-3 px-3 py-2 rounded-lg mb-1">
+          <UserCard
+            href={profileHref}
+            className="flex items-center gap-3 px-3 py-2 rounded-lg mb-1"
+          >
             <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
               {initials}
             </div>
@@ -260,13 +277,13 @@ function SidebarInner() {
                 </p>
               ) : null}
             </div>
-          </div>
+          </UserCard>
         ) : (
-          <div className="flex justify-center py-2 mb-1">
+          <UserCard href={profileHref} className="flex justify-center py-2 mb-1">
             <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white text-xs font-semibold" title={`${user?.first_name} ${user?.last_name}`}>
               {initials}
             </div>
-          </div>
+          </UserCard>
         )}
         <button
           onClick={logout}

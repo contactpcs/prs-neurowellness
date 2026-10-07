@@ -13,7 +13,7 @@ import type { PatientListItem, PatientDetail, StaffDashboard } from "@/types/dom
  */
 
 export function useReceptionDashboard() {
-  const [dashboard, setDashboard] = useState<StaffDashboard | null>(null);
+  const [dashboard, setDashboard] = useState<(StaffDashboard & { pending_preview: PatientListItem[] }) | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -28,38 +28,32 @@ export function useReceptionDashboard() {
   return { dashboard, isLoading };
 }
 
-export function useReceptionPatients() {
+/** One server page of the clinic's patients. Search is debounced (300 ms)
+ * so typing doesn't fire a request per keystroke. */
+export function useReceptionPatients(query: { page?: number; pageSize?: number; search?: string; gender?: string; doctor?: string } = {}) {
   const [patients, setPatients] = useState<PatientListItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
+  const [search, setSearch] = useState(query.search ?? "");
+  const { page, pageSize, gender, doctor } = query;
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(query.search ?? ""), 300);
+    return () => clearTimeout(t);
+  }, [query.search]);
 
   const refresh = useCallback(() => {
     setIsLoading(true);
-    return receptionService.getPatients()
-      .then(({ patients: p }) => setPatients(p))
+    return receptionService.getPatients({ page, pageSize, search, gender, doctor })
+      .then((r) => { setPatients(r.patients); setTotal(r.total); setTotalPages(r.totalPages); })
       .catch(() => {})
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [page, pageSize, search, gender, doctor]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  return { patients, isLoading, refresh };
-}
-
-export function useReceptionPendingPatients() {
-  const [pending, setPending] = useState<PatientListItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  const refresh = useCallback(() => {
-    setIsLoading(true);
-    return receptionService.getPendingPatients()
-      .then(({ patients: p }) => setPending(p))
-      .catch(() => {})
-      .finally(() => setIsLoading(false));
-  }, []);
-
-  useEffect(() => { refresh(); }, [refresh]);
-
-  return { pending, isLoading, refresh };
+  return { patients, total, totalPages, isLoading, refresh };
 }
 
 export function useReceptionPatient(id: string) {

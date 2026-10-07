@@ -6,13 +6,11 @@ import {
 } from "lucide-react";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { doctorsService } from "@/lib/api/services/doctors.service";
-import { eegService } from "@/lib/api/services/eeg.service";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
 import type { ClinicalSessionTab } from "@/lib/hooks/usePatientClinicalSessions";
 import type { ProtocolRead, ProtocolDetail } from "@/types/treatmentProtocol.types";
 import type { AnamnesisRecord, Appointment, AssessmentInstance, PatientDetail } from "@/types/domain.types";
-import type { DeviceSessionDetail } from "@/types/deviceSession.types";
 import { loadTreatmentPlan, saveTreatmentPlan, type TreatmentPlanData } from "@/lib/utils/treatmentPlanStore";
 import { deviceSessionLabel } from "@/lib/utils/deviceSessionStatus";
 
@@ -169,9 +167,8 @@ export function TreatmentPlanFull({
   const [activeDetail, setActiveDetail] = useState<ProtocolDetail | null>(null);
   const [anamnesis, setAnamnesis] = useState<AnamnesisRecord | null>(null);
   const [prsByVisit, setPrsByVisit] = useState<Record<string, AssessmentInstance[]>>({});
-  const [eegReports, setEegReports] = useState<{ id: string; report_name: string; created_at: string }[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [deviceSessionsById, setDeviceSessionsById] = useState<Record<string, DeviceSessionDetail>>({});
+  const [deviceSessionsById, setDeviceSessionsById] = useState<Record<string, { session_status: string | null; feedback_answers: Record<string, unknown> | null; adverse_event_count: number }>>({});
   const [edit, setEdit] = useState(false);
 
   const active = protocols.find((p) => p.status === "active") ?? protocols[protocols.length - 1] ?? null;
@@ -188,47 +185,45 @@ export function TreatmentPlanFull({
       setProtocols(list.slice().sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? "")));
       const act = list.find((p) => p.status === "active") ?? list[list.length - 1] ?? null;
 
-      const [detail, latestAnamnesis, eeg, apptRes] = await Promise.all([
+      // Per-visit summaries — one request per clinical session (Consultation/
+      // Follow-up/Protocol Follow-up only; small, bounded list). The latest
+      // one's anamnesis is reused instead of fetching that summary twice;
+      // appointments are this patient's only (API audit F-038: was the
+      // clinic's first 200 rows, 301 KB, filtered here — later visits
+      // silently missing once the clinic passed 200 appointments).
+      const [detail, apptRes, summaries] = await Promise.all([
         act ? treatmentProtocolService.getProtocolDetail(act.protocol_id).catch(() => null) : Promise.resolve(null),
-        doctorsService.getVisitSummary(patientId, clinicalSessions[clinicalSessions.length - 1]?.appointment.appointment_id ?? "").then((s) => s.anamnesis).catch(() => null),
-        eegService.getPatientReports(patientId).catch(() => ({ data: [] as { id: string; report_name: string; created_at: string }[] })),
-        appointmentsService.list({ limit: 200 }).catch(() => ({ appointments: [] as Appointment[], total: 0 })),
+        appointmentsService.list({ patient_id: patientId, limit: 500 }).catch(() => ({ appointments: [] as Appointment[], total: 0 })),
+        Promise.all(
+          clinicalSessions.map((s) =>
+            doctorsService.getVisitSummary(patientId, s.appointment.appointment_id).catch(() => null),
+          ),
+        ),
       ]);
       if (cancelled) return;
       setActiveDetail(detail);
-      setAnamnesis(latestAnamnesis ?? null);
-      setEegReports(eeg.data ?? []);
-      setAppointments(apptRes.appointments.filter((a) => (a.patient_public_id ?? a.patient_id) === patientId));
+      setAnamnesis(summaries[summaries.length - 1]?.anamnesis ?? null);
+      setAppointments(apptRes.appointments);
       setPlan(act ? loadTreatmentPlan(act.protocol_id, defaultPlan(act)) : defaultPlan(null));
-
-      // Per-visit PRS instances, from the real visit-summary endpoint — one
-      // request per clinical session (Consultation/Follow-up/Protocol
-      // Follow-up only; small, bounded list).
-      const prsEntries = await Promise.all(
-        clinicalSessions.map(async (s) => {
-          try {
-            const summary = await doctorsService.getVisitSummary(patientId, s.appointment.appointment_id);
-            return [s.appointment.appointment_id, (summary.prs_instances ?? []) as unknown as AssessmentInstance[]] as const;
-          } catch {
-            return [s.appointment.appointment_id, [] as AssessmentInstance[]] as const;
-          }
-        }),
-      );
-      if (cancelled) return;
-      setPrsByVisit(Object.fromEntries(prsEntries));
+      setPrsByVisit(Object.fromEntries(clinicalSessions.map((s, i) => [
+        s.appointment.appointment_id,
+        ((summaries[i]?.prs_instances ?? []) as unknown as AssessmentInstance[]),
+      ])));
 
       // Tolerance/adverse-event tally from real device session records —
       // only for sessions that actually ran.
+      // One call for the whole protocol (API audit F-043) — was a full
+      // device-session detail fetch per completed/in-progress session.
       const deviceApptIds = (detail?.sessions ?? [])
         .filter((s) => ["completed", "in_progress"].includes(s.status))
         .map((s) => s.appointment_id);
-      const deviceEntries = await Promise.all(
-        deviceApptIds.map(async (id) => {
-          try { return [id, await deviceSessionService.get(id)] as const; } catch { return null; }
-        }),
-      );
+      const tallies: Awaited<ReturnType<typeof deviceSessionService.listProtocolSummaries>> = act && deviceApptIds.length
+        ? await deviceSessionService.listProtocolSummaries(act.protocol_id).catch(() => ({}))
+        : {};
       if (cancelled) return;
-      setDeviceSessionsById(Object.fromEntries(deviceEntries.filter((e): e is [string, DeviceSessionDetail] => e !== null)));
+      setDeviceSessionsById(Object.fromEntries(
+        deviceApptIds.filter((id) => tallies[id]).map((id) => [id, tallies[id]]),
+      ));
 
       setIsLoading(false);
     })();
@@ -262,6 +257,8 @@ export function TreatmentPlanFull({
     });
   }, [prsByVisit, clinicalSessions]);
 
+  const completedAppointments = appointments.filter((a) => a.status === "completed");
+
   const protocolSessions = activeDetail?.sessions ?? [];
   const completedSessions = protocolSessions.filter((s) => s.status === "completed");
   const missedSessions = protocolSessions.filter((s) => s.status === "no_show");
@@ -271,8 +268,8 @@ export function TreatmentPlanFull({
   const pct = planned ? Math.round((completed / planned) * 100) : 0;
 
   const deviceRecords = Object.values(deviceSessionsById);
-  const tolerated = deviceRecords.filter((d) => d.feedback?.answers.comfort === "comfortable" || d.feedback?.answers.felt_after === "better").length;
-  const withAdverseEvent = deviceRecords.filter((d) => d.adverse_events.length > 0).length;
+  const tolerated = deviceRecords.filter((d) => d.feedback_answers?.comfort === "comfortable" || d.feedback_answers?.felt_after === "better").length;
+  const withAdverseEvent = deviceRecords.filter((d) => d.adverse_event_count > 0).length;
   const stoppedEarly = deviceRecords.filter((d) => d.session_status === "stopped_early").length;
 
   const latestScoreRow = scaleGrid[0]?.last ?? null;
@@ -280,9 +277,9 @@ export function TreatmentPlanFull({
   const checks = useMemo(() => ([
     { key: "Anamnesis recorded", ok: !!anamnesis, detail: anamnesis ? `Recorded ${fmtDate(anamnesis.completed_at)}` : "Not recorded", go: "anamnesis" },
     { key: "Baseline PRS on file", ok: scaleGrid.some((s) => s.first), detail: scaleGrid.length ? scaleGrid.map((s) => s.first ? `${s.name} ${s.first.value}/${s.first.max}` : null).filter(Boolean).join(" · ") || "No baseline scores" : "No baseline scores", go: "prs" },
-    { key: "Brain mapping reviewed", ok: eegReports.length > 0, detail: eegReports.length ? `${eegReports.length} report${eegReports.length === 1 ? "" : "s"} on file` : "No EEG report", go: "brain-mapping" },
+    // Brain mapping / EEG review hidden for now — not a gating check while hidden.
     { key: "Active protocol assigned", ok: !!active, detail: active ? `${active.device_name || active.modality || "Protocol"} v${versionNumber(active)}` : "No protocol assigned", go: "treatment-protocol" },
-  ]), [anamnesis, scaleGrid, eegReports, active]); // eslint-disable-line react-hooks/exhaustive-deps
+  ]), [anamnesis, scaleGrid, active]); // eslint-disable-line react-hooks/exhaustive-deps
   const blocking = checks.filter((c) => !c.ok);
   const isSet = plan.status === "set";
 
@@ -386,7 +383,7 @@ export function TreatmentPlanFull({
         <Stat label="Diagnosis" value={active.notes ? active.notes.split("—")[0].replace(/^Reason:\s*/, "").trim() || "—" : "—"} />
         <Stat label="Prescribed protocol" value={`${active.modality || "Protocol"} · v${versionNumber(active)}`} sub={active.device_name ?? undefined} />
         <Stat label="Progress" value={`${completed} / ${planned}`} sub={`${pct}% · ${remaining} remaining`} tone="bg-primary-50" />
-        <Stat label="Next review" value={String(plan.nextReview || "—")} sub={`Every ${plan.reviewEvery} sessions`} />
+       
         <Stat
           label="Latest PRS"
           value={latestScoreRow ? `${scaleGrid[0].name} ${latestScoreRow.value}/${latestScoreRow.max}` : "Not recorded"}
@@ -447,7 +444,7 @@ export function TreatmentPlanFull({
           <div>
             <GroupLabel>Review &amp; assessment</GroupLabel>
             <Row label="Reassess every" value={`${plan.reviewEvery} sessions`} />
-            <Row label="Next review" value={String(plan.nextReview || "—")} />
+            
             <Row label="Protocol versions" value={`${protocols.length} (${Math.max(0, protocols.length - 1)} change${protocols.length - 1 === 1 ? "" : "s"})`} />
             <Row label="Clinic" value={patient?.clinic_name || "—"} />
             <Row label="Treating doctor" value={doctor} />
@@ -469,12 +466,12 @@ export function TreatmentPlanFull({
               <div className="col-span-full"><Field label="Plan notes (optional)"><textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} placeholder="Anything else the team should know…" className={textareaCls} /></Field></div>
             </div>
           ) : (
-            <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
-              <div><GroupLabel>Treatment goal</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{show(plan.goal)}</p></div>
-              <div><GroupLabel>Medication plan</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{show(plan.medicationPlan)}</p></div>
-              <div className="col-span-full"><GroupLabel>Instructions for clinical assistants</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{show(plan.caInstructions)}</p></div>
-              {plan.notes && <div className="col-span-full"><GroupLabel>Plan notes</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{plan.notes}</p></div>}
-            </div>
+              <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+                <div><GroupLabel>Treatment goal</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{show(plan.goal)}</p></div>
+                <div><GroupLabel>Medication plan</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{show(plan.medicationPlan)}</p></div>
+                <div className="col-span-full"><GroupLabel>Instructions for clinical assistants</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{show(plan.caInstructions)}</p></div>
+                {plan.notes && <div className="col-span-full"><GroupLabel>Plan notes</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{plan.notes}</p></div>}
+              </div>
           )}
         </div>
       </Card>
@@ -519,7 +516,7 @@ export function TreatmentPlanFull({
           <p className="text-[12.5px] text-neutral-400 mb-5">No PRS scale scores recorded yet — scores appear here once an assessment records them.</p>
         )}
 
-        <GroupLabel>Tolerance across delivered device sessions</GroupLabel>
+        <GroupLabel>Tolerance across delivered {active?.modality || "device"} sessions</GroupLabel>
         <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
           <Row label="Sessions delivered" value={completed} />
           <Row label="Reported well tolerated" value={deviceRecords.length ? `${tolerated} of ${deviceRecords.length}` : "Not recorded"} />
@@ -534,7 +531,7 @@ export function TreatmentPlanFull({
         <h3 className="text-sm font-bold text-neutral-900 mb-1">Clinical basis</h3>
         <p className="text-xs text-neutral-500 mb-3">Everything the plan rests on, pulled from the patient&apos;s own record. Open only what you need.</p>
         <div className="flex flex-col gap-2">
-          <Fold title="Patient profile &amp; diagnosis" summary={`${patient?.full_name ?? "—"} · ${patient?.mrn ?? "—"} · ${patient?.age ?? "—"} yrs, ${patient?.gender ?? "—"}`}>
+          <Fold title="Patient profile" summary={`${patient?.full_name ?? "—"} · ${patient?.mrn ?? "—"} · ${patient?.age ?? "—"} yrs, ${patient?.gender ?? "—"}`}>
             <KV rows={[
               ["Patient", `${patient?.full_name ?? "—"} · ${patient?.mrn ?? "—"}`],
               ["Age / gender", `${patient?.age ?? "—"} yrs · ${patient?.gender ?? "—"}`],
@@ -548,19 +545,15 @@ export function TreatmentPlanFull({
               <KV rows={[
                 ["Chief complaint", show(anamnesis.chief_complaint)],
                 ["Main symptoms", show(anamnesis.main_symptoms)],
-                ["Symptom duration", show(anamnesis.symptoms_duration)],
-                ["Previous treatments", show(anamnesis.previous_treatments)],
-                ["Current medications", show(anamnesis.current_medications)],
+                ["Initial Symptom", show(anamnesis.symptoms_duration)],
+                ["Previous Neuromodulation treatments", show(anamnesis.previous_treatments)],
+                
               ]} />
             ) : <p className="text-[12.5px] text-neutral-400">No anamnesis recorded.</p>}
           </Fold>
 
           <Fold title="Medication" summary="No medication-tracking module in this system yet">
             <p className="text-[12.5px] text-neutral-400">Structured medication history isn&apos;t tracked by this system — see the free-text Medication Plan above.</p>
-          </Fold>
-
-          <Fold title="Brain mapping &amp; EEG" summary={eegReports.length ? `${eegReports.length} report${eegReports.length === 1 ? "" : "s"} on file` : "No reports on file"}>
-            <Table cols={["Report", "Date"]} rows={eegReports.map((r) => [r.report_name, fmtDate(r.created_at)])} empty="No EEG or connectivity reports on file." />
           </Fold>
 
           <Fold title="Protocols undergone" summary={protocols.length === 1 ? "1 version" : `${protocols.length} versions · ${protocols.length - 1} change${protocols.length - 1 === 1 ? "" : "s"}`}>
@@ -572,7 +565,7 @@ export function TreatmentPlanFull({
             <p className="text-[11.5px] text-neutral-400 mt-3 leading-relaxed">Completed sessions keep the parameters delivered at the time — a newer version never rewrites them.</p>
           </Fold>
 
-          <Fold title="Device session history" summary={`${completed} delivered · ${missedSessions.length} missed · ${remaining} upcoming`}>
+          <Fold title={`${active?.modality || "Device"} session history`} summary={`${completed} delivered · ${missedSessions.length} missed · ${remaining} upcoming`}>
             <Table
               cols={["#", "Date", "Status"]}
               rows={protocolSessions.map((s) => [s.session_number != null ? `#${s.session_number}` : "—", fmtDate(s.appointment_date), deviceSessionLabel(s.status)])}
@@ -580,14 +573,14 @@ export function TreatmentPlanFull({
             />
           </Fold>
 
-          <Fold title="Appointment history" summary={appointments.length ? `${appointments.length} appointment${appointments.length === 1 ? "" : "s"} on record` : "No appointments on record"}>
+          <Fold title="Appointment history" summary={completedAppointments.length ? `${completedAppointments.length} completed appointment${completedAppointments.length === 1 ? "" : "s"}` : "No completed appointments"}>
             <Table
               cols={["Date", "Time", "Type", "Status"]}
-              rows={appointments
+              rows={completedAppointments
                 .slice()
                 .sort((a, b) => (b.appointment_date + b.start_time).localeCompare(a.appointment_date + a.start_time))
                 .map((a) => [fmtDate(a.appointment_date), a.start_time?.slice(0, 5) || "—", a.appointment_type.replace(/_/g, " "), a.status.replace(/_/g, " ")])}
-              empty="No appointments recorded for this patient."
+              empty="No completed appointments for this patient."
             />
           </Fold>
 

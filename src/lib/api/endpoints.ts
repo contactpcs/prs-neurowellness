@@ -17,13 +17,22 @@ export const ENDPOINTS = {
     SIGNUP_RESEND: "/auth/patients/signup/resend",
     SIGNUP_VERIFY: "/auth/patients/signup/verify",
     SIGNUP_COMPLETE: "/auth/patients/signup/complete",
+    SIGNUP_CONFIRM: "/auth/patients/signup/confirm", // current flow: OTP + full form -> account + session, one call
     VERIFY_CHANNEL_START: "/auth/patients/verify-channel/start",
     VERIFY_CHANNEL_CONFIRM: "/auth/patients/verify-channel/confirm",
     ME: "/auth/me",             // real — GET only
+    REFRESH: "/auth/refresh",   // POST, no body — the httpOnly refresh cookie is the credential; -> {access_token}
+    LOGOUT: "/auth/logout",     // POST — revokes this device's session server-side, clears the cookie
     SYNC_PROFILE: "/auth/sync-profile", // NOT AVAILABLE
     CLINICS: "/auth/clinics",           // real — public clinic picker for self-registration
     FORGOT_PASSWORD_START: "/auth/forgot-password/start",     // real (cognito mode only) — {username} -> 204, always (no user enumeration)
     FORGOT_PASSWORD_CONFIRM: "/auth/forgot-password/confirm", // real (cognito mode only) — {username, code, new_password, confirm_password} -> 204
+  },
+
+  // ─── Live notifications (SSE) ───
+  LIVE: {
+    TICKET: "/events/ticket", // POST -> {ticket}: one-time, ~30 s — what the stream is opened with instead of the token
+    STREAM: "/events/stream", // GET ?ticket=…
   },
 
   // ─── Consent ───
@@ -64,22 +73,52 @@ export const ENDPOINTS = {
     GRANT_ASSESSMENT: (_patientId: string) => `/patient-scale-assignments`, // real, but per-scale POST (see doctors.service.ts)
     AVAILABILITY: "/doctors/availability", // NOT AVAILABLE — real toggle needs PATCH /doctors/{own_doctor_id}, id not resolvable here
     VISIT_SUMMARY: (patientId: string, appointmentId: string) => `/patients/${patientId}/visits/${appointmentId}/summary`, // real
+    // Own profile — GET/PATCH /doctors/{doctor_id}. doctor_id (public ID)
+    // comes off /auth/me (auth.types.ts), the only place the frontend can
+    // learn it — PATCH is now self-scoped server-side (assert_staff_self)
+    // so this only ever succeeds for the caller's own row.
+    ME: (doctorId: string) => `/doctors/${doctorId}`,
+    // real — app/modules/reports/router.py. Query param, not path, since
+    // disease_id contains "/" (e.g. "CHRONICPAIN/2026") — pass via axios's
+    // `params` option so it gets encoded correctly.
+    PATIENTS_OVERVIEW: "/reports/doctor/patients-overview",
+    // real — all-diseases cohort landing view, no query param (scoped to
+    // the calling doctor server-side, same as PATIENTS_OVERVIEW).
+    DISEASES_OVERVIEW: "/reports/doctor/diseases-overview",
+    // real — per-scale history for one patient, ?disease_id= query param.
+    SCALE_TRAJECTORIES: (patientId: string) => `/reports/doctor/patients/${patientId}/scale-trajectories`,
+    // real — weekly composite trend table, ?disease_id=&weeks= query params.
+    WEEKLY_TREND: "/reports/doctor/weekly-trend",
+    // real — treatment protocol outcomes + protocol-vs-scale heatmap, ?disease_id=.
+    PROTOCOL_OUTCOMES: "/reports/doctor/protocol-outcomes",
   },
 
   // ─── Patients (patient-role self views) ───
   PATIENTS: {
     DASHBOARD: "/patients",       // real — RLS-scoped to own record, composed client-side
+    REGISTRATION_RECORD: (patientId: string) => `/patients/${patientId}/registration-record`, // real — anamnesis + responses + general PRS (F-025)
+    CLINIC: (patientId: string) => `/patients/${patientId}/clinic`, // real — primary clinic's address/contact/maps link
     MY_DOCTOR: "/patients/my-doctor",           // NOT AVAILABLE
     MY_ASSESSMENTS: "/patients/my-assessments", // NOT AVAILABLE — scale-assignments carry no disease grouping data
     MY_SCORES: "/patients/my-scores",           // NOT AVAILABLE — no list-instances-by-patient endpoint
     DECIDE_APPROVAL: (patientId: string) => `/patients/${patientId}/approval`, // real — PATCH {decision, rejection_reason}
     ALLOCATE_DOCTOR: (patientId: string) => `/patients/${patientId}/allocate-doctor`, // real — PATCH {doctor_id}
+    // real (SQL/v1/96) — GET list, POST {medicine_name, dose, timing, meal_instruction, duration, note, appointment_id?}
+    PRESCRIBED_MEDICINES: (patientId: string) => `/patients/${patientId}/prescribed-medicines`,
+    // real — PATCH {status: "active" | "stopped"} (stop/resume; never deletes)
+    PRESCRIBED_MEDICINE: (medicineId: string) => `/prescribed-medicines/${medicineId}`,
+    // real (SQL/v1/99) — GET list (newest first), POST {category, note_text, appointment_id?}. Append-only, no update/delete.
+    CLINICAL_NOTES: (patientId: string) => `/patients/${patientId}/clinical-notes`,
+    // real (SQL/v1/106) — GET ?actor_id=&limit= — who did what for this patient, newest first.
+    // doctor/admin: full trail. clinical_assistant: no protocol lifecycle steps, no change diffs.
+    CLINICAL_ACTIVITY: (patientId: string) => `/patients/${patientId}/clinical-activity`,
   },
 
   // ─── Staff ───
   STAFF: {
     DASHBOARD: "/staff/dashboard", // NOT AVAILABLE — composed client-side with defaults
     PATIENTS: "/patients",         // real — RLS-scoped to the staff member's clinic
+    PATIENTS_COUNT: "/patients/count", // real — same filters/scope, just the number (F-045)
     PATIENTS_PENDING: "/patients", // real (same endpoint) — filtered client-side by registration_status
     REGISTER_PATIENT: "/patients", // real — POST, payload reshaped (see staff.service.ts)
     PATIENT: (patientId: string) => `/patients/${patientId}`, // real
@@ -99,11 +138,13 @@ export const ENDPOINTS = {
   RECEPTION: {
     SEND_CODE: "/reception/registrations/send-code",
     VERIFY_CODE: "/reception/registrations/verify-code",
+    CONFIRM_REGISTRATION: "/reception/registrations/confirm", // current flow: OTP + full form -> registered, one call
     PASSWORD_POLICY: "/reception/registrations/password-policy",
     REGISTER_PATIENT: "/reception/patients",
     PATIENTS: "/reception/patients",
     PATIENT: (patientId: string) => `/reception/patients/${patientId}`,
     REGISTRATIONS: "/reception/registrations",
+    DASHBOARD: "/reception/dashboard", // real — counts + pending preview (F-019)
     APPROVE_REGISTRATION: (registrationId: string) => `/reception/registrations/${registrationId}/approve`,
     REJECT_REGISTRATION: (registrationId: string) => `/reception/registrations/${registrationId}/reject`,
     ME: "/reception/me",
@@ -114,6 +155,11 @@ export const ENDPOINTS = {
     NOTIFICATIONS: "/reception/notifications",
     NOTIFICATION_TOGGLE_READ: (notificationId: string) => `/reception/notifications/${notificationId}`,
     NOTIFICATIONS_MARK_ALL_READ: "/reception/notifications/mark-all-read",
+  },
+
+  // ─── Clinical Assistant ───
+  CLINICAL_ASSISTANT: {
+    ME: "/clinical-assistant/me", // real — GET/PATCH own profile, same shape as RECEPTION.ME
   },
 
   // ─── Admin ───
@@ -171,6 +217,7 @@ export const ENDPOINTS = {
     CONDITION: (id: string) => `/prs/conditions/${encodeURIComponent(id)}`, // NOT AVAILABLE — no per-disease detail endpoint
     QUESTION_OPTIONS: (questionId: string) => `/prs/questions/${questionId}/options`, // NOT AVAILABLE
     PERMISSIONS: "/patient-scale-assignments",    // real (closest equivalent — see permissions.service.ts)
+    PERMISSIONS_BULK: "/patient-scale-assignments/bulk", // real — several scales, one transaction (F-042)
     MY_PERMISSIONS: "/prs/permissions/my",        // NOT AVAILABLE — no self patient_id resolvable from a bare URL
     PATIENT_PERMISSIONS: (patientId: string) => `/patients/${patientId}/scale-assignments`, // real
     PATIENT_INSTANCES: (patientId: string) => `/patients/${patientId}/prs-instances`, // real — GET ?assessment_stage=
@@ -186,8 +233,11 @@ export const ENDPOINTS = {
     MY_SCORES: "/prs/scores/me",                                    // NOT AVAILABLE
     MY_SCORES_SUMMARY: "/prs/scores/me/summary",                    // NOT AVAILABLE
     INSTANCE_SCORE: (instanceId: string) => `/prs-assessment-instances/${instanceId}/results`, // real
+    // real — the current as-of disease composite for one patient+disease
+    // (core.disease_composite_scores), not tied to any single instance.
+    DISEASE_COMPOSITE: (patientId: string) => `/patients/${patientId}/disease-composite`,
+    PATIENT_SCORES_SUMMARY: (patientId: string) => `/patients/${patientId}/scores-summary`, // real — GET ?assessment_stage= (F-002)
     PATIENT_SCORES: (patientId: string) => `/prs/scores/patient/${patientId}`,         // NOT AVAILABLE
-    PATIENT_SCORES_SUMMARY: (patientId: string) => `/prs/scores/patient/${patientId}/summary`, // NOT AVAILABLE
     SESSIONS: "/prs/sessions/",                                     // NOT AVAILABLE
     MY_SESSIONS: "/prs/sessions/my",                                // NOT AVAILABLE
     PATIENT_SESSIONS: (patientId: string) => `/prs/sessions/patient/${patientId}`, // NOT AVAILABLE
@@ -219,6 +269,7 @@ export const ENDPOINTS = {
   // ─── Neuromodulation catalogue (Treatment Protocol wizard, steps 1-6) ───
   NEUROMOD: {
     DEVICE_COMPANIES: "/neuromod/device-companies",
+    DEVICE_COMPANY: (companyId: string) => `/neuromod/device-companies/${companyId}`,
     DEVICES: "/neuromod/devices",
     DEVICE: (deviceId: string) => `/neuromod/devices/${deviceId}`,
     CONDITIONS: "/neuromod/conditions",
@@ -307,6 +358,7 @@ export const ENDPOINTS = {
   APPOINTMENTS: {
     LIST: "/appointments",              // real — GET list, POST create (same path as old)
     UPCOMING: "/appointments/upcoming", // real
+    PAGE: "/appointments/page", // real — one page + total + pill counts (F-023)
     TODAY: "/appointments/today",       // real
     GET: (id: string) => `/appointments/${id}`, // real
     UPDATE: (id: string) => `/appointments/${id}`, // real — PATCH {notes?, patient_complaint?, appointment_type?}
@@ -322,10 +374,12 @@ export const ENDPOINTS = {
     // server-side from the caller's own record (scheduling/router.py's
     // "/me/appointments/*" block), so these never take an id in the path.
     MY_LIST: "/me/appointments",
+    MY_HISTORY: "/me/appointments/history", // GET — full history, newest first, most recent payment folded in
     MY_AVAILABILITY: "/me/appointments/availability", // GET ?from_date&to_date
     MY_BOOK_INITIAL: "/me/appointments/initial",       // POST {appointment_date, start_time, reason?, patient_complaint?}
     MY_BOOK_FOLLOWUP: "/me/appointments/follow-up",    // POST — same body shape
     MY_CANCEL: (id: string) => `/me/appointments/${id}/cancel`, // PATCH {reason}
+    MY_RESCHEDULE: (id: string) => `/me/appointments/${id}/reschedule`, // PATCH {appointment_date, start_time, reason?} — selected/paid/no_show only (initial/follow_up; not protocol-born — use CLAIM_SLOT for those)
     CLAIM_SLOT: (id: string) => `/me/appointments/${id}/claim-slot`, // PATCH {start_time, appointment_date?} — planned -> selected
     MY_DEVICE_AVAILABILITY: (id: string) => `/me/appointments/${id}/device-availability`, // GET ?from_date&to_date
     DEVICE_DAY_AVAILABILITY: (id: string) => `/me/appointments/${id}/device-day-availability`, // GET — continuous timeline, no params, always the appointment's own planned date
@@ -335,9 +389,14 @@ export const ENDPOINTS = {
   // device_sessions, ships alongside SQL/v1/53_device_session_records.sql).
   // Keyed by appointment_id, the same id the CA device-session queue
   // (clinical-assistant/appointments) already has in hand — there is no
-  // separate device-session id in the URL space. ───
+  // separate device-session id in the URL space, except MY_PENDING_SCALES
+  // below, which is patient-self-scoped across every appointment. ───
   DEVICE_SESSIONS: {
+    MY_PENDING_SCALES: "/me/device-session-scales",
+    MY_SCALE_SUMMARIES: "/me/device-session-scale-summaries", // real — per-session scale counts (F-012)
+    PROTOCOL_SUMMARIES: (protocolId: string) => `/treatment-protocols/${protocolId}/device-session-summaries`, // real — tally inputs per session (F-043)
     DETAIL: (appointmentId: string) => `/device-sessions/${appointmentId}`,
+    DEVICE_INFO: (appointmentId: string) => `/device-sessions/${appointmentId}/device-info`,
     CHECKLIST: (appointmentId: string) => `/device-sessions/${appointmentId}/checklist`,
     START: (appointmentId: string) => `/device-sessions/${appointmentId}/start`,
     PAUSE: (appointmentId: string) => `/device-sessions/${appointmentId}/pause`,
@@ -353,6 +412,7 @@ export const ENDPOINTS = {
     SCALE: (appointmentId: string, protocolScaleId: string) => `/device-sessions/${appointmentId}/scales/${protocolScaleId}`,
     SCALE_COMPLETE: (appointmentId: string, protocolScaleId: string) => `/device-sessions/${appointmentId}/scales/${protocolScaleId}/complete`,
     FEEDBACK: (appointmentId: string) => `/device-sessions/${appointmentId}/feedback`,
+    TVNS_SETTINGS: (appointmentId: string) => `/device-sessions/${appointmentId}/tvns-settings`,
     MEDIA_CONSENT: (appointmentId: string) => `/device-sessions/${appointmentId}/media/consent`,
     MEDIA: (appointmentId: string) => `/device-sessions/${appointmentId}/media`,
     NEXT_SESSION: (appointmentId: string) => `/device-sessions/${appointmentId}/next-session`,

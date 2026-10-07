@@ -6,30 +6,32 @@ import {
   Users, ClipboardCheck, UserPlus, ArrowRight, Clock, CheckCircle, Stethoscope,
   CalendarPlus, LogIn,
 } from "lucide-react";
-import { useAuth, useReceptionDashboard, useReceptionPendingPatients, useReceptionPatients } from "@/lib/hooks";
-import { PageLoader, Card, CardContent } from "@/components/ui";
+import { useAuth, useReceptionDashboard } from "@/lib/hooks";
+import { PageSkeleton, Card, CardContent } from "@/components/ui";
 import { receptionService } from "@/lib/api/services/reception.service";
 import { DoctorWeekCalendar } from "@/components/appointments/DoctorWeekCalendar";
+import { ReceptionBookAppointmentModal } from "@/components/appointments/ReceptionBookAppointmentModal";
 import RegisterPatientModal from "../patients/RegisterPatientModal";
-import type { PatientListItem, DoctorListItem } from "@/types/domain.types";
-
-function isSameDay(dateStr?: string): boolean {
-  if (!dateStr) return false;
-  const d = new Date(dateStr);
-  const n = new Date();
-  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
-}
+import type { AvailabilitySlot, DoctorListItem } from "@/types/domain.types";
 
 export default function ReceptionistDashboard() {
   const { user } = useAuth();
-  const { dashboard, isLoading: dashLoading } = useReceptionDashboard();
-  const { pending, isLoading: pendingLoading } = useReceptionPendingPatients();
-  const { patients, isLoading: patientsLoading } = useReceptionPatients();
+  // One call: counts + first 5 pending (API audit F-019) — used to download
+  // every patient and every pending registration to count them.
+  const { dashboard, isLoading } = useReceptionDashboard();
+  const pending = dashboard?.pending_preview ?? [];
 
   const [doctors, setDoctors] = useState<DoctorListItem[]>([]);
   const [selectedDoctorId, setSelectedDoctorId] = useState("");
   const [calendarView, setCalendarView] = useState<"single" | "all">("single");
   const [showRegister, setShowRegister] = useState(false);
+  const [showBooking, setShowBooking] = useState(false);
+  // Doctor/date/time when booking was opened from a calendar slot.
+  const [bookingPrefill, setBookingPrefill] = useState<{ doctorId: string; date: string; startTime: string } | null>(null);
+  const openBookingFromSlot = (slot: AvailabilitySlot, doctorId: string) => {
+    setBookingPrefill({ doctorId, date: slot.date, startTime: slot.start_time });
+    setShowBooking(true);
+  };
 
   useEffect(() => {
     receptionService.getDoctors().then(({ doctors: d }) => {
@@ -38,16 +40,11 @@ export default function ReceptionistDashboard() {
     }).catch(() => {});
   }, []);
 
-  // Dashboard stats come from the server, or derive client-side from cached lists.
-  const totalPatients = dashboard?.patient_count ?? patients.length;
-  const pendingCount  = dashboard?.pending_count ?? pending.length;
-  const registeredToday = (() => {
-    if (dashboard?.registered_today) return dashboard.registered_today;
-    return patients.filter((p) => isSameDay(p.registered_at ?? p.created_at ?? p.assigned_at)).length;
-  })();
+  const totalPatients = dashboard?.patient_count ?? 0;
+  const pendingCount  = dashboard?.pending_count ?? 0;
+  const registeredToday = dashboard?.registered_today ?? 0;
 
-  const isLoading = dashLoading || pendingLoading || patientsLoading;
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   const stats = [
     { label: "Total Patients",    value: totalPatients,  icon: Users,         color: "text-primary-600",  bg: "bg-primary-50",  href: "/receptionist/patients"  },
@@ -57,7 +54,7 @@ export default function ReceptionistDashboard() {
 
   const quickActions = [
     { label: "Register Patient",    icon: UserPlus,       onClick: () => setShowRegister(true) },
-    { label: "Book Appointment",    icon: CalendarPlus,   href: "/receptionist/appointments" },
+    { label: "Book Appointment",    icon: CalendarPlus,   onClick: () => { setBookingPrefill(null); setShowBooking(true); } },
     { label: "Check-In Patient",    icon: LogIn,          href: "/receptionist/appointments" },
     { label: "Pending Approvals",   icon: ClipboardCheck, href: "/receptionist/approvals" },
   ];
@@ -66,7 +63,7 @@ export default function ReceptionistDashboard() {
     <div className="space-y-5">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Welcome back, {user?.first_name}</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">Welcome , {user?.first_name}</h1>
         {user?.clinic_name && (
           <p className="text-xs font-medium text-primary-600 mt-0.5">{user.clinic_name}</p>
         )}
@@ -154,7 +151,7 @@ export default function ReceptionistDashboard() {
         </div>
 
         {calendarView === "single" ? (
-          <DoctorWeekCalendar doctorId={selectedDoctorId} />
+          <DoctorWeekCalendar doctorId={selectedDoctorId} onSlotClick={openBookingFromSlot} />
         ) : doctors.length === 0 ? (
           <Card><CardContent className="py-10 text-center text-sm text-neutral-500">No doctors at this clinic</CardContent></Card>
         ) : (
@@ -162,7 +159,7 @@ export default function ReceptionistDashboard() {
             {doctors.map((d) => (
               <div key={d.id}>
                 <p className="text-sm font-semibold text-neutral-800 mb-2">Dr. {d.first_name} {d.last_name}</p>
-                <DoctorWeekCalendar doctorId={d.id} />
+                <DoctorWeekCalendar doctorId={d.id} onSlotClick={openBookingFromSlot} />
               </div>
             ))}
           </div>
@@ -223,6 +220,17 @@ export default function ReceptionistDashboard() {
           </div>
         </Card>
       </section>
+
+      {user?.clinic_id && (
+        <ReceptionBookAppointmentModal
+          isOpen={showBooking}
+          clinicId={user.clinic_id}
+          prefill={bookingPrefill}
+          onClose={() => setShowBooking(false)}
+          // The doctor calendars below refresh themselves on this event.
+          onBooked={() => { setShowBooking(false); window.dispatchEvent(new Event("sse:appointment")); }}
+        />
+      )}
 
       {showRegister && (
         <RegisterPatientModal onClose={() => setShowRegister(false)} onSuccess={() => setShowRegister(false)} />

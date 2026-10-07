@@ -6,8 +6,8 @@ import { Siren, Wind, Grid3x3, Puzzle, ArrowLeft, Lock, ClipboardList, CheckCirc
 import type { LucideIcon } from "lucide-react";
 import { useDeviceSession } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services";
-import { Button, Card, CardContent, Modal, PageLoader } from "@/components/ui";
-import { deviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
+import { Button, Card, CardContent, Modal, PageSkeleton } from "@/components/ui";
+import { patientDeviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
 import type { Appointment } from "@/types/domain.types";
 import type { SosType } from "@/types/deviceSession.types";
 
@@ -334,7 +334,7 @@ export default function PatientDeviceSessionPage() {
     appointmentsService.getById(appointmentId).then(setAppointment).catch(() => setAppointment(null));
   }, [appointmentId]);
 
-  if (!appointment || isLoading) return <PageLoader />;
+  if (!appointment || isLoading) return <PageSkeleton />;
 
   const locked =
     scheduledAt(appointment) > Date.now() &&
@@ -368,7 +368,7 @@ export default function PatientDeviceSessionPage() {
                   Session {appointment.session_number ?? ""}
                 </h2>
                 <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${deviceSessionTone(appointment.status)}`}>
-                  {isLive ? "In progress" : deviceSessionLabel(appointment.status)}
+                  {isLive ? "In progress" : patientDeviceSessionLabel(appointment.status)}
                 </span>
               </div>
               <p className="text-sm text-neutral-500">{fmtWhen(appointment)}</p>
@@ -429,7 +429,15 @@ export default function PatientDeviceSessionPage() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => router.push(sc.prs_instance_id ? `/patient/results/${sc.prs_instance_id}` : "/patient/results")}
+                                onClick={() => {
+                                  if (!sc.prs_instance_id) { router.push("/patient/results"); return; }
+                                  // scale_id scopes the (otherwise disease-wide)
+                                  // results page down to just this one scale —
+                                  // without it, a shared instance would show
+                                  // every scale answered under the same disease.
+                                  const qs = sc.scale_id ? `?scale_id=${encodeURIComponent(sc.scale_id)}` : "";
+                                  router.push(`/patient/results/${sc.prs_instance_id}${qs}`);
+                                }}
                               >
                                 View score
                               </Button>
