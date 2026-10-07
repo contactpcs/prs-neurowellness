@@ -97,6 +97,7 @@ export const ENDPOINTS = {
   PATIENTS: {
     DASHBOARD: "/patients",       // real — RLS-scoped to own record, composed client-side
     REGISTRATION_RECORD: (patientId: string) => `/patients/${patientId}/registration-record`, // real — anamnesis + responses + general PRS (F-025)
+    CLINIC: (patientId: string) => `/patients/${patientId}/clinic`, // real — primary clinic's address/contact/maps link
     MY_DOCTOR: "/patients/my-doctor",           // NOT AVAILABLE
     MY_ASSESSMENTS: "/patients/my-assessments", // NOT AVAILABLE — scale-assignments carry no disease grouping data
     MY_SCORES: "/patients/my-scores",           // NOT AVAILABLE — no list-instances-by-patient endpoint

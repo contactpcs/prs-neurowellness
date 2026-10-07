@@ -1,6 +1,6 @@
 import apiClient, { getDiseaseCatalog, getMyPatientId, getStoredUser } from "../client";
 import { ENDPOINTS } from "../endpoints";
-import type { PatientDashboard, AssessmentPermission } from "@/types/domain.types";
+import type { PatientDashboard, AssessmentPermission, PatientClinic } from "@/types/domain.types";
 
 export const patientsService = {
   /** NOT AVAILABLE as a single aggregate — composed from /auth/me (name/email)
@@ -74,6 +74,15 @@ export const patientsService = {
       specialization: (own.doctor_specialization as string) ?? undefined,
       phone: (own.doctor_phone as string) ?? undefined,
     };
+  },
+
+  /** Real — GET /patients/{patient_id}/clinic: the caller's primary clinic
+   * (address, contact, Google Maps link). null when the patient has no id yet. */
+  async getMyClinic(): Promise<PatientClinic | null> {
+    const patientId = await getMyPatientId();
+    if (!patientId) return null;
+    const { data } = await apiClient.get<PatientClinic>(ENDPOINTS.PATIENTS.CLINIC(patientId));
+    return data;
   },
 
   /** Composed: resolve own patient_id via /patients (RLS-scoped), then group

@@ -78,6 +78,20 @@ export interface DoctorDashboard {
 
 // ─── Patient domain ───────────────────────────────────────────────
 
+/** GET /patients/{patient_id}/clinic — the patient's primary clinic. */
+export interface PatientClinic {
+  clinic_id: string;
+  clinic_name: string;
+  full_address: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
+  phone: string | null;
+  email: string | null;
+  google_maps_url: string | null;
+}
+
 export interface PatientDashboard {
   profile: {
     id: string;

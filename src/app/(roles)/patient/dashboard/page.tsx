@@ -7,6 +7,7 @@ import {
   Bell, Calendar, CheckCircle, Clock, ChevronRight,
   User, PlayCircle, ClipboardList,
   FileText, Zap, Check, Circle, Upload, CreditCard,
+  MapPin, Phone, Mail, ExternalLink,
 } from "lucide-react";
 import {
   usePatientDashboard,
@@ -17,6 +18,7 @@ import {
 } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { deviceSessionService } from "@/lib/api/services/deviceSession.service";
+import { patientsService } from "@/lib/api/services/patients.service";
 import type { PendingPatientScale } from "@/types/deviceSession.types";
 import { useSidebarBadges } from "@/lib/hooks/useSidebarBadges";
 import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
@@ -30,6 +32,7 @@ import type {
   AssessmentPermission,
   AssessmentInstance,
   Appointment,
+  PatientClinic,
 } from "@/types/domain.types";
 
 function formatShortDate(iso?: string | null): string {
@@ -89,6 +92,11 @@ function PatientDashboard() {
   const [pendingDeviceScales, setPendingDeviceScales] = useState<PendingPatientScale[]>([]);
   useEffect(() => {
     deviceSessionService.listMyPendingScales().then(setPendingDeviceScales).catch(() => {});
+  }, []);
+
+  const [clinic, setClinic] = useState<PatientClinic | null>(null);
+  useEffect(() => {
+    patientsService.getMyClinic().then(setClinic).catch(() => {});
   }, []);
 
   // modality/device/conditions come on the appointment row itself — no
@@ -449,7 +457,8 @@ function PatientDashboard() {
             )}
           </div>
 
-          {/* Assigned clinician */}
+          {/* Assigned clinician, with the clinic's address/map beneath */}
+          <div className="flex flex-col gap-3">
           {doctor ? (
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100">
@@ -488,6 +497,8 @@ function PatientDashboard() {
               </div>
             </div>
           )}
+          {clinic && <ClinicLocationCard clinic={clinic} />}
+          </div>
         </div>
 
         {/* Scales sent to you from a live device session — separate from
@@ -579,6 +590,65 @@ function PatientDashboard() {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────
+
+/** Patient's primary clinic (GET /patients/{id}/clinic) — address, contact
+ * and an embedded Google Map. google_maps_url is whatever the clinic_admin
+ * pasted: an /maps/embed URL is used as the iframe src directly; any other
+ * link (share link, place URL) can't be framed, so the map embeds by address
+ * and the link is kept for "Open in Google Maps". */
+function ClinicLocationCard({ clinic }: { clinic: PatientClinic }) {
+  const address =
+    clinic.full_address ||
+    [clinic.address, clinic.city, clinic.state, clinic.pincode].filter(Boolean).join(", ");
+  const query = encodeURIComponent([clinic.clinic_name, address].filter(Boolean).join(", "));
+  const mapsUrl = clinic.google_maps_url?.trim() || null;
+  const isEmbedUrl = !!mapsUrl && mapsUrl.includes("/maps/embed");
+  const embedSrc = isEmbedUrl ? mapsUrl! : `https://www.google.com/maps?q=${query}&output=embed`;
+  const openHref = mapsUrl && !isEmbedUrl ? mapsUrl : `https://www.google.com/maps/search/?api=1&query=${query}`;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
+        <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide flex items-center gap-1">
+          <MapPin className="w-3 h-3" /> Your clinic
+        </p>
+        <span className="text-[10px] text-gray-400 font-mono truncate" title={clinic.clinic_id}>
+          ID: {clinic.clinic_id}
+        </span>
+      </div>
+      <div className="px-4 py-3 space-y-1">
+        <p className="text-sm font-bold text-gray-900">{clinic.clinic_name}</p>
+        {address && <p className="text-xs text-gray-600">{address}</p>}
+        {clinic.phone && (
+          <p className="text-[10px] text-gray-500 flex items-center gap-1">
+            <Phone className="w-3 h-3" /> {clinic.phone}
+          </p>
+        )}
+        {clinic.email && (
+          <p className="text-[10px] text-gray-500 flex items-center gap-1">
+            <Mail className="w-3 h-3" /> {clinic.email}
+          </p>
+        )}
+      </div>
+      <iframe
+        title={`Map of ${clinic.clinic_name}`}
+        src={embedSrc}
+        className="w-full h-48 border-0"
+        allowFullScreen
+        loading="lazy"
+        referrerPolicy="strict-origin-when-cross-origin"
+      />
+      <a
+        href={openHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center justify-center gap-1 text-xs text-blue-600 py-2 border-t border-gray-100 hover:underline"
+      >
+        Open in Google Maps <ExternalLink className="w-3 h-3" />
+      </a>
+    </div>
+  );
+}
 
 function AppointmentStatusBadge({ status }: { status: string }) {
   const base = "text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap";
