@@ -12,7 +12,6 @@ import {
 import {
   usePatientDashboard,
   useMyAssessments,
-  useMyAnamnesis,
   useMyScoresSummary,
   useAuth,
 } from "@/lib/hooks";
@@ -71,7 +70,6 @@ function PatientDashboard() {
   const { dashboard, isLoading: dashLoading } = usePatientDashboard();
   const { user } = useAuth();
   const { assessments, isLoading: assessLoading } = useMyAssessments();
-  const { record: anamnesisRecord } = useMyAnamnesis("registration");
   const { summary } = useMyScoresSummary();
 
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -164,6 +162,22 @@ function PatientDashboard() {
   const totalAssignedPrs = assessments.length;
   const completedPrs = assessments.filter((a) => a.status === "completed").length;
   const prsProgress = totalAssignedPrs > 0 ? Math.round((completedPrs / totalAssignedPrs) * 100) : 0;
+
+  // Journey card: profile first; once complete, an ongoing device session
+  // wins over PRS (treatment follows assessment). All derived from data this
+  // page already loads — no extra request.
+  const activeDeviceSession = deviceSessions
+    .filter((a) => ACTIVE_DEVICE_SESSION_STATUSES.includes(a.status))
+    .sort((a, b) => apptSortKey(a) - apptSortKey(b))[0] ?? null;
+  const journeyState: JourneyState =
+    profilePct < 100 ? "profile" : activeDeviceSession ? "device_session" : "prs";
+  // Progress scoped to the active session's protocol when it has one, so a
+  // finished earlier protocol doesn't inflate "Session X of Y".
+  const journeySessions = activeDeviceSession?.protocol_id
+    ? deviceSessions.filter((a) => a.protocol_id === activeDeviceSession.protocol_id)
+    : deviceSessions;
+  const journeySessionsDone = journeySessions.filter((a) => a.status === "completed").length;
+  const journeySessionsTotal = journeySessions.length;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-neutral-900">
@@ -274,39 +288,19 @@ function PatientDashboard() {
         {/* Action Cards — auto-fit so the row always fills the width whether
             the optional "Pay for upcoming sessions" card is present or not. */}
         <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
-          {/* Profile completion */}
-          <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex flex-col">
-            <div className="flex items-center justify-between mb-2">
-              <User className="w-4 h-4 text-blue-500" />
-              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                profilePct >= 100 ? "text-green-700 bg-green-50" : "text-orange-600 bg-orange-50"
-              }`}>
-                {profilePct >= 100 ? "Complete" : "Incomplete"}
-              </span>
-            </div>
-            <h3 className="text-sm font-semibold text-gray-900">Complete your profile</h3>
-            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-              {profilePct >= 100
-                ? "Your profile is complete."
-                : "Add insurance details and an emergency contact to unlock full clinic access and smooth check-ins."}
-            </p>
-            {profilePct < 100 && (
-              <>
-                <div className="mt-3">
-                  <div className="flex justify-between text-[10px] text-gray-500 mb-1">
-                    <span>{profilePct}% complete</span>
-                    <span>{remainingFields} fields remaining</span>
-                  </div>
-                  <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-orange-500 rounded-full" style={{ width: `${profilePct}%` }} />
-                  </div>
-                </div>
-                <Link href="/patient/profile" className="mt-auto pt-2.5 flex items-center gap-0.5 text-xs font-medium text-gray-900 hover:text-blue-600">
-                  Complete now <ChevronRight className="w-3.5 h-3.5" />
-                </Link>
-              </>
-            )}
-          </div>
+          {/* Journey card — profile → device session / PRS, by patient state */}
+          <JourneyCard
+            state={journeyState}
+            profilePct={profilePct}
+            remainingFields={remainingFields}
+            deviceSession={activeDeviceSession}
+            deviceSessionsDone={journeySessionsDone}
+            deviceSessionsTotal={journeySessionsTotal}
+            pendingAssessment={pendingAssessments[0] ?? null}
+            prsProgress={prsProgress}
+            completedPrs={completedPrs}
+            totalAssignedPrs={totalAssignedPrs}
+          />
 
           {/* Consent signing lives in Profile → Consents now — no dashboard card. */}
 
@@ -457,7 +451,7 @@ function PatientDashboard() {
             )}
           </div>
 
-          {/* Assigned clinician, with the clinic's address/map beneath */}
+          {/* Assigned clinician, with scales sent to the patient beneath */}
           <div className="flex flex-col gap-3">
           {doctor ? (
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -497,9 +491,6 @@ function PatientDashboard() {
               </div>
             </div>
           )}
-          {clinic && <ClinicLocationCard clinic={clinic} />}
-          </div>
-        </div>
 
         {/* Scales sent to you from a live device session — separate from
             the disease-level PrsAssessmentCard below; these are pushed by a
@@ -545,8 +536,10 @@ function PatientDashboard() {
             </div>
           </div>
         )}
+          </div>
+        </div>
 
-        {/* Bottom row: PRS Assessment + Treatment Progress */}
+        {/* PRS Assessment + Treatment Progress */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <PrsAssessmentCard
             pending={pendingAssessments}
@@ -575,6 +568,8 @@ function PatientDashboard() {
             )}
           </div>
         </div>
+
+        {clinic && <ClinicLocationCard clinic={clinic} />}
       </div>
 
       {payingId && (
@@ -590,6 +585,152 @@ function PatientDashboard() {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────
+
+type JourneyState = "profile" | "device_session" | "prs";
+
+const ACTIVE_DEVICE_SESSION_STATUSES = ["planned", "selected", "paid", "checked_in", "in_progress"];
+
+function apptSortKey(a: Appointment): number {
+  return new Date(a.start_at || `${a.appointment_date}T00:00:00`).getTime();
+}
+
+const CTA_CLASS = "mt-auto w-full flex items-center justify-center gap-1.5 text-white py-2 rounded-lg text-xs font-medium hover:opacity-90 transition-opacity";
+const CTA_STYLE = { background: "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)" };
+
+/** One card that follows the patient's journey: "Complete your profile" until
+ * the profile is 100%, then "Your device session" while a treatment session is
+ * ongoing, otherwise "PRS assessment". */
+function JourneyCard({
+  state, profilePct, remainingFields,
+  deviceSession, deviceSessionsDone, deviceSessionsTotal,
+  pendingAssessment, prsProgress, completedPrs, totalAssignedPrs,
+}: {
+  state: JourneyState;
+  profilePct: number;
+  remainingFields: number;
+  deviceSession: Appointment | null;
+  deviceSessionsDone: number;
+  deviceSessionsTotal: number;
+  pendingAssessment: AssessmentPermission | null;
+  prsProgress: number;
+  completedPrs: number;
+  totalAssignedPrs: number;
+}) {
+  if (state === "profile") {
+    return (
+      <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex flex-col">
+        <div className="flex items-center justify-between mb-2">
+          <User className="w-4 h-4 text-blue-500" />
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full text-orange-600 bg-orange-50">
+            Incomplete
+          </span>
+        </div>
+        <h3 className="text-sm font-semibold text-gray-900">Complete your profile</h3>
+        <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+          Add insurance details and an emergency contact to unlock full clinic access and smooth check-ins.
+        </p>
+        <div className="mt-3">
+          <div className="flex justify-between text-[10px] text-gray-500 mb-1">
+            <span>{profilePct}% complete</span>
+            <span>{remainingFields} {remainingFields === 1 ? "field" : "fields"} remaining</span>
+          </div>
+          <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-full bg-orange-500 rounded-full" style={{ width: `${profilePct}%` }} />
+          </div>
+        </div>
+        <Link href="/patient/profile" className="mt-auto pt-2.5 flex items-center gap-0.5 text-xs font-medium text-gray-900 hover:text-blue-600">
+          Complete now <ChevronRight className="w-3.5 h-3.5" />
+        </Link>
+      </div>
+    );
+  }
+
+  if (state === "device_session" && deviceSession) {
+    const isPlanned = deviceSession.status === "planned";
+    const isLive = deviceSession.status === "checked_in" || deviceSession.status === "in_progress";
+    const sessionPct = deviceSessionsTotal > 0 ? Math.round((deviceSessionsDone / deviceSessionsTotal) * 100) : 0;
+    const href = isPlanned
+      ? `/patient/appointments/${deviceSession.appointment_id}?claim=1`
+      : `/patient/device-sessions/${deviceSession.appointment_id}`;
+    return (
+      <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex flex-col">
+        <div className="flex items-center justify-between mb-2">
+          <Zap className="w-4 h-4 text-blue-500" />
+          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+            isLive ? "text-green-700 bg-green-50" : "text-blue-700 bg-blue-50"
+          }`}>
+            {isLive ? "In session" : "Ongoing treatment"}
+          </span>
+        </div>
+        <h3 className="text-sm font-semibold text-gray-900">Your device session</h3>
+        <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+          {getDeviceSessionLabel(deviceSession.modality)}
+          {deviceSession.session_number != null ? ` · Session ${deviceSession.session_number}` : ""}
+          {" · "}
+          {isPlanned ? `${formatShortDate(deviceSession.appointment_date)}, no time booked yet` : formatShortDate(deviceSession.start_at || deviceSession.appointment_date)}
+        </p>
+        <div className="mt-3">
+          <div className="flex justify-between text-[10px] text-gray-500 mb-1">
+            <span>{deviceSessionsDone} of {deviceSessionsTotal} sessions done</span>
+            <span>{sessionPct}%</span>
+          </div>
+          <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-full bg-blue-500 rounded-full" style={{ width: `${sessionPct}%` }} />
+          </div>
+        </div>
+        <Link href={href} className={`${CTA_CLASS} mt-3`} style={CTA_STYLE}>
+          {isPlanned
+            ? <><Calendar className="w-3.5 h-3.5" /> Select slot</>
+            : <><PlayCircle className="w-3.5 h-3.5" /> View session</>}
+        </Link>
+      </div>
+    );
+  }
+
+  // state === "prs"
+  return (
+    <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex flex-col">
+      <div className="flex items-center justify-between mb-2">
+        <ClipboardList className="w-4 h-4 text-blue-500" />
+        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+          pendingAssessment ? "text-orange-600 bg-orange-50"
+            : totalAssignedPrs > 0 ? "text-green-700 bg-green-50"
+            : "text-gray-500 bg-gray-50"
+        }`}>
+          {pendingAssessment ? "Pending" : totalAssignedPrs > 0 ? "Complete" : "Not assigned"}
+        </span>
+      </div>
+      <h3 className="text-sm font-semibold text-gray-900">PRS assessment</h3>
+      <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+        {pendingAssessment
+          ? `Your ${pendingAssessment.disease_name} assessment is ready. Complete it so your doctor can plan your treatment.`
+          : totalAssignedPrs > 0
+            ? "All assigned assessments are complete."
+            : "Your doctor will assign an assessment here."}
+      </p>
+      {totalAssignedPrs > 0 && (
+        <div className="mt-3">
+          <div className="flex justify-between text-[10px] text-gray-500 mb-1">
+            <span>{completedPrs} of {totalAssignedPrs} complete</span>
+            <span>{prsProgress}%</span>
+          </div>
+          <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-full bg-blue-500 rounded-full" style={{ width: `${prsProgress}%` }} />
+          </div>
+        </div>
+      )}
+      {pendingAssessment ? (
+        <Link href={`/patient/assessment/${pendingAssessment.permission_id}`} className={`${CTA_CLASS} mt-3`} style={CTA_STYLE}>
+          <PlayCircle className="w-3.5 h-3.5" /> Start assessment
+        </Link>
+      ) : totalAssignedPrs > 0 ? (
+        <Link href="/patient/results" className="mt-auto pt-2.5 flex items-center gap-0.5 text-xs font-medium text-gray-900 hover:text-blue-600">
+          View results <ChevronRight className="w-3.5 h-3.5" />
+        </Link>
+      ) : null}
+    </div>
+  );
+}
 
 /** Patient's primary clinic (GET /patients/{id}/clinic) — address, contact
  * and an embedded Google Map. google_maps_url is whatever the clinic_admin
@@ -608,13 +749,10 @@ function ClinicLocationCard({ clinic }: { clinic: PatientClinic }) {
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
+      <div className="px-4 py-3 border-b border-gray-100">
         <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide flex items-center gap-1">
           <MapPin className="w-3 h-3" /> Your clinic
         </p>
-        <span className="text-[10px] text-gray-400 font-mono truncate" title={clinic.clinic_id}>
-          ID: {clinic.clinic_id}
-        </span>
       </div>
       <div className="px-4 py-3 space-y-1">
         <p className="text-sm font-bold text-gray-900">{clinic.clinic_name}</p>

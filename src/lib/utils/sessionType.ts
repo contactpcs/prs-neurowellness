@@ -42,18 +42,16 @@ export function getDeviceSessionLabel(modality?: string | null): string {
 
 type ProtocolContext = Pick<
   Appointment,
-  "appointment_type" | "device_name" | "condition_names" | "instance_number" | "session_number" | "session_count"
+  "appointment_type" | "device_name" | "session_number" | "session_count"
 >;
 
-/** Second line for a protocol-born appointment, so a patient running several
- * protocols can tell their sessions apart: "Flow · Depression · Protocol #2 ·
- * Session 5 of 20". Empty for consultations and rows with no protocol data. */
+/** Second line for a protocol-born appointment: "Flow · Session 5 of 20".
+ * The diagnosis and "Protocol #N" are deliberately left off — patients
+ * shouldn't see them. Empty for consultations and rows with no protocol data. */
 export function protocolContextLine(appt: ProtocolContext): string {
   if (!isProtocolGenerated(appt.appointment_type)) return "";
   const parts: string[] = [];
   if (appt.appointment_type === "device_session" && appt.device_name) parts.push(appt.device_name);
-  if (appt.condition_names?.length) parts.push(appt.condition_names.join(", "));
-  if (appt.instance_number) parts.push(`Protocol #${appt.instance_number}`);
   if (appt.appointment_type === "device_session" && appt.session_number) {
     parts.push(appt.session_count ? `Session ${appt.session_number} of ${appt.session_count}` : `Session ${appt.session_number}`);
   }

@@ -198,7 +198,7 @@ function AppointmentDetail() {
       {isPlanned && (
         <div className="bg-neutral-100 border border-neutral-200 rounded-xl p-5 space-y-3">
           <p className="text-sm text-neutral-600">
-            This session hasn't been scheduled to a specific slot yet — no time is locked in and nothing is due until it is.
+            Please select a slot for this appointment to confirm your visit. 
           </p>
           {claimable && (
             <Button variant="primary" size="sm" onClick={() => setShowClaim(true)}>
