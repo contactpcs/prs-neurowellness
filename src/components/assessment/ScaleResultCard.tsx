@@ -53,8 +53,8 @@ export function ScaleResultCard({ response, scaleName }: ScaleResultCardProps) {
             <div className="grid grid-cols-2 gap-2">
               {Object.entries(response.subscale_scores).map(([key, sub]: [string, any]) => (
                 <div key={key} className="flex items-center justify-between bg-neutral-50 rounded px-2 py-1.5">
-                  <span className="text-xs text-neutral-600">{sub.name || key}</span>
-                  <span className="text-xs font-medium">{sub.score}/{sub.max_score}</span>
+                  <span className="text-xs text-neutral-600">{key}</span>
+                  <span className="text-xs font-medium">{typeof sub === "number" ? sub : sub?.score ?? "—"}</span>
                 </div>
               ))}
             </div>

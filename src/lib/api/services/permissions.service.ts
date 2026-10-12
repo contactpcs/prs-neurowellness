@@ -1,4 +1,4 @@
-import apiClient from "../client";
+import apiClient, { getDiseaseCatalog, getMyPatientId } from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type { Permission } from "@/types/domain.types";
 
@@ -21,26 +21,23 @@ export const permissionsService = {
    * patient-scale-assignment per scale_id. Returns the first created row. */
   async grantPermission(payload: { patient_id: string; disease_id: string; scale_ids?: string[] }): Promise<Permission> {
     const scaleIds = payload.scale_ids ?? [];
-    const created = await Promise.all(
-      scaleIds.map((scale_id) =>
-        apiClient.post(ENDPOINTS.PRS.PERMISSIONS, {
-          patient_id: payload.patient_id,
-          scale_id,
-          disease_id: payload.disease_id,
-          assessment_stage: "main_clinical",
-          assignment_reason: "doctor_override",
-        })
-      )
-    );
-    return mapAssignment(created[0]?.data ?? {});
+    if (scaleIds.length === 0) return mapAssignment({});
+    // One request, all-or-nothing (API audit F-042) — was one POST per scale.
+    const { data } = await apiClient.post(ENDPOINTS.PRS.PERMISSIONS_BULK, {
+      patient_id: payload.patient_id,
+      scale_ids: scaleIds,
+      disease_id: payload.disease_id,
+      assessment_stage: "main_clinical",
+      assignment_reason: "doctor_override",
+    });
+    return mapAssignment((Array.isArray(data) ? data[0] : null) ?? {});
   },
 
-  // NOT AVAILABLE directly — resolved via the caller's own /patients record first.
+  // Own patient_id from the stored /auth/me snapshot (getMyPatientId).
   async getMyPermissions(): Promise<{ permissions: Permission[]; total: number }> {
-    const patientsRes = await apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD);
-    const own = Array.isArray(patientsRes.data) ? patientsRes.data[0] : undefined;
-    if (!own?.patient_id) return { permissions: [], total: 0 };
-    return permissionsService.getPatientPermissions(own.patient_id as string);
+    const patientId = await getMyPatientId();
+    if (!patientId) return { permissions: [], total: 0 };
+    return permissionsService.getPatientPermissions(patientId);
   },
 
   async getPatientPermissions(patientId: string): Promise<{ permissions: Permission[]; total: number }> {
@@ -66,7 +63,7 @@ export const permissionsService = {
       apiClient.get(ENDPOINTS.PRS.PATIENT_PERMISSIONS(patientId), {
         params: { assessment_stage: "main_clinical" },
       }),
-      apiClient.get(ENDPOINTS.PRS.CONDITIONS).catch(() => ({ data: [] })),
+      getDiseaseCatalog().catch(() => ({ data: [] })),
       apiClient
         .get(ENDPOINTS.PRS.PATIENT_INSTANCES(patientId), {
           params: { assessment_stage: "main_clinical" },
@@ -116,15 +113,18 @@ export const permissionsService = {
       roundsByDisease.set(r.disease_id, arr);
     }
     for (const [diseaseId, diseaseRounds] of roundsByDisease) {
-      diseaseRounds.sort((a, b) => (a.granted_at < b.granted_at ? -1 : 1));
+      diseaseRounds.sort((a, b) => new Date(a.granted_at).getTime() - new Date(b.granted_at).getTime());
       const diseaseInstances = instances
         .filter((i) => String(i.disease_id) === diseaseId && i.started_at)
-        .sort((a, b) => (a.started_at! < b.started_at! ? -1 : 1));
+        .sort((a, b) => new Date(a.started_at!).getTime() - new Date(b.started_at!).getTime());
       diseaseRounds.forEach((round, idx) => {
-        const windowEnd = diseaseRounds[idx + 1]?.granted_at ?? null;
-        const match = diseaseInstances.find(
-          (i) => i.started_at! >= round.granted_at && (windowEnd === null || i.started_at! < windowEnd),
-        );
+        const roundTime = new Date(round.granted_at).getTime();
+        const nextGranted = diseaseRounds[idx + 1]?.granted_at;
+        const windowEnd = nextGranted ? new Date(nextGranted).getTime() : null;
+        const match = diseaseInstances.find((i) => {
+          const t = new Date(i.started_at!).getTime();
+          return t >= roundTime - 5000 && (windowEnd === null || t < windowEnd);
+        });
         if (match?.status === "completed") {
           round.status = "completed";
           round.completed_at = match.completed_at;
@@ -133,6 +133,16 @@ export const permissionsService = {
           round.instance_id = match.instance_id; // in-progress — resumable, but not "completed"
         }
       });
+
+      // Fallback: if an in-progress instance exists for this disease and hasn't been mapped,
+      // map it to the latest uncompleted round
+      const uncompletedInstance = diseaseInstances.find((i) => i.status !== "completed" && i.instance_id);
+      if (uncompletedInstance) {
+        const targetRound = [...diseaseRounds].reverse().find((r) => r.status !== "completed" && !r.instance_id);
+        if (targetRound) {
+          targetRound.instance_id = uncompletedInstance.instance_id;
+        }
+      }
     }
 
     const permissions = [...rounds.values(), ...ungrouped];

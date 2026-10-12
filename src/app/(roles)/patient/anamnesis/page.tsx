@@ -3,11 +3,11 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/hooks";
-import { PageLoader } from "@/components/ui";
+import { PageSkeleton } from "@/components/ui";
 
 const AnamnesisForm = dynamic(
   () => import("@/components/assessment/AnamnesisForm").then((m) => ({ default: m.AnamnesisForm })),
-  { loading: () => <PageLoader />, ssr: false },
+  { loading: () => <PageSkeleton />, ssr: false },
 );
 
 export default function PatientAnamnesisPage() {
@@ -19,7 +19,7 @@ export default function PatientAnamnesisPage() {
   // ID the backend's anamnesis endpoints key off), not user.id (profiles.id)
   // — passing the profile id here made every auto-start 404 ("Patient not
   // found") for any real patient.
-  if (!user.patient_id) return <PageLoader />;
+  if (!user.patient_id) return <PageSkeleton />;
 
   return (
     <div className="max-w-3xl mx-auto py-4 space-y-2">

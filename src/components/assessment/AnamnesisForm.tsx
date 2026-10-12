@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
-import { CheckCircle, AlertCircle, Stethoscope, Loader2 } from "lucide-react";
-import { anamnesisService } from "@/lib/api/services/anamnesis.service";
+import { CheckCircle, AlertCircle, Stethoscope, Loader2, Save } from "lucide-react";
+import { anamnesisService, withResponses } from "@/lib/api/services/anamnesis.service";
 import { AnamnesisReadOnlyView } from "@/components/assessment/AnamnesisReadOnlyView";
 import { useAppDispatch } from "@/store/hooks";
 import { invalidateMyAnamnesis, invalidatePatientAnamnesis } from "@/store/slices/anamnesisSlice";
@@ -22,15 +22,8 @@ interface AnamnesisFormProps {
   assessmentStage: AnamnesisStage;
   initialRecord?: AnamnesisRecord | null;
   onSubmitted?: () => void;
-  /** True when the doctor is viewing this from a session that is NOT the
-   * patient's current/latest one (e.g. looking at Consultation after
-   * Follow-up 1 exists). The anamnesis GET endpoint only ever returns the
-   * single latest version — there's no per-session history to fetch — so
-   * recording a new one from a frozen session's view would create a new
-   * version that then silently becomes "the" anamnesis shown everywhere,
-   * including under the earlier session it doesn't belong to. Locking this
-   * out is the only honest fix available without a backend history
-   * endpoint. */
+  /** True once this consultation's appointment is completed — its anamnesis
+   *  is frozen (the server refuses edits too, ANAMNESIS_LOCKED). */
   lockedForSession?: boolean;
   /** The visit (appointment_id) this form is being recorded under, when
    *  known — passed through to anamnesisService.start() so the doctor
@@ -75,7 +68,7 @@ const SEC_ICON: Record<number, string> = {
 // ── question field ────────────────────────────────────────────────────────────
 
 const inputCls =
-  "w-full px-3 py-2.5 border border-neutral-200 rounded-lg text-sm outline-none transition-colors focus:border-orange-500 focus:ring-1 focus:ring-orange-100 disabled:bg-neutral-50 disabled:text-neutral-500 disabled:cursor-default";
+  "w-full px-3 py-2.5 border border-neutral-200 rounded-lg text-sm outline-none transition-colors focus:border-primary-500 focus:ring-1 focus:ring-primary-100 disabled:bg-neutral-50 disabled:text-neutral-500 disabled:cursor-default";
 const textareaCls = `${inputCls} min-h-[88px] resize-y`;
 
 function QuestionField({
@@ -104,7 +97,7 @@ function QuestionField({
               checked={val === o.option_value}
               disabled={readOnly}
               onChange={() => !readOnly && onChange(q.question_id, o.option_value, null)}
-              className="w-3.5 h-3.5 accent-orange-500"
+              className="w-3.5 h-3.5 accent-primary-500"
             />
             {o.option_label}
           </label>
@@ -147,7 +140,7 @@ function QuestionField({
               checked={vals.includes(o.option_value)}
               disabled={readOnly}
               onChange={() => toggle(o.option_value)}
-              className="w-3.5 h-3.5 accent-orange-500"
+              className="w-3.5 h-3.5 accent-primary-500"
             />
             {o.option_label}
           </label>
@@ -201,8 +194,23 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
   const [saving,     setSaving]     = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error,      setError]      = useState("");
+  // Doctor reopened a completed record to edit it in place (no versions —
+  // one anamnesis per consultation, editable until the consultation completes).
+  const [editing,    setEditing]    = useState(false);
 
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // One timer per question — a single shared timer meant typing into
+  // question B within 600ms of question A cancelled A's pending save via
+  // clearTimeout, so only the last-edited field of a fast multi-field fill
+  // ever actually reached the server (found live: doctor's form showed every
+  // answer typed, submit's own required-question check read that same
+  // in-memory state and passed, but several answers were never persisted —
+  // status ended up "completed" with responses missing).
+  const saveTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // question_id -> true once its autosave has failed and not yet retried
+  // successfully. Surfaced in the UI and blocks submit — silently completing
+  // over an unsaved answer is exactly how a "Done" record ends up empty.
+  const [failedSaves, setFailedSaves] = useState<Set<string>>(new Set());
 
   // ── fetch questions + record ───────────────────────────────────────────────
   useEffect(() => {
@@ -259,6 +267,9 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
   useEffect(() => {
     // "loading" after questions are fetched = patient has no record
     if (recordState !== "loading" || mode !== "patient" || questions.length === 0) return;
+    // A consultation (main) anamnesis belongs to an appointment and is taken by
+    // the doctor — the patient only views theirs.
+    if (assessmentStage === "main") { setRecordState("no-record"); return; }
 
     anamnesisService
       .start({ patient_id: patientId, taken_by: "patient", assessment_stage: assessmentStage })
@@ -273,17 +284,38 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
       });
   }, [recordState, mode, questions.length, patientId, assessmentStage]);
 
+  // ── auto-start on behalf when doctor has no record yet ────────────────────
+  // Previously required a "Start Anamnesis" click before the form even
+  // appeared — pure friction, since starting has no meaningful choice for
+  // the doctor to make (it just creates/resumes the record). Fires once
+  // recordState settles on "no-record" for a doctor who isn't locked out.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (recordState !== "no-record" || mode !== "doctor" || lockedForSession) return;
+    // A consultation (main) anamnesis must belong to an appointment — the
+    // backend rejects it otherwise (422 ANAMNESIS_APPOINTMENT_REQUIRED), so
+    // don't auto-fire a request that can't succeed when no consultation is
+    // selected (API audit F-035: it fired on every patient-page open).
+    if (assessmentStage === "main" && !appointmentId) return;
+    if (autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    handleStartOnBehalf();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordState, mode, lockedForSession, assessmentStage, appointmentId]);
+
   // ── per-question auto-save (600 ms debounce) ──────────────────────────────
   const handleChange = useCallback((questionId: string, value: string | null, values: string[] | null) => {
-    if (recordState === "completed") return;
+    if (recordState === "completed" && !editing) return;
 
     setResponses((prev) => ({
       ...prev,
       [questionId]: { value: value ?? "", values: values ?? [] },
     }));
 
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
+    const existingTimer = saveTimers.current.get(questionId);
+    if (existingTimer) clearTimeout(existingTimer);
+    saveTimers.current.set(questionId, setTimeout(async () => {
+      saveTimers.current.delete(questionId);
       if (!anamnesisId) return;
       setSaving(true);
       try {
@@ -293,14 +325,35 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
           response_value:  value   ?? null,
           response_values: values  ?? null,
         });
-      } catch { /* silent — will be caught on submit if needed */ }
+        setFailedSaves((prev) => {
+          if (!prev.has(questionId)) return prev;
+          const next = new Set(prev);
+          next.delete(questionId);
+          return next;
+        });
+      } catch {
+        setFailedSaves((prev) => new Set(prev).add(questionId));
+      }
       finally { setSaving(false); }
-    }, 600);
-  }, [anamnesisId, recordState]);
+    }, 600));
+  }, [anamnesisId, recordState, editing]);
 
   // ── submit ────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     setError("");
+
+    // Answers still mid-debounce or that failed to save haven't reached the
+    // server yet — submitting now would mark the record "completed" while
+    // those responses are silently missing (the exact "Done, but empty"
+    // state this was found from). Block until they're actually persisted.
+    if (saveTimers.current.size > 0) {
+      setError("Still saving your answers — please wait a moment and try again.");
+      return;
+    }
+    if (failedSaves.size > 0) {
+      setError(`${failedSaves.size} answer${failedSaves.size === 1 ? "" : "s"} failed to save. Re-enter ${failedSaves.size === 1 ? "it" : "them"} before submitting.`);
+      return;
+    }
 
     const missing = questions.filter(
       (q) =>
@@ -351,6 +404,7 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
         })),
       }));
       setRecordState("completed");
+      setEditing(false);
       if (mode === "patient") {
         dispatch(invalidateMyAnamnesis(assessmentStage));
         dispatch(invalidateDashboard());
@@ -367,15 +421,13 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
     }
   };
 
-  // ── doctor: start on behalf ───────────────────────────────────────────────
-  // Always creates a BRAND NEW anamnesis_id (a new version) — never reopens
-  // an existing completed record for editing. Completed anamnesis rows are
-  // frozen; new clinical information from a later session becomes a new
-  // version instead, so `60 -> 45 -> 35`-style history is never lost.
+  // ── doctor: start (get-or-create) ────────────────────────────────────────
+  // The server returns this consultation's existing anamnesis if there is
+  // one, else a new one pre-filled with the previous consultation's answers —
+  // so always load its responses rather than starting from blank.
   const handleStartOnBehalf = async () => {
     setError("");
     try {
-      // Fetch questions alongside start if not already loaded
       const [r, qs] = await Promise.all([
         anamnesisService.start({
           patient_id: patientId,
@@ -389,15 +441,22 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
         setQuestions(qs);
         setSections(groupBySection(qs));
       }
+      const full = await withResponses(r as unknown as AnamnesisRecord);
       setAnamnesisId(r.anamnesis_id);
-      setMeta({ completed_at: null, taken_by: "doctor_on_behalf" });
-      setRecord(null);
-      setResponses({});
-      setRecordState("in_progress");
+      setRecord(full);
+      setMeta({ completed_at: full.completed_at ?? null, taken_by: full.taken_by ?? "doctor_on_behalf" });
+      setResponses(hydrateResponses(full));
+      setRecordState(full.status === "completed" ? "completed" : "in_progress");
     } catch (e: unknown) {
-      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(detail ?? "Failed to start anamnesis on behalf of patient.");
+      const detail = (e as { response?: { data?: { error?: { message?: string }; detail?: string } } })?.response?.data;
+      setError(detail?.error?.message ?? detail?.detail ?? "Failed to start anamnesis on behalf of patient.");
     }
+  };
+
+  // ── doctor: edit a completed record in place ─────────────────────────────
+  const handleEdit = () => {
+    if (record) setResponses(hydrateResponses(record));
+    setEditing(true);
   };
 
   // ── render: early states ─────────────────────────────────────────────────
@@ -405,31 +464,58 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
   if (recordState === "loading" && questions.length === 0) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-7 h-7 text-orange-500 animate-spin" />
+        <Loader2 className="w-7 h-7 text-primary-500 animate-spin" />
       </div>
     );
   }
 
   if (recordState === "no-record" && mode === "doctor") {
+    // Not locked: the auto-start effect above fires immediately, so this
+    // only ever shows for an instant, or if that start failed (error set).
+    // Locked (consultation already completed): genuinely nothing to start.
+    // No consultation selected for a main anamnesis: auto-start is skipped
+    // (it can only 422), so say where to start it instead of spinning
+    // forever (API audit BUG-ANAM).
+    const needsConsultation = !lockedForSession && assessmentStage === "main" && !appointmentId;
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">
         <div className="w-14 h-14 rounded-full bg-neutral-100 flex items-center justify-center">
-          <Stethoscope className="w-7 h-7 text-neutral-400" />
+          {lockedForSession || error || needsConsultation ? (
+            <Stethoscope className="w-7 h-7 text-neutral-400" />
+          ) : (
+            <Loader2 className="w-7 h-7 text-primary-500 animate-spin" />
+          )}
         </div>
         <div>
-          <p className="font-semibold text-neutral-800">Anamnesis not started</p>
+          <p className="font-semibold text-neutral-800">
+            {lockedForSession || needsConsultation ? "Anamnesis not started" : error ? "Could not start anamnesis" : "Loading anamnesis…"}
+          </p>
           <p className="text-sm text-neutral-500 mt-1">
             {lockedForSession
-              ? "The patient had not yet begun their medical history intake as of this session."
-              : "The patient has not yet begun their medical history intake. You can start it on their behalf."}
+              ? "No anamnesis was recorded for this consultation."
+              : needsConsultation
+                ? "Open a consultation for this patient to start the anamnesis."
+              : error
+                ? "Something went wrong opening this consultation's anamnesis."
+                : "Starting it pre-fills the previous consultation's answers."}
           </p>
         </div>
         {error && <p className="text-sm text-red-600 max-w-xs">{error}</p>}
-        {!lockedForSession && (
-          <Button onClick={handleStartOnBehalf}>
-            <Stethoscope className="w-4 h-4" /> Start on Patient's Behalf
+        {!lockedForSession && error && (
+          <Button onClick={() => { setError(""); handleStartOnBehalf(); }}>
+            <Stethoscope className="w-4 h-4" /> Retry
           </Button>
         )}
+      </div>
+    );
+  }
+
+  if (recordState === "no-record" && mode === "patient" && assessmentStage === "main") {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
+        <Stethoscope className="w-10 h-10 text-neutral-300" />
+        <p className="font-semibold text-neutral-800">No anamnesis yet</p>
+        <p className="text-sm text-neutral-500">Your doctor records this during your consultation.</p>
       </div>
     );
   }
@@ -444,29 +530,29 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
     );
   }
 
-  // Doctor: edit while in_progress, read-only after submit
-  // Patient: edit while in_progress, read-only after submit
-  // Also forced read-only when viewing a frozen (non-latest) session, even
-  // for a dangling in-progress draft — see lockedForSession above.
-  const readOnly  = recordState === "completed" || (mode === "doctor" && lockedForSession);
+  // Doctor: editable until the consultation is completed (lockedForSession);
+  // a completed record shows read-only until the doctor clicks Edit.
+  // Patient: registration editable until submitted; consultation anamnesis
+  // is view-only (the doctor's record).
+  const patientViewOnly = mode === "patient" && assessmentStage === "main";
+  const readOnly  = (recordState === "completed" && !editing) || (mode === "doctor" && lockedForSession) || patientViewOnly;
   const completed = recordState === "completed";
 
-  // Show read-only summary view when completed
-  if (completed && record) {
+  if (completed && record && !editing) {
     return (
       <>
-        {lockedForSession && (
+        {mode === "doctor" && lockedForSession && (
           <div className="mb-4 flex items-start gap-2 bg-neutral-100 border border-neutral-200 rounded-lg px-4 py-3 text-sm text-neutral-600">
             <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-neutral-400" />
-            This session is frozen. Showing the latest anamnesis on record — new anamnesis can only be recorded from the patient&apos;s current session.
+            This consultation is completed — its anamnesis is read-only.
           </div>
         )}
         <AnamnesisReadOnlyView
           record={record}
           questions={questions}
-          takenBy={meta?.taken_by}
-          onEdit={mode === "doctor" && !lockedForSession ? handleStartOnBehalf : undefined}
-          editLabel="Record New Anamnesis"
+          takenBy={record.taken_by}
+          onEdit={mode === "doctor" && !lockedForSession ? handleEdit : undefined}
+          editLabel="Edit"
         />
       </>
     );
@@ -478,12 +564,29 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
       {mode === "doctor" && lockedForSession && (
         <div className="flex items-start gap-2 bg-neutral-100 border border-neutral-200 rounded-lg px-4 py-3 text-sm text-neutral-600">
           <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-neutral-400" />
-          This session is frozen — showing the anamnesis on record as read-only.
+          This consultation is completed — its anamnesis is read-only.
         </div>
       )}
 
-      {/* Header */}
-      <div className="bg-orange-50 border border-orange-200 rounded-xl px-5 py-4 flex items-center gap-3.5">
+      {/* Editing a completed record: Save sits where Edit was in the
+          read-only view (AnamnesisReadOnlyView's header row). */}
+      {editing ? (
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-2xl font-bold text-neutral-900">Anamnesis</h2>
+          <div className="flex items-center gap-3">
+            {saving && (
+              <span className="flex items-center gap-1.5 text-xs text-neutral-400">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Auto-saving…
+              </span>
+            )}
+            <Button onClick={handleSubmit} isLoading={submitting}>
+              <Save className="w-4 h-4" /> Save
+            </Button>
+          </div>
+        </div>
+      ) : (
+      /* Header */
+      <div className="bg-primary-50 border border-primary-200 rounded-xl px-5 py-4 flex items-center gap-3.5">
         <span className="text-2xl flex-shrink-0">🩺</span>
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">
@@ -497,6 +600,7 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
           <p className="text-xs text-neutral-500 mt-0.5">Patient Symptoms &amp; Medical History</p>
         </div>
       </div>
+      )}
 
       {/* Error */}
       {error && (
@@ -509,8 +613,8 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
       {/* Sections */}
       {sections.map((sec) => (
         <div key={sec.number} className="bg-white rounded-xl border border-neutral-200 shadow-sm p-5 space-y-5">
-          <div className="flex items-center gap-2.5 pb-3.5 border-b-2 border-orange-500">
-            <div className="w-6 h-6 rounded-full bg-orange-500 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+          <div className="flex items-center gap-2.5 pb-3.5 border-b-2 border-primary-500">
+            <div className="w-6 h-6 rounded-full bg-primary-500 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
               {sec.number}
             </div>
             <h3 className="text-sm font-bold text-neutral-900">
@@ -525,6 +629,9 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
                 <label className="block text-sm font-semibold text-neutral-700 mb-1.5">
                   {q.question_text}
                   {q.is_required && !readOnly && <span className="text-red-500 ml-1">*</span>}
+                  {failedSaves.has(q.question_id) && (
+                    <span className="ml-2 text-xs font-medium text-red-600">Failed to save — re-enter this answer</span>
+                  )}
                 </label>
                 <QuestionField
                   q={q}
@@ -543,8 +650,8 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
         </div>
       ))}
 
-      {/* Footer — patient in_progress only */}
-      {!readOnly && (
+      {/* Footer — first-time fill only; an edit saves from the top row */}
+      {!readOnly && !editing && (
         <div className="bg-white rounded-xl border border-neutral-200 shadow-sm px-5 py-4 flex items-center justify-end gap-3">
           {saving && (
             <span className="flex items-center gap-1.5 text-xs text-neutral-400 mr-auto">
@@ -554,7 +661,7 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
           <Button
             onClick={handleSubmit}
             isLoading={submitting}
-            className="bg-orange-500 hover:bg-orange-600 text-white"
+            className="bg-primary-500 hover:bg-primary-600 text-white"
           >
             ✓ Submit Anamnesis
           </Button>

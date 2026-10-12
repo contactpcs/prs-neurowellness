@@ -16,8 +16,10 @@ export interface Clinic {
 interface MeResponse {
   id: string; email: string; first_name: string; last_name: string; role: string;
   clinic_id: string | null; region_id: string | null; is_active: boolean; consent_signed: boolean;
+  clinic_name?: string | null; clinic_city?: string | null;
   consent_type_required: string | null;
   self_registered: boolean; patient_id: string | null; registration_status: string | null;
+  approval_status: string | null; rejection_reason: string | null;
   doctor_id: string | null;
   email_verified: boolean; phone_verified: boolean;
 }
@@ -27,9 +29,12 @@ function meToUser(me: MeResponse): AuthResponse["user"] {
     id: me.id, email: me.email, first_name: me.first_name, last_name: me.last_name,
     roles: [me.role as AuthResponse["user"]["roles"][number]], permissions: [],
     clinic_id: me.clinic_id ?? undefined, region_id: me.region_id ?? undefined,
+    clinic_name: me.clinic_name ?? undefined, clinic_city: me.clinic_city ?? undefined,
     is_active: me.is_active, consent_signed: me.consent_signed, consent_type_required: me.consent_type_required,
     self_registered: me.self_registered, patient_id: me.patient_id ?? undefined,
     registration_status: me.registration_status ?? undefined,
+    approval_status: me.approval_status ?? undefined,
+    rejection_reason: me.rejection_reason ?? null,
     doctor_id: me.doctor_id ?? undefined,
     email_verified: me.email_verified, phone_verified: me.phone_verified,
   };
@@ -90,6 +95,9 @@ export const authService = {
       country: formData.country,
       pincode: formData.pincode,
       primary_clinic_id: formData.clinic_id,
+      guardian_name: formData.guardian_name,
+      guardian_relationship: formData.guardian_relationship,
+      guardian_contact: formData.guardian_contact,
     });
     const access_token: string = data.access_token;
     const meRes = await apiClient.get(ENDPOINTS.AUTH.ME, { headers: { Authorization: `Bearer ${access_token}` } });
@@ -129,12 +137,14 @@ export const authService = {
 
   isRealSignupEnabled: getAuthMode,
 
-  /** Step 1 — starts Cognito's SignUp for the chosen channel; auto-sends
-   * the OTP. Nothing written to our DB yet. */
+  /** Step 1 — details + the patient's chosen password. Starts Cognito's
+   * SignUp with that password and auto-sends the OTP. Nothing written to our
+   * DB yet. */
   async patientSignupStart(data: {
     first_name: string; last_name: string; dob?: string; gender?: string; address?: string;
     city?: string; state?: string; country?: string; pincode?: string; primary_clinic_id: string;
-    method: "email" | "mobile"; contact: string;
+    method: "email" | "mobile"; contact: string; password: string; confirm_password: string;
+    guardian_name?: string; guardian_relationship?: string; guardian_contact?: string;
   }): Promise<void> {
     await apiClient.post(ENDPOINTS.AUTH.SIGNUP_START, data);
   },
@@ -143,19 +153,16 @@ export const authService = {
     await apiClient.post(ENDPOINTS.AUTH.SIGNUP_RESEND, { contact });
   },
 
-  /** Step 2 — verifies the OTP. */
-  async patientSignupVerify(contact: string, code: string): Promise<void> {
-    await apiClient.post(ENDPOINTS.AUTH.SIGNUP_VERIFY, { contact, code });
-  },
-
-  /** Step 3 — sets the real password, creates the profiles/patients row,
-   * auto-logs in. Same fields as Start (stateless wizard) plus password. */
+  /** Step 2 — the OTP plus the same form as Start (stateless wizard).
+   * Verifies the code, creates the account and logs in, in ONE call, so a
+   * patient can't abandon signup between "verified" and "account exists". */
   async patientSignupComplete(data: {
     first_name: string; last_name: string; dob?: string; gender?: string; address?: string;
     city?: string; state?: string; country?: string; pincode?: string; primary_clinic_id: string;
-    method: "email" | "mobile"; contact: string; password: string; confirm_password: string;
+    method: "email" | "mobile"; contact: string; password: string; code: string;
+    guardian_name?: string; guardian_relationship?: string; guardian_contact?: string;
   }): Promise<AuthResponse> {
-    const { data: res } = await apiClient.post(ENDPOINTS.AUTH.SIGNUP_COMPLETE, data);
+    const { data: res } = await apiClient.post(ENDPOINTS.AUTH.SIGNUP_CONFIRM, data);
     const access_token: string = res.access_token;
     const meRes = await apiClient.get(ENDPOINTS.AUTH.ME, { headers: { Authorization: `Bearer ${access_token}` } });
     return { access_token, refresh_token: "", expires_in: 0, user: meToUser(meRes.data as MeResponse) };

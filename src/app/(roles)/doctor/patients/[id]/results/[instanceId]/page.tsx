@@ -3,7 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { ChevronRight, AlertTriangle, User } from "lucide-react";
 import { usePatientResult } from "@/lib/hooks";
-import { PageLoader, Card, CardContent } from "@/components/ui";
+import { PageSkeleton, Card, CardContent } from "@/components/ui";
 
 function severityColor(level?: string) {
   switch (level?.toLowerCase()) {
@@ -22,7 +22,7 @@ export default function DoctorPatientResultPage() {
   const detail = usePatientResult(patientId, instanceId);
   const isLoading = !detail;
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   if (!detail) {
     return (
@@ -141,17 +141,12 @@ export default function DoctorPatientResultPage() {
                     {sr.subscale_scores && Object.keys(sr.subscale_scores).length > 0 && (
                       <div className="border-t pt-2 space-y-1">
                         <p className="text-xs font-medium text-neutral-400 uppercase">Subscales</p>
-                        {Object.entries(sr.subscale_scores).map(([key, sub]: [string, unknown]) => {
-                          const s = sub as Record<string, unknown>;
-                          return (
-                            <div key={key} className="flex justify-between text-xs">
-                              <span className="text-neutral-500">{(s.name as string) || key}</span>
-                              <span className="font-medium text-neutral-700">
-                                {s.score as number}/{s.max_score as number}
-                              </span>
-                            </div>
-                          );
-                        })}
+                        {Object.entries(sr.subscale_scores).map(([key, sub]: [string, unknown]) => (
+                          <div key={key} className="flex justify-between text-xs">
+                            <span className="text-neutral-500">{key}</span>
+                            <span className="font-medium text-neutral-700">{typeof sub === "number" ? sub : "—"}</span>
+                          </div>
+                        ))}
                       </div>
                     )}
 

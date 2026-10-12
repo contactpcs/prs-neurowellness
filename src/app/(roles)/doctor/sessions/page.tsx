@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Activity } from "lucide-react";
-import { PageLoader } from "@/components/ui";
+import { PageSkeleton } from "@/components/ui";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { deviceSessionLabel, deviceSessionTone, isSessionFinished } from "@/lib/utils/deviceSessionStatus";
 import type { ProtocolRead, ProtocolSessionRead } from "@/types/treatmentProtocol.types";
@@ -27,17 +27,16 @@ export default function DoctorSessionsPage() {
     let cancelled = false;
     (async () => {
       try {
-        const protocols = await treatmentProtocolService.listProtocols({ status: "active" });
-        const withSessions = await Promise.all(
-          protocols.map(async (protocol) => {
-            const detail = await treatmentProtocolService.getProtocolDetail(protocol.protocol_id).catch(() => null);
-            const sessions = (detail?.sessions ?? []).slice().sort((a, b) => (a.session_number ?? 0) - (b.session_number ?? 0));
+        // One call: protocols + their device sessions (API audit F-034) —
+        // was a full detail fetch per protocol.
+        const protocols = await treatmentProtocolService.listProtocolsWithSessions({ status: "active" });
+        const withSessions = protocols.map((protocol) => {
+            const sessions = protocol.sessions.slice().sort((a, b) => (a.session_number ?? 0) - (b.session_number ?? 0));
             // The device session currently "up" — the earliest one that
             // hasn't finished yet (in progress or still not started).
             const current = sessions.find((s) => !isSessionFinished(s.status)) ?? sessions[sessions.length - 1] ?? null;
             return { protocol, sessions, current };
-          })
-        );
+          });
         if (!cancelled) setRows(withSessions);
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -52,7 +51,7 @@ export default function DoctorSessionsPage() {
     return label === filter;
   });
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   return (
     <div className="flex flex-col gap-5">
@@ -82,9 +81,9 @@ export default function DoctorSessionsPage() {
             <p className="text-sm text-neutral-400">No matching sessions.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[calc(100vh-220px)]">
             <table className="w-full text-sm min-w-[820px]">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-neutral-50">
                 <tr className="border-b border-neutral-100 bg-neutral-50">
                   {["Patient", "Session", "Date", "Time", "Status", ""].map((h) => (
                     <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">{h}</th>

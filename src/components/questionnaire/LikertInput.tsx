@@ -37,15 +37,15 @@ export function LikertInput({ options, value, onChange, readOnly }: LikertInputP
                 "flex sm:flex-col items-center sm:justify-between gap-3 sm:gap-1.5",
                 "p-3 rounded-lg border-2 text-left sm:text-center transition-all sm:min-h-[72px]",
                 isSelected
-                  ? "border-orange-500 bg-orange-50"
-                  : "border-neutral-200 bg-white hover:border-orange-300 hover:bg-orange-50/40",
+                  ? "border-primary-500 bg-primary-50"
+                  : "border-neutral-200 bg-white hover:border-primary-300 hover:bg-primary-50/40",
                 readOnly && "cursor-default opacity-75",
               )}
             >
               <span
                 className={cn(
                   "w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 sm:hidden",
-                  isSelected ? "border-orange-500 bg-orange-500 text-white text-xs font-bold" : "border-neutral-300 text-neutral-500 text-xs font-bold",
+                  isSelected ? "border-primary-500 bg-primary-500 text-white text-xs font-bold" : "border-neutral-300 text-neutral-500 text-xs font-bold",
                 )}
               >
                 {i + 1}
@@ -53,7 +53,7 @@ export function LikertInput({ options, value, onChange, readOnly }: LikertInputP
               <span
                 className={cn(
                   "text-xs leading-snug flex-1 sm:flex sm:items-center sm:justify-center sm:text-center",
-                  isSelected ? "text-orange-900 font-medium" : "text-neutral-700",
+                  isSelected ? "text-primary-900 font-medium" : "text-neutral-700",
                 )}
               >
                 {opt.label}
@@ -61,7 +61,7 @@ export function LikertInput({ options, value, onChange, readOnly }: LikertInputP
               <span
                 className={cn(
                   "text-xs font-semibold hidden sm:block",
-                  isSelected ? "text-orange-500" : "text-neutral-400",
+                  isSelected ? "text-primary-500" : "text-neutral-400",
                 )}
               >
                 {i + 1}
@@ -86,23 +86,23 @@ export function LikertInput({ options, value, onChange, readOnly }: LikertInputP
             className={cn(
               "w-full flex items-center gap-3 px-3 py-2 rounded-lg border text-left transition-all",
               isSelected
-                ? "border-orange-500 bg-orange-50 ring-2 ring-orange-200"
-                : "border-neutral-200 hover:border-orange-300 hover:bg-neutral-50",
+                ? "border-primary-500 bg-primary-50 ring-2 ring-primary-200"
+                : "border-neutral-200 hover:border-primary-300 hover:bg-neutral-50",
               readOnly && "cursor-default opacity-75",
             )}
           >
             <div
               className={cn(
                 "w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0",
-                isSelected ? "border-orange-500" : "border-neutral-300",
+                isSelected ? "border-primary-500" : "border-neutral-300",
               )}
             >
-              {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-orange-500" />}
+              {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-primary-500" />}
             </div>
             <span
               className={cn(
                 "text-sm flex-1",
-                isSelected ? "text-orange-900 font-medium" : "text-neutral-700",
+                isSelected ? "text-primary-900 font-medium" : "text-neutral-700",
               )}
             >
               {opt.label}

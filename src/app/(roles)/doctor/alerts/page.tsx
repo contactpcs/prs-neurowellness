@@ -5,7 +5,7 @@ import { AlertTriangle, Check, Shield } from "lucide-react";
 import { prsService } from "@/lib/api/services";
 import { useAuth } from "@/lib/hooks";
 import { useMyAlerts } from "@/lib/hooks";
-import { PageLoader, Button, Card, CardContent, Modal } from "@/components/ui";
+import { PageSkeleton, Button, Card, CardContent, Modal } from "@/components/ui";
 import { SeverityBadge } from "@/components/assessment";
 import { formatDateTime } from "@/lib/utils/format";
 import type { RiskAlert } from "@/types/prs.types";
@@ -27,7 +27,7 @@ export default function AlertsPage() {
     setResolveNotes("");
   };
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   const active = alerts.filter(a => a.status === "active");
   const acknowledged = alerts.filter(a => a.status === "acknowledged");

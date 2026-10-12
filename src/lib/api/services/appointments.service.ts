@@ -1,6 +1,6 @@
 import apiClient from "@/lib/api/client";
 import { ENDPOINTS } from "@/lib/api/endpoints";
-import type { Appointment, AppointmentStatus, AppointmentType, AvailabilitySlot, DeviceSlot, DeviceDayAvailability } from "@/types/domain.types";
+import type { Appointment, AppointmentHistoryEntry, AppointmentStatus, AppointmentType, AvailabilitySlot, DeviceSlot, DeviceDayAvailability } from "@/types/domain.types";
 
 export interface AppointmentListParams {
   date_from?: string;
@@ -9,9 +9,13 @@ export interface AppointmentListParams {
   clinic_id?: string; // real server-side filter (list_appointments), unlike date_from/date_to below
   doctor_id?: string;
   patient_id?: string;
+  appointment_type?: AppointmentType;
   page?: number;
   page_size?: number;
+  skip?: number;
   limit?: number;
+  /** Server sort on appointment_date/start_time. Backend default is "asc". */
+  order?: "asc" | "desc";
 }
 
 export interface AppointmentCreatePayload {
@@ -59,6 +63,16 @@ function mapAppointment(a: Record<string, unknown>): Appointment {
     doctor_name: a.doctor_name ? String(a.doctor_name) : undefined,
     doctor_public_id: a.doctor_public_id ? String(a.doctor_public_id) : null,
     patient_public_id: a.patient_public_id ? String(a.patient_public_id) : null,
+    patient_mrn: a.patient_mrn ? String(a.patient_mrn) : null,
+    protocol_version_major: typeof a.protocol_version_major === "number" ? a.protocol_version_major : null,
+    protocol_version_minor: typeof a.protocol_version_minor === "number" ? a.protocol_version_minor : null,
+    protocol_status: a.protocol_status ? String(a.protocol_status) : null,
+    device_name: a.device_name ? String(a.device_name) : null,
+    modality: a.modality ? String(a.modality) : null,
+    condition_names: Array.isArray(a.condition_names) ? a.condition_names.map(String) : null,
+    instance_number: typeof a.instance_number === "number" ? a.instance_number : null,
+    session_count: typeof a.session_count === "number" ? a.session_count : null,
+    prescribing_doctor_name: a.prescribing_doctor_name ? String(a.prescribing_doctor_name) : null,
     appointment_date: date,
     start_time: start,
     end_time: end,
@@ -80,11 +94,50 @@ function mapAppointment(a: Record<string, unknown>): Appointment {
     checked_in_at: a.checked_in_at ? String(a.checked_in_at) : null,
     started_at: a.started_at ? String(a.started_at) : null,
     completed_at: a.completed_at ? String(a.completed_at) : null,
+    rescheduled_from: a.rescheduled_from ? String(a.rescheduled_from) : null,
+    rescheduled_to: a.rescheduled_to ? String(a.rescheduled_to) : null,
+    rescheduled_from_date: a.rescheduled_from_date ? String(a.rescheduled_from_date) : null,
+    rescheduled_from_start_time: a.rescheduled_from_start_time ? String(a.rescheduled_from_start_time) : null,
+    rescheduled_from_end_time: a.rescheduled_from_end_time ? String(a.rescheduled_from_end_time) : null,
   };
 }
 
 function extractList(data: unknown): Appointment[] {
   return Array.isArray(data) ? data.map(mapAppointment) : [];
+}
+
+function mapAppointmentHistory(a: Record<string, unknown>): AppointmentHistoryEntry {
+  return {
+    ...mapAppointment(a),
+    payment_id: a.payment_id ? String(a.payment_id) : null,
+    payment_status: (a.payment_status as AppointmentHistoryEntry["payment_status"]) ?? null,
+    payment_amount: typeof a.payment_amount === "number" ? a.payment_amount : a.payment_amount ? Number(a.payment_amount) : null,
+    payment_currency: a.payment_currency ? String(a.payment_currency) : null,
+    payment_method: a.payment_method ? String(a.payment_method) : null,
+    paid_at: a.paid_at ? String(a.paid_at) : null,
+  };
+}
+
+// ponytail: callers within HISTORY_REUSE_MS share one /me/appointments/history
+// request (myList(true) + myHistory() fire together on the appointments
+// page). Short window so an SSE-triggered reload still gets fresh rows.
+const HISTORY_REUSE_MS = 2000;
+let myHistoryReq: { at: number; p: Promise<AppointmentHistoryEntry[]> } | null = null;
+function fetchMyHistory(): Promise<AppointmentHistoryEntry[]> {
+  if (myHistoryReq && Date.now() - myHistoryReq.at < HISTORY_REUSE_MS) return myHistoryReq.p;
+  const p = apiClient
+    .get(ENDPOINTS.APPOINTMENTS.MY_HISTORY)
+    .then(({ data }) => (Array.isArray(data) ? data.map(mapAppointmentHistory) : []));
+  myHistoryReq = { at: Date.now(), p };
+  p.catch(() => { myHistoryReq = null; });
+  return p;
+}
+
+// /me/appointments order: appointment_date, start_time NULLS LAST.
+function byDateTimeAsc(a: Appointment, b: Appointment): number {
+  if (a.appointment_date !== b.appointment_date) return a.appointment_date < b.appointment_date ? -1 : 1;
+  if (!a.start_time || !b.start_time) return a.start_time ? -1 : b.start_time ? 1 : 0;
+  return a.start_time < b.start_time ? -1 : a.start_time > b.start_time ? 1 : 0;
 }
 
 async function setStatus(id: string, status: AppointmentStatus, extra?: Record<string, unknown>): Promise<Appointment> {
@@ -99,8 +152,32 @@ export const appointmentsService = {
     return { appointments, total: appointments.length };
   },
 
-  async getUpcoming(): Promise<Appointment[]> {
-    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.UPCOMING);
+  /** One server page + total + pill counts (GET /appointments/page, API
+   * audit F-023) — the reception table's data source. */
+  async page(params: {
+    clinic_id?: string; doctor_name?: string; status?: string; appointment_type?: string; exclude_appointment_type?: string;
+    date_from?: string; date_to?: string; search?: string; page: number; page_size: number;
+    doctor_id?: string; exclude_superseded?: boolean; date_order?: "asc" | "desc"; period_today?: string;
+  }): Promise<{
+    appointments: Appointment[]; total: number; totalPages: number;
+    counts: {
+      all: number; by_status: Record<string, number>; by_type: Record<string, number>;
+      /** Only with period_today (admin tabs, F-055). */
+      by_period?: { past: number; today: number; upcoming: number };
+    };
+  }> {
+    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.PAGE, { params });
+    return {
+      appointments: extractList(data?.items),
+      total: data?.total ?? 0,
+      totalPages: data?.total_pages ?? 1,
+      counts: data?.counts ?? { all: 0, by_status: {}, by_type: {} },
+    };
+  },
+
+  /** patientId (patients.patient_id) narrows to one patient (F-031). */
+  async getUpcoming(patientId?: string): Promise<Appointment[]> {
+    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.UPCOMING, { params: patientId ? { patient_id: patientId } : undefined });
     return extractList(data);
   },
 
@@ -166,8 +243,30 @@ export const appointmentsService = {
   // never take an id or send ownership fields.
 
   async myList(includePast = false): Promise<Appointment[]> {
+    // Past-inclusive list = exactly the /history rows (history only adds
+    // payment fields), so serve it from the shared history request: the
+    // appointments page loads both at once and used to download the same
+    // rows twice (API audit F-009). Re-sorted to /me/appointments' order.
+    if (includePast) return [...(await fetchMyHistory())].sort(byDateTimeAsc);
     const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.MY_LIST, { params: { include_past: includePast } });
     return extractList(data);
+  },
+
+  /** Only the caller's device_session rows, past included — server-side
+   * filter instead of downloading every appointment (API audit F-010). */
+  async myDeviceSessions(): Promise<Appointment[]> {
+    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.MY_LIST, {
+      params: { include_past: true, appointment_type: "device_session" },
+    });
+    return extractList(data);
+  },
+
+  // The appointment section's history feed — every appointment ever, newest
+  // first, each with its most recent payment folded in (pending hold,
+  // abandoned/failed, paid, or none). One call instead of joining myList()
+  // with a separate payments fetch client-side.
+  async myHistory(): Promise<AppointmentHistoryEntry[]> {
+    return fetchMyHistory();
   },
 
   async myAvailability(fromDate: string, toDate: string): Promise<AvailabilitySlot[]> {
@@ -189,6 +288,22 @@ export const appointmentsService = {
 
   async myCancel(id: string, reason: string): Promise<Appointment> {
     const { data } = await apiClient.patch(ENDPOINTS.APPOINTMENTS.MY_CANCEL(id), { reason });
+    return mapAppointment(data);
+  },
+
+  // Patient self-service reschedule — distinct from reschedule() above
+  // (that one hits the staff-only PATCH /appointments/{id}/reschedule and
+  // 403s for a patient caller). Backend accepts this only when status is
+  // 'selected', 'paid', or 'no_show' (scheduling/service.py's
+  // PATIENT_RESCHEDULE_FROM_STATUSES) — a protocol-born appointment
+  // (device_session/protocol_followup) is rejected with
+  // USE_CLAIM_SLOT_INSTEAD; use claimSlot() for those instead.
+  async myReschedule(id: string, payload: AppointmentReschedulePayload): Promise<Appointment> {
+    const { data } = await apiClient.patch(ENDPOINTS.APPOINTMENTS.MY_RESCHEDULE(id), {
+      appointment_date: payload.appointment_date,
+      start_time: payload.start_time,
+      change_reason: payload.reason,
+    });
     return mapAppointment(data);
   },
 

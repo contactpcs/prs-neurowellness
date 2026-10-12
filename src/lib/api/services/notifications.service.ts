@@ -13,6 +13,18 @@ function mapNotification(n: Record<string, unknown>): Notification {
     type: String(n.type ?? ""),
     is_read: Boolean(n.is_read),
     created_at: String(n.created_at ?? ""),
+    // Deep-link payload — the backend attaches { appointment_id, protocol_scale_id,
+    // scale_code, ... } on assessment/device-session notifications so the client
+    // can route straight to the right screen (see notificationLink.ts). Kept as an
+    // opaque bag rather than typed columns since each notification type carries
+    // its own shape.
+    // entity_type/entity_id (what the notification is about, e.g. a signed
+    // final report) ride in the same bag so the link helper has one place
+    // to look.
+    metadata: {
+      ...(n.metadata && typeof n.metadata === "object" ? (n.metadata as Record<string, unknown>) : {}),
+      ...(n.entity_type ? { entity_type: n.entity_type, entity_id: n.entity_id } : {}),
+    },
   };
 }
 
@@ -31,6 +43,12 @@ export const notificationsService = {
       total: notifications.length,
       unread_count: unreadRes.data?.unread_count ?? 0,
     };
+  },
+
+  /** Badge count only — one call instead of getNotifications()'s list + count pair. */
+  async getUnreadCount(): Promise<number> {
+    const { data } = await apiClient.get("/notifications/unread-count");
+    return data?.unread_count ?? 0;
   },
 
   async markAllRead(): Promise<void> {

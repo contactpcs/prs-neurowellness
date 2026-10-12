@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { authService } from "@/lib/api/services";
 import { STORAGE_KEYS } from "@/lib/constants";
+import { isTokenExpired, refreshAccessToken } from "@/lib/api/client";
 import type { User, LoginCredentials, RegisterData } from "@/types/auth.types";
 
 function splitFullName(fullName: string | undefined): { first_name: string; last_name: string } {
@@ -34,6 +35,7 @@ function normalizeUser(rawUser: any): User {
     date_of_birth: rawUser?.date_of_birth ?? undefined,
     gender: rawUser?.gender ?? undefined,
     approval_status: rawUser?.approval_status ?? rawUser?.account_status ?? rawUser?.status ?? undefined,
+    rejection_reason: rawUser?.rejection_reason ?? null,
     is_active: rawUser?.is_active ?? true,
     consent_signed: rawUser?.consent_signed ?? true,
     consent_type_required: rawUser?.consent_type_required ?? null,
@@ -95,19 +97,23 @@ export const login = createAsyncThunk(
 
       const normalizedUser = normalizeUser(response.user);
 
-      // Enforce approval gate for patients
+      // A rejected self-registration can't sign in; say why. 'pending' is
+      // deliberately NOT blocked here: a self-registered patient stays
+      // 'pending' through the whole registration wizard, and must be able to
+      // log back in to resume it or to reach /patient-registration/pending
+      // (useAuth's resumeRouteForPatient). /auth/me only started returning
+      // approval_status with migration 94 — before that this gate never ran.
       if (normalizedUser.roles.includes("patient")) {
         const status = (normalizedUser.approval_status ?? "").toLowerCase();
-        if (status === "pending") {
-          return rejectWithValue("You will be able to log in once your account is approved.");
-        }
         if (status === "rejected") {
-          return rejectWithValue("Your account has been rejected. Please contact reception.");
+          const reason = normalizedUser.rejection_reason?.trim();
+          return rejectWithValue(
+            `Your account has been rejected.${reason ? ` Reason: ${reason}.` : ""} Please contact reception.`
+          );
         }
       }
 
       localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.access_token);
-      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, response.refresh_token);
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(normalizedUser));
 
       return normalizedUser;
@@ -140,7 +146,6 @@ export const completeNewPassword = createAsyncThunk(
       if (!response.user) return rejectWithValue("User data missing from response");
       const normalizedUser = normalizeUser(response.user);
       localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.access_token);
-      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, response.refresh_token);
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(normalizedUser));
       return normalizedUser;
     } catch (error: any) {
@@ -160,7 +165,6 @@ export const register = createAsyncThunk(
       if (!response.user) return rejectWithValue("User data missing from response");
       const normalizedUser = normalizeUser(response.user);
       localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.access_token);
-      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, response.refresh_token);
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(normalizedUser));
       return normalizedUser;
     } catch (error: any) {
@@ -186,7 +190,6 @@ export const completePatientSignup = createAsyncThunk(
       if (!response.user) return rejectWithValue("User data missing from response");
       const normalizedUser = normalizeUser(response.user);
       localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.access_token);
-      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, response.refresh_token);
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(normalizedUser));
       return normalizedUser;
     } catch (error: any) {
@@ -226,7 +229,13 @@ export const refreshUser = createAsyncThunk(
 export const restoreSession = createAsyncThunk(
   "auth/restoreSession",
   async (_, { rejectWithValue }) => {
-    const token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    // Refresh tokens used to be kept in localStorage; they now live only in an
+    // httpOnly cookie. Drop any value an older version of the app left behind.
+    localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+    let token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    // No usable access token (closed the browser for a day, cleared storage):
+    // the refresh cookie can still sign them back in without a password.
+    if (!token || isTokenExpired(token)) token = await refreshAccessToken();
     if (!token) return rejectWithValue("No session to restore");
     try {
       const me = await authService.me();

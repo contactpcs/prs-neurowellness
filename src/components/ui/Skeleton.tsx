@@ -154,6 +154,76 @@ export function AssessmentSkeleton() {
   );
 }
 
+// ─── Generic page skeleton ─────────────────────────────────────────────────────
+// Drop-in replacement for PageLoader wherever a page doesn't have (or doesn't
+// yet need) a layout-matched skeleton — a rough page shape (title, a couple
+// filter/action controls, a handful of row-shaped cards) beats a spinner on
+// nearly every page without hand-building one skeleton per layout.
+
+export function PageSkeleton() {
+  return (
+    <div className="max-w-5xl mx-auto space-y-6">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="space-y-2">
+          <Skeleton className="h-7 w-48" />
+          <Skeleton className="h-4 w-64" />
+        </div>
+        <Skeleton className="h-9 w-32 rounded-lg" />
+      </div>
+      <div className="space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="bg-white rounded-lg border border-neutral-200 p-4 flex items-center gap-4">
+            <Skeleton className="h-10 w-10 rounded-full shrink-0" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-1/3" />
+              <Skeleton className="h-3 w-1/2" />
+            </div>
+            <Skeleton className="h-8 w-20 rounded-lg shrink-0" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Appointment detail skeleton ──────────────────────────────────────────────
+
+export function AppointmentDetailSkeleton() {
+  return (
+    <div className="min-h-screen bg-neutral-50">
+      <Skeleton className="h-5 w-16 mb-5" />
+      <div className="grid gap-5 xl:grid-cols-[1fr_320px]">
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div className="space-y-2">
+                <Skeleton className="h-6 w-40" />
+                <Skeleton className="h-4 w-28" />
+              </div>
+              <Skeleton className="h-7 w-20 rounded-full" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-5 w-40" />
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-3">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-16 w-full" />
+          </div>
+        </div>
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-3">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-9 w-full rounded-lg" />
+            <Skeleton className="h-9 w-full rounded-lg" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Patient dashboard skeleton ───────────────────────────────────────────────
 
 export function PatientDashboardSkeleton() {

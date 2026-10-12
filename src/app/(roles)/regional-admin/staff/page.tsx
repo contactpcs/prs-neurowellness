@@ -376,11 +376,15 @@ export default function RegionalAdminStaffPage() {
     if (!user?.region_id) return;
     setError(null);
     try {
-      const regionClinics = await adminService.getClinics({ region_id: user.region_id });
+      // Staff for the whole region in one set of calls (RLS scopes a regional
+      // admin to their region) — was getStaff once per clinic (API audit F-059).
+      const [regionClinics, staffRes, approvedRequests] = await Promise.all([
+        adminService.getClinics({ region_id: user.region_id }),
+        adminService.getStaff(),
+        staffRequestsService.list({ status: "approved" }),
+      ]);
       setClinics(regionClinics);
-      const results = await Promise.all(regionClinics.map((c) => adminService.getStaff({ clinic_id: c.clinic_id })));
-      setStaff(results.flatMap((r) => r.staff));
-      const approvedRequests = await staffRequestsService.list({ status: "approved" });
+      setStaff(staffRes.staff);
       setStaffRequests(approvedRequests.filter((r) => !r.fulfilled_profile_id));
     } catch (e: any) {
       setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Failed to load staff");
@@ -483,16 +487,16 @@ export default function RegionalAdminStaffPage() {
         </select>
       </div>
 
-      <Card>
+      <Card className="overflow-hidden">
         {filtered.length === 0 ? (
           <CardContent className="py-16 text-center">
             <UserCog className="h-10 w-10 text-neutral-300 mx-auto mb-3" />
             <p className="text-sm font-medium text-neutral-600">No staff members found</p>
           </CardContent>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[calc(100vh-240px)]">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-white">
                 <tr className="border-b border-neutral-100">
                   <th className="text-left px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">Staff Member</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">Role</th>

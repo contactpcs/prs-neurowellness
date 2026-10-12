@@ -9,7 +9,7 @@ export interface InventoryItem {
 }
 
 export const inventoryService = {
-  list: async (params: { clinic_id: string }): Promise<InventoryItem[]> => {
+  list: async (params: { clinic_id?: string }): Promise<InventoryItem[]> => {
     const { data } = await apiClient.get("/inventory", { params });
     return Array.isArray(data) ? data : [];
   },

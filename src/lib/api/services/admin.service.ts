@@ -1,4 +1,4 @@
-import apiClient from "../client";
+import apiClient, { getAnamnesisCatalog, getClinicNamesCatalog } from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type {
   AdminDashboard,
@@ -40,8 +40,11 @@ function mapClinic(c: Record<string, unknown>): AdminClinic {
     is_operational: c.is_operational !== false,
     is_main_branch: Boolean(c.is_main_branch),
     address: (c.address as string) ?? undefined,
+    full_address: (c.full_address as string) ?? undefined,
+    google_maps_url: (c.google_maps_url as string) ?? undefined,
     city: (c.city as string) ?? undefined,
     state: (c.state as string) ?? undefined,
+    pincode: (c.pincode as string) ?? undefined,
     phone: (c.phone as string) ?? undefined,
     email: (c.email as string) ?? undefined,
     is_active: c.status === "active",
@@ -144,19 +147,20 @@ export const adminService = {
 
   // ─── Dashboard — no aggregate endpoint, composed from real counts ───
   async getDashboard(): Promise<AdminDashboard> {
-    const [clinicsRes, patientsRes] = await Promise.all([
+    // Patient total via /patients/count — was every patient on the platform
+    // downloaded to take .length (API audit F-061).
+    const [clinicsRes, patientsCountRes] = await Promise.all([
       apiClient.get(ENDPOINTS.ADMIN.CLINICS),
-      apiClient.get(ENDPOINTS.ADMIN.PATIENTS),
+      apiClient.get(ENDPOINTS.STAFF.PATIENTS_COUNT),
     ]);
     const clinics = (Array.isArray(clinicsRes.data) ? clinicsRes.data : []).map(mapClinic);
-    const patients = Array.isArray(patientsRes.data) ? patientsRes.data : [];
     return {
       stats: {
         total_clinics: clinics.length,
         total_doctors: 0,
         total_receptionists: 0,
         total_clinical_assistants: 0,
-        total_patients: patients.length,
+        total_patients: patientsCountRes.data?.count ?? 0,
         pending_approvals: 0,
         active_assessments: 0,
       },
@@ -241,7 +245,7 @@ export const adminService = {
       apiClient.get("/doctors", { params }),
       apiClient.get("/clinical-assistants", { params }),
       apiClient.get("/receptionists", { params }),
-      apiClient.get(ENDPOINTS.ADMIN.CLINICS),
+      getClinicNamesCatalog(),
     ]);
 
     const clinicNameById = new Map<string, string>();
@@ -294,7 +298,7 @@ export const adminService = {
       : `/receptionists/${id}`;
     const [{ data }, clinicsRes] = await Promise.all([
       apiClient.get(path),
-      apiClient.get(ENDPOINTS.ADMIN.CLINICS).catch(() => ({ data: [] as unknown[] })),
+      getClinicNamesCatalog().catch(() => ({ data: [] as unknown[] })),
     ]);
     const clinicNameById = new Map<string, string>();
     if (Array.isArray(clinicsRes.data)) {
@@ -380,7 +384,11 @@ export const adminService = {
    * availability_status instead (no is_active column on that table). */
   async _setStaffActive(id: string, role: string | undefined, active: boolean): Promise<void> {
     if (role === "doctor") {
-      await apiClient.patch(`/doctors/${id}`, { availability_status: active ? "available" : "inactive" });
+      // is_active is the real login gate (profiles.is_active) — doctors has
+      // no is_active column of its own, availability_status is a separate
+      // scheduling concept. Send both: availability_status alone never
+      // blocked login, it just hid the doctor from allocation.
+      await apiClient.patch(`/doctors/${id}`, { is_active: active, availability_status: active ? "available" : "inactive" });
     } else if (role === "clinical_assistant") {
       await apiClient.patch(`/clinical-assistants/${id}`, { is_active: active });
     } else if (role === "receptionist") {
@@ -409,16 +417,30 @@ export const adminService = {
   },
 
   // ─── Patients ───
-  async getPatients(params?: { clinic_id?: string; status?: string; search?: string; skip?: number; limit?: number }): Promise<{ patients: AdminPatient[]; total: number }> {
+  /** With `page`, one server page of GET /patients/page (server search,
+   * total = all matches; API audit F-053); without, every patient. */
+  async getPatients(params?: {
+    clinic_id?: string; status?: string; search?: string; skip?: number; limit?: number; page?: number; page_size?: number;
+    approval_view?: "all" | "approved" | "pending" | "rejected"; with_counts?: boolean;
+  }): Promise<{ patients: AdminPatient[]; total: number; counts?: Record<"all" | "approved" | "pending" | "rejected", number> }> {
+    const paged = params?.page !== undefined;
     const [res, clinicsRes] = await Promise.all([
-      apiClient.get(ENDPOINTS.ADMIN.PATIENTS, { params }),
-      apiClient.get(ENDPOINTS.ADMIN.CLINICS).catch(() => ({ data: [] as unknown[] })),
+      paged
+        ? apiClient.get(`${ENDPOINTS.ADMIN.PATIENTS}/page`, {
+            params: {
+              clinic_id: params.clinic_id, search: params.search || undefined, page: params.page, page_size: params.page_size,
+              approval_view: params.approval_view, with_counts: params.with_counts || undefined,
+            },
+          })
+        : apiClient.get(ENDPOINTS.ADMIN.PATIENTS, { params }),
+      getClinicNamesCatalog().catch(() => ({ data: [] as unknown[] })),
     ]);
     const clinicNameById = new Map<string, string>();
     if (Array.isArray(clinicsRes.data)) {
       for (const c of clinicsRes.data as Record<string, unknown>[]) clinicNameById.set(String(c.clinic_id), String(c.clinic_name ?? ""));
     }
-    const list: Record<string, unknown>[] = Array.isArray(res.data) ? res.data : [];
+    const raw = paged ? res.data?.items : res.data;
+    const list: Record<string, unknown>[] = Array.isArray(raw) ? raw : [];
     const patients: AdminPatient[] = list.map((p) => {
       const clinicId = (p.primary_clinic_id as string) ?? undefined;
       return {
@@ -432,7 +454,9 @@ export const adminService = {
       gender: (p.gender as string) ?? undefined,
       clinic_id: clinicId,
       clinic_name: clinicId ? clinicNameById.get(clinicId) ?? clinicId : undefined,
-      approval_status: "approved" as const,
+      // Real status (was hard-coded "approved", so Pending/Rejected tabs
+      // were always empty — BUG-APPR); staff-registered "not_required" = approved.
+      approval_status: p.approval_status === "pending" || p.approval_status === "rejected" ? p.approval_status : "approved",
       registration_status: (p.registration_status as string) ?? undefined,
       mrn: (p.mrn as string) ?? undefined,
       registered_at: (p.registration_completed_at as string) ?? undefined,
@@ -440,7 +464,7 @@ export const adminService = {
       is_active: (p.profile_is_active as boolean) ?? true,
       };
     });
-    return { patients, total: patients.length };
+    return { patients, total: paged ? res.data?.total ?? 0 : patients.length, counts: paged ? res.data?.counts ?? undefined : undefined };
   },
 
   async registerPatient(payload: { email: string; first_name: string; last_name: string; phone?: string; gender?: string; dob?: string; address?: string; primary_clinic_id: string; emergency_contact_name?: string; emergency_contact_phone?: string }): Promise<AdminPatient> {
@@ -461,48 +485,27 @@ export const adminService = {
    * was removed from registration (70_remove_disease_selection.sql, 27 Aug
    * 2026) — no longer fetched here. */
   async getPatientDetail(id: string): Promise<Record<string, unknown>> {
-    const [{ data }, clinicsRes, anamnesisCatalogRes] = await Promise.all([
+    // /patients/{id} already carries clinic_name; the anamnesis catalog is
+    // static and shared-cached (F-022); anamnesis + responses + latest
+    // general-registration PRS result come in one call (F-025) instead of
+    // two sequential chains of two.
+    const [{ data }, anamnesisCatalogRes, recordRes] = await Promise.all([
       apiClient.get(`/patients/${id}`),
-      apiClient.get(ENDPOINTS.ADMIN.CLINICS).catch(() => ({ data: [] as unknown[] })),
-      apiClient.get(ENDPOINTS.ANAMNESIS.QUESTIONS).catch(() => ({ data: [] as unknown[] })),
+      getAnamnesisCatalog().catch(() => ({ data: [] as unknown[] })),
+      apiClient.get(ENDPOINTS.PATIENTS.REGISTRATION_RECORD(id)).catch(() => ({ data: null })),
     ]);
-    const clinicNameById = new Map<string, string>();
-    if (Array.isArray(clinicsRes.data)) {
-      for (const c of clinicsRes.data as Record<string, unknown>[]) clinicNameById.set(String(c.clinic_id), String(c.clinic_name ?? ""));
-    }
-
-    let anamnesis: Record<string, unknown> | null = null;
-    let anamnesisResponses: Record<string, unknown>[] = [];
-    try {
-      const { data: assessment } = await apiClient.get(ENDPOINTS.ANAMNESIS.FOR_PATIENT(id), {
-        params: { assessment_stage: "registration" },
-      });
-      anamnesis = assessment;
-      if (assessment?.anamnesis_id) {
-        const { data: responses } = await apiClient.get(ENDPOINTS.ANAMNESIS.RESPONSES(assessment.anamnesis_id));
-        anamnesisResponses = Array.isArray(responses) ? responses : [];
-      }
-    } catch {
-      anamnesis = null;
-    }
-
-    let generalPrs: Record<string, unknown> | null = null;
-    try {
-      const { data: instances } = await apiClient.get(ENDPOINTS.PRS.PATIENT_INSTANCES(id), {
-        params: { assessment_stage: "general_registration" },
-      });
-      const latest = Array.isArray(instances) ? instances[0] : undefined;
-      if (latest?.instance_id) {
-        const { data: results } = await apiClient.get(ENDPOINTS.PRS.INSTANCE_SCORE(latest.instance_id));
-        generalPrs = { instance: latest, ...results };
-      }
-    } catch {
-      generalPrs = null;
-    }
+    const record = (recordRes.data ?? {}) as {
+      anamnesis?: Record<string, unknown> | null;
+      anamnesis_responses?: Record<string, unknown>[];
+      general_prs?: Record<string, unknown> | null;
+    };
+    const anamnesis = record.anamnesis ?? null;
+    const anamnesisResponses = Array.isArray(record.anamnesis_responses) ? record.anamnesis_responses : [];
+    const generalPrs = record.general_prs ?? null;
 
     return {
       ...data,
-      clinic_name: data.primary_clinic_id ? clinicNameById.get(String(data.primary_clinic_id)) ?? null : null,
+      clinic_name: data.clinic_name ?? null,
       anamnesis,
       anamnesis_responses: anamnesisResponses,
       anamnesis_catalog: Array.isArray(anamnesisCatalogRes.data) ? anamnesisCatalogRes.data : [],

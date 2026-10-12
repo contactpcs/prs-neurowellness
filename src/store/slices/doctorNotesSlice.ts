@@ -1,10 +1,8 @@
 /**
- * Doctor notes slice — caches:
- * - the doctor's full notes list (own context)
- * - per-patient notes (keyed by patientId)
- *
- * Notes mutate when a doctor saves edits, so TTL is short and we expose
- * an upsert thunk that updates the cache directly without an extra fetch.
+ * Doctor's clinical notes — backed by core.patient_clinical_notes (backend
+ * SQL/v1/99). Per-patient chronological list, kept in Redux so every screen
+ * that shows a patient's notes shares one copy and nothing is lost on
+ * reload (previously this was pure client-side fake state).
  */
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { doctorNotesService, type DoctorNote } from "@/lib/api/services/doctorNotes.service";
@@ -14,57 +12,31 @@ const TTL_MS = 2 * 60 * 1000; // 2 minutes
 
 type LoadStatus = "idle" | "loading" | "succeeded" | "failed";
 
-interface PatientNoteEntry {
-  note: DoctorNote | null;
+interface PatientNotesEntry {
+  notes: DoctorNote[];
   status: LoadStatus;
   loadedAt: number | null;
 }
 
 interface DoctorNotesState {
-  myNotes: DoctorNote[];
-  myNotesStatus: LoadStatus;
-  myNotesLoadedAt: number | null;
-
-  byPatientId: Record<string, PatientNoteEntry>;
+  byPatientId: Record<string, PatientNotesEntry>;
 }
 
-const initialState: DoctorNotesState = {
-  myNotes: [],
-  myNotesStatus: "idle",
-  myNotesLoadedAt: null,
-  byPatientId: {},
-};
+const initialState: DoctorNotesState = { byPatientId: {} };
 
 function isFresh(loadedAt: number | null): boolean {
   return loadedAt !== null && Date.now() - loadedAt < TTL_MS;
 }
 
-export const fetchMyNotes = createAsyncThunk<
-  DoctorNote[],
-  void,
-  { state: RootState }
->(
-  "doctorNotes/fetchMine",
-  async () => doctorNotesService.getMyNotes(),
-  {
-    condition: (_, { getState }) => {
-      const { myNotesStatus, myNotesLoadedAt } = getState().doctorNotes;
-      if (myNotesStatus === "loading") return false;
-      if (myNotesStatus === "succeeded" && isFresh(myNotesLoadedAt)) return false;
-      return true;
-    },
-  },
-);
-
-export const fetchPatientNote = createAsyncThunk<
-  { patientId: string; note: DoctorNote | null },
+export const fetchPatientNotes = createAsyncThunk<
+  { patientId: string; notes: DoctorNote[] },
   string,
   { state: RootState }
 >(
   "doctorNotes/fetchForPatient",
   async (patientId) => {
-    const note = await doctorNotesService.getForPatient(patientId);
-    return { patientId, note };
+    const notes = await doctorNotesService.getForPatient(patientId);
+    return { patientId, notes };
   },
   {
     condition: (patientId, { getState }) => {
@@ -77,13 +49,17 @@ export const fetchPatientNote = createAsyncThunk<
   },
 );
 
-export const upsertPatientNote = createAsyncThunk<
+export const addPatientNote = createAsyncThunk<
   { patientId: string; note: DoctorNote },
-  { patientId: string; noteText: string }
+  { patientId: string; category: string; noteText: string; appointmentId?: string | null }
 >(
-  "doctorNotes/upsertForPatient",
-  async ({ patientId, noteText }) => {
-    const note = await doctorNotesService.upsertForPatient(patientId, noteText);
+  "doctorNotes/addForPatient",
+  async ({ patientId, category, noteText, appointmentId }) => {
+    const note = await doctorNotesService.addForPatient(patientId, {
+      category,
+      note_text: noteText,
+      appointment_id: appointmentId ?? null,
+    });
     return { patientId, note };
   },
 );
@@ -92,60 +68,42 @@ const doctorNotesSlice = createSlice({
   name: "doctorNotes",
   initialState,
   reducers: {
-    invalidateMyNotes: (state) => {
-      state.myNotesLoadedAt = null;
-      state.myNotesStatus = "idle";
-    },
-    invalidatePatientNote: (state, action: { payload: string }) => {
+    invalidatePatientNotes: (state, action: { payload: string }) => {
       delete state.byPatientId[action.payload];
     },
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchMyNotes.pending, (s) => { s.myNotesStatus = "loading"; })
-      .addCase(fetchMyNotes.fulfilled, (s, a) => {
-        s.myNotesStatus = "succeeded";
-        s.myNotes = a.payload;
-        s.myNotesLoadedAt = Date.now();
-      })
-      .addCase(fetchMyNotes.rejected, (s) => { s.myNotesStatus = "failed"; })
-
-      .addCase(fetchPatientNote.pending, (s, a) => {
+      .addCase(fetchPatientNotes.pending, (s, a) => {
         s.byPatientId[a.meta.arg] = {
-          ...(s.byPatientId[a.meta.arg] || { note: null, loadedAt: null, status: "idle" }),
+          ...(s.byPatientId[a.meta.arg] || { notes: [], loadedAt: null, status: "idle" }),
           status: "loading",
         };
       })
-      .addCase(fetchPatientNote.fulfilled, (s, a) => {
+      .addCase(fetchPatientNotes.fulfilled, (s, a) => {
         s.byPatientId[a.payload.patientId] = {
-          note: a.payload.note,
+          notes: a.payload.notes,
           status: "succeeded",
           loadedAt: Date.now(),
         };
       })
-      .addCase(fetchPatientNote.rejected, (s, a) => {
+      .addCase(fetchPatientNotes.rejected, (s, a) => {
         s.byPatientId[a.meta.arg] = {
-          ...(s.byPatientId[a.meta.arg] || { note: null, loadedAt: null }),
+          ...(s.byPatientId[a.meta.arg] || { notes: [], loadedAt: null }),
           status: "failed",
-        } as PatientNoteEntry;
+        } as PatientNotesEntry;
       })
 
-      .addCase(upsertPatientNote.fulfilled, (s, a) => {
-        // Cache-through on save: avoid an extra GET after PUT.
-        s.byPatientId[a.payload.patientId] = {
-          note: a.payload.note,
-          status: "succeeded",
-          loadedAt: Date.now(),
-        };
-        s.myNotesLoadedAt = null;
-        s.myNotesStatus = "idle";
+      .addCase(addPatientNote.fulfilled, (s, a) => {
+        // Cache-through on save: avoid an extra GET after POST.
+        const entry = s.byPatientId[a.payload.patientId];
+        const notes = [a.payload.note, ...(entry?.notes ?? [])];
+        s.byPatientId[a.payload.patientId] = { notes, status: "succeeded", loadedAt: Date.now() };
       });
   },
 });
 
-export const { invalidateMyNotes, invalidatePatientNote } = doctorNotesSlice.actions;
+export const { invalidatePatientNotes } = doctorNotesSlice.actions;
 export default doctorNotesSlice.reducer;
 
-export const selectMyDoctorNotes       = (s: RootState) => s.doctorNotes.myNotes;
-export const selectMyDoctorNotesStatus = (s: RootState) => s.doctorNotes.myNotesStatus;
-export const selectPatientNote         = (patientId: string) => (s: RootState) => s.doctorNotes.byPatientId[patientId];
+export const selectPatientNotes = (patientId: string) => (s: RootState) => s.doctorNotes.byPatientId[patientId];

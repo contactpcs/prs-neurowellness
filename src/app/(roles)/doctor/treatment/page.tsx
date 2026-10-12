@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Syringe } from "lucide-react";
-import { PageLoader } from "@/components/ui";
+import { PageSkeleton } from "@/components/ui";
 import { doctorsService } from "@/lib/api/services/doctors.service";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import type { PatientListItem } from "@/types/domain.types";
@@ -38,19 +38,30 @@ export default function DoctorTreatmentPage() {
     let cancelled = false;
     (async () => {
       try {
-        const { patients } = await doctorsService.getPatients();
-        // Resolve each patient's own protocols directly — the same lookup
-        // TreatmentProtocolPanel does — so the "Modify" vs "New" label here
-        // always matches what the destination page will actually show.
-        const withProtocols = await Promise.all(
-          patients.map(async (patient) => {
-            const protocols = await treatmentProtocolService.listProtocols({ patientId: patient.id }).catch(() => []);
-            const sorted = protocols.slice().sort((a, b) => a.created_at.localeCompare(b.created_at));
-            const active = sorted.find((p) => p.status === "active") ?? null;
-            const latest = active ?? sorted[sorted.length - 1] ?? null;
-            return { patient, active, latest };
-          })
-        );
+        // Patients + every protocol in scope in parallel, grouped per patient
+        // here (API audit F-036) — was one /treatment-protocols call per
+        // patient. Same protocol rows the per-patient lookup returned, so the
+        // "Modify" vs "New" label still matches the destination page.
+        const allProtocols = async () => {
+          const out: Awaited<ReturnType<typeof treatmentProtocolService.listProtocols>> = [];
+          for (let skip = 0; ; skip += 200) {
+            const page = await treatmentProtocolService.listProtocols({ skip, limit: 200 });
+            out.push(...page);
+            if (page.length < 200) return out;
+          }
+        };
+        const [{ patients }, protocols] = await Promise.all([doctorsService.getPatients(), allProtocols().catch(() => [])]);
+        const byPatient = new Map<string, typeof protocols>();
+        for (const p of protocols) {
+          const key = String(p.patient_public_id ?? "");
+          byPatient.set(key, [...(byPatient.get(key) ?? []), p]);
+        }
+        const withProtocols = patients.map((patient) => {
+          const sorted = (byPatient.get(patient.id) ?? []).slice().sort((a, b) => a.created_at.localeCompare(b.created_at));
+          const active = sorted.find((p) => p.status === "active") ?? null;
+          const latest = active ?? sorted[sorted.length - 1] ?? null;
+          return { patient, active, latest };
+        });
         if (!cancelled) setRows(withProtocols);
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -59,7 +70,7 @@ export default function DoctorTreatmentPage() {
     return () => { cancelled = true; };
   }, []);
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageSkeleton />;
 
   return (
     <div className="flex flex-col gap-5">
@@ -75,9 +86,9 @@ export default function DoctorTreatmentPage() {
             <p className="text-sm text-neutral-400">No patients found.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[calc(100vh-180px)]">
             <table className="w-full text-sm min-w-[900px]">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-neutral-50">
                 <tr className="border-b border-neutral-100 bg-neutral-50">
                   {["Patient", "Protocol", "Status", "Device", "Placement", "Current", "Sessions", ""].map((h) => (
                     <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">{h}</th>

@@ -1,7 +1,7 @@
 // Mirrors backend/app/modules/treatment_protocols/schemas.py exactly.
 // Decimal -> number, UUID -> string, date -> "YYYY-MM-DD" string.
 
-export const MODALITIES = ["tDCS", "HD-tDCS", "taVNS", "TPS", "rTMS", "other"] as const;
+export const MODALITIES = ["tDCS", "HD-tDCS", "tVNS", "TPS", "rTMS", "other"] as const;
 export type Modality = (typeof MODALITIES)[number];
 
 export const EVIDENCE_RANK: Record<string, number> = { A: 3, B: 2, C: 1 };
@@ -12,8 +12,40 @@ export interface DeviceCompanyRead {
   company_code: string;
   company_name: string;
   country?: string | null;
+  website?: string | null;
+  support_email?: string | null;
+  support_phone?: string | null;
+  regulatory_ids?: Record<string, string>;
+  notes?: string | null;
   is_active: boolean;
 }
+
+// ─── Super admin: device catalogue maintenance ───
+// company_code / device_code / modality are fixed at creation (backend Update
+// schemas omit them) — retire with is_active=false and create a new one instead.
+export interface DeviceCompanyCreate {
+  company_code: string;
+  company_name: string;
+  country?: string | null;
+  website?: string | null;
+  support_email?: string | null;
+  support_phone?: string | null;
+  regulatory_ids?: Record<string, string>;
+  notes?: string | null;
+  is_active?: boolean;
+}
+export type DeviceCompanyUpdate = Partial<Omit<DeviceCompanyCreate, "company_code">>;
+
+export interface DeviceCreate {
+  company_id: string;
+  device_code: string;
+  device_name: string;
+  model_number?: string | null;
+  modality: Modality;
+  phase?: 1 | 2;
+  is_active?: boolean;
+}
+export type DeviceUpdate = Partial<Omit<DeviceCreate, "device_code" | "modality">>;
 
 export interface DeviceRead {
   device_id: string;
@@ -63,6 +95,28 @@ export interface ClinicDeviceUpdate {
   quantity?: number;
   is_active?: boolean;
   acquired_on?: string | null;
+  notes?: string | null;
+}
+
+// ─── Device units (serial-numbered physical units, 73_device_units.sql) ───
+// Optional layer under one ClinicDeviceRead row. A clinic can keep using
+// quantity alone with no units listed here.
+export interface DeviceUnitRead {
+  device_unit_id: string;
+  clinic_device_id: string;
+  serial_number: string;
+  status: "active" | "retired";
+  notes?: string | null;
+}
+
+export interface DeviceUnitCreate {
+  serial_number: string;
+  notes?: string | null;
+}
+
+export interface DeviceUnitUpdate {
+  serial_number?: string;
+  status?: "active" | "retired";
   notes?: string | null;
 }
 
@@ -271,10 +325,16 @@ export interface DosingRead {
   per_return_current_ma?: number | null;
   session_duration_min?: number | null;
   sessions_per_day?: number | null;
-  intensity_ma?: number | null;
+  // tVNS
+  wavelength?: "alternant" | "biphasic" | null;
+  pattern?: "continuous" | "modulation" | "intermittent" | null;
+  strength_pct_min?: number | null;
+  strength_pct_max?: number | null;
   pulse_width_us?: number | null;
-  duty_cycle_on_sec?: number | null;
-  duty_cycle_off_sec?: number | null;
+  frequency_hz_min?: number | null;
+  frequency_hz_max?: number | null;
+  pulse_width_us_min?: number | null;
+  pulse_width_us_max?: number | null;
   energy_mj?: number | null;
   pulses_per_session?: number | null;
   pulse_rate_hz?: number | null;
@@ -352,6 +412,11 @@ export interface ProtocolCreate {
    *  entirely. */
   instance_id: string;
   device_id: string;
+  /** Optional pinned physical unit (DeviceUnitRead), narrowing device_id to
+   *  one specific serialized machine. Omit for "any unit of this device
+   *  type" — existing behaviour. When set, device_sessions prefills the
+   *  CA's serial field from it at session start. */
+  device_unit_id?: string | null;
   /** Exactly one of placement_id (catalogue) or custom_montage_id
    *  (doctor-authored, 38/54) — chk_protocol_plan_one_placement.
    *  dosing_id is required with placement_id, and must be omitted with
@@ -380,6 +445,18 @@ export interface ProtocolCreate {
   prescribed_current_ma?: number | null;
   prescribed_duration_min?: number | null;
   ramp_seconds?: number;
+  /** tVNS's own prescription — freely typed, the exact equivalent of the
+   *  three fields above but shaped for wavelength/pattern/strength/
+   *  frequency/pulse-width (92). ramp_up/down only apply when pattern is
+   *  "intermittent". */
+  prescribed_tvns_wavelength?: "alternant" | "biphasic" | null;
+  prescribed_tvns_pattern?: "continuous" | "modulation" | "intermittent" | null;
+  prescribed_tvns_strength_pct?: number | null;
+  prescribed_tvns_frequency_hz?: number | null;
+  prescribed_tvns_pulse_width_us?: number | null;
+  prescribed_tvns_duration_min?: number | null;
+  prescribed_tvns_ramp_up_sec?: number | null;
+  prescribed_tvns_ramp_down_sec?: number | null;
   /** Which consultation authored this. Provenance only. */
   authored_in_appointment_id?: string | null;
   /** Set to amend an existing protocol instead of starting a new lineage:
@@ -400,6 +477,14 @@ export interface ProtocolUpdate {
   prescribed_current_ma?: number | null;
   prescribed_duration_min?: number | null;
   ramp_seconds?: number | null;
+  prescribed_tvns_wavelength?: "alternant" | "biphasic" | null;
+  prescribed_tvns_pattern?: "continuous" | "modulation" | "intermittent" | null;
+  prescribed_tvns_strength_pct?: number | null;
+  prescribed_tvns_frequency_hz?: number | null;
+  prescribed_tvns_pulse_width_us?: number | null;
+  prescribed_tvns_duration_min?: number | null;
+  prescribed_tvns_ramp_up_sec?: number | null;
+  prescribed_tvns_ramp_down_sec?: number | null;
   sessions_per_week?: number | null;
   device_settings?: Record<string, unknown>;
   notes?: string | null;
@@ -433,6 +518,8 @@ export interface ProtocolRead {
   instance_number?: number | null;
   instance_status?: string | null;
   device_id: string;
+  device_unit_id?: string | null;
+  device_unit_serial_number?: string | null;
   set_by: string;
   session_count: number;
   follow_up_every_n?: number | null;
@@ -440,6 +527,14 @@ export interface ProtocolRead {
   prescribed_current_ma?: number | null;
   prescribed_duration_min?: number | null;
   ramp_seconds?: number | null;
+  prescribed_tvns_wavelength?: "alternant" | "biphasic" | null;
+  prescribed_tvns_pattern?: "continuous" | "modulation" | "intermittent" | null;
+  prescribed_tvns_strength_pct?: number | null;
+  prescribed_tvns_frequency_hz?: number | null;
+  prescribed_tvns_pulse_width_us?: number | null;
+  prescribed_tvns_duration_min?: number | null;
+  prescribed_tvns_ramp_up_sec?: number | null;
+  prescribed_tvns_ramp_down_sec?: number | null;
   sessions_per_week?: number | null;
   device_settings: Record<string, unknown>;
   notes?: string | null;
@@ -499,6 +594,10 @@ export interface DeviceSessionPrsCreate {
   appointment_id: string;
   instance_id: string;
   session_number: number;
+  // The one scale this device session administered — scopes the backend's
+  // due-scale completion sweep to just this scale instead of every scale
+  // scored on the (disease-scoped) instance.
+  scale_id: string;
 }
 
 export interface FollowUpPrsCreate {

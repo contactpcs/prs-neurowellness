@@ -1,4 +1,4 @@
-import apiClient from "../client";
+import apiClient, { getDiseaseCatalog } from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type {
   Scale,
@@ -152,7 +152,7 @@ export const prsService = {
 
   // ─── Conditions — real endpoint, existing normalizer already handles the raw disease_id/disease_name shape ───
   async getConditions(): Promise<{ conditions: ConditionBattery[]; total: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.PRS.CONDITIONS);
+    const { data } = await getDiseaseCatalog();
     return normalizeConditionsList(data);
   },
 

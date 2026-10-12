@@ -3,15 +3,16 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { useDeviceSession } from "@/lib/hooks";
+import { useDeviceSession, useGoBack } from "@/lib/hooks";
 import { appointmentsService } from "@/lib/api/services";
-import { Button, Card, CardHeader, CardContent, PageLoader, DetailFieldList } from "@/components/ui";
+import { Button, Card, CardHeader, CardContent, PageSkeleton, DetailFieldList } from "@/components/ui";
 import { SessionLogTimeline } from "@/components/deviceSession/SessionLogTimeline";
 import type { Appointment } from "@/types/domain.types";
 
 export default function DeviceSessionSummaryPage() {
   const { appointmentId } = useParams<{ appointmentId: string }>();
   const router = useRouter();
+  const goBack = useGoBack("/clinical-assistant/appointments");
   const { session, isLoading } = useDeviceSession(appointmentId);
   const [appointment, setAppointment] = useState<Appointment | null>(null);
 
@@ -20,7 +21,7 @@ export default function DeviceSessionSummaryPage() {
     appointmentsService.getById(appointmentId).then(setAppointment);
   }, [appointmentId]);
 
-  if (!session || isLoading || !appointment) return <PageLoader />;
+  if (!session || isLoading || !appointment) return <PageSkeleton />;
 
   const completedFully = session.session_status === "completed";
   const stoppedEarly = session.session_status === "stopped_early";
@@ -28,10 +29,10 @@ export default function DeviceSessionSummaryPage() {
   return (
     <div className="space-y-5 max-w-4xl">
       <button
-        onClick={() => router.push("/clinical-assistant/appointments")}
+        onClick={goBack}
         className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 transition-colors"
       >
-        <ArrowLeft className="h-4 w-4" /> Back to queue
+        <ArrowLeft className="h-4 w-4" /> Back
       </button>
 
       <div className={`rounded-xl border px-5 py-4 flex items-center justify-between ${completedFully ? "bg-success-50 border-success-200" : "bg-danger-50 border-danger-200"}`}>

@@ -68,7 +68,7 @@ export function ProgressSidebar({
               className={cn(
                 "w-full flex items-center gap-2 px-3 py-2 text-left transition-all border-r-2",
                 isActive
-                  ? "bg-orange-50 border-r-orange-500"
+                  ? "bg-primary-50 border-r-primary-500"
                   : "border-r-transparent hover:bg-neutral-50",
               )}
             >
@@ -76,8 +76,8 @@ export function ProgressSidebar({
                 className={cn(
                   "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0",
                   isComplete && "bg-green-100 text-green-700",
-                  isActive && !isComplete && "bg-orange-500 text-white",
-                  !isActive && !isComplete && hasResponses && "bg-amber-100 text-amber-700",
+                  isActive && !isComplete && "bg-primary-500 text-white",
+                  !isActive && !isComplete && hasResponses && "bg-primary-100 text-primary-700",
                   !isActive && !isComplete && !hasResponses && "bg-neutral-100 text-neutral-500",
                 )}
               >
@@ -88,7 +88,7 @@ export function ProgressSidebar({
                   className={cn(
                     "text-xs font-semibold truncate",
                     isActive
-                      ? "text-orange-700"
+                      ? "text-primary-700"
                       : isComplete
                         ? "text-green-700"
                         : "text-neutral-700",

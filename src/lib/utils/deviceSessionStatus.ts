@@ -4,7 +4,7 @@
 // started" covers every pre-session state: booked but the CA hasn't checked
 // the patient in or begun stimulation yet.
 const NOT_STARTED = new Set(["planned", "selected", "paid", "checked_in"]);
-const FINISHED = new Set(["completed", "cancelled", "no_show"]);
+const FINISHED = new Set(["completed", "cancelled", "no_show", "missed"]);
 
 export function isSessionFinished(status?: string | null): boolean {
   return !!status && FINISHED.has(status);
@@ -15,8 +15,18 @@ export function deviceSessionLabel(status?: string | null): string {
   if (status === "in_progress") return "In Progress";
   if (status === "completed") return "Completed";
   if (status === "no_show") return "Missed";
+  if (status === "missed") return "Missed";
   if (status === "cancelled") return "Cancelled";
   return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Patient-facing label: splits "Missed" into its two causes — no_show = a
+ * slot was booked but not attended; missed = the date passed with no slot
+ * ever booked. Staff screens keep deviceSessionLabel's single "Missed". */
+export function patientDeviceSessionLabel(status?: string | null): string {
+  if (status === "no_show") return "No-Show";
+  if (status === "missed") return "Not Booked";
+  return deviceSessionLabel(status);
 }
 
 export function deviceSessionTone(status?: string | null): string {
@@ -24,5 +34,6 @@ export function deviceSessionTone(status?: string | null): string {
   if (status === "in_progress") return "bg-primary-50 text-primary-700";
   if (status === "completed") return "bg-green-50 text-green-700";
   if (status === "no_show") return "bg-red-50 text-red-700";
+  if (status === "missed") return "bg-neutral-200 text-neutral-700";
   return "bg-neutral-100 text-neutral-600";
 }

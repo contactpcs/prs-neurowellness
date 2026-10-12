@@ -6,11 +6,11 @@ import { useQuestionnaire, useSessions } from "@/lib/hooks";
 import { useAssessmentSTT } from "@/lib/hooks/useAssessmentSTT";
 import { prsService } from "@/lib/api/services";
 import dynamic from "next/dynamic";
-import { PageLoader } from "@/components/ui";
+import { PageSkeleton } from "@/components/ui";
 
 const AssessmentUI = dynamic(
   () => import("@/components/assessment/AssessmentUI").then((m) => ({ default: m.AssessmentUI })),
-  { loading: () => <PageLoader />, ssr: false },
+  { loading: () => <PageSkeleton />, ssr: false },
 );
 import type { ScaleDefinition } from "@/types/prs.types";
 
@@ -51,6 +51,24 @@ export default function QuestionnairePage() {
       setScaleDefinitions((prev) => ({ ...prev, [questionnaire.currentScaleId!]: def }));
     });
   }, [questionnaire.currentScaleId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Once the resumed scale's questions arrive, jump straight to the first
+  // unanswered one instead of leaving the patient back at question 1 of a
+  // scale they'd already partly answered before navigating away. Only runs
+  // once per scale (jumpedForScale ref) so it doesn't fight manual Next/
+  // Previous navigation afterward.
+  const jumpedForScale = useRef<string | null>(null);
+  useEffect(() => {
+    const scaleId = questionnaire.currentScaleId;
+    const def = scaleId ? scaleDefinitions[scaleId] : undefined;
+    if (!scaleId || !def || jumpedForScale.current === scaleId) return;
+    jumpedForScale.current = scaleId;
+    const scaleResponses = questionnaire.responses[scaleId] ?? {};
+    const firstUnansweredIdx = (def.questions ?? []).findIndex(
+      (_: unknown, idx: number) => scaleResponses[String(idx)] === undefined,
+    );
+    if (firstUnansweredIdx > 0) questionnaire.goToQuestion(firstUnansweredIdx);
+  }, [questionnaire.currentScaleId, scaleDefinitions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pre-load all scale definitions for sidebar labels
   useEffect(() => {
@@ -143,8 +161,8 @@ export default function QuestionnairePage() {
   }, [sttEnabled]);
 
   // ─── Early returns (after all hooks) ──────────────────────────────────────
-  if (!currentSession || !currentScaleId) return <PageLoader />;
-  if (!currentDef) return <PageLoader />;
+  if (!currentSession || !currentScaleId) return <PageSkeleton />;
+  if (!currentDef) return <PageSkeleton />;
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
 
@@ -184,6 +202,9 @@ export default function QuestionnairePage() {
       questionsAnswered={questionsAnswered}
       onAnswer={handleAnswer}
       onPrev={questionnaire.prevScale}
+      onQuestionPrev={questionnaire.prevQuestion}
+      onQuestionNext={() => questionnaire.nextQuestion(totalQuestions)}
+      onQuestionJump={questionnaire.goToQuestion}
       onSkipSection={handleSkipSection}
       onSubmitScale={handleSubmitScale}
       onNavigateScale={questionnaire.goToScale}

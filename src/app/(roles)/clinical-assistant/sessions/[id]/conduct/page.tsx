@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { UserCheck, Send, ChevronLeft, ChevronRight } from "lucide-react";
 import { useQuestionnaire, useSessions } from "@/lib/hooks";
 import { prsService } from "@/lib/api/services";
-import { PageLoader, Button, ProgressBar, Card, CardContent } from "@/components/ui";
+import { PageSkeleton, Button, ProgressBar, Card, CardContent } from "@/components/ui";
 import { QuestionRenderer } from "@/components/questionnaire/QuestionRenderer";
 import { ProgressSidebar } from "@/components/questionnaire/ProgressSidebar";
 import type { ScaleDefinition } from "@/types/prs.types";
@@ -42,9 +42,9 @@ export default function CAConductAssessmentPage() {
     });
   }, [questionnaire.currentScaleId]);
 
-  if (!currentSession || !questionnaire.currentScaleId) return <PageLoader />;
+  if (!currentSession || !questionnaire.currentScaleId) return <PageSkeleton />;
   const currentDef = scaleDefinitions[questionnaire.currentScaleId];
-  if (!currentDef) return <PageLoader />;
+  if (!currentDef) return <PageSkeleton />;
 
   const questions = currentDef.questions || [];
   const currentQuestion = questions[questionnaire.currentQuestionIndex];

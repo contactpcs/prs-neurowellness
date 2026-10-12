@@ -19,7 +19,7 @@ export function STTBar({ phase, transcript, matchedLabel, hint }: STTBarProps) {
         phase === "listening" && "bg-red-50 border-red-100",
         phase === "reading" && "bg-blue-50 border-blue-100",
         phase === "matched" && "bg-green-50 border-green-100",
-        phase === "error" && "bg-orange-50 border-orange-100",
+        phase === "error" && "bg-primary-50 border-primary-100",
         phase === "idle" && "bg-neutral-50 border-neutral-100",
       )}
     >
@@ -37,7 +37,7 @@ export function STTBar({ phase, transcript, matchedLabel, hint }: STTBarProps) {
         <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
       )}
       {phase === "error" && (
-        <AlertCircle className="h-4 w-4 text-orange-500 shrink-0" />
+        <AlertCircle className="h-4 w-4 text-primary-500 shrink-0" />
       )}
       {phase === "idle" && (
         <MicOff className="h-4 w-4 text-neutral-400 shrink-0" />
@@ -50,7 +50,7 @@ export function STTBar({ phase, transcript, matchedLabel, hint }: STTBarProps) {
           phase === "listening" && "text-red-700",
           phase === "reading" && "text-blue-700",
           phase === "matched" && "text-green-700",
-          phase === "error" && "text-orange-700",
+          phase === "error" && "text-primary-700",
           phase === "idle" && "text-neutral-500",
         )}
       >

@@ -40,7 +40,7 @@ function PatientRowDetail({ patientId, registrationStatus }: { patientId: string
 
   return (
     <tr>
-      <td colSpan={7} className="px-6 py-5 bg-neutral-50 border-t border-neutral-100">
+      <td colSpan={6} className="px-6 py-5 bg-neutral-50 border-t border-neutral-100">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
           <div className="bg-white rounded-lg p-3 border border-neutral-200">
             <p className="text-xs text-neutral-500 mb-0.5">Registration Status</p>
@@ -103,12 +103,13 @@ export default function DoctorPatientsPage() {
   const { patients, isLoading } = useDoctorPatients();
   const searchParams = useSearchParams();
   const [search, setSearch] = useState(searchParams.get("q") ?? "");
+  const [visitDate, setVisitDate] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const router = useRouter();
 
-  const filtered = patients.filter((p) =>
-    `${p.first_name} ${p.last_name} ${p.email} ${p.mrn || ""}`.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = patients
+    .filter((p) => `${p.first_name} ${p.last_name} ${p.email} ${p.mrn || ""}`.toLowerCase().includes(search.toLowerCase()))
+    .filter((p) => !visitDate || (p.last_visit_date ?? "").slice(0, 10) === visitDate);
 
   if (isLoading) return <PatientListSkeleton />;
 
@@ -120,27 +121,45 @@ export default function DoctorPatientsPage() {
           <h1 className="text-2xl font-bold text-neutral-900">My Patients</h1>
           <p className="text-sm text-neutral-500 mt-0.5">Search by name or MRN</p>
         </div>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
-          <Input
-            placeholder="e.g., Alice or MRN..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 w-full sm:w-64"
-          />
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+            <Input
+              placeholder="e.g., Alice or MRN..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <div className="w-36">
+            <Input
+              type="date"
+              value={visitDate}
+              onChange={(e) => setVisitDate(e.target.value)}
+              title="Filter by last visit date"
+            />
+          </div>
+          {visitDate && (
+            <button
+              onClick={() => setVisitDate("")}
+              className="text-xs font-medium text-neutral-500 hover:text-neutral-700 whitespace-nowrap"
+            >
+              Clear date
+            </button>
+          )}
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden overflow-x-auto">
+      <div className="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
+        <div className="overflow-auto max-h-[calc(100vh-150px)]">
         <table className="w-full text-base min-w-[600px]">
-          <thead>
+          <thead className="sticky top-0 z-10 bg-neutral-50">
             <tr className="border-b border-neutral-100 bg-neutral-50">
               <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Patient Name</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Diagnosis</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">MRN</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Clinic Name</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Last Visit</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Status</th>
               <th className="pl-6 pr-2 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Action</th>
               <th className="w-8 pl-0 pr-3 py-3"></th>
             </tr>
@@ -148,8 +167,9 @@ export default function DoctorPatientsPage() {
           <tbody className="divide-y divide-neutral-100">
             {filtered.map((p) => {
               const age = calcAge(p.date_of_birth);
-              const lastVisit = p.last_prs?.completed_at ?? p.assigned_at ?? null;
-              const clinicLabel = p.clinic_name ?? p.clinic_city ?? "Kharadi, Pune";
+              const lastVisit = p.last_visit_date ?? p.last_prs?.completed_at ?? null;
+              // clinic_name comes on each /patients row — no clinic-list fetch (API audit F-030).
+              const clinicLabel = p.clinic_name || p.clinic_city || "—";
               const isExpanded = expandedId === p.id;
               return (
                 <Fragment key={p.id}>
@@ -170,30 +190,28 @@ export default function DoctorPatientsPage() {
                         </div>
                       </div>
                     </td>
-                    {/* Diagnosis */}
-                    <td className="px-6 py-4 text-neutral-600">{p.condition || "—"}</td>
+                    {/* MRN */}
+                    <td className="px-6 py-4 text-neutral-600">{p.mrn || "—"}</td>
                     {/* Clinic Name */}
                     <td className="px-6 py-4 text-neutral-600">{clinicLabel}</td>
                     {/* Last Visit */}
                     <td className="px-6 py-4 text-neutral-600">{fmtDate(lastVisit)}</td>
-                    {/* Status */}
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex px-2.5 py-1 rounded-full text-sm font-medium ${
-                        p.status === "active" || !p.status
-                          ? "bg-green-50 text-green-700"
-                          : "bg-neutral-100 text-neutral-500"
-                      }`}>
-                        {p.status ? (p.status.charAt(0).toUpperCase() + p.status.slice(1)) : "Active"}
-                      </span>
-                    </td>
                     {/* Action */}
                     <td className="pl-6 pr-2 py-4">
-                      <button
-                        onClick={() => router.push(`/doctor/patients/${p.id}`)}
-                        className="px-4 py-1.5 rounded-lg text-sm font-semibold text-white bg-action-orange hover:bg-action-orange-dark transition-colors"
-                      >
-                        View
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => router.push(`/doctor/patients/${p.id}/summary`)}
+                          className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-brand-gradient hover:opacity-90 transition-opacity whitespace-nowrap shadow-sm"
+                        >
+                          View Patient Details
+                        </button>
+                        <button
+                          onClick={() => router.push(`/doctor/patients/${p.id}`)}
+                          className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-brand-gradient hover:opacity-90 transition-opacity whitespace-nowrap shadow-sm"
+                        >
+                          Open Clinical Workspace
+                        </button>
+                      </div>
                     </td>
                     {/* Expand toggle */}
                     <td className="pl-0 pr-3 py-4">
@@ -216,11 +234,12 @@ export default function DoctorPatientsPage() {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-6 py-10 text-center text-neutral-400 text-sm">No patients found</td>
+                <td colSpan={6} className="px-6 py-10 text-center text-neutral-400 text-sm">No patients found</td>
               </tr>
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

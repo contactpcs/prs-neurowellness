@@ -22,7 +22,8 @@ declare global {
 }
 
 let razorpayScriptPromise: Promise<void> | null = null;
-function loadRazorpayScript(): Promise<void> {
+/** Shared with the staff checkout (StaffPaymentPanel) — one script load. */
+export function loadRazorpayScript(): Promise<void> {
   if (typeof window !== "undefined" && window.Razorpay) return Promise.resolve();
   if (!razorpayScriptPromise) {
     razorpayScriptPromise = new Promise((resolve, reject) => {

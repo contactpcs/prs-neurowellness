@@ -21,3 +21,12 @@ export function extractErrorMessage(err: unknown, fallback = "Something went wro
   }
   return fallback;
 }
+
+/** The AnavaException code ({error:{code}}), e.g. "CONSULTATION_NOT_STARTED",
+ * for callers that react to a specific rule rather than just show text. */
+export function extractErrorCode(err: unknown): string | undefined {
+  const data = (err as { response?: { data?: unknown } })?.response?.data as
+    | { error?: { code?: string } }
+    | undefined;
+  return data?.error?.code ?? undefined;
+}

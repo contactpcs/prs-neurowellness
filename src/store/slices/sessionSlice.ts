@@ -69,6 +69,16 @@ const sessionSlice = createSlice({
   reducers: {
     clearCurrentSession: (state) => { state.currentSession = null; },
     clearCurrentCondition: (state) => { state.currentCondition = null; },
+    // Sets currentCondition directly from a condition the caller already
+    // has in hand (e.g. found in catalogSlice's conditions list) —
+    // fetchConditionDetail (below) calls prsService.getCondition(), which
+    // always throws NOT_AVAILABLE (no real per-condition detail endpoint
+    // exists), so it never actually populated currentCondition. The list
+    // endpoint (catalogSlice.fetchConditions) already returns each
+    // condition's full scales[], so no second fetch is needed at all.
+    setCurrentCondition: (state, action: { payload: ConditionBattery | null }) => {
+      state.currentCondition = action.payload;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -105,5 +115,5 @@ const sessionSlice = createSlice({
   },
 });
 
-export const { clearCurrentSession, clearCurrentCondition } = sessionSlice.actions;
+export const { clearCurrentSession, clearCurrentCondition, setCurrentCondition } = sessionSlice.actions;
 export default sessionSlice.reducer;

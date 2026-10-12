@@ -1,13 +1,14 @@
 import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
 import type {
-  DeviceSessionRead, DeviceSessionDetail, DeviceSessionChecklistUpdate,
+  DeviceSessionRead, DeviceSessionDetail, DeviceSessionChecklistUpdate, DeviceInfo,
   SymptomRecord, Symptom, Severity,
   AdverseEventRecord, AdverseEventType,
   NoteRecord, ActivityRecord, CognitiveActivity,
-  DeviceSessionScale, ScaleDeliveryMode,
+  DeviceSessionScale, ScaleDeliveryMode, PendingPatientScale,
   SessionFeedback, MediaRecord, MediaType,
   SessionEvent, SosEvent, SosType, PauseStopReason,
+  TvnsSessionSettingsCreate, TvnsSessionSettingsRead,
 } from "@/types/deviceSession.types";
 
 /** tDCS Device Session module — backend/app/modules/device_sessions
@@ -16,6 +17,38 @@ import type {
 export const deviceSessionService = {
   async get(appointmentId: string): Promise<DeviceSessionDetail> {
     const { data } = await apiClient.get(ENDPOINTS.DEVICE_SESSIONS.DETAIL(appointmentId));
+    return data;
+  },
+
+  /** Device name + pinned unit serial, resolvable before any device_sessions
+   * header row exists (get() 404s until the first checklist write) — see
+   * backend router.py's docstring on this endpoint. */
+  async getDeviceInfo(appointmentId: string): Promise<DeviceInfo> {
+    const { data } = await apiClient.get(ENDPOINTS.DEVICE_SESSIONS.DEVICE_INFO(appointmentId));
+    return data;
+  },
+
+  /** Every patient_app scale still open across all of the caller's own
+   * device sessions — powers the patient dashboard's "scales sent to you"
+   * widget. Patient-only; no appointment id needed. */
+  /** Status, feedback answers and adverse-event count for every device
+   * session of a protocol, keyed by appointment_id — one call (F-043). */
+  async listProtocolSummaries(protocolId: string): Promise<Record<string, { session_status: string | null; feedback_answers: Record<string, unknown> | null; adverse_event_count: number }>> {
+    const { data } = await apiClient.get(ENDPOINTS.DEVICE_SESSIONS.PROTOCOL_SUMMARIES(protocolId));
+    const rows: { appointment_id: string; session_status: string | null; feedback_answers: Record<string, unknown> | null; adverse_event_count: number }[] = Array.isArray(data) ? data : [];
+    return Object.fromEntries(rows.map((r) => [String(r.appointment_id), r]));
+  },
+
+  /** Scale counts for every one of the caller's device sessions, keyed by
+   * appointment_id — one call instead of listScales() per session. */
+  async listMyScaleSummaries(): Promise<Record<string, { total: number; completed: number; actionable: boolean }>> {
+    const { data } = await apiClient.get(ENDPOINTS.DEVICE_SESSIONS.MY_SCALE_SUMMARIES);
+    const rows: { appointment_id: string; total: number; completed: number; actionable: boolean }[] = Array.isArray(data) ? data : [];
+    return Object.fromEntries(rows.map((r) => [String(r.appointment_id), { total: r.total, completed: r.completed, actionable: r.actionable }]));
+  },
+
+  async listMyPendingScales(): Promise<PendingPatientScale[]> {
+    const { data } = await apiClient.get(ENDPOINTS.DEVICE_SESSIONS.MY_PENDING_SCALES);
     return data;
   },
 
@@ -50,8 +83,12 @@ export const deviceSessionService = {
     return data;
   },
 
-  async complete(appointmentId: string): Promise<DeviceSessionRead> {
-    const { data } = await apiClient.post(ENDPOINTS.DEVICE_SESSIONS.COMPLETE(appointmentId));
+  // early_completion_override_reason is required by the server whenever
+  // elapsed time is under 75% of the prescribed duration.
+  async complete(appointmentId: string, earlyCompletionOverrideReason?: string): Promise<DeviceSessionRead> {
+    const { data } = await apiClient.post(ENDPOINTS.DEVICE_SESSIONS.COMPLETE(appointmentId), {
+      early_completion_override_reason: earlyCompletionOverrideReason,
+    });
     return data;
   },
 
@@ -118,12 +155,32 @@ export const deviceSessionService = {
     return data;
   },
 
+  /** Flips this one due-scale row to "completed" right when its PRS answers
+   * are submitted — independent of the once-per-session PRS link
+   * (recordDeviceSessionPrs), which only fires once every scale due the
+   * visit is done. Without this a scale answered first in a multi-scale
+   * session sat at "pending" until the last one was also submitted. */
+  async completeScale(appointmentId: string, protocolScaleId: string, prsInstanceId: string): Promise<DeviceSessionScale> {
+    const { data } = await apiClient.post(ENDPOINTS.DEVICE_SESSIONS.SCALE_COMPLETE(appointmentId, protocolScaleId), {
+      prs_instance_id: prsInstanceId,
+    });
+    return data;
+  },
+
   async recordFeedback(
     appointmentId: string,
     answers: SessionFeedback["answers"],
     quote?: string
   ): Promise<SessionFeedback> {
     const { data } = await apiClient.post(ENDPOINTS.DEVICE_SESSIONS.FEEDBACK(appointmentId), { answers, quote });
+    return data;
+  },
+
+  /** Device settings dialled in for this session — wavelength, pattern,
+   * strength, frequency, pulse width, duration. Only meaningful for a tVNS
+   * protocol; one row per session (409s on a repeat call). */
+  async recordTvnsSettings(appointmentId: string, body: TvnsSessionSettingsCreate): Promise<TvnsSessionSettingsRead> {
+    const { data } = await apiClient.post(ENDPOINTS.DEVICE_SESSIONS.TVNS_SETTINGS(appointmentId), body);
     return data;
   },
 

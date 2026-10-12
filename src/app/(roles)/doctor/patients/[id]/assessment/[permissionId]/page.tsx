@@ -14,6 +14,7 @@ import { invalidateDoctorPatients, fetchDoctorPatient } from "@/store/slices/doc
 import type { ScaleQuestion, QuestionOption } from "@/types/prs.types";
 import type { PrsAssessmentQuestion, PrsAssessmentScaleResult } from "@/lib/api/services/prsAssessment.service";
 import { computeHiddenQuestionIndices } from "@/lib/utils/prsSkipLogic";
+import { extractErrorMessage } from "@/lib/api/errors";
 
 // ─── Type helpers ─────────────────────────────────────────────────────────────
 
@@ -135,6 +136,17 @@ export default function DoctorOnBehalfAssessmentPage() {
           appointment_id: sessionId ?? undefined,
         });
 
+        // This (patient, disease) was already completed once — the backend
+        // returned that completed instance read-only rather than a fresh
+        // blank one (submitting against it would 400 anyway). Send the
+        // doctor straight to the existing results instead of rendering an
+        // editable form — mirrors the patient-side handling in
+        // patient/assessment/[permissionId]/page.tsx.
+        if (result.is_readonly_completed) {
+          router.replace(`/doctor/patients/${patientId}/results/${result.instance_id}`);
+          return;
+        }
+
         if (result.scales.length === 0) throw new Error("No scales found for this assessment");
 
         setInstanceId(result.instance_id);
@@ -160,10 +172,17 @@ export default function DoctorOnBehalfAssessmentPage() {
               scale.question_ids.forEach((qid, idx) => {
                 const entry = byQid[qid];
                 if (entry) {
-                  scaleMap[String(idx)] =
-                    entry.response_value !== null && entry.response_value !== undefined
-                      ? entry.response_value
-                      : entry.given_response;
+                  // given_response is the canonical option VALUE as sent to
+                  // saveResponse (String(value)) — response_value is the
+                  // scoring POINTS for that answer, a different number for
+                  // reverse-scored items. Restoring response_value here
+                  // broke both the selected-option highlight (LikertInput
+                  // compares strictly against option.value) and skip-logic
+                  // (computeHiddenQuestionIndices looks up option.value too)
+                  // whenever an item's points didn't equal its value.
+                  const raw = entry.given_response;
+                  const asNumber = Number(raw);
+                  scaleMap[String(idx)] = raw !== null && raw !== "" && !Number.isNaN(asNumber) ? asNumber : raw;
                 }
               });
               if (Object.keys(scaleMap).length > 0) {
@@ -177,20 +196,23 @@ export default function DoctorOnBehalfAssessmentPage() {
             );
             if (firstIncompleteIdx >= 0) {
               setCurrentScaleIndex(firstIncompleteIdx);
-              setCurrentQuestionIndex(0);
+              const resumedScale = loadedScales[firstIncompleteIdx];
+              const resumedScaleResponses = restoredResponses[resumedScale.scale_id] ?? {};
+              const hidden = computeHiddenQuestionIndices(resumedScale.questions, resumedScaleResponses);
+              const firstUnansweredIdx = resumedScale.questions.findIndex(
+                (_, idx) => !hidden.has(idx) && resumedScaleResponses[String(idx)] === undefined,
+              );
+              setCurrentQuestionIndex(firstUnansweredIdx >= 0 ? firstUnansweredIdx : 0);
             }
           } catch {
             // If restoring saved responses fails, continue from the beginning
           }
         }
       } catch (e: unknown) {
-        const msg =
-          (e as { response?: { data?: { message?: string; detail?: string } } })?.response?.data
-            ?.message ??
-          (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-          (e as { message?: string })?.message ??
-          "Failed to load assessment";
-        setLoadError(String(msg));
+        // Backend errors arrive as {error:{code,message}} — the old
+        // data.message/data.detail lookup missed them and showed axios's bare
+        // "Request failed with status code 400".
+        setLoadError(extractErrorMessage(e, (e as { message?: string })?.message ?? "Failed to load assessment"));
       } finally {
         setIsLoading(false);
       }
@@ -231,6 +253,13 @@ export default function DoctorOnBehalfAssessmentPage() {
       setCurrentScaleIndex((i) => i - 1);
       setCurrentQuestionIndex(0);
     }
+  };
+
+  const handleQuestionNext = () => {
+    setCurrentQuestionIndex((prev) => Math.min(prev + 1, totalQuestions - 1));
+  };
+  const handleQuestionPrev = () => {
+    setCurrentQuestionIndex((prev) => Math.max(prev - 1, 0));
   };
 
   const handleLanguageChange = async (code: string) => {
@@ -362,8 +391,11 @@ export default function DoctorOnBehalfAssessmentPage() {
 
   if (loadError) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4">
+      <div className="flex flex-col items-center justify-center h-screen gap-4 p-4 text-center">
         <p className="text-red-600 text-sm">{loadError}</p>
+        <button onClick={() => router.push(`/doctor/patients/${patientId}`)} className="text-sm text-blue-600 hover:underline">
+          Back to patient
+        </button>
       </div>
     );
   }
@@ -397,6 +429,9 @@ export default function DoctorOnBehalfAssessmentPage() {
       isResumed={isResumed}
       onAnswer={handleAnswer}
       onPrev={handlePrev}
+      onQuestionNext={handleQuestionNext}
+      onQuestionPrev={handleQuestionPrev}
+      onQuestionJump={setCurrentQuestionIndex}
       onSkipSection={handleSkipSection}
       onSubmitScale={handleSubmitScale}
       onNavigateScale={(idx) => {

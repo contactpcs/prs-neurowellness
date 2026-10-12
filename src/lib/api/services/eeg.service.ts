@@ -1,6 +1,6 @@
-import axios from "axios";
 import apiClient from "../client";
 import { ENDPOINTS } from "../endpoints";
+import { sendFile } from "./patientFiles.service";
 import type { EEGReport, EEGReportListResponse, UploadEEGReportPayload } from "@/types/eeg.types";
 
 /** FileRead (real backend) has file_id/file_name/file_size/checksum/status —
@@ -25,7 +25,7 @@ function mapFile(f: Record<string, unknown>): EEGReport {
 
 export const eegService = {
   /** Real backend has no single-call multipart upload — it's a 3-step
-   * presign -> PUT raw bytes -> confirm flow, and presign needs a clinic_id
+   * presign -> upload -> confirm flow, and presign needs a clinic_id
    * the old payload never carried (resolved here via the patient's own record). */
   async uploadReport(payload: UploadEEGReportPayload): Promise<EEGReport> {
     const patientRes = await apiClient.get(ENDPOINTS.DOCTORS.PATIENT(payload.patient_id));
@@ -39,24 +39,10 @@ export const eegService = {
       clinic_id: clinicId,
       content_type: contentType,
     });
-    const { s3_key, upload_url } = presign.data;
-    // Presigned S3 URLs must be hit with a bare client — apiClient's
-    // interceptor attaches this app's Cognito bearer token to every
-    // request, and an Authorization header on a sigv4 presigned PUT
-    // conflicts with the query-string signature (S3 rejects the whole
-    // request with SignatureDoesNotMatch). The local-dev fallback path
-    // IS our own backend and does need that token, so it still goes
-    // through apiClient.
-    if (upload_url) {
-      await axios.put(upload_url, payload.file, { headers: { "Content-Type": contentType } });
-    } else {
-      await apiClient.put(`/files/upload/${s3_key}`, payload.file, {
-        headers: { "Content-Type": contentType },
-      });
-    }
+    await sendFile(presign.data, payload.file, contentType);
     const confirm = await apiClient.post(`/patients/${payload.patient_id}/files`, {
       doc_type: "eeg",
-      s3_key,
+      s3_key: presign.data.s3_key,
       file_name: payload.report_name,
       clinic_id: clinicId,
     });

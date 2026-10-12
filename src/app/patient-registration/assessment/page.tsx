@@ -74,9 +74,24 @@ export default function SelfRegistrationAssessmentPage() {
           return;
         }
         setInstanceId(instance_id);
+        // Resuming an in-progress instance (find_in_progress in prs/service.py's
+        // start()) can hand back a scale that was already scored — e.g. the
+        // deferred completion trigger hadn't flipped instance.status yet when
+        // this page re-fetched. Without filtering is_completed out, the patient
+        // would see the same finished scale again and could resubmit it,
+        // re-triggering the completion side effects for no reason.
+        const remaining = startedScales.filter((s) => s.questions.length > 0 && !s.is_completed);
+        if (remaining.length === 0) {
+          // Every assigned scale is already scored — this instance just
+          // hasn't been re-fetched as 'completed' yet. Re-check status the
+          // same way the last-scale branch of handleSubmitScale does.
+          const result = await dispatch(refreshUser());
+          const isActive = refreshUser.fulfilled.match(result) ? result.payload?.is_active : false;
+          router.replace(isActive ? ROUTES.PATIENT_DASHBOARD : "/patient-registration/pending");
+          return;
+        }
         setScales(
-          startedScales
-            .filter((s) => s.questions.length > 0)
+          remaining
             .map((s) => ({
               scale_id: s.scale_id,
               questions: s.questions.map((q) => ({

@@ -1,18 +1,20 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
-import { Loader2, Building2, ChevronDown, Shield } from "lucide-react";
-import { Button } from "@/components/ui";
-import { useAuth, useClinics } from "@/lib/hooks";
+import { Loader2, Building2, ChevronDown, Shield, MapPin } from "lucide-react";
+import { Button, Input } from "@/components/ui";
+import { useAuth, useClinics, usePincodeLookup, useGeolocationAddress } from "@/lib/hooks";
 import { register as registerThunk } from "@/store/slices/authSlice";
 import { authService } from "@/lib/api/services/auth.service";
 import { COUNTRY_OPTIONS } from "@/lib/countries";
 import { ROUTES } from "@/lib/constants";
+import { GUARDIAN_RELATION_OPTIONS, ageFromDob, isMinor } from "@/lib/utils/guardian";
+import { MOBILE_ERROR, isValidMobile, toMobileDigits } from "@/lib/utils/phone";
 
 // ─── Shared field helpers (used by both the local-dev form and the OTP wizard) ─
 
@@ -38,9 +40,146 @@ const inputCls =
 const inputErrCls =
   "w-full rounded-lg border border-danger-400 bg-white px-3.5 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-danger-500/20 focus:border-danger-500";
 
+/** Wraps a react-hook-form registration so the input only ever holds up to
+ * 10 digits (mobile numbers). */
+function digitsOnly(reg: UseFormRegisterReturn): UseFormRegisterReturn {
+  return {
+    ...reg,
+    onChange: (e) => {
+      e.target.value = toMobileDigits(e.target.value);
+      return reg.onChange(e);
+    },
+  };
+}
+
 function FieldError({ msg }: { msg?: string }) {
   if (!msg) return null;
   return <p className="mt-1.5 text-xs text-danger-600">{msg}</p>;
+}
+
+// ─── Guardian — same as the receptionist form: a "Guardian applicable"
+// checkbox, auto-ticked and locked when date of birth is under 18, optional
+// otherwise; once ticked, name/relationship/contact are all required. ──────
+
+const guardianShape = {
+  guardian_applicable:   z.boolean().optional(),
+  guardian_name:         z.string().optional(),
+  guardian_relationship: z.string().optional(),
+  guardian_contact:      z.string().optional(),
+};
+
+type GuardianValues = {
+  date_of_birth: string;
+  guardian_applicable?: boolean;
+  guardian_name?: string;
+  guardian_relationship?: string;
+  guardian_contact?: string;
+};
+
+const GUARDIAN_MESSAGES = {
+  guardian_name:         "Guardian name is required",
+  guardian_relationship: "Guardian relationship is required",
+  guardian_contact:      "Guardian contact is required",
+} as const;
+
+const guardianRequired = (d: GuardianValues) => isMinor(d.date_of_birth) || !!d.guardian_applicable;
+
+function requireGuardianIfApplicable(d: GuardianValues, ctx: z.RefinementCtx) {
+  if (!guardianRequired(d)) return;
+  for (const f of Object.keys(GUARDIAN_MESSAGES) as (keyof typeof GUARDIAN_MESSAGES)[]) {
+    if (!d[f]?.trim()) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [f], message: GUARDIAN_MESSAGES[f] });
+  }
+  if (d.guardian_contact?.trim() && !isValidMobile(d.guardian_contact)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["guardian_contact"], message: MOBILE_ERROR });
+  }
+}
+
+/** Guardian fields for the API — only sent when the box is ticked (always,
+ * for minors), so leftovers from an unticked box never reach the backend. */
+function guardianPayload(d: GuardianValues) {
+  if (!guardianRequired(d)) {
+    return { guardian_name: undefined, guardian_relationship: undefined, guardian_contact: undefined };
+  }
+  return {
+    guardian_name: d.guardian_name?.trim(),
+    guardian_relationship: d.guardian_relationship,
+    guardian_contact: d.guardian_contact?.trim(),
+  };
+}
+
+/** Prefills guardian contact with the patient's own contact (for a minor it
+ * is the guardian's) until the user types something different there. */
+function useGuardianContactPrefill(minor: boolean, patientContact: string, current: string | undefined, setContact: (v: string) => void) {
+  const lastAuto = useRef("");
+  useEffect(() => {
+    if (!minor) return;
+    const prev = lastAuto.current;
+    lastAuto.current = patientContact;
+    if (!current || current === prev) setContact(patientContact);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [minor, patientContact]);
+}
+
+function GuardianFields({
+  dob, applicable, onApplicableChange, field, errors,
+}: {
+  dob: string | undefined;
+  applicable: boolean | undefined;
+  onApplicableChange: (v: boolean) => void;
+  field: (name: "guardian_name" | "guardian_relationship" | "guardian_contact") => UseFormRegisterReturn;
+  errors: Partial<Record<"guardian_name" | "guardian_relationship" | "guardian_contact", { message?: string }>>;
+}) {
+  const minor = isMinor(dob);
+  const checked = minor || !!applicable;
+  return (
+    <div className="space-y-3">
+      <label className="flex items-center gap-2 pt-2 border-t border-neutral-100 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={minor}
+          onChange={(e) => onApplicableChange(e.target.checked)}
+          className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500 disabled:opacity-60"
+        />
+        <span className="text-sm font-medium text-neutral-800">Guardian applicable</span>
+        <span className="text-xs text-neutral-400">
+          {minor
+            ? `— required: patient is ${ageFromDob(dob)} (under 18)`
+            : "— for minors or patients under assisted care"}
+        </span>
+      </label>
+
+      {checked && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <FieldLabel htmlFor="guardian_name" text="Guardian name" required />
+            <input id="guardian_name" placeholder="Arun Nair" {...field("guardian_name")} className={errors.guardian_name ? inputErrCls : inputCls} />
+            <FieldError msg={errors.guardian_name?.message} />
+          </div>
+          <div>
+            <FieldLabel htmlFor="guardian_relationship" text="Relation type" required />
+            <div className="relative">
+              <select id="guardian_relationship" {...field("guardian_relationship")} className={`${errors.guardian_relationship ? inputErrCls : inputCls} appearance-none pr-9`}>
+                <option value="">Select…</option>
+                {GUARDIAN_RELATION_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
+            </div>
+            <FieldError msg={errors.guardian_relationship?.message} />
+          </div>
+          <div>
+            <FieldLabel htmlFor="guardian_contact" text="Contact number" required />
+            <input
+              id="guardian_contact" type="tel" inputMode="numeric" maxLength={10} placeholder="9820033445"
+              {...digitsOnly(field("guardian_contact"))}
+              className={errors.guardian_contact ? inputErrCls : inputCls}
+            />
+            <FieldError msg={errors.guardian_contact?.message} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function getFilteredClinics(allClinics: any[], userCity?: string, userState?: string) {
@@ -85,7 +224,7 @@ const registerSchema = z.object({
   last_name:     z.string().min(1, "Last name is required"),
   email:         z.string().email("Please enter a valid email"),
   password:      z.string().min(8, "Password must be at least 8 characters"),
-  phone:         z.string().min(1, "Phone is required"),
+  phone:         z.string().regex(/^\d{10}$/, MOBILE_ERROR),
   date_of_birth: z.string().min(1, "Date of birth is required"),
   gender:        z.string().min(1, "Gender is required"),
   address:       z.string().optional(),
@@ -94,7 +233,8 @@ const registerSchema = z.object({
   country:       z.string().optional(),
   pincode:       z.string().optional(),
   clinic_id:     z.string().min(1, "Please select your clinic"),
-});
+  ...guardianShape,
+}).superRefine(requireGuardianIfApplicable);
 type RegisterFormData = z.infer<typeof registerSchema>;
 
 function LocalRegisterForm() {
@@ -102,7 +242,7 @@ function LocalRegisterForm() {
   const { clinics, isLoading: clinicsLoading } = useClinics();
   const router = useRouter();
 
-  const { register: field, handleSubmit, watch, formState: { errors } } = useForm<RegisterFormData>({
+  const { register: field, handleSubmit, watch, setValue, formState: { errors } } = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema),
     defaultValues: { gender: "" },
   });
@@ -110,12 +250,32 @@ function LocalRegisterForm() {
   const selectedClinicId = watch("clinic_id");
   const userCity = watch("city");
   const userState = watch("state");
+  const userPincode = watch("pincode");
   const selectedClinic = clinics.find((c) => c.clinic_id === selectedClinicId);
   const filteredClinics = getFilteredClinics(clinics, userCity, userState);
+  const dob = watch("date_of_birth");
+  useGuardianContactPrefill(isMinor(dob), watch("phone") ?? "", watch("guardian_contact"), (v) => setValue("guardian_contact", v));
+
+  const { location: pincodeLocation, loading: pincodeLoading } = usePincodeLookup(userPincode);
+  useEffect(() => {
+    if (!pincodeLocation) return;
+    setValue("city", pincodeLocation.city, { shouldValidate: true });
+    setValue("state", pincodeLocation.state, { shouldValidate: true });
+    setValue("country", pincodeLocation.country);
+  }, [pincodeLocation, setValue]);
+
+  const { locate, address: geoAddress, status: geoStatus } = useGeolocationAddress();
+  useEffect(() => {
+    if (!geoAddress) return;
+    if (geoAddress.pincode) setValue("pincode", geoAddress.pincode);
+    setValue("city", geoAddress.city, { shouldValidate: true });
+    setValue("state", geoAddress.state, { shouldValidate: true });
+    setValue("country", geoAddress.country);
+  }, [geoAddress, setValue]);
 
   const onSubmit = async (data: RegisterFormData) => {
     clearError();
-    const result = await register(data);
+    const result = await register({ ...data, ...guardianPayload(data) });
     if (registerThunk.fulfilled.match(result)) {
       router.push(ROUTES.CONSENT);
     }
@@ -152,13 +312,17 @@ function LocalRegisterForm() {
 
         <div>
           <FieldLabel htmlFor="password" text="Password" required />
-          <input id="password" type="password" placeholder="At least 8 characters" autoComplete="new-password" {...field("password")} className={errors.password ? inputErrCls : inputCls} />
+          <Input id="password" type="password" placeholder="At least 8 characters" autoComplete="new-password" {...field("password")} className={errors.password ? inputErrCls : inputCls} />
           <FieldError msg={errors.password?.message} />
         </div>
 
         <div>
           <FieldLabel htmlFor="phone" text="Phone" required />
-          <input id="phone" type="tel" placeholder="+91 98765 43210" autoComplete="tel" {...field("phone")} className={errors.phone ? inputErrCls : inputCls} />
+          <input
+            id="phone" type="tel" inputMode="numeric" maxLength={10} placeholder="9876543210" autoComplete="tel-national"
+            {...digitsOnly(field("phone"))}
+            className={errors.phone ? inputErrCls : inputCls}
+          />
           <FieldError msg={errors.phone?.message} />
         </div>
 
@@ -185,6 +349,29 @@ function LocalRegisterForm() {
           <input id="address" placeholder="Street address" {...field("address")} className={inputCls} />
         </div>
 
+        <button
+          type="button"
+          onClick={locate}
+          disabled={geoStatus === "requesting" || geoStatus === "loading"}
+          className="flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50"
+        >
+          {geoStatus === "requesting" || geoStatus === "loading" ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <MapPin className="w-3.5 h-3.5" />
+          )}
+          Use my location
+        </button>
+        {geoStatus === "denied" && (
+          <p className="text-xs text-danger-600 -mt-2">Location permission denied — enter your address manually.</p>
+        )}
+        {geoStatus === "error" && (
+          <p className="text-xs text-danger-600 -mt-2">Couldn&apos;t determine your address — enter it manually.</p>
+        )}
+        {geoStatus === "unsupported" && (
+          <p className="text-xs text-neutral-400 -mt-2">Location isn&apos;t supported on this browser — enter your address manually.</p>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <FieldLabel htmlFor="city" text="City" required />
@@ -201,13 +388,30 @@ function LocalRegisterForm() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <FieldLabel htmlFor="country" text="Country" optional />
-            <input id="country" placeholder="India" {...field("country")} className={inputCls} />
+            <div className="relative">
+              <select id="country" {...field("country")} className={`${inputCls} appearance-none pr-9`}>
+                <option value="">Select</option>
+                {COUNTRY_OPTIONS.map((c) => (
+                  <option key={c.name} value={c.name}>{c.name}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
+            </div>
           </div>
           <div>
             <FieldLabel htmlFor="pincode" text="Pincode" optional />
-            <input id="pincode" placeholder="400001" {...field("pincode")} className={inputCls} />
+            <input id="pincode" placeholder="400001" maxLength={6} {...field("pincode")} className={inputCls} />
+            {pincodeLoading && <p className="text-xs text-neutral-400 mt-1">Looking up city/state…</p>}
           </div>
         </div>
+
+        <GuardianFields
+          dob={dob}
+          applicable={watch("guardian_applicable")}
+          onApplicableChange={(v) => setValue("guardian_applicable", v)}
+          field={field}
+          errors={errors}
+        />
 
         <div>
           <FieldLabel htmlFor="clinic_id" text="Clinic" required />
@@ -245,7 +449,7 @@ function LocalRegisterForm() {
   );
 }
 
-// ─── Real signup — email-or-mobile, OTP-verified, then password ─────────────
+// ─── Real signup — details, then password, then OTP (verifying creates the account) ───
 
 const demographicsSchema = z.object({
   first_name: z.string().min(1, "First name is required"),
@@ -258,7 +462,8 @@ const demographicsSchema = z.object({
   country:    z.string().min(1, "Country is required"),
   pincode:    z.string().optional(),
   clinic_id:  z.string().min(1, "Please select your clinic"),
-});
+  ...guardianShape,
+}).superRefine(requireGuardianIfApplicable);
 type DemographicsData = z.infer<typeof demographicsSchema>;
 
 function OtpSignupWizard() {
@@ -267,7 +472,9 @@ function OtpSignupWizard() {
   const { clinics, isLoading: clinicsLoading } = useClinics();
   const { completePatientSignup } = useAuth();
 
-  const [step, setStep] = useState<"demographics" | "otp" | "password">("demographics");
+  // Password comes BEFORE the OTP: entering the code creates the account in
+  // the same request, so a patient can't abandon signup half-registered.
+  const [step, setStep] = useState<"demographics" | "password" | "otp">("demographics");
   // Fixed by which button the patient clicked on /login — no in-page switcher.
   const [method] = useState<"email" | "mobile">(searchParams.get("method") === "mobile" ? "mobile" : "email");
   const [contact, setContact] = useState("");
@@ -275,37 +482,85 @@ function OtpSignupWizard() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { register: field, handleSubmit, watch, formState: { errors } } = useForm<DemographicsData>({
+  const { register: field, handleSubmit, watch, setValue, formState: { errors } } = useForm<DemographicsData>({
     resolver: zodResolver(demographicsSchema),
     defaultValues: { gender: "", country: "India" },
   });
   const userCity = watch("city");
   const userState = watch("state");
+  const userPincode = watch("pincode");
   const selectedClinicId = watch("clinic_id");
   const selectedClinic = clinics.find((c) => c.clinic_id === selectedClinicId);
   const filteredClinics = getFilteredClinics(clinics, userCity, userState);
   const dialCode = COUNTRY_OPTIONS.find((c) => c.name === watch("country"))?.dialCode ?? "+91";
+
+  const { location: pincodeLocation, loading: pincodeLoading } = usePincodeLookup(userPincode);
+  useEffect(() => {
+    if (!pincodeLocation) return;
+    setValue("city", pincodeLocation.city, { shouldValidate: true });
+    setValue("state", pincodeLocation.state, { shouldValidate: true });
+    if (COUNTRY_OPTIONS.some((c) => c.name === pincodeLocation.country)) {
+      setValue("country", pincodeLocation.country, { shouldValidate: true });
+    }
+  }, [pincodeLocation, setValue]);
+
+  const { locate, address: geoAddress, status: geoStatus } = useGeolocationAddress();
+  useEffect(() => {
+    if (!geoAddress) return;
+    if (geoAddress.pincode) setValue("pincode", geoAddress.pincode);
+    setValue("city", geoAddress.city, { shouldValidate: true });
+    setValue("state", geoAddress.state, { shouldValidate: true });
+    if (COUNTRY_OPTIONS.some((c) => c.name === geoAddress.country)) {
+      setValue("country", geoAddress.country, { shouldValidate: true });
+    }
+  }, [geoAddress, setValue]);
   // Full E.164 number for mobile (country code + digits only); the raw
   // email string as typed for email — this is what Cognito/our backend
   // actually needs, while `contact` state holds just what's in the input.
   const fullContact = method === "mobile" ? `${dialCode}${contact.replace(/\D/g, "")}` : contact.trim();
+  const dob = watch("date_of_birth");
+  useGuardianContactPrefill(
+    isMinor(dob),
+    method === "mobile" ? contact : "",
+    watch("guardian_contact"),
+    (v) => setValue("guardian_contact", v),
+  );
 
-  // ── Step 1: demographics + clinic + contact -> send OTP ──────────────────
+  // ── Step 1: demographics + clinic + contact (no API call yet) ────────────
   const onStartSignup = async (data: DemographicsData) => {
     if (!contact.trim()) {
       setError(method === "email" ? "Enter your email address" : "Enter your mobile number");
       return;
     }
+    if (method === "mobile" && !isValidMobile(contact)) {
+      setError(MOBILE_ERROR);
+      return;
+    }
+    setError(null);
+    setDemographics(data);
+    setStep("password");
+  };
+
+  // ── Step 2: password + confirm -> send OTP ───────────────────────────────
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  const onSendCode = async () => {
+    if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
+    if (password !== confirmPassword) { setError("Passwords do not match"); return; }
+    if (!demographics) { setError("Something went wrong — please start over"); setStep("demographics"); return; }
     setError(null);
     setBusy(true);
     try {
       await authService.patientSignupStart({
-        first_name: data.first_name, last_name: data.last_name, dob: data.date_of_birth,
-        gender: data.gender, address: data.address, city: data.city, state: data.state,
-        country: data.country, pincode: data.pincode,
-        primary_clinic_id: data.clinic_id, method, contact: fullContact,
+        first_name: demographics.first_name, last_name: demographics.last_name, dob: demographics.date_of_birth,
+        gender: demographics.gender, address: demographics.address, city: demographics.city, state: demographics.state,
+        country: demographics.country, pincode: demographics.pincode,
+        primary_clinic_id: demographics.clinic_id, method, contact: fullContact,
+        password, confirm_password: confirmPassword,
+        ...guardianPayload(demographics),
       });
-      setDemographics(data);
+      setOtp("");
       setStep("otp");
     } catch (e: any) {
       setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Could not send verification code");
@@ -314,20 +569,32 @@ function OtpSignupWizard() {
     }
   };
 
-  // ── Step 2: OTP — auto-submits once 6 digits are entered ──────────────────
+  // ── Step 3: OTP -> verify + create account + log in (one call) ───────────
+  // Auto-submits once 6 digits are entered.
   const [otp, setOtp] = useState("");
   const [resending, setResending] = useState(false);
 
   const onVerifyOtp = async (code: string) => {
     if (!code.trim()) { setError("Enter the code we sent you"); return; }
+    if (!demographics) { setError("Something went wrong — please start over"); setStep("demographics"); return; }
     setError(null);
     setBusy(true);
     try {
-      await authService.patientSignupVerify(fullContact, code.trim());
-      setStep("password");
-    } catch (e: any) {
-      setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Incorrect or expired code");
-      setOtp("");
+      const result = await completePatientSignup({
+        first_name: demographics.first_name, last_name: demographics.last_name,
+        dob: demographics.date_of_birth, gender: demographics.gender, address: demographics.address,
+        city: demographics.city, state: demographics.state, country: demographics.country,
+        pincode: demographics.pincode,
+        primary_clinic_id: demographics.clinic_id, method, contact: fullContact,
+        password, code: code.trim(),
+        ...guardianPayload(demographics),
+      });
+      if ((result as any)?.meta?.requestStatus === "fulfilled") {
+        router.push(ROUTES.CONSENT);
+      } else {
+        setError(((result as any)?.payload as string) || "Incorrect or expired code");
+        setOtp("");
+      }
     } finally {
       setBusy(false);
     }
@@ -349,35 +616,6 @@ function OtpSignupWizard() {
       setError("Could not resend code — try again shortly");
     } finally {
       setResending(false);
-    }
-  };
-
-  // ── Step 3: password + confirm -> create account ──────────────────────────
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-
-  const onCompleteSignup = async () => {
-    if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
-    if (password !== confirmPassword) { setError("Passwords do not match"); return; }
-    if (!demographics) { setError("Something went wrong — please start over"); setStep("demographics"); return; }
-    setError(null);
-    setBusy(true);
-    try {
-      const result = await completePatientSignup({
-        first_name: demographics.first_name, last_name: demographics.last_name,
-        dob: demographics.date_of_birth, gender: demographics.gender, address: demographics.address,
-        city: demographics.city, state: demographics.state, country: demographics.country,
-        pincode: demographics.pincode,
-        primary_clinic_id: demographics.clinic_id, method, contact: fullContact,
-        password, confirm_password: confirmPassword,
-      });
-      if ((result as any)?.meta?.requestStatus === "fulfilled") {
-        router.push(ROUTES.CONSENT);
-      } else {
-        setError(((result as any)?.payload as string) || "Could not create your account");
-      }
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -428,6 +666,29 @@ function OtpSignupWizard() {
             <input id="address" placeholder="Street address" {...field("address")} className={inputCls} />
           </div>
 
+          <button
+            type="button"
+            onClick={locate}
+            disabled={geoStatus === "requesting" || geoStatus === "loading"}
+            className="flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50"
+          >
+            {geoStatus === "requesting" || geoStatus === "loading" ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <MapPin className="w-3.5 h-3.5" />
+            )}
+            Use my location
+          </button>
+          {geoStatus === "denied" && (
+            <p className="text-xs text-danger-600">Location permission denied — enter your address manually.</p>
+          )}
+          {geoStatus === "error" && (
+            <p className="text-xs text-danger-600">Couldn&apos;t determine your address — enter it manually.</p>
+          )}
+          {geoStatus === "unsupported" && (
+            <p className="text-xs text-neutral-400">Location isn&apos;t supported on this browser — enter your address manually.</p>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <FieldLabel htmlFor="city" text="City" required />
@@ -443,7 +704,8 @@ function OtpSignupWizard() {
 
           <div>
             <FieldLabel htmlFor="pincode" text="Pincode" optional />
-            <input id="pincode" placeholder="400001" {...field("pincode")} className={inputCls} />
+            <input id="pincode" placeholder="400001" maxLength={6} {...field("pincode")} className={inputCls} />
+            {pincodeLoading && <p className="text-xs text-neutral-400 mt-1">Looking up city/state…</p>}
           </div>
 
           <div>
@@ -459,6 +721,14 @@ function OtpSignupWizard() {
             </div>
             <FieldError msg={errors.country?.message} />
           </div>
+
+          <GuardianFields
+            dob={dob}
+            applicable={watch("guardian_applicable")}
+            onApplicableChange={(v) => setValue("guardian_applicable", v)}
+            field={field}
+            errors={errors}
+          />
 
           <div>
             <FieldLabel htmlFor="clinic_id" text="Clinic" required />
@@ -491,10 +761,10 @@ function OtpSignupWizard() {
                   <span className="flex items-center justify-center px-3 rounded-lg border border-neutral-300 bg-neutral-50 text-sm text-neutral-600 flex-shrink-0">
                     {dialCode}
                   </span>
-                  <input id="contact" type="tel" placeholder="XXXXXXXXXX" value={contact} onChange={(e) => setContact(e.target.value)} className={inputCls} />
+                  <input id="contact" type="tel" inputMode="numeric" maxLength={10} placeholder="XXXXXXXXXX" value={contact} onChange={(e) => setContact(toMobileDigits(e.target.value))} className={inputCls} />
                 </div>
               )}
-              <Button type="submit" isLoading={busy} className="flex-shrink-0">Verify</Button>
+              <Button type="submit" isLoading={busy} className="flex-shrink-0">Continue</Button>
             </div>
           </div>
         </form>
@@ -514,27 +784,34 @@ function OtpSignupWizard() {
             />
             <p className="mt-1.5 text-xs text-neutral-400">Verifies automatically once you enter all 6 digits.</p>
           </div>
-          {busy && <p className="text-sm text-neutral-500 text-center">Verifying…</p>}
+          {busy && <p className="text-sm text-neutral-500 text-center">Verifying and creating your account…</p>}
           <button type="button" onClick={onResend} disabled={resending} className="w-full text-center text-sm text-primary-600 hover:underline disabled:opacity-50">
             {resending ? "Resending…" : "Resend code"}
+          </button>
+          <button type="button" onClick={() => { setError(null); setOtp(""); setStep("password"); }} className="w-full text-center text-sm text-neutral-500 hover:underline">
+            Back
           </button>
         </div>
       )}
 
       {step === "password" && (
         <div className="space-y-4">
-          <p className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-lg px-3.5 py-2.5">
-            {method === "email" ? "Email" : "Mobile number"} verified. Choose a password to finish creating your account.
+          <p className="text-sm text-neutral-600">
+            Choose a password for your account. We&apos;ll then send a verification code to{" "}
+            <span className="font-medium text-neutral-900">{fullContact}</span>.
           </p>
           <div>
             <FieldLabel htmlFor="password" text="Password" required />
-            <input id="password" type="password" placeholder="At least 8 characters" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} />
+            <Input id="password" type="password" placeholder="At least 8 characters" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} />
           </div>
           <div>
             <FieldLabel htmlFor="confirm_password" text="Confirm password" required />
-            <input id="confirm_password" type="password" placeholder="Re-enter your password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputCls} />
+            <Input id="confirm_password" type="password" placeholder="Re-enter your password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputCls} />
           </div>
-          <Button onClick={onCompleteSignup} className="w-full" size="lg" isLoading={busy}>Create Account</Button>
+          <Button onClick={onSendCode} className="w-full" size="lg" isLoading={busy}>Send Verification Code</Button>
+          <button type="button" onClick={() => { setError(null); setStep("demographics"); }} className="w-full text-center text-sm text-neutral-500 hover:underline">
+            Back
+          </button>
         </div>
       )}
 

@@ -2,16 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, CalendarDays, ClipboardList, UserCircle, Receipt } from "lucide-react";
+import { LayoutDashboard, CalendarDays, ClipboardList, UserCircle, Receipt, Activity } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { useSidebar } from "@/contexts/SidebarContext";
 
 const TABS = [
-  { label: "Home",         href: "/patient/dashboard",    icon: LayoutDashboard },
-  { label: "Appointments", href: "/patient/appointments", icon: CalendarDays },
-  { label: "Billing",      href: "/patient/payments",     icon: Receipt },
-  { label: "Results",      href: "/patient/results",      icon: ClipboardList },
-  { label: "Profile",      href: "/patient/profile",      icon: UserCircle },
+  { label: "Home",         href: "/patient/dashboard",       icon: LayoutDashboard },
+  { label: "Sessions",     href: "/patient/device-sessions", icon: Activity },
+  { label: "Appts",        href: "/patient/appointments",    icon: CalendarDays },
+  { label: "Billing",      href: "/patient/payments",        icon: Receipt },
+  { label: "Results",      href: "/patient/results",         icon: ClipboardList },
+  { label: "Profile",      href: "/patient/profile",         icon: UserCircle },
 ];
 
 export function PatientBottomNav() {

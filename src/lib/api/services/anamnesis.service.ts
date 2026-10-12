@@ -1,4 +1,5 @@
-import apiClient from "../client";
+import apiClient, { getMyPatientId, getAnamnesisCatalog, sendKeepalive } from "../client";
+import { createSaveBatcher } from "../saveBatcher";
 import { ENDPOINTS } from "../endpoints";
 import type { AnamnesisRecord } from "@/types/domain.types";
 
@@ -77,10 +78,23 @@ export type AnamnesisQuestion = {
   }>;
 };
 
+// Per-answer autosaves, batched per anamnesis record (API audit F-041).
+type AnamnesisAnswer = { question_id: string; response_value?: string; response_values?: string[] };
+const anamnesisAnswers = createSaveBatcher<AnamnesisAnswer>({
+  windowMs: 1500,
+  idOf: (r) => r.question_id,
+  send: async (anamnesisId, responses, keepalive) => {
+    const body = { responses, complete: false };
+    if (keepalive) return sendKeepalive("PATCH", ENDPOINTS.ANAMNESIS.SAVE_RESPONSE(anamnesisId), body);
+    await apiClient.patch(ENDPOINTS.ANAMNESIS.SAVE_RESPONSE(anamnesisId), body);
+  },
+});
+
 export const anamnesisService = {
   // Real GET /anamnesis-catalog shape matches this directly.
   async getQuestions(type?: AnamnesisStage): Promise<AnamnesisQuestion[]> {
-    const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.QUESTIONS, { params: type ? { type } : undefined });
+    // Static catalog (full or per type) -> shared 5-min cache (F-022/F-032).
+    const { data } = await getAnamnesisCatalog(type);
     return Array.isArray(data) ? data : [];
   },
 
@@ -95,13 +109,13 @@ export const anamnesisService = {
 
   // Real backend has no per-response save — adapted to a single-item PATCH batch.
   async saveResponse(payload: AnamnesisSaveResponsePayload): Promise<{ response_id: string }> {
-    await apiClient.patch(ENDPOINTS.ANAMNESIS.SAVE_RESPONSE(payload.anamnesis_id), {
-      responses: [{
-        question_id: payload.question_id,
-        response_value: payload.response_value ?? undefined,
-        response_values: payload.response_values ?? undefined,
-      }],
-      complete: false,
+    // Queued and sent in batches (F-041); resolves/rejects with the batch
+    // that carried this answer, so the form's per-answer failure tracking
+    // and "still saving" guard keep working.
+    await anamnesisAnswers.enqueue(payload.anamnesis_id, {
+      question_id: payload.question_id,
+      response_value: payload.response_value ?? undefined,
+      response_values: payload.response_values ?? undefined,
     });
     return { response_id: "" };
   },
@@ -170,19 +184,29 @@ export const anamnesisService = {
   },
 
   async submit(payload: AnamnesisSubmitPayload): Promise<AnamnesisRecord> {
-    const { data } = await apiClient.patch(ENDPOINTS.ANAMNESIS.SUBMIT(payload.anamnesis_id), {
-      responses: payload.responses ?? [],
-      complete: true,
-    });
-    return data;
+    // Answers still queued are saved in the same request as complete:true,
+    // so a record can never be marked complete with answers missing.
+    const pending = await anamnesisAnswers.drain(payload.anamnesis_id);
+    const explicit = payload.responses ?? [];
+    const explicitIds = new Set(explicit.map((r: { question_id?: string }) => r.question_id));
+    try {
+      const { data } = await apiClient.patch(ENDPOINTS.ANAMNESIS.SUBMIT(payload.anamnesis_id), {
+        responses: [...pending.items.filter((r) => !explicitIds.has(r.question_id)), ...explicit],
+        complete: true,
+      });
+      pending.done();
+      return data;
+    } catch (err) {
+      pending.done(err);
+      throw err;
+    }
   },
 
-  // NOT AVAILABLE directly — resolved via the caller's own /patients record first.
+  // Own patient_id from the stored /auth/me snapshot (getMyPatientId).
   async getMyAnamnesis(assessmentStage?: AnamnesisStage): Promise<AnamnesisRecord> {
-    const patientsRes = await apiClient.get(ENDPOINTS.PATIENTS.DASHBOARD);
-    const own = Array.isArray(patientsRes.data) ? patientsRes.data[0] : undefined;
-    if (!own?.patient_id) throw new Error("No patient record found for the current user.");
-    const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.FOR_PATIENT(own.patient_id), {
+    const patientId = await getMyPatientId();
+    if (!patientId) throw new Error("No patient record found for the current user.");
+    const { data } = await apiClient.get(ENDPOINTS.ANAMNESIS.FOR_PATIENT(patientId), {
       params: assessmentStage ? { assessment_stage: assessmentStage } : undefined,
     });
     return withResponses(data);
