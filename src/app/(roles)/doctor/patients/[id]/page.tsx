@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ChevronRight, ChevronLeft, Plus, HelpCircle, Bell, Check, Lock, PlayCircle, BarChart2, Save, FileText, Pill, NotebookPen, X } from "lucide-react";
@@ -267,41 +267,34 @@ export default function DoctorPatientDetailPage() {
     } catch {}
   }, [selectedSection, id]);
 
-  // Auto-save, debounced ~800ms after typing stops — no explicit Save click.
-  // Fires once per note: after the create call resolves the field clears
-  // itself, which cancels any pending timer for that now-empty value and
-  // leaves the form ready for the next note.
-  const noteSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (noteSaveTimer.current) clearTimeout(noteSaveTimer.current);
+  // Explicit Save — Enter inserts a newline in the textarea; the note is only
+  // persisted when the doctor clicks Save.
+  const [noteSaving, setNoteSaving] = useState(false);
+  const saveNote = () => {
     const text = newNoteBody.trim();
-    if (!text) return;
-    noteSaveTimer.current = setTimeout(() => {
-      addDoctorNoteApi(newNoteCategory, text)
-        .then(() => { setNewNoteBody(""); setNoteSaveError(null); })
-        .catch(() => setNoteSaveError("Could not save the note. Please try again."));
-    }, 800);
-    return () => { if (noteSaveTimer.current) clearTimeout(noteSaveTimer.current); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newNoteBody]);
+    if (!text || noteSaving) return;
+    setNoteSaving(true);
+    addDoctorNoteApi(newNoteCategory, text)
+      .then(() => { setNewNoteBody(""); setNoteSaveError(null); })
+      .catch(() => setNoteSaveError("Could not save the note. Please try again."))
+      .finally(() => setNoteSaving(false));
+  };
 
-  const widgetSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (widgetSaveTimer.current) clearTimeout(widgetSaveTimer.current);
+  const [widgetSaving, setWidgetSaving] = useState(false);
+  const saveWidgetNote = () => {
     const text = widgetBody.trim();
-    if (!text) return;
-    widgetSaveTimer.current = setTimeout(() => {
-      addDoctorNoteApi(widgetCategory, `(from ${SECTION_LABELS[selectedSection] ?? selectedSection}) ${text}`)
-        .then(() => {
-          setWidgetBody("");
-          setWidgetSaved(true);
-          setTimeout(() => { setWidgetSaved(false); setNoteWidgetOpen(false); }, 1400);
-        })
-        .catch(() => setNoteSaveError("Could not save the note. Please try again."));
-    }, 800);
-    return () => { if (widgetSaveTimer.current) clearTimeout(widgetSaveTimer.current); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [widgetBody]);
+    if (!text || widgetSaving) return;
+    setWidgetSaving(true);
+    addDoctorNoteApi(widgetCategory, `(from ${SECTION_LABELS[selectedSection] ?? selectedSection}) ${text}`)
+      .then(() => {
+        setWidgetBody("");
+        setNoteSaveError(null);
+        setWidgetSaved(true);
+        setTimeout(() => { setWidgetSaved(false); setNoteWidgetOpen(false); }, 1400);
+      })
+      .catch(() => setNoteSaveError("Could not save the note. Please try again."))
+      .finally(() => setWidgetSaving(false));
+  };
 
   if (isLoading) return <PatientDetailSkeleton />;
 
@@ -829,6 +822,16 @@ export default function DoctorPatientDetailPage() {
                         />
                       </div>
                       {noteSaveError && <p className="text-xs text-red-600">{noteSaveError}</p>}
+                      <div className="flex justify-end">
+                        <button
+                          onClick={saveNote}
+                          disabled={!newNoteBody.trim() || noteSaving}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-brand-gradient hover:opacity-90 transition-opacity shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Save className="w-4 h-4" />
+                          {noteSaving ? "Saving…" : "Save Note"}
+                        </button>
+                      </div>
                     </div>
 
                   {doctorNotes.length === 0 ? (
@@ -1061,6 +1064,14 @@ export default function DoctorPatientDetailPage() {
             />
             {widgetSaved && <p className="text-xs font-medium text-green-600">✓ Saved to Doctor&apos;s Notes</p>}
             {noteSaveError && <p className="text-xs text-red-600">{noteSaveError}</p>}
+            <button
+              onClick={saveWidgetNote}
+              disabled={!widgetBody.trim() || widgetSaving}
+              className="self-end inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-brand-gradient hover:opacity-90 transition-opacity shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Save className="w-3.5 h-3.5" />
+              {widgetSaving ? "Saving…" : "Save"}
+            </button>
           </div>
         )}
 

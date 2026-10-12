@@ -14,6 +14,7 @@ import { invalidateDoctorPatients, fetchDoctorPatient } from "@/store/slices/doc
 import type { ScaleQuestion, QuestionOption } from "@/types/prs.types";
 import type { PrsAssessmentQuestion, PrsAssessmentScaleResult } from "@/lib/api/services/prsAssessment.service";
 import { computeHiddenQuestionIndices } from "@/lib/utils/prsSkipLogic";
+import { extractErrorMessage } from "@/lib/api/errors";
 
 // ─── Type helpers ─────────────────────────────────────────────────────────────
 
@@ -208,13 +209,10 @@ export default function DoctorOnBehalfAssessmentPage() {
           }
         }
       } catch (e: unknown) {
-        const msg =
-          (e as { response?: { data?: { message?: string; detail?: string } } })?.response?.data
-            ?.message ??
-          (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-          (e as { message?: string })?.message ??
-          "Failed to load assessment";
-        setLoadError(String(msg));
+        // Backend errors arrive as {error:{code,message}} — the old
+        // data.message/data.detail lookup missed them and showed axios's bare
+        // "Request failed with status code 400".
+        setLoadError(extractErrorMessage(e, (e as { message?: string })?.message ?? "Failed to load assessment"));
       } finally {
         setIsLoading(false);
       }
@@ -393,8 +391,11 @@ export default function DoctorOnBehalfAssessmentPage() {
 
   if (loadError) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4">
+      <div className="flex flex-col items-center justify-center h-screen gap-4 p-4 text-center">
         <p className="text-red-600 text-sm">{loadError}</p>
+        <button onClick={() => router.push(`/doctor/patients/${patientId}`)} className="text-sm text-blue-600 hover:underline">
+          Back to patient
+        </button>
       </div>
     );
   }

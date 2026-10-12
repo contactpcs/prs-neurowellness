@@ -5,9 +5,13 @@ import { useRouter } from "next/navigation";
 import {
   CalendarDays, Clock, Plus,
   ChevronRight, Loader2, RefreshCw, Lock, History,
+  Stethoscope,
 } from "lucide-react";
+import type { ComponentType } from "react";
+import { NeuroDeviceIcon } from "@/components/icons/NeuroDeviceIcon";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
 import { BookAppointmentModal } from "@/components/appointments/BookAppointmentModal";
+import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
 import { PatientMonthCalendar } from "@/components/appointments/PatientMonthCalendar";
 import { STATUS_LABEL, ACTIVE_APPOINTMENT_STATUSES, isSupersededCancellation } from "@/lib/appointmentStatus";
 import { appointmentDoctorName, getDeviceSessionLabel, protocolContextLine, SESSION_TYPE_LABEL } from "@/lib/utils/sessionType";
@@ -39,6 +43,19 @@ const PAYMENT_STATUS_COLOR: Record<string, string> = {
   refunded: "bg-neutral-100 text-neutral-500",
 };
 
+// Icon + tint per appointment type — colours match the calendar legend
+// (blue consultation, purple protocol follow-up, orange device session).
+const TYPE_ICON: Record<AppointmentType, { Icon: ComponentType<{ className?: string }>; bg: string; fg: string }> = {
+  initial:           { Icon: Stethoscope,  bg: "bg-blue-50",   fg: "text-blue-600" },
+  follow_up:         { Icon: Stethoscope,  bg: "bg-blue-50",   fg: "text-blue-600" },
+  protocol_followup: { Icon: CalendarDays, bg: "bg-purple-50", fg: "text-purple-600" },
+  device_session:    { Icon: NeuroDeviceIcon, bg: "bg-orange-50", fg: "text-orange-600" },
+};
+const DEFAULT_TYPE_ICON = { Icon: CalendarDays, bg: "bg-blue-50", fg: "text-blue-600" };
+function typeIcon(t?: AppointmentType | null) {
+  return (t && TYPE_ICON[t]) || DEFAULT_TYPE_ICON;
+}
+
 function fmtDate(d?: string | null) {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
@@ -60,6 +77,7 @@ export default function PatientAppointmentsPage() {
   const [selectedDate, setSelectedDate] = useState<string>(todayStr());
   const [history, setHistory]           = useState<AppointmentHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [payingId, setPayingId]         = useState<string | null>(null);
 
   const loadAppointments = useCallback(async () => {
     setApptLoading(true);
@@ -147,6 +165,7 @@ export default function PatientAppointmentsPage() {
   );
 
   const dayAppts = visibleAppts.filter((a) => a.appointment_date === selectedDate);
+  const NextIcon = typeIcon(nextAppointment?.appointment_type).Icon;
 
   // A day with exactly one appointment goes straight to its detail page —
   // no point making the patient click twice. Multiple on the same day still
@@ -184,12 +203,9 @@ export default function PatientAppointmentsPage() {
       {/* Next appointment — replaces the old two-KPI row with one card
           showing whatever's actually soonest, any appointment type. */}
       {nextAppointment ? (
-        <button
-          onClick={() => router.push(`/patient/appointments/${nextAppointment.appointment_id}`)}
-          className="w-full text-left bg-brand-gradient rounded-xl p-4 flex items-center gap-4 hover:opacity-95 transition-opacity"
-        >
+        <div className="w-full text-left bg-brand-gradient rounded-xl p-4 flex items-center gap-4">
           <div className="bg-white/20 rounded-xl p-2.5 flex-shrink-0">
-            <CalendarDays className="h-5 w-5 text-white" />
+            <NextIcon className="h-5 w-5 text-white" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-medium text-white/80">Your Next Session</p>
@@ -204,8 +220,23 @@ export default function PatientAppointmentsPage() {
               <p className="text-xs text-white/80 mt-0.5 truncate">{protocolContextLine(nextAppointment)}</p>
             )}
           </div>
-          <ChevronRight className="h-4 w-4 text-white/70 flex-shrink-0" />
-        </button>
+          {nextAppointment.status === "selected" && (
+            <button
+              onClick={() => setPayingId(nextAppointment.appointment_id)}
+              className="bg-white text-[#09172E] rounded-lg px-3.5 py-2 text-xs font-semibold hover:bg-blue-50 transition-colors flex-shrink-0"
+            >
+              Pay Now
+            </button>
+          )}
+          {nextAppointment.status === "planned" && (nextAppointment.appointment_type === "device_session" || nextAppointment.appointment_type === "protocol_followup") && (
+            <button
+              onClick={() => router.push(`/patient/appointments/${nextAppointment.appointment_id}?claim=1`)}
+              className="bg-white text-[#09172E] rounded-lg px-3.5 py-2 text-xs font-semibold hover:bg-blue-50 transition-colors flex-shrink-0"
+            >
+              Select Slot
+            </button>
+          )}
+        </div>
       ) : (
         <div className="bg-white rounded-xl p-4 border border-neutral-100 shadow-sm flex items-center gap-4">
           <div className="bg-neutral-100 rounded-xl p-2.5 flex-shrink-0">
@@ -291,6 +322,15 @@ export default function PatientAppointmentsPage() {
         )}
       </section>
 
+      {payingId && (
+        <MockPaymentModal
+          isOpen
+          appointmentId={payingId}
+          onClose={() => setPayingId(null)}
+          onPaid={() => { setPayingId(null); loadAppointments(); loadHistory(); }}
+        />
+      )}
+
       {showBook && bookableType && (
         <BookAppointmentModal
           isOpen
@@ -310,13 +350,14 @@ export default function PatientAppointmentsPage() {
 // Whole row navigates to the appointment's detail page — that page is
 // where payment/status/reschedule now live, this list is just a picker.
 function AppointmentRow({ appt, typeLabel, onClick }: { appt: Appointment; typeLabel: string; onClick: () => void }) {
+  const { Icon, bg, fg } = typeIcon(appt.appointment_type);
   return (
     <button
       onClick={onClick}
       className="w-full text-left bg-white border border-neutral-200 rounded-xl px-4 py-4 flex items-center gap-4 hover:border-neutral-300 transition-colors"
     >
-      <div className="bg-blue-50 rounded-xl p-2.5 flex-shrink-0">
-        <CalendarDays className="h-5 w-5 text-blue-600" />
+      <div className={`${bg} rounded-xl p-2.5 flex-shrink-0`}>
+        <Icon className={`h-5 w-5 ${fg}`} />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
@@ -360,13 +401,14 @@ function AppointmentRow({ appt, typeLabel, onClick }: { appt: Appointment; typeL
 function HistoryRow({ appt, typeLabel, onClick }: { appt: AppointmentHistoryEntry; typeLabel: string; onClick: () => void }) {
   const isLocked = appt.status === "selected";
   const money = fmtMoney(appt.payment_amount, appt.payment_currency);
+  const { Icon, bg, fg } = typeIcon(appt.appointment_type);
   return (
     <button
       onClick={onClick}
       className="w-full text-left bg-white border border-neutral-200 rounded-xl px-4 py-4 flex items-center gap-4 hover:border-neutral-300 transition-colors"
     >
-      <div className={`rounded-xl p-2.5 flex-shrink-0 ${isLocked ? "bg-amber-50" : "bg-blue-50"}`}>
-        {isLocked ? <Lock className="h-5 w-5 text-amber-600" /> : <CalendarDays className="h-5 w-5 text-blue-600" />}
+      <div className={`rounded-xl p-2.5 flex-shrink-0 ${isLocked ? "bg-amber-50" : bg}`}>
+        {isLocked ? <Lock className="h-5 w-5 text-amber-600" /> : <Icon className={`h-5 w-5 ${fg}`} />}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">

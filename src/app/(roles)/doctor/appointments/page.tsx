@@ -154,7 +154,7 @@ export default function DoctorAppointmentsPage() {
   const apptTypeLabel = useCallback((appt: Appointment): string =>
     appt.appointment_type === "device_session"
       ? getDeviceSessionLabel(appt.modality ?? null)
-      : (appt.appointment_type ?? "").replace(/_/g, " "),
+      : (appt.appointment_type ?? "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
     [],
   );
 
@@ -171,7 +171,7 @@ export default function DoctorAppointmentsPage() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search patient, MRN, appointment ID…"
+            placeholder="Search patient, MRN…"
             className="w-full h-[38px] pl-8 pr-3 rounded-lg border border-neutral-300 bg-white text-sm outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
           />
         </div>
@@ -220,7 +220,7 @@ export default function DoctorAppointmentsPage() {
         <div className="bg-white rounded-xl border border-neutral-200/80 shadow-card overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-100">
             <h3 className="text-[13px] font-semibold text-neutral-900">
-              Appointment Details · {sel.appointment_id.slice(0, 8)}
+              Appointment Details
             </h3>
             <div className="flex items-center gap-1.5">
               {sel.rescheduled_from && (

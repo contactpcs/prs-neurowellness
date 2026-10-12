@@ -156,10 +156,10 @@ export function PatientMonthCalendar({ appointments, selectedDate, onSelectDate,
         })}
       </div>
 
-      <div className="flex flex-wrap gap-3 mt-4 pt-3 border-t border-neutral-100 text-[11px] text-neutral-500">
-        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" />Consultation</span>
-        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-purple-500" />Protocol Visit</span>
-        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-orange-500" />Device Session</span>
+      <div className="flex flex-wrap gap-4 mt-4 pt-3 border-t border-neutral-100 text-sm text-neutral-600">
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-blue-500" />Consultation</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-purple-500" />Protocol Visit</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-orange-500" />Device Session</span>
       </div>
     </div>
   );

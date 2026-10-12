@@ -547,7 +547,6 @@ export default function AppointmentDetailPage() {
                 <ActionBtn
                   icon={CreditCard}
                   label="Collect Payment"
-                  color="orange"
                   busy={busy}
                   onClick={() => setShowPay(true)}
                 />
@@ -556,7 +555,6 @@ export default function AppointmentDetailPage() {
                 <ActionBtn
                   icon={UserCheck}
                   label="Check In Patient"
-                  color="blue"
                   busy={busy}
                   onClick={() => run(checkIn, "Check-in")}
                 />
@@ -565,7 +563,6 @@ export default function AppointmentDetailPage() {
                 <ActionBtn
                   icon={Play}
                   label={isDeviceSession ? "Run Device Session" : "Start Consultation"}
-                  color="brand"
                   busy={busy}
                   onClick={() => (isDeviceSession ? router.push(deviceSessionWorkflowHref) : run(start, "Start"))}
                 />
@@ -574,7 +571,6 @@ export default function AppointmentDetailPage() {
                 <ActionBtn
                   icon={CheckSquare}
                   label={isDeviceSession ? "Run Device Session" : "Mark Complete"}
-                  color="green"
                   busy={busy}
                   onClick={() => (isDeviceSession ? router.push(deviceSessionWorkflowHref) : run(complete, "Complete"))}
                 />
@@ -583,7 +579,6 @@ export default function AppointmentDetailPage() {
                 <ActionBtn
                   icon={RotateCcw}
                   label="Reschedule"
-                  color="purple"
                   busy={busy}
                   onClick={() => setShowReschedule(true)}
                 />
@@ -592,7 +587,6 @@ export default function AppointmentDetailPage() {
                 <ActionBtn
                   icon={AlertOctagon}
                   label="Mark No-Show"
-                  color="orange"
                   busy={busy}
                   onClick={() => run(noShow, "No-show")}
                 />
@@ -601,7 +595,6 @@ export default function AppointmentDetailPage() {
                 <ActionBtn
                   icon={XCircle}
                   label="Cancel"
-                  color="red"
                   busy={busy}
                   onClick={() => setShowCancel(true)}
                 />
@@ -690,29 +683,15 @@ export default function AppointmentDetailPage() {
 
 // ─── Small helpers ────────────────────────────────────────────────────────────
 
-type BtnColor = "green" | "blue" | "brand" | "purple" | "orange" | "red";
-
-const BTN_STYLES: Record<BtnColor, { bg: string; hover: string; text: string }> = {
-  green:  { bg: "#f0fdf4", hover: "#dcfce7", text: "#15803d" },
-  blue:   { bg: "#eff6ff", hover: "#dbeafe", text: "#1e40af" },
-  brand:  { bg: "#e0f2fe", hover: "#bae6fd", text: "#0369a1" },
-  purple: { bg: "#f5f3ff", hover: "#ede9fe", text: "#4c1d95" },
-  orange: { bg: "#fff7ed", hover: "#ffedd5", text: "#9a3412" },
-  red:    { bg: "#fff1f2", hover: "#ffe4e6", text: "#991b1b" },
-};
-
 function ActionBtn({
-  icon: Icon, label, color, busy, onClick,
-}: { icon: React.ElementType; label: string; color: BtnColor; busy: boolean; onClick: () => void }) {
-  const s = BTN_STYLES[color];
+  icon: Icon, label, busy, onClick,
+}: { icon: React.ElementType; label: string; busy: boolean; onClick: () => void }) {
   return (
     <button
       disabled={busy}
       onClick={onClick}
-      className="w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
-      style={{ backgroundColor: s.bg, color: s.text }}
-      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = s.hover)}
-      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = s.bg)}
+      className="w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-medium text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50"
+      style={{ background: BRAND }}
     >
       <Icon className="w-4 h-4 flex-shrink-0" />
       {label}
