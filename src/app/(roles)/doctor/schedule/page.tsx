@@ -341,12 +341,12 @@ export default function DoctorSchedulePage() {
                     <div key={dd.dow} className="flex items-center gap-2 text-xs">
                       <span className="w-7 font-semibold text-neutral-700">{dd.short}</span>
                       <span className="text-neutral-500 flex-1">
-                        {toHHMM(row.start_time)}–{toHHMM(row.end_time)}
+                        {fmt12(row.start_time)} – {fmt12(row.end_time)}
                       </span>
                       <span className="text-neutral-400">{row.slot_duration_minutes}m</span>
                       {(row.break_start && row.break_end) && (
                         <span className="text-neutral-300 text-[10px]">
-                          break {toHHMM(row.break_start)}–{toHHMM(row.break_end)}
+                          break {fmt12(row.break_start)} – {fmt12(row.break_end)}
                         </span>
                       )}
                     </div>
@@ -389,17 +389,19 @@ export default function DoctorSchedulePage() {
                         </span>
                         <span
                           className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                            ov.is_available
-                              ? "bg-blue-100 text-blue-700"
-                              : "bg-red-100 text-red-700"
+                            !ov.is_available
+                              ? "bg-red-100 text-red-700"
+                              : ov.reason?.startsWith(HALF_DAY_REASON)
+                                ? "bg-amber-100 text-amber-700"
+                                : "bg-blue-100 text-blue-700"
                           }`}
                         >
-                          {ov.is_available ? "Custom hrs" : "Day off"}
+                          {!ov.is_available ? "Day off" : ov.reason?.startsWith(HALF_DAY_REASON) ? "Half day" : "Custom hrs"}
                         </span>
                       </div>
                       {ov.is_available && ov.start_time && ov.end_time && (
                         <div className="text-neutral-500 mt-0.5">
-                          {toHHMM(ov.start_time)}–{toHHMM(ov.end_time)}
+                          {fmt12(ov.start_time)} – {fmt12(ov.end_time)}
                         </div>
                       )}
                       {ov.reason && (
@@ -439,6 +441,7 @@ export default function DoctorSchedulePage() {
       )}
       {showAddOverride && (
         <AddOverrideModal
+          weekly={weekly}
           onClose={() => setShowAddOverride(false)}
           onSuccess={() => { setShowAddOverride(false); fetchSchedule(); fetchSlots(weekMonday); }}
         />
@@ -588,28 +591,114 @@ function EditScheduleModal({
 
 // ─── AddOverrideModal ─────────────────────────────────────────────────────────
 
-function AddOverrideModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
-  const todayStr = toDateStr(new Date());
+// Override rules (mirrored server-side in ScheduleOverrideService.create_own):
+//   • Day Off   — must be submitted at least 24 hours before the day starts.
+//   • Half Day  — any future date; for today only until 12:00 PM.
+//   • Custom    — any date; for today the start must be later than now.
+// Half Day has no column of its own — it's stored as a custom-hours override
+// covering the half the doctor still works, tagged via HALF_DAY_REASON.
+type OverrideKind = "day_off" | "half_day" | "custom";
+type HalfPart = "morning" | "afternoon";
+
+const HALF_DAY_REASON = "Half day leave";
+const NOON = "12:00";
+const DAY_OFF_NOTICE_MS = 24 * 60 * 60 * 1000;
+
+function minutesToHHMM(mins: number): string {
+  return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+}
+
+/** Now rounded up to the next 15 minutes, as "HH:MM" — null once the day has
+ *  no quarter-hour left. Earliest start a same-day override may use. */
+function earliestStartToday(now: Date): string | null {
+  const mins = Math.ceil((now.getHours() * 60 + now.getMinutes() + 1) / 15) * 15;
+  return mins >= 24 * 60 ? null : minutesToHHMM(mins);
+}
+
+function AddOverrideModal({
+  weekly, onClose, onSuccess,
+}: {
+  weekly: WeeklyScheduleRow[];
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const now      = new Date();
+  const todayStr = toDateStr(now);
   const [date,       setDate]       = useState(todayStr);
-  const [isAvail,    setIsAvail]    = useState(false);
+  const [kind,       setKind]       = useState<OverrideKind>("custom");
+  const [halfPart,   setHalfPart]   = useState<HalfPart>("afternoon");
   const [startTime,  setStartTime]  = useState("08:00");
   const [endTime,    setEndTime]    = useState("17:00");
   const [reason,     setReason]     = useState("");
   const [busy,       setBusy]       = useState(false);
   const [error,      setError]      = useState("");
 
+  const isToday       = date === todayStr;
+  const minStart      = isToday ? earliestStartToday(now) : null;
+  const dayOffAllowed = new Date(date + "T00:00:00").getTime() - now.getTime() >= DAY_OFF_NOTICE_MS;
+  const halfAllowed   = !isToday || now.getHours() < 12;
+  const template      = weekly.find((w) => w.day_of_week === new Date(date + "T00:00:00").getDay() && w.is_active);
+
+  // Drop to a type that's still allowed whenever the date changes, and pull
+  // today's custom start forward past the current time.
+  useEffect(() => {
+    if (kind === "day_off" && !dayOffAllowed) setKind(halfAllowed ? "half_day" : "custom");
+    else if (kind === "half_day" && !halfAllowed) setKind("custom");
+    if (isToday && minStart && startTime < minStart) {
+      setStartTime(minStart);
+      if (endTime <= minStart) {
+        const [h, m] = minStart.split(":").map(Number);
+        setEndTime(minutesToHHMM(Math.min(h * 60 + m + 60, 23 * 60 + 59)));
+      }
+    }
+  }, [date]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Half-day hours are derived from the weekly template, not typed in.
+  const halfHours = useMemo((): { start: string; end: string } | null => {
+    if (!template) return null;
+    const tStart = toHHMM(template.start_time);
+    const tEnd   = toHHMM(template.end_time);
+    if (halfPart === "morning") {
+      return tEnd > NOON ? { start: NOON, end: tEnd } : null;
+    }
+    const start = isToday && minStart && minStart > tStart ? minStart : tStart;
+    return start < NOON ? { start, end: NOON } : null;
+  }, [template, halfPart, isToday, minStart]);
+
+  const validationError = ((): string => {
+    if (date < todayStr) return "Date can't be in the past.";
+    if (kind === "day_off" && !dayOffAllowed) return "Day off must be requested at least 24 hours before the day starts.";
+    if (kind === "half_day") {
+      if (!halfAllowed) return "Half day leave for today can only be submitted before 12:00 PM.";
+      if (!template)    return "No working hours set for this day in your weekly template.";
+      if (!halfHours)   return `Your schedule has no ${halfPart === "morning" ? "afternoon" : "morning"} hours to keep on this day.`;
+    }
+    if (kind === "custom") {
+      if (isToday && !minStart)       return "No time left today for custom hours.";
+      if (isToday && minStart && startTime < minStart) return `Start time for today must be ${fmt12(minStart)} or later.`;
+      if (endTime <= startTime)       return "End time must be after start time.";
+    }
+    return "";
+  })();
+
   const save = async () => {
+    if (validationError || !reason.trim()) return;
     setBusy(true);
     setError("");
     try {
       const body: Record<string, unknown> = {
         override_date: date,
-        is_available:  isAvail,
-        reason:        reason || undefined,
+        is_available:  kind !== "day_off",
+        reason:        reason.trim(),
       };
-      if (isAvail) {
+      if (kind === "custom") {
         body.start_time = startTime + ":00";
         body.end_time   = endTime   + ":00";
+      } else if (kind === "half_day" && halfHours) {
+        body.start_time = halfHours.start + ":00";
+        body.end_time   = halfHours.end   + ":00";
+        const tag = `${HALF_DAY_REASON} (${halfPart} off)`;
+        body.reason = `${tag} — ${reason.trim()}`;
       }
       await apiClient.post(ENDPOINTS.SCHEDULE.ADD_OVERRIDE, body);
       onSuccess();
@@ -619,6 +708,12 @@ function AddOverrideModal({ onClose, onSuccess }: { onClose: () => void; onSucce
       setBusy(false);
     }
   };
+
+  const kinds: { key: OverrideKind; label: string; allowed: boolean; title?: string; activeBg: string }[] = [
+    { key: "day_off",  label: "Day Off",      allowed: dayOffAllowed, title: "Requires 24 hours' notice",              activeBg: "linear-gradient(135deg, #ef4444, #dc2626)" },
+    { key: "half_day", label: "Half Day",     allowed: halfAllowed,   title: "Same-day half day only before 12:00 PM", activeBg: "linear-gradient(135deg, #f59e0b, #d97706)" },
+    { key: "custom",   label: "Custom Hours", allowed: true,                                                            activeBg: BRAND_GRADIENT },
+  ];
 
   return (
     <Modal title="Add Date Override" onClose={onClose} maxWidth="max-w-sm">
@@ -634,47 +729,69 @@ function AddOverrideModal({ onClose, onSuccess }: { onClose: () => void; onSucce
           />
         </div>
 
-        {/* Day off vs custom hours toggle */}
+        {/* Day off / half day / custom hours toggle */}
         <div>
           <label className="field-label">Type</label>
           <div className="flex rounded-lg overflow-hidden border border-neutral-200 text-sm font-medium">
-            <button
-              onClick={() => setIsAvail(false)}
-              className="flex-1 py-2 transition-colors"
-              style={!isAvail
-                ? { background: "linear-gradient(135deg, #ef4444, #dc2626)", color: "#fff" }
-                : { background: "#fff", color: "#525252" }}
-            >
-              Day Off
-            </button>
-            <button
-              onClick={() => setIsAvail(true)}
-              className="flex-1 py-2 transition-colors border-l border-neutral-200"
-              style={isAvail
-                ? { background: BRAND_GRADIENT, color: "#fff" }
-                : { background: "#fff", color: "#525252" }}
-            >
-              Custom Hours
-            </button>
+            {kinds.map((k, i) => (
+              <button
+                key={k.key}
+                onClick={() => k.allowed && setKind(k.key)}
+                disabled={!k.allowed}
+                title={!k.allowed ? k.title : undefined}
+                className={`flex-1 py-2 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${i > 0 ? "border-l border-neutral-200" : ""}`}
+                style={kind === k.key
+                  ? { background: k.activeBg, color: "#fff" }
+                  : { background: "#fff", color: "#525252" }}
+              >
+                {k.label}
+              </button>
+            ))}
           </div>
+          {!dayOffAllowed && (
+            <p className="text-[11px] text-neutral-400 mt-1.5">
+              Day off needs 24 hours&apos; notice{isToday && !halfAllowed ? "; half day for today closes at 12:00 PM" : ""}.
+            </p>
+          )}
         </div>
 
-        {isAvail && (
+        {kind === "half_day" && (
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              {(["morning", "afternoon"] as HalfPart[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setHalfPart(p)}
+                  className={`py-2 rounded-lg border text-xs font-medium transition-colors ${halfPart === p ? "border-amber-500 bg-amber-50 text-amber-700" : "border-neutral-200 bg-white text-neutral-600"}`}
+                >
+                  {p === "morning" ? "Morning off" : "Afternoon off"}
+                </button>
+              ))}
+            </div>
+            {halfHours && (
+              <p className="text-xs text-neutral-500">
+                Working {fmt12(halfHours.start)} – {fmt12(halfHours.end)}
+              </p>
+            )}
+          </div>
+        )}
+
+        {kind === "custom" && (
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="field-label">Start</label>
-              <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="field" />
+              <input type="time" value={startTime} min={minStart ?? undefined} onChange={(e) => setStartTime(e.target.value)} className="field" />
             </div>
             <div>
               <label className="field-label">End</label>
-              <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="field" />
+              <input type="time" value={endTime} min={startTime} onChange={(e) => setEndTime(e.target.value)} className="field" />
             </div>
           </div>
         )}
 
         <div>
           <label className="field-label">
-            Reason <span className="text-neutral-400 font-normal">(optional)</span>
+            Reason <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
@@ -685,13 +802,13 @@ function AddOverrideModal({ onClose, onSuccess }: { onClose: () => void; onSucce
           />
         </div>
 
-        {error && <ErrorMsg>{error}</ErrorMsg>}
+        {(error || validationError) && <ErrorMsg>{error || validationError}</ErrorMsg>}
       </div>
       <ModalFooter
         onCancel={onClose}
         onConfirm={save}
         confirmLabel={busy ? "Saving…" : "Save Override"}
-        disabled={busy}
+        disabled={busy || !!validationError || !reason.trim()}
       />
     </Modal>
   );
