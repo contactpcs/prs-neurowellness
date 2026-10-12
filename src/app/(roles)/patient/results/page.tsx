@@ -1,10 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ClipboardList, ChevronDown, Activity, CalendarDays, ArrowUpRight, Search } from "lucide-react";
 import { useMyScores } from "@/lib/hooks";
 import { PageSkeleton, Card, CardContent, Input } from "@/components/ui";
+import { MyFinalReports } from "@/components/reports/MyFinalReports";
+
+type Tab = "assessments" | "final-reports";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "assessments", label: "Assessments" },
+  { id: "final-reports", label: "Final Reports" },
+];
 
 function severityTone(level?: string): string {
   switch (level?.toLowerCase()) {
@@ -26,6 +33,14 @@ export default function PatientResultsPage() {
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [dateFilter, setDateFilter] = useState("");
+  const [tab, setTab] = useState<Tab>("assessments");
+
+  // ?tab=final-reports deep link (the "report is ready" notification and the
+  // report page's Back button). Read after mount: the server render has no
+  // query string to read.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "final-reports") setTab("final-reports");
+  }, []);
 
   const toggle = (id: string) => {
     setOpenIds((prev) => {
@@ -54,9 +69,11 @@ export default function PatientResultsPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap flex-shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">My Results</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">Your completed assessment scores, most recent first.</p>
+          <p className="text-sm text-neutral-500 mt-0.5">
+            {tab === "assessments" ? "Your completed assessment scores, most recent first." : "Reports signed by your doctor."}
+          </p>
         </div>
-        {instances.length > 0 && (
+        {tab === "assessments" && instances.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <div className="relative w-full sm:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
@@ -82,7 +99,25 @@ export default function PatientResultsPage() {
         )}
       </div>
 
-      {instances.length === 0 ? (
+      <div className="flex gap-1 border-b border-neutral-200" role="tablist">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={tab === t.id}
+            onClick={() => setTab(t.id)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+              tab === t.id ? "border-primary-500 text-primary-700" : "border-transparent text-neutral-500 hover:text-neutral-700"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "final-reports" ? (
+        <MyFinalReports />
+      ) : instances.length === 0 ? (
         <Card>
           <CardContent className="py-16">
             <div className="flex flex-col items-center text-center gap-2.5">

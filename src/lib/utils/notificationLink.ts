@@ -11,6 +11,10 @@ export function patientNotificationHref(n: Notification): string | null {
   const str = (v: unknown): string | null =>
     typeof v === "string" && v.trim() ? v.trim() : null;
 
+  // A doctor-signed Final Report — open the report itself.
+  const entityId = str(meta.entity_id);
+  if (meta.entity_type === "final_report" && entityId) return `/patient/results/final-reports/${entityId}`;
+
   const appointmentId = str(meta.appointment_id) ?? str(meta.device_session_appointment_id);
   const protocolScaleId = str(meta.protocol_scale_id) ?? str(meta.session_scale_id);
   const scaleCode = str(meta.scale_code);

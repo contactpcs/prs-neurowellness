@@ -431,6 +431,16 @@ export const ENDPOINTS = {
     UPSERT: (patientId: string) => `/doctor-notes/patient/${patientId}`,      // NOT AVAILABLE
   },
 
+  // ─── Final Report (SQL/v1/117) — signed by the doctor, then immutable ───
+  FINAL_REPORTS: {
+    // real — GET ?scope=overall|last_consultation (doctor): live sections + note candidates, nothing stored
+    PREVIEW: (patientId: string) => `/patients/${patientId}/final-report/preview`,
+    // real — POST {scope, diagnosis, note_ids, confirm_sign} (doctor) signs; GET lists previous (doctor + admins)
+    FOR_PATIENT: (patientId: string) => `/patients/${patientId}/final-reports`,
+    MINE: "/me/final-reports", // real — GET ?scope=&date_from=&date_to=&sort=newest|oldest (patient)
+    ITEM: (reportId: string) => `/final-reports/${reportId}`, // real — GET the frozen report
+  },
+
   // ─── EEG Reports ───
   EEG: {
     UPLOAD: "/patients", // real base — actual flow is presign+PUT+confirm, composed in eeg.service.ts

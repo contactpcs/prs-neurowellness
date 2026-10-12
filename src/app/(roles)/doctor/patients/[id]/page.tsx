@@ -25,13 +25,11 @@ import type { Permission, AssessmentInstance, AnamnesisRecord } from "@/types/do
 import { EEGReportList, EEGUploadForm, NEDFUploadForm } from "@/components/eeg";
 import { TreatmentProtocolPanel, DeviceSessionsPanel } from "@/components/doctor/TreatmentProtocolPanel";
 import { SessionTabsBar } from "@/components/doctor/SessionTabsBar";
-import { SessionFinalReportModal } from "@/components/doctor/SessionFinalReportModal";
+import { FinalReportModal } from "@/components/doctor/FinalReportModal";
 import { CompareSessionsModal } from "@/components/doctor/CompareSessionsModal";
 import { usePatientClinicalSessions } from "@/lib/hooks/usePatientClinicalSessions";
 import { useGoBack } from "@/lib/hooks/useGoBack";
 import { usePatientVisitSummary } from "@/lib/hooks/usePatientVisitSummary";
-import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
-import type { ProtocolRead } from "@/types/treatmentProtocol.types";
 import { TreatmentPlanFull } from "@/components/doctor/TreatmentPlanFull";
 import { ClinicalActivityPanel } from "@/components/doctor/ClinicalActivityPanel";
 import { isFinalReportGenerated, markFinalReportGenerated } from "@/lib/utils/finalReportLock";
@@ -165,36 +163,27 @@ export default function DoctorPatientDetailPage() {
   // consultation's appointment is completed (the server enforces the same,
   // ANAMNESIS_LOCKED) — not frozen just because a newer visit exists.
   const anamnesisLocked = !sessionsLoading && (currentSessionIdx < 0 || currentSession?.appointment.status === "completed");
-  const [finalReportFor, setFinalReportFor] = useState<typeof currentSession>(null);
+  // The session the Final Report modal was opened from (null = opened with
+  // no consultation selected, e.g. before one was started).
+  const [finalReportFor, setFinalReportFor] = useState<{ session: typeof currentSession } | null>(null);
   const [showCompare, setShowCompare] = useState(false);
-  const [finalReportProtocol, setFinalReportProtocol] = useState<ProtocolRead | null>(null);
-  // Bumped whenever a Final Report is generated so isFinalReportGenerated()
+  // Bumped whenever a Final Report is signed so isFinalReportGenerated()
   // (backed by localStorage, not otherwise reactive) gets re-checked.
   const [finalReportLockTick, setFinalReportLockTick] = useState(0);
-  const openFinalReport = useCallback((session: typeof currentSession) => {
-    if (!session) return;
-    markFinalReportGenerated(session.appointment.appointment_id);
-    setFinalReportLockTick((t) => t + 1);
-    setFinalReportFor(session);
-  }, []);
+  const openFinalReport = useCallback((session: typeof currentSession) => setFinalReportFor({ session }), []);
+  // Only a SIGNED report locks the session's Treatment Plan — opening the
+  // modal and closing it again changes nothing.
+  const onFinalReportSigned = useCallback(
+    (report: { appointment_id: string | null }) => {
+      markFinalReportGenerated(report.appointment_id ?? finalReportFor?.session?.appointment.appointment_id);
+      setFinalReportLockTick((t) => t + 1);
+    },
+    [finalReportFor],
+  );
   const treatmentPlanLocked = useMemo(
     () => sessionLocked || (currentSession ? isFinalReportGenerated(currentSession.appointment.appointment_id) : false),
     [sessionLocked, currentSession, finalReportLockTick],
   );
-
-  useEffect(() => {
-    if (!finalReportFor) { setFinalReportProtocol(null); return; }
-    const cutoff = new Date(finalReportFor.appointment.appointment_date + "T23:59:59").getTime();
-    treatmentProtocolService
-      .listProtocols({ patientId: id })
-      .then((list) => {
-        const before = list
-          .filter((p) => p.created_at && new Date(p.created_at).getTime() <= cutoff)
-          .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
-        setFinalReportProtocol(before[0] ?? null);
-      })
-      .catch(() => setFinalReportProtocol(null));
-  }, [finalReportFor, id]);
 
   const updateQuery = useCallback(
     (updates: Record<string, string | null>) => {
@@ -1085,19 +1074,12 @@ export default function DoctorPatientDetailPage() {
       </div>
 
       {finalReportFor && (
-        <SessionFinalReportModal
+        <FinalReportModal
+          patientId={id}
           patientName={fullName}
-          mrn={patient?.mrn}
-          session={finalReportFor}
-          anamnesis={anamnesisRecord ?? null}
-          scoreSummary={(() => {
-            const latest = scoreInstances.slice().sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""))[0];
-            if (!latest) return null;
-            return `${latest.disease_score != null ? `Score ${latest.disease_score.toFixed(0)}/100` : ""}${latest.severity_label ? ` · ${latest.severity_label}` : ""}`.trim() || null;
-          })()}
-          doctorNoteText={doctorNotes[0]?.note_text ?? null}
-          protocol={finalReportProtocol}
+          defaultScope={finalReportFor.session ? "last_consultation" : "overall"}
           onClose={() => setFinalReportFor(null)}
+          onSigned={onFinalReportSigned}
         />
       )}
 

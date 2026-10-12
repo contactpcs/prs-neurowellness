@@ -13,6 +13,7 @@ import { filesService, type PatientFile } from "@/lib/api/services/files.service
 import { adminService } from "@/lib/api/services/admin.service";
 import { PatientJourneySections, type PatientJourneyDetail } from "@/components/admin/PatientJourneySections";
 import type { AdminPatient } from "@/types/admin.types";
+import { PatientFinalReports } from "@/components/reports/PatientFinalReports";
 
 // Matches patients/service.py _REGISTRATION_STEPS exactly.
 const PAGE_SIZE = 20;
@@ -329,6 +330,13 @@ function PatientDetailModal({ patient }: { patient: AdminPatient }) {
             ))}
           </div>
         )}
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+          <FileText className="h-3.5 w-3.5" />Final Reports
+        </p>
+        <PatientFinalReports patientId={patient.id} />
       </div>
 
       {loadError && <p className="text-xs text-red-500">{loadError}</p>}
