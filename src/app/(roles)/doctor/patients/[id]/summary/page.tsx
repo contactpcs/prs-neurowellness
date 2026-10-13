@@ -306,12 +306,7 @@ export default function DoctorPatientSummaryPage() {
                 {fullName[0]?.toUpperCase()}
               </div>
               <div className="flex-1 min-w-[220px]">
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <h1 className="text-xl font-bold text-neutral-900">{fullName}</h1>
-                  <span className="px-2.5 py-0.5 bg-green-50 text-green-700 text-xs font-semibold rounded-full">
-                    {patient.status ? patient.status.charAt(0).toUpperCase() + patient.status.slice(1) : "Active"}
-                  </span>
-                </div>
+                <h1 className="text-xl font-bold text-neutral-900">{fullName}</h1>
                 <p className="text-sm text-neutral-500 mt-1">
                   {patient.mrn || "—"} · {age != null ? `${age} yrs` : "—"} · {genderLabel || "—"} · DOB {formatDate(patient.date_of_birth)}
                 </p>

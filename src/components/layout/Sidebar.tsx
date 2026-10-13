@@ -11,9 +11,11 @@ import {
   LayoutDashboard, Users, ClipboardList,
   UserCircle, LogOut, ChevronLeft, Menu, Calendar, CalendarDays,
   ClipboardCheck, MapPin, Building2, UserCog, Settings, ShieldCheck,
-  ShoppingBag, Receipt, Bell, DollarSign, Activity, Syringe, BarChart2, Percent,
+  ShoppingBag, Receipt, Bell, DollarSign, Activity, BarChart2, Percent,
   TrendingUp, Cpu,
 } from "lucide-react";
+import { NeuroDeviceIcon } from "@/components/icons/NeuroDeviceIcon";
+import { BrainBoltIcon } from "@/components/icons/BrainBoltIcon";
 import { AnavaLogo } from "./AnavaLogo";
 
 interface NavItem {
@@ -50,8 +52,8 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { label: "Appointments", href: "/doctor/appointments", icon: CalendarDays, badge: "doctorPendingAppointments" },
     { label: "Schedule",     href: "/doctor/schedule",     icon: Calendar },
     { label: "Patients",     href: "/doctor/patients",     icon: Users },
-    { label: "Sessions",     href: "/doctor/sessions",     icon: Activity },
-    { label: "Treatment",    href: "/doctor/treatment",    icon: Syringe },
+    { label: "Sessions",     href: "/doctor/sessions",     icon: NeuroDeviceIcon },
+    { label: "Treatment Protocol", href: "/doctor/treatment",    icon: BrainBoltIcon },
     { label: "Notifications",href: "/doctor/notifications",icon: Bell, badge: "doctorUnreadNotifications" },
     { label: "Reports",      href: "/doctor/reports",      icon: BarChart2 },
     { label: "Analytics",    href: "/doctor/analytics",    icon: TrendingUp },
