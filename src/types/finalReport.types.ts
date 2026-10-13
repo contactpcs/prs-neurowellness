@@ -13,6 +13,42 @@ export interface FinalReportAnamnesis {
   sections: { title: string; items: { question: string; answer: string | null }[] }[];
 }
 
+export interface FinalReportPrsScale {
+  scale_code: string;
+  scale_name: string;
+  value: number | null;
+  max: number | null;
+  percentage: number | null;
+  severity_label: string | null;
+  /** true = not answered in this sitting: the latest earlier result,
+   * taken on taken_at. Absent on reports signed before 2026-10-13. */
+  carried?: boolean;
+  taken_at?: string | null;
+}
+
+/** PRS taken at the device sessions of one protocol instance ("Instance 1",
+ * "Instance 2", ... when the patient runs several devices): one row per
+ * session, no condition. (The condition a session scale is filed under in
+ * the database is arbitrary — see assembler._device_session_groups in the
+ * backend.) An instance with no PRS yet still has a block, with no entries. */
+export interface FinalReportPrsDeviceGroup {
+  instance_number?: number | null;
+  device_name: string | null;
+  /** The conditions the doctor selected on the protocol. */
+  conditions: string[];
+  entries: {
+    appointment_id: string;
+    completed_at: string | null;
+    session_number: number | null;
+    /** Plain average of the scales, 0-100, lower is better. */
+    score?: number | null;
+    severity_label?: string | null;
+    scales: FinalReportPrsScale[];
+  }[];
+  /** One weekly row of the session score. */
+  weekly_progress: { weeks: string[]; scores: (number | null)[] };
+}
+
 export interface FinalReportPrsEntry {
   instance_id: string;
   completed_at: string | null;
@@ -23,14 +59,7 @@ export interface FinalReportPrsEntry {
   device_name: string | null;
   session_number: number | null;
   conditions: string[];
-  scales: {
-    scale_code: string;
-    scale_name: string;
-    value: number | null;
-    max: number | null;
-    percentage: number | null;
-    severity_label: string | null;
-  }[];
+  scales: FinalReportPrsScale[];
 }
 
 export interface FinalReportPrsDisease {
@@ -64,6 +93,8 @@ export interface FinalReportMedication {
 
 export interface FinalReportTreatmentPlan {
   protocol_id: string;
+  /** Which of the patient's protocol instances this is (1, 2, ...). */
+  instance_number?: number | null;
   status: string;
   version: string;
   device_name: string | null;
@@ -109,7 +140,10 @@ export interface FinalReportSections {
   anamnesis: FinalReportAnamnesis[];
   diagnosis_codes: { icd10_code: string; icd10_description: string | null }[];
   brain_mapping: { available: boolean };
-  prs: { diseases: FinalReportPrsDisease[] };
+  /** diseases = the main PRS, per condition. device_sessions = PRS taken at
+   * device sessions (absent on reports signed before 2026-10-13, where
+   * those rows sit inside `diseases`). */
+  prs: { diseases: FinalReportPrsDisease[]; device_sessions?: FinalReportPrsDeviceGroup[] };
   doctor_notes: FinalReportNote[];
   medications: FinalReportMedication[];
   treatment_plans: FinalReportTreatmentPlan[];

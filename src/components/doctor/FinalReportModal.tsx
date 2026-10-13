@@ -5,7 +5,7 @@ import { X, Printer, Lock, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { finalReportsService } from "@/lib/api/services";
 import { extractErrorMessage } from "@/lib/api/errors";
-import { printElement } from "@/lib/utils/printElement";
+import { printFinalReport } from "@/components/reports/printFinalReport";
 import { FinalReportDocument } from "@/components/reports/FinalReportDocument";
 import { PatientFinalReports } from "@/components/reports/PatientFinalReports";
 import type { FinalReport, FinalReportPreview, FinalReportScope } from "@/types/finalReport.types";
@@ -73,8 +73,11 @@ export function FinalReportModal({
       return next;
     });
 
-  const print = () => {
-    if (docRef.current && !printElement(docRef.current, `Final Report — ${patientName}`)) {
+  // Takes the report explicitly: right after signing, the `signed` state is
+  // not yet visible to this closure.
+  const print = (report: FinalReport) => {
+    const meta = { sections: report.snapshot, signature: report.signature, reportId: report.report_id };
+    if (docRef.current && !printFinalReport(docRef.current, meta)) {
       toast.error("Allow pop-ups for this site to print the report.");
     }
   };
@@ -93,7 +96,7 @@ export function FinalReportModal({
       onSigned?.(report);
       toast.success("Final report signed and shared with the patient.");
       // Let the signed document render before it is copied to the print window.
-      setTimeout(print, 100);
+      setTimeout(() => print(report), 100);
     } catch (err) {
       toast.error(extractErrorMessage(err, "Could not sign the report."));
     } finally {
@@ -208,7 +211,7 @@ export function FinalReportModal({
                 sections={signed.snapshot}
                 diagnosis={signed.diagnosis}
                 signature={signed.signature}
-                contentHash={signed.content_hash}
+                reportId={signed.report_id}
               />
             ) : !preview ? (
               <div className="h-96 bg-white rounded-lg animate-pulse" />
@@ -223,7 +226,7 @@ export function FinalReportModal({
             Close
           </button>
           {signed ? (
-            <button onClick={print} className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-gradient rounded-lg">
+            <button onClick={() => print(signed)} className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-gradient rounded-lg">
               <Printer className="w-3.5 h-3.5" /> Print / Save as PDF
             </button>
           ) : (

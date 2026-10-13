@@ -7,7 +7,7 @@ import toast from "react-hot-toast";
 import { finalReportsService } from "@/lib/api/services";
 import { extractErrorMessage } from "@/lib/api/errors";
 import { useGoBack } from "@/lib/hooks";
-import { printElement } from "@/lib/utils/printElement";
+import { printFinalReport } from "@/components/reports/printFinalReport";
 import { PageSkeleton } from "@/components/ui";
 import { FinalReportDocument } from "@/components/reports/FinalReportDocument";
 import type { FinalReport } from "@/types/finalReport.types";
@@ -43,7 +43,8 @@ export default function PatientFinalReportPage() {
         </button>
         <button
           onClick={() => {
-            if (docRef.current && !printElement(docRef.current, "Final Report")) toast.error("Allow pop-ups for this site to print the report.");
+            const meta = { sections: report.snapshot, signature: report.signature, reportId: report.report_id };
+            if (docRef.current && !printFinalReport(docRef.current, meta)) toast.error("Allow pop-ups for this site to print the report.");
           }}
           className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-gradient rounded-lg"
         >
@@ -56,7 +57,7 @@ export default function PatientFinalReportPage() {
           sections={report.snapshot}
           diagnosis={report.diagnosis}
           signature={report.signature}
-          contentHash={report.content_hash}
+          reportId={report.report_id}
         />
       </div>
     </div>
