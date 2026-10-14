@@ -47,7 +47,7 @@ const SCOPE_LABEL: Record<FinalReportScope, string> = {
   last_consultation: "Last consultation",
 };
 
-const ORIGIN_LABEL: Record<string, string> = {
+export const ORIGIN_LABEL: Record<string, string> = {
   device_session: "Device session",
   initial: "Consultation",
   follow_up: "Follow-up",
@@ -256,9 +256,12 @@ function DevicePrsGroup({ group }: { group: FinalReportPrsDeviceGroup }) {
             </thead>
             <tbody>
               {group.entries.map((entry) => (
-                <tr key={entry.appointment_id}>
+                <tr key={entry.instance_id ?? entry.appointment_id}>
                   <td>{formatReportDate(entry.completed_at)}</td>
-                  <td>Device session{entry.session_number != null && ` #${entry.session_number}`}</td>
+                  <td>
+                    Device session{entry.session_number != null && ` #${entry.session_number}`}
+                    {entry.status === "in_progress" && <small>In progress</small>}
+                  </td>
                   <td>
                     {entry.score != null ? (
                       <div className="score">
@@ -317,6 +320,7 @@ function PrsGroup({ disease }: { disease: FinalReportPrsDisease }) {
                   {ORIGIN_LABEL[entry.origin] ?? capitalise(words(entry.origin))}
                   {entry.session_number != null && ` #${entry.session_number}`}
                   {detail && <small>{detail}</small>}
+                  {entry.status === "in_progress" && <small>In progress</small>}
                 </td>
                 <td>
                   {entry.score != null ? (

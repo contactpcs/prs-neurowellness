@@ -25,7 +25,7 @@ import type { Permission, AssessmentInstance, AnamnesisRecord } from "@/types/do
 import { EEGReportList, EEGUploadForm, NEDFUploadForm } from "@/components/eeg";
 import { TreatmentProtocolPanel, DeviceSessionsPanel } from "@/components/doctor/TreatmentProtocolPanel";
 import { SessionTabsBar } from "@/components/doctor/SessionTabsBar";
-import { FinalReportModal } from "@/components/doctor/FinalReportModal";
+import { FinalReportWorkspace } from "@/components/doctor/FinalReportWorkspace";
 import { CompareSessionsModal } from "@/components/doctor/CompareSessionsModal";
 import { usePatientClinicalSessions } from "@/lib/hooks/usePatientClinicalSessions";
 import { useGoBack } from "@/lib/hooks/useGoBack";
@@ -163,14 +163,13 @@ export default function DoctorPatientDetailPage() {
   // consultation's appointment is completed (the server enforces the same,
   // ANAMNESIS_LOCKED) — not frozen just because a newer visit exists.
   const anamnesisLocked = !sessionsLoading && (currentSessionIdx < 0 || currentSession?.appointment.status === "completed");
-  // The session the Final Report modal was opened from (null = opened with
-  // no consultation selected, e.g. before one was started).
+  // The session the Final Report section was opened from (null = opened with
+  // no consultation selected, e.g. before one was started, or by URL).
   const [finalReportFor, setFinalReportFor] = useState<{ session: typeof currentSession } | null>(null);
   const [showCompare, setShowCompare] = useState(false);
   // Bumped whenever a Final Report is signed so isFinalReportGenerated()
   // (backed by localStorage, not otherwise reactive) gets re-checked.
   const [finalReportLockTick, setFinalReportLockTick] = useState(0);
-  const openFinalReport = useCallback((session: typeof currentSession) => setFinalReportFor({ session }), []);
   // Only a SIGNED report locks the session's Treatment Plan — opening the
   // modal and closing it again changes nothing.
   const onFinalReportSigned = useCallback(
@@ -201,6 +200,15 @@ export default function DoctorPatientDetailPage() {
   const setSelectedSection = useCallback(
     (s: string) => updateQuery({ section: s === "anamnesis" ? null : s }),
     [updateQuery],
+  );
+  // The Final Report is a workspace section (like the Treatment Plan), not a
+  // pop-up: remember which session it was opened from, then show it.
+  const openFinalReport = useCallback(
+    (session: typeof currentSession) => {
+      setFinalReportFor({ session });
+      setSelectedSection("final-report");
+    },
+    [setSelectedSection],
   );
   const [basicOpen, setBasicOpen] = useState(true);
   const [eegRefreshKey, setEegRefreshKey] = useState(0);
@@ -789,6 +797,14 @@ export default function DoctorPatientDetailPage() {
                   onNavigateSection={setSelectedSection}
                   onGenerateFinalReport={() => openFinalReport(currentSession)}
                 />
+              ) : selectedSection === "final-report" ? (
+                <FinalReportWorkspace
+                  key={finalReportFor?.session ? "last_consultation" : "overall"}
+                  patientId={id}
+                  patientName={fullName}
+                  defaultScope={finalReportFor?.session ? "last_consultation" : "overall"}
+                  onSigned={onFinalReportSigned}
+                />
               ) : selectedSection === "sessions" ? (
                 <DeviceSessionsPanel patientId={id} />
               ) : selectedSection === "activity" ? (
@@ -1084,15 +1100,6 @@ export default function DoctorPatientDetailPage() {
         </button>
       </div>
 
-      {finalReportFor && (
-        <FinalReportModal
-          patientId={id}
-          patientName={fullName}
-          defaultScope={finalReportFor.session ? "last_consultation" : "overall"}
-          onClose={() => setFinalReportFor(null)}
-          onSigned={onFinalReportSigned}
-        />
-      )}
 
       {showCompare && (
         <CompareSessionsModal patientId={id} sessions={clinicalSessions} onClose={() => setShowCompare(false)} />

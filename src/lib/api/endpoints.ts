@@ -433,7 +433,7 @@ export const ENDPOINTS = {
 
   // ─── Final Report (SQL/v1/117) — signed by the doctor, then immutable ───
   FINAL_REPORTS: {
-    // real — GET ?scope=overall|last_consultation (doctor): live sections + note candidates, nothing stored
+    // real — POST {scope, selection?} (doctor): live sections + per-section candidates, nothing stored
     PREVIEW: (patientId: string) => `/patients/${patientId}/final-report/preview`,
     // real — POST {scope, diagnosis, note_ids, confirm_sign} (doctor) signs; GET lists previous (doctor + admins)
     FOR_PATIENT: (patientId: string) => `/patients/${patientId}/final-reports`,
