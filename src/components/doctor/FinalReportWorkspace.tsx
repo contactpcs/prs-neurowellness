@@ -44,12 +44,17 @@ interface PickItem {
 }
 
 /** The patient's full history for one section, with a tick per item. Apply
- * returns the ticked ids; the report is rebuilt from them. */
+ * returns the ticked ids; the report is rebuilt from them. With an `editor`
+ * (the consultation is still open) a second tab runs that section's own
+ * form/wizard in place; once it saves, the report reloads and the new record
+ * comes back here already ticked. */
 function SectionPicker({
   title,
   items,
   selected,
   wide,
+  editor,
+  onEdited,
   onApply,
   onClose,
 }: {
@@ -58,10 +63,24 @@ function SectionPicker({
   selected: string[];
   /** Wider dialog, for items that carry their full details. */
   wide?: boolean;
+  editor?: SectionEditor;
+  /** A record was added/changed in the editor — reload the report. */
+  onEdited: () => void;
   onApply: (ids: string[]) => void;
   onClose: () => void;
 }) {
   const [ticked, setTicked] = useState<Set<string>>(new Set(selected));
+  const [tab, setTab] = useState<"choose" | "edit">("choose");
+  // Ids already shown; anything new after an edit is ticked and badged.
+  const known = useRef<Set<string>>(new Set(items.map((i) => i.id)));
+  const [fresh, setFresh] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const added = items.map((i) => i.id).filter((id) => !known.current.has(id));
+    if (added.length === 0) return;
+    added.forEach((id) => known.current.add(id));
+    setTicked((prev) => new Set([...prev, ...added]));
+    setFresh((prev) => new Set([...prev, ...added]));
+  }, [items]);
   const groups = useMemo(() => {
     const out: { name: string; items: PickItem[] }[] = [];
     for (const item of items) {
@@ -79,18 +98,53 @@ function SectionPicker({
       return next;
     });
 
+  // The open editor, if its tab is showing.
+  const editing = tab === "edit" ? editor : undefined;
+  const size = editing ? (editing.size === "wizard" ? "max-w-6xl h-full" : "max-w-3xl") : wide ? "max-w-3xl" : "max-w-lg";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-3 py-4" role="dialog" aria-modal="true" aria-label={title}>
-      <div className={`bg-white rounded-xl shadow-xl w-full ${wide ? "max-w-3xl" : "max-w-lg"} max-h-full flex flex-col overflow-hidden`}>
+      <div className={`bg-white rounded-xl shadow-xl w-full ${size} max-h-full flex flex-col overflow-hidden`}>
         <div className="flex items-start justify-between gap-3 px-5 py-3.5 border-b border-neutral-100">
           <div>
             <h3 className="text-sm font-bold text-neutral-900">{title}</h3>
-            <p className="text-xs text-neutral-500 mt-0.5">Everything on record for this patient. Tick what goes into the report.</p>
+            <p className="text-xs text-neutral-500 mt-0.5">
+              {editing ? editing.hint : "Everything on record for this patient. Tick what goes into the report."}
+            </p>
           </div>
           <button onClick={onClose} aria-label="Close" className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-lg hover:bg-neutral-100">
             <X className="w-4 h-4" />
           </button>
         </div>
+        {editor && (
+          <div className="flex gap-1 px-5 pt-2 border-b border-neutral-100 text-xs" role="tablist">
+            {(
+              [
+                ["choose", "Choose for report"],
+                ["edit", editor.label],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={tab === key}
+                onClick={() => setTab(key)}
+                className={`px-3 py-2 -mb-px border-b-2 font-semibold ${tab === key ? "border-primary-600 text-primary-700" : "border-transparent text-neutral-500 hover:text-neutral-700"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {editing ? (
+          <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+            {editing.render(() => {
+              setTab("choose");
+              onEdited();
+            })}
+          </div>
+        ) : (
+        <>
         <div className="flex items-center gap-3 px-5 py-2 border-b border-neutral-100 text-xs">
           <button onClick={() => setTicked(new Set(items.map((i) => i.id)))} className="font-semibold text-primary-600 hover:text-primary-700">
             Select all
@@ -118,7 +172,10 @@ function SectionPicker({
                       <label className="flex items-start gap-2.5 rounded-lg px-2 py-2 hover:bg-neutral-50 cursor-pointer">
                         <input type="checkbox" className="mt-0.5" checked={ticked.has(item.id)} onChange={() => toggle(item.id)} />
                         <span className="min-w-0">
-                          <span className="block text-[13px] font-medium text-neutral-800">{item.label}</span>
+                          <span className="block text-[13px] font-medium text-neutral-800">
+                            {item.label}
+                            {fresh.has(item.id) && <Pill className="ml-1.5 bg-green-50 text-green-700">New</Pill>}
+                          </span>
                           {item.sub && <span className="block text-xs text-neutral-500 line-clamp-2">{item.sub}</span>}
                         </span>
                       </label>
@@ -138,6 +195,8 @@ function SectionPicker({
             Apply
           </button>
         </div>
+        </>
+        )}
       </div>
     </div>
   );
@@ -330,6 +389,18 @@ function PrsBody({ sections }: { sections: FinalReportSections }) {
 
 type PickerKey = "anamnesis" | "prs" | "notes" | "medicines" | "protocols" | "sessions" | "diagnosis";
 
+/** One section's in-place editor, for the pencil pop-up's "Add or edit" tab. */
+export interface SectionEditor {
+  label: string;
+  hint: string;
+  /** "wizard" = a multi-step flow that needs the near-full-screen dialog. */
+  size?: "form" | "wizard";
+  /** `done` once the record is saved: the report reloads and ticks it. */
+  render: (done: () => void) => React.ReactNode;
+}
+
+export type FinalReportEditors = Partial<Record<"anamnesis" | "prs" | "notes" | "medicines" | "protocols", SectionEditor>>;
+
 /** The Final Report as a workspace section, laid out like the Treatment Plan:
  * one card per report section, each with a pencil that opens the patient's
  * full history for that section so the doctor picks what goes in. Nothing is
@@ -339,11 +410,15 @@ export function FinalReportWorkspace({
   patientId,
   patientName,
   defaultScope,
+  editors,
   onSigned,
 }: {
   patientId: string;
   patientName: string;
   defaultScope: FinalReportScope;
+  /** Present only while the consultation is open: lets each pencil edit its
+   * section in place, as many times as needed, without leaving the report. */
+  editors?: FinalReportEditors;
   onSigned?: (report: FinalReport) => void;
 }) {
   const [scope, setScope] = useState<FinalReportScope>(defaultScope);
@@ -358,6 +433,8 @@ export function FinalReportWorkspace({
   const [signed, setSigned] = useState<FinalReport | null>(null);
   const [picker, setPicker] = useState<PickerKey | null>(null);
   const [previousKey, setPreviousKey] = useState(0);
+  // Bumped after an in-place edit so the preview (and its candidates) reload.
+  const [reloadKey, setReloadKey] = useState(0);
   const docRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -373,7 +450,7 @@ export function FinalReportWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [patientId, scope, selection, signed]);
+  }, [patientId, scope, selection, signed, reloadKey]);
 
   const sections = signed?.snapshot ?? preview?.sections ?? null;
   const candidates = preview?.candidates;
@@ -522,7 +599,10 @@ export function FinalReportWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [picker, candidates, current]);
 
-  const pencil = (key: PickerKey, label: string) => (locked || !preview ? null : <PencilButton onClick={() => setPicker(key)} label={`Choose ${label}`} />);
+  const pencil = (key: PickerKey, label: string) =>
+    locked || !preview ? null : (
+      <PencilButton onClick={() => setPicker(key)} label={editors?.[key as keyof FinalReportEditors] ? `Choose or edit ${label}` : `Choose ${label}`} />
+    );
   const devices = sections?.prs.device_sessions ?? [];
   const prsRows = (sections?.prs.diseases.reduce((n, d) => n + d.entries.length, 0) ?? 0) + devices.reduce((n, g) => n + g.entries.length, 0);
 
@@ -803,6 +883,8 @@ export function FinalReportWorkspace({
           items={pickerConfig.items}
           selected={pickerConfig.selected}
           wide={pickerConfig.wide}
+          editor={picker && picker !== "sessions" && picker !== "diagnosis" ? editors?.[picker] : undefined}
+          onEdited={() => setReloadKey((k) => k + 1)}
           onApply={pickerConfig.apply}
           onClose={() => setPicker(null)}
         />
