@@ -309,6 +309,8 @@ export const ENDPOINTS = {
     UPDATE: (id: string) => `/treatment-protocols/${id}`,
     SESSIONS: (id: string) => `/treatment-protocols/${id}/sessions`,
     ACTIVATE: (id: string) => `/treatment-protocols/${id}/activate`,
+    // POST — next minor version with only the sent fields changed; takes over the not-yet-started sessions and goes live
+    AMEND: (id: string) => `/treatment-protocols/${id}/amend`,
     CANCEL: (id: string) => `/treatment-protocols/${id}/cancel`,
     COMPLETE: (id: string) => `/treatment-protocols/${id}/complete`,
     PRS_DEVICE_SESSION: (id: string) => `/treatment-protocols/${id}/prs/device-session`,

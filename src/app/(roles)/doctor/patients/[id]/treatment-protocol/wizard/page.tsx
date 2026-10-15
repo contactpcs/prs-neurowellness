@@ -5,6 +5,7 @@ import { TreatmentProtocolWizard } from "@/components/doctor/TreatmentProtocolWi
 
 // The wizard itself lives in components/ so the Final Report's edit pop-up
 // can run the same steps without leaving the patient workspace.
+// mode=modify opens it prefilled from the protocol, on its Review step.
 export default function TreatmentProtocolWizardPage() {
   const { id: patientId } = useParams<{ id: string }>();
   const searchParams = useSearchParams();

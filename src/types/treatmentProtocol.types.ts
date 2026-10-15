@@ -585,8 +585,58 @@ export interface ProtocolDetail extends ProtocolRead {
   /** Hydrated when custom_montage_id is set instead of placement_id/
    *  dosing_id — mutually exclusive with placement/dosing above. */
   custom_montage?: CustomMontageRead | null;
+  conditions?: { protocol_condition_id: string; condition_id: string | null; condition_name: string | null; other_text: string | null }[];
+  diagnoses?: { protocol_diagnosis_id: string; diagnosis_id: string; icd10_code: string | null; icd10_description: string | null; condition_name: string | null }[];
+  scales?: {
+    protocol_scale_id: string;
+    scale_id: string | null;
+    prs_scale_id: string | null;
+    scale_code: string | null;
+    scale_name: string | null;
+    /** Stored value: baseline | per_checkpoint | weekly | fortnightly | end_of_treatment */
+    cadence: string;
+    window_days: number | null;
+    answered_by: string;
+    display_order: number;
+  }[];
   sessions: ProtocolSessionRead[];
   follow_ups: ProtocolSessionRead[];
+}
+
+/** POST /treatment-protocols/{id}/amend — only the fields sent change.
+ *  scales / diagnosis_ids replace the whole list when sent. */
+export interface ProtocolAmend {
+  reason: string;
+  clinical_note: string;
+  /** A new device needs its own montage in the same request. */
+  device_id?: string;
+  device_unit_id?: string;
+  /** placement_id + dosing_id together, or custom_montage_id alone. */
+  placement_id?: string;
+  dosing_id?: string;
+  custom_montage_id?: string;
+  conditions?: ProtocolConditionAssignment[];
+  /** Any schedule field re-plans the sessions not yet run. session_count is
+   *  the whole course; delivered sessions count toward it. */
+  session_count?: number;
+  sessions_per_week?: number;
+  follow_up_every_n?: number;
+  start_date?: string;
+  skip_dates?: string[];
+  extra_dates?: string[];
+  prescribed_current_ma?: number;
+  prescribed_duration_min?: number;
+  ramp_seconds?: number;
+  prescribed_tvns_wavelength?: "alternant" | "biphasic";
+  prescribed_tvns_pattern?: "continuous" | "modulation" | "intermittent";
+  prescribed_tvns_strength_pct?: number;
+  prescribed_tvns_frequency_hz?: number;
+  prescribed_tvns_pulse_width_us?: number;
+  prescribed_tvns_duration_min?: number;
+  prescribed_tvns_ramp_up_sec?: number;
+  prescribed_tvns_ramp_down_sec?: number;
+  scales?: ProtocolScaleAssignment[];
+  diagnosis_ids?: string[];
 }
 
 // ─── PRS responses ───
