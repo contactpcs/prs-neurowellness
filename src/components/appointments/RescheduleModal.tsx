@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarDays, Info } from "lucide-react";
 import { Modal, Button } from "@/components/ui";
-import { appointmentsService } from "@/lib/api/services/appointments.service";
+import { appointmentsService, type RescheduleOptions } from "@/lib/api/services/appointments.service";
 import type { Appointment, AvailabilitySlot } from "@/types/domain.types";
 
 const DISPLAY_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -34,17 +34,23 @@ interface RescheduleModalProps {
   onClose: () => void;
   appointment: Appointment;
   onRescheduled: (appointment: Appointment) => void;
+  /** From myRescheduleOptions(): limits the pickable dates (e.g. the two
+   * days after a course ends for a missed device session) and carries the
+   * reason to show. */
+  options?: RescheduleOptions | null;
 }
 
-/** Moves a missed (no_show) — or still-booked selected/paid — appointment to
- * a new slot on the same doctor's calendar. Mirrors BookAppointmentModal's
- * week-view picker exactly, just calls myReschedule() on an EXISTING
- * appointment instead of creating a new one via bookInitial/bookFollowUp.
- * Not for a protocol-born appointment (device_session/protocol_followup) —
- * the backend rejects those with USE_CLAIM_SLOT_INSTEAD; the caller should
- * route those through ClaimSlotModal instead. */
-export function RescheduleModal({ isOpen, onClose, appointment, onRescheduled }: RescheduleModalProps) {
-  const [weekMonday, setWeekMonday] = useState<Date>(() => getMondayOf(new Date()));
+/** Moves a booked or missed appointment to a new slot. Mirrors
+ * BookAppointmentModal's week-view picker, just calls myReschedule() on an
+ * EXISTING appointment. A device session picks from its clinic device's
+ * slots; everything else from the doctor's calendar. Dates outside
+ * options.earliest_date..latest_date are not offered. A still-'planned'
+ * protocol session uses ClaimSlotModal instead. */
+export function RescheduleModal({ isOpen, onClose, appointment, onRescheduled, options }: RescheduleModalProps) {
+  const isDevice = appointment.appointment_type === "device_session";
+  const earliest = options?.earliest_date ?? null;
+  const latest = options?.latest_date ?? null;
+  const [weekMonday, setWeekMonday] = useState<Date>(() => getMondayOf(earliest ? new Date(earliest + "T00:00:00") : new Date()));
   const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [picked, setPicked] = useState<AvailabilitySlot | null>(null);
@@ -59,12 +65,14 @@ export function RescheduleModal({ isOpen, onClose, appointment, onRescheduled }:
     setLoadingSlots(true);
     const end = new Date(monday);
     end.setDate(monday.getDate() + 6);
-    appointmentsService
-      .myAvailability(toDateStr(monday), toDateStr(end))
-      .then(setSlots)
+    (isDevice
+      ? appointmentsService.deviceAvailability(appointment.appointment_id, toDateStr(monday), toDateStr(end))
+      : appointmentsService.myAvailability(toDateStr(monday), toDateStr(end))
+    )
+      .then((rows) => setSlots(rows.filter((r) => (!earliest || r.date >= earliest) && (!latest || r.date <= latest))))
       .catch(() => setSlots([]))
       .finally(() => setLoadingSlots(false));
-  }, []);
+  }, [isDevice, appointment.appointment_id, earliest, latest]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -104,6 +112,12 @@ export function RescheduleModal({ isOpen, onClose, appointment, onRescheduled }:
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Reschedule Appointment" className="max-w-2xl">
+      {options?.date_rule_reason && (
+        <div className="flex items-start gap-2 mb-3 rounded-lg border border-primary-100 bg-primary-50 px-3 py-2.5">
+          <Info className="h-4 w-4 text-primary-600 mt-0.5 flex-shrink-0" />
+          <p className="text-xs text-primary-800 leading-relaxed">{options.date_rule_reason}</p>
+        </div>
+      )}
       {!picked ? (
         <div>
           <div className="flex items-center justify-between mb-3">
@@ -118,8 +132,11 @@ export function RescheduleModal({ isOpen, onClose, appointment, onRescheduled }:
               </button>
               <span className="text-sm font-medium text-neutral-700">{weekLabel}</span>
             </div>
-            <button onClick={() => setWeekMonday(getMondayOf(new Date()))} className="text-xs font-medium text-primary-600 hover:text-primary-700">
-              This week
+            <button
+              onClick={() => setWeekMonday(getMondayOf(earliest ? new Date(earliest + "T00:00:00") : new Date()))}
+              className="text-xs font-medium text-primary-600 hover:text-primary-700"
+            >
+              {earliest ? "First allowed week" : "This week"}
             </button>
           </div>
 

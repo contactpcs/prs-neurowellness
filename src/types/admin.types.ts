@@ -47,6 +47,8 @@ export interface AdminClinic {
    * the onboarding lifecycle). FALSE blocks new doctor-schedule writes and
    * new appointment creation/claim/reschedule at this clinic. */
   is_operational: boolean;
+  /** Patient reschedule notice in hours for this clinic; null = platform default (24). */
+  reschedule_min_hours: number | null;
   region_id: string;
   clinic_admin_id: string | null;
   is_main_branch: boolean;

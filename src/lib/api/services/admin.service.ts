@@ -38,6 +38,7 @@ function mapClinic(c: Record<string, unknown>): AdminClinic {
     region_id: String(c.region_id ?? ""),
     clinic_admin_id: (c.clinic_admin_id as string | null) ?? null,
     is_operational: c.is_operational !== false,
+    reschedule_min_hours: c.reschedule_min_hours == null ? null : Number(c.reschedule_min_hours),
     is_main_branch: Boolean(c.is_main_branch),
     address: (c.address as string) ?? undefined,
     full_address: (c.full_address as string) ?? undefined,
@@ -215,6 +216,13 @@ export const adminService = {
   // creation/claim/reschedule at this clinic (scheduling/service.py).
   async setClinicOperationalStatus(id: string, isOperational: boolean): Promise<AdminClinic> {
     const res = await apiClient.patch(ENDPOINTS.ADMIN.CLINIC(id), { is_operational: isOperational });
+    return mapClinic(res.data);
+  },
+
+  // Patient reschedule notice for this clinic, in hours (clinic_admin for
+  // own clinic, regional/super admin). Never set = platform default 24 h.
+  async setClinicRescheduleMinHours(id: string, hours: number): Promise<AdminClinic> {
+    const res = await apiClient.patch(ENDPOINTS.ADMIN.CLINIC(id), { reschedule_min_hours: hours });
     return mapClinic(res.data);
   },
 

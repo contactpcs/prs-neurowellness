@@ -328,4 +328,51 @@ export const appointmentsService = {
     const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.DEVICE_DAY_AVAILABILITY(appointmentId));
     return data;
   },
+
+  // Whether an appointment can be moved now, and to which dates. For a
+  // no-show/missed device session the window is the two days after the
+  // course's last session; date_rule_reason carries the text to show while
+  // the patient picks. latest_date null = no upper bound.
+  async myRescheduleOptions(appointmentId: string): Promise<RescheduleOptions> {
+    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.MY_RESCHEDULE_OPTIONS(appointmentId));
+    return data;
+  },
+
+  async rescheduleOptions(appointmentId: string): Promise<RescheduleOptions> {
+    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.RESCHEDULE_OPTIONS(appointmentId));
+    return data;
+  },
+
+  // Policy note shown before booking. A patient always gets their own
+  // clinic's; staff pass clinicId (or get their own clinic).
+  async getPolicy(clinicId?: string): Promise<AppointmentPolicy> {
+    const { data } = await apiClient.get(ENDPOINTS.APPOINTMENTS.POLICY, { params: clinicId ? { clinic_id: clinicId } : undefined });
+    return data;
+  },
 };
+
+export interface RescheduleOptions {
+  appointment_id: string;
+  status: string;
+  can_reschedule: boolean;
+  blocked_reason: string | null;
+  min_notice_hours: number | null;
+  earliest_date: string | null;
+  latest_date: string | null;
+  date_rule_reason: string | null;
+}
+
+export interface AppointmentPolicy {
+  clinic_id: string;
+  values: {
+    payment_required: boolean;
+    hold_minutes: number;
+    reschedule_min_hours: number;
+    no_show_grace_hours: number;
+    device_makeup_window_days: number;
+    refund_tiers_appointment: { min_hours_before: number; refund_percent: number }[];
+    refund_tiers_device_session: { min_hours_before: number; refund_percent: number }[];
+  };
+  sections: { key: string; title: string; points: string[] }[];
+  acknowledgement: string;
+}
