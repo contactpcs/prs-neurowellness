@@ -42,6 +42,16 @@ export interface Payment {
  * frontend needs to open Razorpay Checkout. */
 export interface PaymentOrder extends Payment {
   razorpay_key_id: string | null;
+  /** When the booking's 15-minute hold ends; checkout must close before it. */
+  hold_expires_at: string | null;
+}
+
+/** Seconds Razorpay Checkout may stay open: the time left on the booking's
+ * hold, less a small margin so payment can't land after the slot is
+ * released. null = no hold (nothing to limit); <= 0 = already expired. */
+export function checkoutSecondsLeft(order: PaymentOrder, marginSeconds = 20): number | null {
+  if (!order.hold_expires_at) return null;
+  return Math.floor((Date.parse(order.hold_expires_at) - Date.now()) / 1000) - marginSeconds;
 }
 
 /** Resolved price for display before checkout starts — no order/payment row

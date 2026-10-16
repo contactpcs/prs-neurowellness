@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Banknote, Smartphone, CreditCard, Loader2, CheckCircle2, Download, Lock, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
-import { paymentsService, saveBlobAsFile, type PaymentAmount } from "@/lib/api/services/payments.service";
+import { paymentsService, saveBlobAsFile, checkoutSecondsLeft, type PaymentAmount } from "@/lib/api/services/payments.service";
 import { loadRazorpayScript } from "@/components/appointments/MockPaymentModal";
 import type { Appointment } from "@/types/domain.types";
 
@@ -145,7 +145,12 @@ export function StaffPaymentPanel({
       if (!order.razorpay_key_id || !order.razorpay_order_id) {
         throw new Error("Online payment gateway is not configured — collect cash or contact the clinic admin");
       }
+      const secondsLeft = checkoutSecondsLeft(order);
+      if (secondsLeft !== null && secondsLeft <= 0) {
+        throw new Error("The hold on this slot has ended — book the slot again before taking payment");
+      }
       const checkout = new window.Razorpay({
+        ...(secondsLeft !== null ? { timeout: secondsLeft } : {}),
         key: order.razorpay_key_id,
         order_id: order.razorpay_order_id,
         amount: Math.round(order.amount * 100),
