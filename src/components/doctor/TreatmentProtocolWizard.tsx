@@ -15,7 +15,7 @@ import { PlacementMap } from "@/app/(roles)/doctor/patients/[id]/treatment-proto
 import { PatientClinicalSnapshot } from "@/components/doctor/PatientClinicalSnapshot";
 import type {
   DeviceRead, ConditionRead, DiagnosisRead, DiagnosisResolution, PlacementRead, DosingRead, ScaleRead,
-  SchedulePreview, ProtocolCreate, ProtocolScaleAssignment, ProtocolRead, CustomMontageCreate,
+  SchedulePreview, ProtocolCreate, ProtocolScaleAssignment, ProtocolRead, ProtocolDetail, ProtocolAmend, CustomMontageCreate,
   DeviceScheduleRead, DeviceOverrideRead, DeviceSlotRead,
 } from "@/types/treatmentProtocol.types";
 import {
@@ -24,7 +24,29 @@ import {
 
 const STEP_LABELS = ["Device", "Condition", "Diagnosis", "Placement", "Dosing", "Scales", "Schedule", "Review"];
 const REASON_OPTIONS = ["Patient discomfort", "Patient tolerance", "Clinical reassessment", "Treatment response", "Other"];
-const CADENCE_OPTIONS = ["After every session", "Weekly", "Every 2 weeks", "At re-assessment only", "Baseline & end only", "Monthly"];
+const CADENCE_OPTIONS = ["After every session", "Weekly", "Every 2 weeks", "At re-assessment only", "Baseline only", "Baseline & end only", "End of treatment", "Monthly"];
+// Stored cadence (core.protocol_scales) -> the label shown for it, so an
+// existing protocol's scales show their cadence when modified. The backend
+// normalises the label back (schemas.normalise_cadence).
+const CADENCE_LABEL: Record<string, string> = {
+  baseline: "Baseline only",
+  per_checkpoint: "At re-assessment only",
+  weekly: "Weekly",
+  fortnightly: "Every 2 weeks",
+  end_of_treatment: "End of treatment",
+};
+// Label -> stored value, mirroring schemas.CADENCE_ALIASES for these labels.
+const CADENCE_STORED: Record<string, string> = {
+  "After every session": "per_checkpoint",
+  "Weekly": "weekly",
+  "Every 2 weeks": "fortnightly",
+  "At re-assessment only": "per_checkpoint",
+  "Baseline only": "baseline",
+  "Baseline & end only": "end_of_treatment",
+  "End of treatment": "end_of_treatment",
+  "Monthly": "fortnightly",
+};
+const NOT_STARTED = ["planned", "selected", "paid"];
 const FREQ_OPTIONS = [1, 2, 3, 5, 7];
 
 interface AssignedScale extends ProtocolScaleAssignment {
@@ -147,7 +169,7 @@ export function TreatmentProtocolWizard({
   // same patient. Only a genuine refresh/back-forward within this window
   // still resumes; anything past it starts clean from step 0.
   const DRAFT_TTL_MS = 30 * 60 * 1000;
-  const readDraft = (): { step: number; state: WizardState } | null => {
+  const readDraft = (): { step: number; state: WizardState; visited: number[] } | null => {
     if (typeof window === "undefined") return null;
     try {
       const raw = sessionStorage.getItem(storageKey);
@@ -157,21 +179,35 @@ export function TreatmentProtocolWizard({
         sessionStorage.removeItem(storageKey);
         return null;
       }
-      return { step: parsed.step ?? 0, state: { ...emptyState(), ...parsed.state } };
+      const step = parsed.step ?? 0;
+      return {
+        step,
+        state: { ...emptyState(), ...parsed.state },
+        // Drafts saved before `visited` existed: everything up to the saved step.
+        visited: Array.isArray(parsed.visited) ? parsed.visited : Array.from({ length: step + 1 }, (_, i) => i),
+      };
     } catch { return null; }
   };
   const [step, setStep] = useState<number>(() => readDraft()?.step ?? 0);
   const [state, setState] = useState<WizardState>(() => readDraft()?.state ?? emptyState());
+  // Steps the doctor has actually opened. Picking a condition/diagnosis
+  // pre-fills later steps (suggested montage and dose) — those values are
+  // suggestions until the doctor opens the step, so a step ahead is never
+  // shown as done just because something filled it in the background.
+  const [visited, setVisited] = useState<number[]>(() => readDraft()?.visited ?? [0]);
+  useEffect(() => {
+    setVisited((v) => (v.includes(step) ? v : [...v, step]));
+  }, [step]);
 
   useEffect(() => {
     try {
-      sessionStorage.setItem(storageKey, JSON.stringify({ step, state, savedAt: Date.now() }));
+      sessionStorage.setItem(storageKey, JSON.stringify({ step, state, visited, savedAt: Date.now() }));
     } catch {
       // Storage full/unavailable (private browsing, quota) — the wizard
       // still works for the current session, it just won't survive a
       // reload. Not worth surfacing to the doctor mid-form.
     }
-  }, [storageKey, step, state]);
+  }, [storageKey, step, state, visited]);
   const [reasonGateOpen, setReasonGateOpen] = useState(mode === "modify");
   const [reasonLabel, setReasonLabel] = useState("");
   const [reasonNote, setReasonNote] = useState("");
@@ -240,16 +276,42 @@ export function TreatmentProtocolWizard({
   const isTvns = selectedDevice?.modality === "tVNS";
 
   // ─── Prefill from an existing active protocol when modifying ───
+  // Every step is filled from the protocol as prescribed and the wizard opens
+  // on Review, so the doctor jumps straight to the section to change. The
+  // prefilled state is kept to send only what actually changed.
+  const original = useRef<{ detail: ProtocolDetail; state: WizardState } | null>(null);
   useEffect(() => {
     if (mode !== "modify" || !priorProtocolId) return;
     treatmentProtocolService.getProtocolDetail(priorProtocolId).then((detail) => {
-      setState((s) => ({
+      const montage = detail.custom_montage;
+      const nextSession = [...detail.sessions]
+        .filter((x) => NOT_STARTED.includes(x.status) && x.appointment_date >= todayIso())
+        .sort((a, b) => a.appointment_date.localeCompare(b.appointment_date))[0];
+      const fill = (s: WizardState): WizardState => ({
         ...s,
         deviceId: detail.device_id,
+        conditionIds: (detail.conditions ?? []).map((c) => c.condition_id).filter((id): id is string => !!id),
+        diagnosisIds: (detail.diagnoses ?? []).map((d) => d.diagnosis_id),
+        scales: (detail.scales ?? [])
+          .filter((sc) => sc.prs_scale_id)
+          .map((sc) => ({
+            scale_id: sc.prs_scale_id!,
+            cadence: CADENCE_LABEL[sc.cadence] ?? "At re-assessment only",
+            displayName: sc.scale_name ?? sc.scale_code ?? sc.prs_scale_id!,
+          })),
+        montageMode: montage ? "custom" : "catalogue",
+        customMontageId: montage?.custom_montage_id ?? null,
+        customMontageName: montage?.montage_name ?? null,
+        // The remaining sessions re-plan from here if the schedule changes.
+        startDate: nextSession?.appointment_date ?? todayIso(),
+        skipDates: [],
+        extraDates: [],
         deviceUnitId: detail.device_unit_id || null,
         placementId: detail.placement_id || null,
-        anodeSite: detail.placement?.anode_site || null,
-        cathodeSites: detail.placement?.cathode_site ? [detail.placement.cathode_site] : (detail.placement?.return_sites || []),
+        anodeSite: montage ? montage.anode_sites[0] ?? null : detail.placement?.anode_site || null,
+        cathodeSites: montage
+          ? montage.cathode_sites
+          : detail.placement?.cathode_site ? [detail.placement.cathode_site] : (detail.placement?.return_sites || []),
         dosingId: detail.dosing_id || null,
         // Read the prescription from its typed columns, falling back to
         // device_settings only for protocols written before the dose moved out
@@ -274,7 +336,11 @@ export function TreatmentProtocolWizard({
         sessionCount: String(detail.session_count),
         sessionsPerWeek: detail.sessions_per_week ?? s.sessionsPerWeek,
         followUpEveryN: detail.follow_up_every_n ? String(detail.follow_up_every_n) : "",
-      }));
+      });
+      original.current = { detail, state: fill(emptyState()) };
+      setState(fill);
+      setStep(7);
+      setVisited([0, 1, 2, 3, 4, 5, 6, 7]);
     }).catch(() => setErr("Couldn't load the current protocol to modify.")).finally(() => setPrefillLoading(false));
   }, [mode, priorProtocolId]);
 
@@ -363,9 +429,10 @@ export function TreatmentProtocolWizard({
     treatmentProtocolService.resolveDiagnoses(state.deviceId, state.diagnosisIds).then((r) => {
       if (cancelled) return;
       resolutionCacheKey.current = cacheKey;
+      // Only a suggestion: Step 4 badges it and the doctor clicks it (or
+      // another montage). Selecting it here silently left a montage chosen
+      // before the doctor ever opened the step.
       setResolution(r);
-      // Auto-apply the driving suggestion the first time a placement/dosing hasn't been chosen yet.
-      setState((s) => (s.placementId ? s : { ...s, placementId: r.placement_id || s.placementId, dosingId: r.dosing_id || s.dosingId }));
     }).catch(() => { if (!cancelled) setResolution(null); });
     return () => { cancelled = true; };
   }, [state.deviceId, state.diagnosisIds]);
@@ -601,30 +668,127 @@ export function TreatmentProtocolWizard({
   const stepFilled: Record<number, boolean> = {
     ...canContinue,
     5: state.scales.length > 0,
+    // Modifying: the schedule is already set even before a preview is drawn.
+    6: canContinue[6] || mode === "modify",
   };
 
   const goNext = () => setStep((s) => Math.min(7, s + 1));
   const goBack = () => setStep((s) => Math.max(0, s - 1));
 
+  // ─── Modify: send only what changed against the prefilled protocol ───
+  const buildAmendment = (): Omit<ProtocolAmend, "reason" | "clinical_note"> | null => {
+    const orig = original.current;
+    if (!orig) return null;
+    const o = orig.state;
+    const d = orig.detail;
+    const body: Omit<ProtocolAmend, "reason" | "clinical_note"> = {};
+    const sameList = (a: string[], b: string[]) => [...a].sort().join("|") === [...b].sort().join("|");
+    const num = (v: string) => (v === "" ? undefined : Number(v));
+
+    const deviceChanged = state.deviceId !== o.deviceId;
+    if (deviceChanged && state.deviceId) body.device_id = state.deviceId;
+    if (state.deviceUnitId && state.deviceUnitId !== o.deviceUnitId) body.device_unit_id = state.deviceUnitId;
+
+    if (state.montageMode === "custom") {
+      if (state.customMontageId && (deviceChanged || state.customMontageId !== o.customMontageId)) body.custom_montage_id = state.customMontageId;
+    } else if (state.placementId && state.dosingId && (deviceChanged || state.placementId !== o.placementId || state.dosingId !== o.dosingId || o.montageMode === "custom")) {
+      body.placement_id = state.placementId;
+      body.dosing_id = state.dosingId;
+    }
+
+    if (!sameList(state.conditionIds, o.conditionIds)) {
+      // Free-text conditions aren't editable in the wizard — keep them.
+      const freeText = (d.conditions ?? []).filter((c) => !c.condition_id && c.other_text).map((c) => ({ other_text: c.other_text! }));
+      body.conditions = [...state.conditionIds.map((condition_id) => ({ condition_id })), ...freeText];
+    }
+    if (!sameList(state.diagnosisIds, o.diagnosisIds)) body.diagnosis_ids = state.diagnosisIds;
+    const scaleKey = (rows: AssignedScale[]) => rows.map((r) => `${r.scale_id}:${CADENCE_STORED[r.cadence] ?? r.cadence}`);
+    if (!sameList(scaleKey(state.scales), scaleKey(o.scales))) {
+      body.scales = state.scales
+        .filter((sc): sc is typeof sc & { scale_id: string } => Boolean(sc.scale_id))
+        .map(({ scale_id, cadence }) => ({ scale_id, cadence }));
+    }
+
+    if (isTvns) {
+      if (state.tvnsWavelength && state.tvnsWavelength !== o.tvnsWavelength) body.prescribed_tvns_wavelength = state.tvnsWavelength;
+      if (state.tvnsPattern && state.tvnsPattern !== o.tvnsPattern) body.prescribed_tvns_pattern = state.tvnsPattern;
+      const tvns: [keyof WizardState, keyof ProtocolAmend][] = [
+        ["tvnsStrengthPct", "prescribed_tvns_strength_pct"],
+        ["tvnsFrequencyHz", "prescribed_tvns_frequency_hz"],
+        ["tvnsPulseWidthUs", "prescribed_tvns_pulse_width_us"],
+        ["tvnsDurationMin", "prescribed_tvns_duration_min"],
+        ...(state.tvnsPattern === "intermittent"
+          ? ([["tvnsRampUpSec", "prescribed_tvns_ramp_up_sec"], ["tvnsRampDownSec", "prescribed_tvns_ramp_down_sec"]] as [keyof WizardState, keyof ProtocolAmend][])
+          : []),
+      ];
+      for (const [k, field] of tvns) {
+        if (deviceChanged || state[k] !== o[k]) (body as Record<string, unknown>)[field] = num(state[k] as string);
+      }
+    } else {
+      const tdcs: [keyof WizardState, keyof ProtocolAmend][] = [
+        ["currentMa", "prescribed_current_ma"],
+        ["sessionDurationMin", "prescribed_duration_min"],
+        ["rampSeconds", "ramp_seconds"],
+      ];
+      for (const [k, field] of tdcs) {
+        if (deviceChanged || state[k] !== o[k]) (body as Record<string, unknown>)[field] = num(state[k] as string);
+      }
+    }
+
+    const scheduleChanged =
+      state.sessionCount !== o.sessionCount || state.sessionsPerWeek !== o.sessionsPerWeek || state.followUpEveryN !== o.followUpEveryN
+      || state.startDate !== o.startDate || state.skipDates.length > 0 || state.extraDates.length > 0;
+    if (scheduleChanged || deviceChanged) {
+      if (state.sessionCount !== o.sessionCount) body.session_count = num(state.sessionCount);
+      if (state.sessionsPerWeek !== o.sessionsPerWeek) body.sessions_per_week = state.sessionsPerWeek;
+      if (state.followUpEveryN !== o.followUpEveryN && state.followUpEveryN) body.follow_up_every_n = num(state.followUpEveryN);
+      body.start_date = state.startDate;
+      if (state.skipDates.length) body.skip_dates = state.skipDates;
+      if (state.extraDates.length) body.extra_dates = state.extraDates;
+    }
+    return body;
+  };
+
+  const handleAmend = async () => {
+    if (!priorProtocolId) return;
+    const body = buildAmendment();
+    if (!body || Object.keys(body).length === 0) { setErr("Nothing has been changed yet — open a step, change what you need, then save."); return; }
+    setErr(null);
+    setPushing(true);
+    try {
+      const updated = await treatmentProtocolService.amendProtocol(priorProtocolId, {
+        ...body,
+        reason: reasonLabel || "Other",
+        clinical_note: [reasonNote, state.protocolNote].filter((t) => t.trim()).join(" | "),
+      });
+      setPushed(updated);
+      try { sessionStorage.removeItem(storageKey); } catch { /* best-effort cleanup */ }
+      onPushed?.(updated);
+    } catch (e: any) {
+      setErr(describePushError(e));
+    } finally {
+      setPushing(false);
+    }
+  };
+
   // ─── Push ───
   const handlePush = async () => {
+    if (mode === "modify") return handleAmend();
     if (!user?.doctor_id || !user?.clinic_id) { setErr("Your account has no doctor/clinic assignment — cannot create a protocol."); return; }
     if (!state.deviceId || (!state.placementId && !state.customMontageId)) return;
     if (state.montageMode === "catalogue" && !state.dosingId) return;
     setErr(null);
     setPushing(true);
     try {
-      const finalNotes = mode === "modify"
-        ? `Reason: ${reasonLabel || "Other"} — ${reasonNote}${state.protocolNote ? ` | ${state.protocolNote}` : ""}`
-        : (state.protocolNote || null);
+      // Only a new protocol reaches here — modify goes through handleAmend.
+      const finalNotes = state.protocolNote || null;
 
       // A protocol belongs to a protocol INSTANCE — one course of device
-      // treatment. A patient may run several instances side by side, so an
-      // amendment stays in the amended protocol's own instance and a new
-      // protocol gets its own (see resolveOrCreateInstanceId).
+      // treatment. A patient may run several instances side by side, so a
+      // new protocol gets its own (see resolveOrCreateInstanceId).
       const instanceId = await treatmentProtocolService.resolveOrCreateInstanceId({
         patientId, doctorId: user.doctor_id, clinicId: user.clinic_id,
-        supersedesProtocolId: mode === "modify" ? priorProtocolId : null,
+        supersedesProtocolId: null,
       });
 
       // Step 5's numbers are the PRESCRIPTION, not a deviation from it, so they
@@ -694,13 +858,6 @@ export function TreatmentProtocolWizard({
           : {}),
         device_settings: {},
         notes: finalNotes,
-        // Amending rather than replacing: the server inherits priorProtocolId's
-        // version_major, bumps version_minor, and — in the same request —
-        // cancels its planned sessions and flips it to 'superseded'. Replaces
-        // the old create+activate+cancel three-call dance below, which is no
-        // longer valid once the server marks the prior row 'superseded'
-        // (cancelProtocol only accepts draft/active).
-        ...(mode === "modify" && priorProtocolId ? { supersedes_protocol_id: priorProtocolId } : {}),
       };
 
       const created = await treatmentProtocolService.createProtocol(payload);
@@ -841,7 +998,7 @@ export function TreatmentProtocolWizard({
           // the data was never lost, but it read as if it had been, since
           // going back knocked every later step back to an unchecked
           // white pill regardless of what was actually filled in.
-          const active = i === step, done = i < step || (i !== step && (stepFilled[i] ?? false));
+          const active = i === step, done = i < step || (i !== step && visited.includes(i) && (stepFilled[i] ?? false));
           return (
             <button
               key={label}
@@ -958,6 +1115,7 @@ export function TreatmentProtocolWizard({
                   savingMontage={savingMontage}
                   montageErr={montageErr}
                   isTvns={isTvns}
+                  suggestedId={resolution?.placement_id}
                 />
               )}
               {step === 4 && (
@@ -983,6 +1141,12 @@ export function TreatmentProtocolWizard({
                   onRemove={(i) => set("scales", state.scales.filter((_, j) => j !== i))}
                   onCadence={(i, cadence) => set("scales", state.scales.map((s, j) => (j === i ? { ...s, cadence } : s)))}
                 />
+              )}
+              {step === 6 && mode === "modify" && (
+                <p className="mb-3 text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                  Total sessions is the whole course — sessions already delivered count toward it. Changing the schedule re-plans only
+                  the sessions not yet run, from the start date; sessions the patient has already booked keep their slot.
+                </p>
               )}
               {step === 6 && (
                 <ScheduleStep
@@ -1301,10 +1465,20 @@ function DiagnosisStep({
 // ─────────────────────────────────────────────────────────────────────────
 // Step 4 — Placement
 // ─────────────────────────────────────────────────────────────────────────
+function SuggestedBadge({ on }: { on: boolean }) {
+  return (
+    <span className={`ml-1.5 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded ${on ? "bg-white/20 text-white" : "bg-green-50 text-green-700"}`}>
+      Suggested
+    </span>
+  );
+}
+
 function PlacementStep({
-  placements, loading, state, validation, onApply, onSaveCustomMontage, savingMontage, montageErr, isTvns,
+  placements, loading, state, validation, onApply, onSaveCustomMontage, savingMontage, montageErr, isTvns, suggestedId,
 }: {
   placements: PlacementRead[]; loading: boolean; state: WizardState;
+  /** The diagnoses' suggested montage — badged, never pre-selected. */
+  suggestedId?: string | null;
   validation: { valid: boolean; errors: string[]; warnings: string[]; maxCathodes: number } | null;
   onApply: (p: PlacementRead) => void;
   onSaveCustomMontage: (name: string, clinicalReasoning: string, description: string) => Promise<void>;
@@ -1358,7 +1532,10 @@ function PlacementStep({
                   onClick={() => onApply(p)}
                   className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors text-left ${on ? "border-blue-600 bg-blue-600 text-white" : "border-neutral-200 text-neutral-700 hover:border-neutral-300"}`}
                 >
-                  <span className="block">{p.montage_label}</span>
+                  <span className="block">
+                    {p.montage_label}
+                    {p.placement_id === suggestedId && <SuggestedBadge on={on} />}
+                  </span>
                   <span className={`block text-xs mt-0.5 ${on ? "text-blue-100" : "text-neutral-400"}`}>
                     {[p.ear_side, p.auricular_site].filter(Boolean).join(" · ") || "—"}
                   </span>
@@ -1388,6 +1565,7 @@ function PlacementStep({
               className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${on ? "border-blue-600 bg-blue-600 text-white" : "border-neutral-200 text-neutral-700 hover:border-neutral-300"}`}
             >
               {p.montage_label}
+              {p.placement_id === suggestedId && <SuggestedBadge on={on} />}
             </button>
           );
         })}
