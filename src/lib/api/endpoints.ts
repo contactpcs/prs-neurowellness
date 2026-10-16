@@ -168,6 +168,7 @@ export const ENDPOINTS = {
     DASHBOARD: "/admin/dashboard",              // NOT AVAILABLE — composed client-side
     CLINICS: "/clinics",                        // real
     CLINIC: (id: string) => `/clinics/${id}`,   // real
+    BOOKING_POLICY: (id: string) => `/clinics/${id}/booking-policy`, // GET / PUT (whole policy) — refund-on-cancel rows + reschedule notice; clinic_admin own clinic, super_admin any
     DEACTIVATE_CLINIC: (id: string) => `/clinics/${id}/status`, // real — PATCH {status:"pending_closure"}
     ACTIVATE_CLINIC: (id: string) => `/clinics/${id}/status`,   // real — PATCH {status:"active"}
     STAFF: "/admin/staff",                                      // NOT AVAILABLE — composed from DOCTORS/STAFF below

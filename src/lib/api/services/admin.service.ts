@@ -17,6 +17,8 @@ import type {
   BillableItemUpdatePayload,
   PlatformFeeConfig,
   PlatformFeeUpdatePayload,
+  BookingPolicy,
+  BookingPolicyUpdate,
   CancellationPolicyTier,
   CancellationPolicyTierCreatePayload,
   CancellationPolicyTierUpdatePayload,
@@ -224,6 +226,17 @@ export const adminService = {
   async setClinicRescheduleMinHours(id: string, hours: number): Promise<AdminClinic> {
     const res = await apiClient.patch(ENDPOINTS.ADMIN.CLINIC(id), { reschedule_min_hours: hours });
     return mapClinic(res.data);
+  },
+
+  // ─── Clinic booking policy (refund on cancellation + reschedule notice) ───
+  async getBookingPolicy(clinicId: string): Promise<BookingPolicy> {
+    const { data } = await apiClient.get(ENDPOINTS.ADMIN.BOOKING_POLICY(clinicId));
+    return data;
+  },
+
+  async saveBookingPolicy(clinicId: string, body: BookingPolicyUpdate): Promise<BookingPolicy> {
+    const { data } = await apiClient.put(ENDPOINTS.ADMIN.BOOKING_POLICY(clinicId), body);
+    return data;
   },
 
   // ─── Clinic weekly operating hours ───

@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, TrendingUp, Receipt, Users, RefreshCw, AlertTriangle, ListTree, Crown } from "lucide-react";
-import { Card, CardContent, Skeleton, Badge } from "@/components/ui";
+import { Search, TrendingUp, Receipt, Users, RefreshCw, AlertTriangle, ListTree, Crown, Undo2 } from "lucide-react";
+import { Card, CardContent, Skeleton, Badge, Button, Modal } from "@/components/ui";
 import { useAuth } from "@/lib/hooks";
 import { RevenueOverTimeChart } from "@/components/payments/RevenueOverTimeChart";
 import { RevenueBreakdownPanel } from "@/components/payments/RevenueBreakdownPanel";
 import { purposeLabel } from "@/components/payments/revenueViz";
+import { RefundProgress } from "@/components/payments/RefundProgress";
 import {
   paymentsService,
   type PaymentHistoryDetail,
@@ -43,7 +44,92 @@ const STATUS_STYLES: Record<string, string> = {
   failed: "bg-red-100 text-red-600",
   waived: "bg-blue-100 text-blue-700",
   refunded: "bg-neutral-200 text-neutral-600",
+  partially_refunded: "bg-neutral-200 text-neutral-600",
 };
+
+const REFUND_STYLES: Record<string, string> = {
+  pending: "text-amber-700",
+  processed: "text-green-700",
+  failed: "text-red-600",
+};
+
+const REFUND_LABEL: Record<string, string> = {
+  pending: "refund pending",
+  processed: "refunded",
+  failed: "refund failed",
+};
+
+/** Online (Razorpay) refunds are completed by the refund worker; everything
+ * else — cash, card/UPI recorded by staff, or a refund Razorpay refused —
+ * needs a person to hand the money back and confirm it here. */
+function needsManualRefund(p: PaymentHistoryDetail): boolean {
+  return p.refund_status === "failed" || (p.refund_status === "pending" && !(p.payment_method ?? "").startsWith("razorpay"));
+}
+
+function statusLabel(status: string): string {
+  return status.replace(/_/g, " ");
+}
+
+/** Front desk confirms the money went back (cash at the counter, or an
+ * online refund the gateway refused and was settled by hand). */
+function ConfirmRefundModal({
+  payment,
+  onClose,
+  onDone,
+}: {
+  payment: PaymentHistoryDetail;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const owed = payment.cancellation_refund_amount ?? payment.amount;
+
+  async function confirm() {
+    setSaving(true);
+    setError(null);
+    try {
+      await paymentsService.refund(payment.payment_id, note || undefined);
+      onDone();
+    } catch (e: any) {
+      setError(e?.response?.data?.error?.message || e?.response?.data?.detail || "Could not confirm the refund");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal isOpen onClose={onClose} title="Confirm refund given">
+      <div className="space-y-4">
+        <p className="text-sm text-neutral-700">
+          Confirm that <strong>{payment.currency} {owed.toLocaleString("en-IN")}</strong>
+          {payment.cancellation_refund_percent != null ? ` (${payment.cancellation_refund_percent}% of ${payment.currency} ${payment.amount.toLocaleString("en-IN")})` : ""} has
+          been handed back to <strong>{payment.patient_name ?? "the patient"}</strong>.
+        </p>
+        {payment.refund_status === "failed" && (
+          <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+            The automatic Razorpay refund failed. Refund the patient another way (for example from the Razorpay dashboard or in cash) before confirming.
+          </p>
+        )}
+        <div>
+          <label className="block text-xs font-medium text-neutral-600 mb-1">Note (optional)</label>
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="e.g. Cash returned at counter"
+            className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          />
+        </div>
+        {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+        <div className="flex justify-end gap-3">
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={confirm} disabled={saving}>{saving ? "Saving…" : "Refund given"}</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
 
 const GROUP_BY_OPTIONS: { value: RevenueGroupBy; label: string }[] = [
   { value: "day", label: "Daily" },
@@ -132,6 +218,10 @@ export function PaymentsHistorySection() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
+  // Cancelled paid bookings whose refund is still open (pending/failed).
+  const [openRefunds, setOpenRefunds] = useState<PaymentHistoryDetail[]>([]);
+  const [confirmRefund, setConfirmRefund] = useState<PaymentHistoryDetail | null>(null);
+
   const [logs, setLogs] = useState<PaymentLogDetail[]>([]);
   const [logStatusFilter, setLogStatusFilter] = useState("failed");
   const [logsLoading, setLogsLoading] = useState(true);
@@ -167,9 +257,16 @@ export function PaymentsHistorySection() {
       setTopPatients(topRes);
     } catch (e: any) { failed(e); }
   }
+  async function loadOpenRefunds() {
+    try {
+      setOpenRefunds(await paymentsService.getHistory({ refund_status: "pending,failed", limit: 50 }));
+    } catch {
+      setOpenRefunds([]);
+    }
+  }
   async function load() {
     setError(null);
-    await Promise.all([loadHistory(), loadSummaries()]);
+    await Promise.all([loadHistory(), loadSummaries(), loadOpenRefunds()]);
   }
 
   // Skeleton only on first load; later refetches keep the current render
@@ -197,6 +294,7 @@ export function PaymentsHistorySection() {
   useEffect(() => { setError(null); run(loadHistory); }, [status, debouncedSearch, dateFrom, historyPage]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { run(loadSummaries); }, [groupBy, dateFrom]);
+  useEffect(() => { loadOpenRefunds(); }, []);
 
   function selectRange(value: RangeKey) {
     setRange(value);
@@ -352,6 +450,61 @@ export function PaymentsHistorySection() {
         </div>
       )}
 
+      {/* Refunds still open — cancelled paid bookings whose money has not
+          gone back yet. Online ones finish on their own; cash and failed
+          ones need someone to hand the money back and confirm it. */}
+      {openRefunds.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-neutral-700 mb-2 flex items-center gap-1.5">
+            <Undo2 className="h-4 w-4" /> Refunds in progress ({openRefunds.length})
+          </h2>
+          <Card>
+            <div className="divide-y divide-neutral-100">
+              {openRefunds.map((p) => (
+                <div key={p.payment_id} className="flex items-center justify-between gap-4 px-5 py-3 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-neutral-900 truncate">
+                      {p.patient_name ?? "Unknown"}
+                      <span className="text-xs font-normal text-neutral-400 ml-2">{p.clinic_name ?? ""}</span>
+                    </p>
+                    <p className="text-xs text-neutral-500">
+                      Refund {p.currency} {(p.cancellation_refund_amount ?? 0).toLocaleString("en-IN")}
+                      {p.cancellation_refund_percent != null ? ` (${p.cancellation_refund_percent}% of ${p.amount.toLocaleString("en-IN")})` : ""}
+                      {" · "}paid by {statusLabel(p.payment_method ?? "unknown")}
+                      {p.appointment_date ? ` · appointment ${fmtDate(p.appointment_date)}` : ""}
+                    </p>
+                    <div className="mt-2 max-w-xl">
+                      <RefundProgress payment={p} audience="staff" />
+                    </div>
+                  </div>
+                  {needsManualRefund(p) ? (
+                    <div className="flex items-center gap-3">
+                      <span className={`text-xs font-medium ${REFUND_STYLES[p.refund_status ?? "pending"]}`}>
+                        {p.refund_status === "failed" ? "Razorpay refund failed — refund by hand" : "Hand back at counter"}
+                      </span>
+                      <Button size="sm" onClick={() => setConfirmRefund(p)}>Refund given</Button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-neutral-500">Razorpay refund in progress — completes automatically</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {confirmRefund && (
+        <ConfirmRefundModal
+          payment={confirmRefund}
+          onClose={() => setConfirmRefund(null)}
+          onDone={() => {
+            setConfirmRefund(null);
+            load();
+          }}
+        />
+      )}
+
       {/* Filters + payments table */}
       <div>
         <div className="flex items-center gap-3 flex-wrap mb-3">
@@ -366,8 +519,8 @@ export function PaymentsHistorySection() {
           </div>
           <select value={status} onChange={(e) => setStatus(e.target.value)} className="px-3 py-2 text-sm border border-neutral-200 rounded-lg bg-white">
             <option value="">All Statuses</option>
-            {["pending", "paid", "failed", "waived", "refunded"].map((s) => (
-              <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>
+            {["pending", "paid", "failed", "waived", "refunded", "partially_refunded"].map((s) => (
+              <option key={s} value={s}>{s[0].toUpperCase() + statusLabel(s.slice(1))}</option>
             ))}
           </select>
         </div>
@@ -408,9 +561,17 @@ export function PaymentsHistorySection() {
                           <p className="text-[10px] text-neutral-400">{p.base_fee_amount.toLocaleString("en-IN")} + {p.platform_fee_amount.toLocaleString("en-IN")} fee</p>
                         )}
                       </div>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize w-fit ${STATUS_STYLES[p.status] ?? "bg-neutral-100 text-neutral-600"}`}>
-                        {p.status}
-                      </span>
+                      <div>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize w-fit ${STATUS_STYLES[p.status] ?? "bg-neutral-100 text-neutral-600"}`}>
+                          {statusLabel(p.status)}
+                        </span>
+                        {p.refund_status && (
+                          <p className={`text-[10px] mt-1 ${REFUND_STYLES[p.refund_status] ?? "text-neutral-500"}`}>
+                            {REFUND_LABEL[p.refund_status] ?? p.refund_status} · {p.currency} {(p.cancellation_refund_amount ?? 0).toLocaleString("en-IN")}
+                            {p.cancellation_refund_percent != null ? ` (${p.cancellation_refund_percent}%)` : ""}
+                          </p>
+                        )}
+                      </div>
                       <div>
                         <p className="text-xs text-neutral-600">{fmtDate(p.appointment_date)} {p.appointment_start_time ? `· ${p.appointment_start_time.slice(0, 5)}` : ""}</p>
                         {p.appointment_status === "completed" && p.appointment_completed_at ? (
@@ -447,7 +608,7 @@ export function PaymentsHistorySection() {
             <ListTree className="h-4 w-4" /> Payment Event Log
           </h2>
           <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1">
-            {["", "failed", "paid", "refunded", "waived", "pending"].map((s) => (
+            {["", "failed", "paid", "refunded", "partially_refunded", "waived", "pending"].map((s) => (
               <button
                 key={s || "all"}
                 onClick={() => setLogStatusFilter(s)}
@@ -455,7 +616,7 @@ export function PaymentsHistorySection() {
                   logStatusFilter === s ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"
                 }`}
               >
-                {s || "All"}
+                {s ? statusLabel(s) : "All"}
               </button>
             ))}
           </div>
@@ -494,7 +655,7 @@ export function PaymentsHistorySection() {
                       <p className="text-sm font-medium text-neutral-900 truncate">{l.patient_name ?? "Unknown"}</p>
                       <p className="text-xs text-neutral-600 truncate">{l.clinic_name ?? "—"}</p>
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize w-fit ${STATUS_STYLES[l.status] ?? "bg-neutral-100 text-neutral-600"}`}>
-                        {l.status}
+                        {statusLabel(l.status)}
                       </span>
                       <p className="text-xs text-neutral-500 capitalize truncate">{l.source.replace(/_/g, " ")}</p>
                       <p className="text-xs text-neutral-500 truncate">{l.gateway_event ?? "—"}</p>

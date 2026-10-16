@@ -215,6 +215,37 @@ export interface CancellationPolicyTier {
   updated_at: string;
 }
 
+/** One refund row: cancelled at least `min_hours_before` hours ahead -> `refund_percent` back. */
+export interface RefundTier {
+  min_hours_before: number;
+  refund_percent: number;
+}
+
+export interface RefundRule {
+  /** true = this clinic has no rows of its own and uses the platform default. */
+  uses_default: boolean;
+  /** What applies now (own rows, or the default when uses_default). */
+  tiers: RefundTier[];
+  default_tiers: RefundTier[];
+}
+
+/** GET/PUT /clinics/{id}/booking-policy */
+export interface BookingPolicy {
+  clinic_id: string;
+  /** Clinic's own reschedule notice; null = platform default. */
+  reschedule_min_hours: number | null;
+  effective_reschedule_min_hours: number;
+  default_reschedule_min_hours: number;
+  refund_rules: Record<SessionType, RefundRule>;
+}
+
+/** PUT body. An empty tier list = use the platform default for that type;
+ * reschedule_min_hours null = platform default. */
+export interface BookingPolicyUpdate {
+  reschedule_min_hours: number | null;
+  refund_rules: Record<SessionType, RefundTier[]>;
+}
+
 export interface CancellationPolicyTierCreatePayload {
   clinic_id?: string | null;
   session_type: SessionType;

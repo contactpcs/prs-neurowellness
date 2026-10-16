@@ -30,7 +30,12 @@ export interface Payment {
    * processed = money returned (status is then refunded/partially_refunded);
    * failed = gateway refused, clinic completes it by hand. */
   refund_status: "pending" | "processed" | "failed" | null;
+  /** Refund progress stages: approved -> sent to Razorpay (online only) -> refunded. */
+  refund_requested_at: string | null;
+  refund_initiated_at: string | null;
   refunded_at: string | null;
+  /** Razorpay refund reference (rfnd_...) — what a patient quotes to their bank. */
+  razorpay_refund_id: string | null;
 }
 
 /** Response from creating a real Razorpay order — carries the public key the
@@ -113,6 +118,8 @@ export interface PatientRevenueTotal {
 
 export interface PaymentHistoryParams {
   status?: string;
+  /** Comma list of pending,processed,failed — "pending,failed" = refunds needing action. */
+  refund_status?: string;
   search?: string;
   date_from?: string;
   date_to?: string;
