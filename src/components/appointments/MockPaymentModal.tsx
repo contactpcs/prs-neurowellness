@@ -10,6 +10,7 @@ import {
   saveBlobAsFile,
   type PaymentAmount,
   type PaymentOrder,
+  checkoutSecondsLeft,
 } from "@/lib/api/services/payments.service";
 
 declare global {
@@ -202,9 +203,15 @@ export function MockPaymentModal({ isOpen, onClose, appointmentId, onPaid }: Moc
       if (!created.razorpay_key_id || !created.razorpay_order_id) {
         throw new Error("Payment gateway is not configured yet — contact the clinic");
       }
+      const secondsLeft = checkoutSecondsLeft(created);
+      if (secondsLeft !== null && secondsLeft <= 0) {
+        throw new Error("Your 15-minute hold on this slot has ended — please choose the slot again");
+      }
 
       const checkout = new window.Razorpay({
         key: created.razorpay_key_id,
+        // Close checkout before the slot hold ends, so nobody pays for a slot that was released.
+        ...(secondsLeft !== null ? { timeout: secondsLeft } : {}),
         order_id: created.razorpay_order_id,
         amount: Math.round(created.amount * 100),
         currency: created.currency,

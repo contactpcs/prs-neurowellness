@@ -28,7 +28,7 @@ const show = (v: unknown) => (v === null || v === undefined || v === "" ? "Not r
 
 // ─── small building blocks ──────────────────────────────────────────────────
 
-function Card({ title, sub, right, children }: { title: string; sub?: string; right?: React.ReactNode; children: React.ReactNode }) {
+export function Card({ title, sub, right, children }: { title: string; sub?: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="border border-neutral-200 rounded-xl bg-white">
       <div className="flex items-start justify-between gap-3 flex-wrap px-4 py-3.5 border-b border-neutral-100">
@@ -43,7 +43,7 @@ function Card({ title, sub, right, children }: { title: string; sub?: string; ri
   );
 }
 
-function Row({ label, value, strong, tone }: { label: string; value: React.ReactNode; strong?: boolean; tone?: string }) {
+export function Row({ label, value, strong, tone }: { label: string; value: React.ReactNode; strong?: boolean; tone?: string }) {
   return (
     <div className="flex justify-between gap-3 py-2 border-b border-neutral-100 last:border-0">
       <span className="text-xs text-neutral-500">{label}</span>
@@ -52,7 +52,7 @@ function Row({ label, value, strong, tone }: { label: string; value: React.React
   );
 }
 
-function GroupLabel({ children }: { children: React.ReactNode }) {
+export function GroupLabel({ children }: { children: React.ReactNode }) {
   return <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide mb-1.5">{children}</p>;
 }
 
@@ -67,9 +67,9 @@ function Field({ label, children, hint }: { label: string; children: React.React
 }
 
 const inputCls = "w-full h-9 border border-neutral-200 rounded-md px-2.5 text-sm bg-white outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-100";
-const textareaCls = "w-full border border-neutral-200 rounded-md p-2.5 text-sm bg-white outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-100 resize-y";
+export const textareaCls = "w-full border border-neutral-200 rounded-md p-2.5 text-sm bg-white outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-100 resize-y";
 
-function Pill({ children, className }: { children: React.ReactNode; className: string }) {
+export function Pill({ children, className }: { children: React.ReactNode; className: string }) {
   return <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap ${className}`}>{children}</span>;
 }
 
@@ -120,7 +120,7 @@ function Table({ cols, rows, empty }: { cols: string[]; rows: React.ReactNode[][
   );
 }
 
-function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
+export function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
   return (
     <div className={`rounded-lg border border-neutral-100 px-3.5 py-3 ${tone ?? "bg-neutral-50"}`}>
       <p className="text-[10.5px] font-semibold text-neutral-500 uppercase tracking-wide">{label}</p>

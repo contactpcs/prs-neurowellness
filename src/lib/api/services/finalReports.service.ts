@@ -5,6 +5,7 @@ import type {
   FinalReportMeta,
   FinalReportPreview,
   FinalReportScope,
+  FinalReportSelection,
   FinalReportSignPayload,
 } from "@/types/finalReport.types";
 
@@ -12,10 +13,11 @@ import type {
 // doctor signs it and can never be edited or deleted afterwards: a
 // correction is a new report, older ones stay listed.
 export const finalReportsService = {
-  /** Doctor only. The sections as they would be signed right now, plus the
-   * clinical notes the doctor can tick. Nothing is stored. */
-  async preview(patientId: string, scope: FinalReportScope): Promise<FinalReportPreview> {
-    const { data } = await apiClient.get(ENDPOINTS.FINAL_REPORTS.PREVIEW(patientId), { params: { scope } });
+  /** Doctor only. The sections as they would be signed with this selection
+   * (null = the scope's defaults), the selection they hold, and every
+   * candidate each section's pencil can offer. Nothing is stored. */
+  async preview(patientId: string, scope: FinalReportScope, selection?: FinalReportSelection | null): Promise<FinalReportPreview> {
+    const { data } = await apiClient.post(ENDPOINTS.FINAL_REPORTS.PREVIEW(patientId), { scope, selection: selection ?? null });
     return data as FinalReportPreview;
   },
 

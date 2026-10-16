@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Receipt as ReceiptIcon, Download, Search } from "lucide-react";
 import { PageSkeleton, Card, Button, Input } from "@/components/ui";
 import { paymentsService, saveBlobAsFile, type PaymentHistory } from "@/lib/api/services/payments.service";
+import { RefundProgress } from "@/components/payments/RefundProgress";
 
-const STATUS_STYLES: Record<PaymentHistory["status"], string> = {
+const STATUS_STYLES: Record<string, string> = {
   pending: "bg-amber-100 text-amber-700",
   paid: "bg-green-100 text-green-700",
   failed: "bg-red-100 text-red-600",
   waived: "bg-blue-100 text-blue-700",
   refunded: "bg-neutral-200 text-neutral-600",
+  partially_refunded: "bg-neutral-200 text-neutral-600",
 };
 
 function fmtDate(d: string | null): string {
@@ -100,9 +102,11 @@ export default function PatientPaymentsPage() {
               </thead>
               <tbody>
                 {filtered.map((p) => {
-                  const canDownload = p.status === "paid" || p.status === "waived" || p.status === "refunded";
+                  const canDownload = ["paid", "waived", "refunded", "partially_refunded"].includes(p.status);
+                  const hasRefund = p.cancellation_refund_amount != null;
                   return (
-                    <tr key={p.payment_id} className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50">
+                    <Fragment key={p.payment_id}>
+                    <tr className={`hover:bg-neutral-50 ${hasRefund ? "" : "border-b border-neutral-100 last:border-0"}`}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0">
@@ -123,15 +127,10 @@ export default function PatientPaymentsPage() {
                             {p.currency} {p.base_fee_amount.toLocaleString("en-IN")} + {p.currency} {p.platform_fee_amount.toLocaleString("en-IN")} fee
                           </p>
                         )}
-                        {p.cancellation_refund_amount != null && (
-                          <p className="text-xs text-neutral-500 mt-0.5">
-                            Refund due: {p.currency} {p.cancellation_refund_amount.toLocaleString("en-IN")} ({p.cancellation_refund_percent}%)
-                          </p>
-                        )}
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize whitespace-nowrap ${STATUS_STYLES[p.status]}`}>
-                          {p.status}
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize whitespace-nowrap ${STATUS_STYLES[p.status] ?? "bg-neutral-100 text-neutral-600"}`}>
+                          {p.status.replace(/_/g, " ")}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -147,6 +146,17 @@ export default function PatientPaymentsPage() {
                         )}
                       </td>
                     </tr>
+                    {hasRefund && (
+                      <tr className="border-b border-neutral-100 last:border-0">
+                        <td colSpan={5} className="px-4 pb-4 pt-0">
+                          <div className="ml-12 rounded-lg border border-neutral-100 bg-neutral-50 px-4 py-3">
+                            <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide mb-2">Refund progress</p>
+                            <RefundProgress payment={p} audience="patient" />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>

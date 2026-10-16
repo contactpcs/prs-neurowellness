@@ -5,7 +5,7 @@ import type {
   DeviceCompanyCreate, DeviceCompanyUpdate, DeviceCreate, DeviceUpdate,
   PlacementRead, ElectrodeValidationRequest, ElectrodeValidationResult,
   DosingRead, ScaleRead, SchedulePreviewRequest, SchedulePreview,
-  ProtocolCreate, ProtocolUpdate, ProtocolRead, ProtocolDetail, ProtocolSessionRead,
+  ProtocolCreate, ProtocolUpdate, ProtocolAmend, ProtocolRead, ProtocolDetail, ProtocolSessionRead,
   CustomMontageCreate, CustomMontageRead,
   DeviceSessionPrsCreate, FollowUpPrsCreate, PrsResponseRead,
   DeviceScheduleRead, DeviceOverrideRead, DeviceSlotRead,
@@ -190,6 +190,11 @@ export const treatmentProtocolService = {
   async listProtocolSessions(protocolId: string, appointmentType?: string): Promise<ProtocolSessionRead[]> {
     const { data } = await apiClient.get(ENDPOINTS.TREATMENT_PROTOCOLS.SESSIONS(protocolId), { params: { appointment_type: appointmentType } });
     return Array.isArray(data) ? data : [];
+  },
+
+  async amendProtocol(protocolId: string, body: ProtocolAmend): Promise<ProtocolRead> {
+    const { data } = await apiClient.post(ENDPOINTS.TREATMENT_PROTOCOLS.AMEND(protocolId), body);
+    return data;
   },
 
   async activateProtocol(protocolId: string): Promise<ProtocolRead> {

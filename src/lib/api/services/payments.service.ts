@@ -7,6 +7,9 @@ export interface Payment {
   appointment_id: string | null;
   amount: number;
   currency: string;
+  /** Backend can also return "partially_refunded" (only when a clinic sets a
+   * refund tier below 100 %). Not in this union yet: four screens key a
+   * Record on it and would need an entry first. */
   status: "pending" | "paid" | "failed" | "waived" | "refunded";
   payment_method: string | null;
   razorpay_order_id: string | null;
@@ -22,12 +25,33 @@ export interface Payment {
    * gateway refund — the amount owed, not money actually moved back yet. */
   cancellation_refund_percent: number | null;
   cancellation_refund_amount: number | null;
+  /** null = nothing owed; pending = refund owed (online: completed
+   * automatically through Razorpay; cash: front desk confirms with refund());
+   * processed = money returned (status is then refunded/partially_refunded);
+   * failed = gateway refused, clinic completes it by hand. */
+  refund_status: "pending" | "processed" | "failed" | null;
+  /** Refund progress stages: approved -> sent to Razorpay (online only) -> refunded. */
+  refund_requested_at: string | null;
+  refund_initiated_at: string | null;
+  refunded_at: string | null;
+  /** Razorpay refund reference (rfnd_...) — what a patient quotes to their bank. */
+  razorpay_refund_id: string | null;
 }
 
 /** Response from creating a real Razorpay order — carries the public key the
  * frontend needs to open Razorpay Checkout. */
 export interface PaymentOrder extends Payment {
   razorpay_key_id: string | null;
+  /** When the booking's 15-minute hold ends; checkout must close before it. */
+  hold_expires_at: string | null;
+}
+
+/** Seconds Razorpay Checkout may stay open: the time left on the booking's
+ * hold, less a small margin so payment can't land after the slot is
+ * released. null = no hold (nothing to limit); <= 0 = already expired. */
+export function checkoutSecondsLeft(order: PaymentOrder, marginSeconds = 20): number | null {
+  if (!order.hold_expires_at) return null;
+  return Math.floor((Date.parse(order.hold_expires_at) - Date.now()) / 1000) - marginSeconds;
 }
 
 /** Resolved price for display before checkout starts — no order/payment row
@@ -104,6 +128,8 @@ export interface PatientRevenueTotal {
 
 export interface PaymentHistoryParams {
   status?: string;
+  /** Comma list of pending,processed,failed — "pending,failed" = refunds needing action. */
+  refund_status?: string;
   search?: string;
   date_from?: string;
   date_to?: string;
@@ -126,7 +152,7 @@ export interface PaymentLog {
   razorpay_payment_id: string | null;
   failure_code: string | null;
   failure_reason: string | null;
-  source: "order_created" | "razorpay_webhook" | "client_verify" | "staff_action";
+  source: "order_created" | "razorpay_webhook" | "client_verify" | "staff_action" | "system";
   gateway_event: string | null;
   gateway_response: Record<string, unknown>;
   changed_by: string | null;

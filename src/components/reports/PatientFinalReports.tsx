@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { FileCheck2, Printer, X } from "lucide-react";
 import { finalReportsService } from "@/lib/api/services";
 import { extractErrorMessage } from "@/lib/api/errors";
-import { printElement } from "@/lib/utils/printElement";
+import { printFinalReport } from "./printFinalReport";
 import { FinalReportDocument } from "./FinalReportDocument";
 import type { FinalReport, FinalReportMeta } from "@/types/finalReport.types";
 
@@ -37,7 +37,11 @@ export function FinalReportViewer({ reportId, onClose }: { reportId: string; onC
           <h3 className="text-base font-semibold text-neutral-900">Final Report</h3>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => docRef.current && printElement(docRef.current, "Final Report")}
+              onClick={() =>
+                docRef.current &&
+                report &&
+                printFinalReport(docRef.current, { sections: report.snapshot, signature: report.signature, reportId: report.report_id })
+              }
               disabled={!report}
               className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white bg-brand-gradient rounded-lg disabled:opacity-50"
             >
@@ -59,7 +63,7 @@ export function FinalReportViewer({ reportId, onClose }: { reportId: string; onC
               sections={report.snapshot}
               diagnosis={report.diagnosis}
               signature={report.signature}
-              contentHash={report.content_hash}
+              reportId={report.report_id}
             />
           )}
         </div>

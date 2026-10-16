@@ -19,13 +19,15 @@ import {
   useAuth,
 } from "@/lib/hooks";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { changeMedicineStatus, fetchPatientMedicines, prescribeMedicine, selectPatientMedicines, type PrescribedMedicineForm } from "@/store/slices/prescribedMedicineSlice";
+import { changeMedicineStatus, fetchPatientMedicines, selectPatientMedicines } from "@/store/slices/prescribedMedicineSlice";
+import { MedicinePrescribeForm } from "@/components/doctor/MedicinePrescribeForm";
 import { invalidatePatientAnamnesis } from "@/store/slices/anamnesisSlice";
 import type { Permission, AssessmentInstance, AnamnesisRecord } from "@/types/domain.types";
 import { EEGReportList, EEGUploadForm, NEDFUploadForm } from "@/components/eeg";
 import { TreatmentProtocolPanel, DeviceSessionsPanel } from "@/components/doctor/TreatmentProtocolPanel";
 import { SessionTabsBar } from "@/components/doctor/SessionTabsBar";
-import { FinalReportModal } from "@/components/doctor/FinalReportModal";
+import { FinalReportWorkspace, type FinalReportEditors } from "@/components/doctor/FinalReportWorkspace";
+import { NoteEditor, PrsEditor, ProtocolEditor } from "@/components/doctor/FinalReportSectionEditors";
 import { CompareSessionsModal } from "@/components/doctor/CompareSessionsModal";
 import { usePatientClinicalSessions } from "@/lib/hooks/usePatientClinicalSessions";
 import { useGoBack } from "@/lib/hooks/useGoBack";
@@ -70,9 +72,6 @@ const SECTION_LABELS: Record<string, string> = {
   "final-report": "Final Report",
   activity: "Activity Log",
 };
-
-const MEDICINE_TIMINGS = ["Morning", "Afternoon", "Evening", "Night", "Twice daily", "Three times daily", "As needed"];
-const MEDICINE_MEALS = ["Before meal", "After meal", "With meal", "Empty stomach", "Not applicable"];
 
 function buildSections(
   anamnesisStatus: "in_progress" | "completed" | null,
@@ -163,14 +162,13 @@ export default function DoctorPatientDetailPage() {
   // consultation's appointment is completed (the server enforces the same,
   // ANAMNESIS_LOCKED) — not frozen just because a newer visit exists.
   const anamnesisLocked = !sessionsLoading && (currentSessionIdx < 0 || currentSession?.appointment.status === "completed");
-  // The session the Final Report modal was opened from (null = opened with
-  // no consultation selected, e.g. before one was started).
+  // The session the Final Report section was opened from (null = opened with
+  // no consultation selected, e.g. before one was started, or by URL).
   const [finalReportFor, setFinalReportFor] = useState<{ session: typeof currentSession } | null>(null);
   const [showCompare, setShowCompare] = useState(false);
   // Bumped whenever a Final Report is signed so isFinalReportGenerated()
   // (backed by localStorage, not otherwise reactive) gets re-checked.
   const [finalReportLockTick, setFinalReportLockTick] = useState(0);
-  const openFinalReport = useCallback((session: typeof currentSession) => setFinalReportFor({ session }), []);
   // Only a SIGNED report locks the session's Treatment Plan — opening the
   // modal and closing it again changes nothing.
   const onFinalReportSigned = useCallback(
@@ -202,6 +200,15 @@ export default function DoctorPatientDetailPage() {
     (s: string) => updateQuery({ section: s === "anamnesis" ? null : s }),
     [updateQuery],
   );
+  // The Final Report is a workspace section (like the Treatment Plan), not a
+  // pop-up: remember which session it was opened from, then show it.
+  const openFinalReport = useCallback(
+    (session: typeof currentSession) => {
+      setFinalReportFor({ session });
+      setSelectedSection("final-report");
+    },
+    [setSelectedSection],
+  );
   const [basicOpen, setBasicOpen] = useState(true);
   const [eegRefreshKey, setEegRefreshKey] = useState(0);
   const [showEegUpload, setShowEegUpload] = useState(false);
@@ -212,12 +219,6 @@ export default function DoctorPatientDetailPage() {
   // in a Redux slice (not local state) so the patient summary page can read
   // the same list; still resets on reload since nothing is persisted.
   const medicines = useAppSelector(selectPatientMedicines(id));
-  // Always populated — the prescribe form renders inline on the page rather
-  // than behind a "Prescribe Medicine" reveal click.
-  const emptyMedForm: PrescribedMedicineForm = { name: "", dose: "", timing: MEDICINE_TIMINGS[0], meal: MEDICINE_MEALS[1], duration: "", note: "" };
-  const [medForm, setMedForm] = useState<PrescribedMedicineForm>(emptyMedForm);
-  const [medSaving, setMedSaving] = useState(false);
-  const [medError, setMedError] = useState<string | null>(null);
   // Prescriptions live in the backend (SQL/v1/96) — load them for this patient.
   useEffect(() => { dispatch(fetchPatientMedicines(id)); }, [dispatch, id]);
   // Backed by core.patient_clinical_notes (SQL/v1/99) — a real per-patient
@@ -230,11 +231,6 @@ export default function DoctorPatientDetailPage() {
   const [widgetBody, setWidgetBody] = useState("");
   const [widgetSaved, setWidgetSaved] = useState(false);
   const [noteSaveError, setNoteSaveError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setMedForm(emptyMedForm);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
 
   // Registration Record = anamnesis + general PRS taken during self-
   // registration (assessment_stage='general_registration',
@@ -325,6 +321,59 @@ export default function DoctorPatientDetailPage() {
   const nextAssessment = (assessments as Permission[]).find((a: Permission) => a.status === "granted");
   const completedAssessments = (assessments as Permission[]).filter((a: Permission) => a.status === "completed");
   const pendingAssessments = (assessments as Permission[]).filter((a: Permission) => a.status === "granted");
+
+  // The Final Report's pencils can edit a section in place, but only while
+  // this consultation is still the open one (same rule as the rest of the
+  // workspace). Anamnesis keeps its own lock, as in its own section.
+  const visitAppointment = currentSession?.appointment.appointment_id ?? null;
+  const finalReportEditors: FinalReportEditors | undefined = sessionLocked
+    ? undefined
+    : {
+        ...(anamnesisLocked
+          ? {}
+          : {
+              anamnesis: {
+                label: "Edit this consultation's anamnesis",
+                hint: "Saved to this consultation's record. Edit as often as needed until it is completed.",
+                render: (done) => (
+                  <AnamnesisForm
+                    patientId={id}
+                    mode="doctor"
+                    assessmentStage="main"
+                    initialRecord={visitSummaryLoading ? undefined : (visitSummary?.anamnesis ?? null)}
+                    onSubmitted={() => {
+                      dispatch(invalidatePatientAnamnesis({ patientId: id, stage: "main" }));
+                      reloadVisitSummary();
+                      done();
+                    }}
+                    appointmentId={visitAppointment ?? sessionId}
+                  />
+                ),
+              },
+            }),
+        prs: {
+          label: "Take a PRS",
+          hint: "Run an assigned PRS on the patient's behalf, under this consultation.",
+          size: "wizard",
+          render: (done) => <PrsEditor patientId={id} sessionId={visitAppointmentId} onDone={done} />,
+        },
+        notes: {
+          label: "Add a note",
+          hint: "Added to this patient's Doctor's Notes.",
+          render: (done) => <NoteEditor patientId={id} appointmentId={visitAppointment} onDone={done} />,
+        },
+        medicines: {
+          label: "Prescribe",
+          hint: "Added to this patient's prescriptions for this consultation.",
+          render: (done) => <MedicinePrescribeForm patientId={id} appointmentId={visitAppointment} onSaved={done} />,
+        },
+        protocols: {
+          label: "Modify or add protocol",
+          hint: "The full protocol wizard, without leaving the report.",
+          size: "wizard",
+          render: (done) => <ProtocolEditor patientId={id} onDone={done} />,
+        },
+      };
 
   const isAssessmentStarted = (a: Permission) => {
     if (a.instance_id) return true;
@@ -653,86 +702,7 @@ export default function DoctorPatientDetailPage() {
                     <p className="text-neutral-600 text-sm">Current and past prescriptions for {fullName}.</p>
                   </div>
 
-                  <div className="border border-blue-100 bg-blue-50/50 rounded-lg p-4 space-y-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <div>
-                          <label className="text-xs font-semibold text-neutral-700">Medicine name *</label>
-                          <input
-                            value={medForm.name}
-                            onChange={(e) => setMedForm((f) => ({ ...f, name: e.target.value }))}
-                            placeholder="e.g. Escitalopram 10 mg"
-                            className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs font-semibold text-neutral-700">Dose</label>
-                          <input
-                            value={medForm.dose}
-                            onChange={(e) => setMedForm((f) => ({ ...f, dose: e.target.value }))}
-                            placeholder="e.g. 1 tablet"
-                            className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs font-semibold text-neutral-700">Timing</label>
-                          <select
-                            value={medForm.timing}
-                            onChange={(e) => setMedForm((f) => ({ ...f, timing: e.target.value }))}
-                            className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
-                          >
-                            {MEDICINE_TIMINGS.map((t) => <option key={t}>{t}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-xs font-semibold text-neutral-700">Meal instruction</label>
-                          <select
-                            value={medForm.meal}
-                            onChange={(e) => setMedForm((f) => ({ ...f, meal: e.target.value }))}
-                            className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
-                          >
-                            {MEDICINE_MEALS.map((m) => <option key={m}>{m}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-xs font-semibold text-neutral-700">Duration</label>
-                          <input
-                            value={medForm.duration}
-                            onChange={(e) => setMedForm((f) => ({ ...f, duration: e.target.value }))}
-                            placeholder="e.g. 8 weeks"
-                            className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-neutral-700">Note</label>
-                        <input
-                          value={medForm.note}
-                          onChange={(e) => setMedForm((f) => ({ ...f, note: e.target.value }))}
-                          placeholder="Optional prescribing note"
-                          className="w-full mt-1.5 h-9 border border-neutral-200 rounded-lg px-3 text-sm bg-white outline-none focus:border-blue-400"
-                        />
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        disabled={!medForm.name.trim() || medSaving}
-                        onClick={async () => {
-                          setMedSaving(true);
-                          setMedError(null);
-                          const result = await dispatch(prescribeMedicine({
-                            patientId: id,
-                            medicine: medForm,
-                            appointmentId: currentSession?.appointment.appointment_id ?? null,
-                          }));
-                          setMedSaving(false);
-                          if (prescribeMedicine.fulfilled.match(result)) setMedForm(emptyMedForm);
-                          else setMedError(result.error?.message || "Could not save the prescription. Please try again.");
-                        }}
-                      >
-                        <Save className="h-4 w-4" /> Save Prescription
-                      </Button>
-                      {medError && <p className="text-xs text-red-600 mt-2">{medError}</p>}
-                    </div>
+                  <MedicinePrescribeForm key={id} patientId={id} appointmentId={currentSession?.appointment.appointment_id ?? null} />
 
                   {medicines.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-center border border-dashed border-neutral-200 rounded-lg">
@@ -788,6 +758,15 @@ export default function DoctorPatientDetailPage() {
                   doctorNoteText={doctorNotes[0]?.note_text ?? null}
                   onNavigateSection={setSelectedSection}
                   onGenerateFinalReport={() => openFinalReport(currentSession)}
+                />
+              ) : selectedSection === "final-report" ? (
+                <FinalReportWorkspace
+                  key={finalReportFor?.session ? "last_consultation" : "overall"}
+                  patientId={id}
+                  patientName={fullName}
+                  defaultScope={finalReportFor?.session ? "last_consultation" : "overall"}
+                  editors={finalReportEditors}
+                  onSigned={onFinalReportSigned}
                 />
               ) : selectedSection === "sessions" ? (
                 <DeviceSessionsPanel patientId={id} />
@@ -1084,15 +1063,6 @@ export default function DoctorPatientDetailPage() {
         </button>
       </div>
 
-      {finalReportFor && (
-        <FinalReportModal
-          patientId={id}
-          patientName={fullName}
-          defaultScope={finalReportFor.session ? "last_consultation" : "overall"}
-          onClose={() => setFinalReportFor(null)}
-          onSigned={onFinalReportSigned}
-        />
-      )}
 
       {showCompare && (
         <CompareSessionsModal patientId={id} sessions={clinicalSessions} onClose={() => setShowCompare(false)} />

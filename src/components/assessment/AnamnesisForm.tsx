@@ -215,6 +215,14 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
   // ── fetch questions + record ───────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
+    // The doctor pages pass the selected visit's own record; undefined there
+    // only means "that visit is still loading". Fetching the patient-wide
+    // latest instead showed a previous consultation's anamnesis on a new
+    // follow-up — wait for the visit's record.
+    if (initialRecord === undefined && mode === "doctor" && assessmentStage === "main") {
+      setRecordState("loading");
+      return;
+    }
 
     const fetchRecord = (): Promise<AnamnesisRecord | null> => {
       if (initialRecord !== undefined) {
@@ -242,7 +250,11 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
           setResponses(hydrateResponses(record));
           setRecordState(record.status === "completed" ? "completed" : "in_progress");
         } else {
-          // no record found
+          // no record found — drop whatever an earlier visit left in state
+          setRecord(null);
+          setAnamnesisId(null);
+          setMeta(null);
+          setResponses({});
           setRecordState(mode === "doctor" ? "no-record" : "loading");
         }
       })
@@ -290,6 +302,10 @@ export function AnamnesisForm({ patientId, mode, assessmentStage, initialRecord,
   // the doctor to make (it just creates/resumes the record). Fires once
   // recordState settles on "no-record" for a doctor who isn't locked out.
   const autoStartedRef = useRef(false);
+  // A different visit gets its own auto-start.
+  useEffect(() => {
+    autoStartedRef.current = false;
+  }, [appointmentId]);
   useEffect(() => {
     if (recordState !== "no-record" || mode !== "doctor" || lockedForSession) return;
     // A consultation (main) anamnesis must belong to an appointment — the

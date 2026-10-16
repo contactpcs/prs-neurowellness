@@ -53,7 +53,7 @@ export const ENDPOINTS = {
     ITEM: (itemId: string) => `/billable-items/${itemId}`, // real — GET one, PATCH update. No DELETE — deactivate instead.
   },
 
-  // ─── Platform Fee & Cancellation Policy (super_admin) ───
+  // ─── Platform Fee (super_admin) & Cancellation Policy (super_admin; clinic_admin for own clinic's tiers) ───
   PLATFORM_FEE_CONFIG: {
     LIST: "/platform-fee-config",                                    // real — GET both session_type rows
     ITEM: (sessionType: string) => `/platform-fee-config/${sessionType}`, // real — PATCH fee_percent
@@ -168,6 +168,7 @@ export const ENDPOINTS = {
     DASHBOARD: "/admin/dashboard",              // NOT AVAILABLE — composed client-side
     CLINICS: "/clinics",                        // real
     CLINIC: (id: string) => `/clinics/${id}`,   // real
+    BOOKING_POLICY: (id: string) => `/clinics/${id}/booking-policy`, // GET / PUT (whole policy) — refund-on-cancel rows + reschedule notice; clinic_admin own clinic, super_admin any
     DEACTIVATE_CLINIC: (id: string) => `/clinics/${id}/status`, // real — PATCH {status:"pending_closure"}
     ACTIVATE_CLINIC: (id: string) => `/clinics/${id}/status`,   // real — PATCH {status:"active"}
     STAFF: "/admin/staff",                                      // NOT AVAILABLE — composed from DOCTORS/STAFF below
@@ -309,6 +310,8 @@ export const ENDPOINTS = {
     UPDATE: (id: string) => `/treatment-protocols/${id}`,
     SESSIONS: (id: string) => `/treatment-protocols/${id}/sessions`,
     ACTIVATE: (id: string) => `/treatment-protocols/${id}/activate`,
+    // POST — next minor version with only the sent fields changed; takes over the not-yet-started sessions and goes live
+    AMEND: (id: string) => `/treatment-protocols/${id}/amend`,
     CANCEL: (id: string) => `/treatment-protocols/${id}/cancel`,
     COMPLETE: (id: string) => `/treatment-protocols/${id}/complete`,
     PRS_DEVICE_SESSION: (id: string) => `/treatment-protocols/${id}/prs/device-session`,
@@ -382,6 +385,9 @@ export const ENDPOINTS = {
     MY_RESCHEDULE: (id: string) => `/me/appointments/${id}/reschedule`, // PATCH {appointment_date, start_time, reason?} — selected/paid/no_show only (initial/follow_up; not protocol-born — use CLAIM_SLOT for those)
     CLAIM_SLOT: (id: string) => `/me/appointments/${id}/claim-slot`, // PATCH {start_time, appointment_date?} — planned -> selected
     MY_DEVICE_AVAILABILITY: (id: string) => `/me/appointments/${id}/device-availability`, // GET ?from_date&to_date
+    MY_RESCHEDULE_OPTIONS: (id: string) => `/me/appointments/${id}/reschedule-options`, // GET — can it move now, allowed date window + reason (device-session make-up rule)
+    RESCHEDULE_OPTIONS: (id: string) => `/appointments/${id}/reschedule-options`, // GET — staff version of the above
+    POLICY: "/appointment-policy", // GET ?clinic_id (patient: own clinic) — booking/cancellation/reschedule/refund note, built from live clinic settings
     DEVICE_DAY_AVAILABILITY: (id: string) => `/me/appointments/${id}/device-day-availability`, // GET — continuous timeline, no params, always the appointment's own planned date
   },
 
@@ -433,7 +439,7 @@ export const ENDPOINTS = {
 
   // ─── Final Report (SQL/v1/117) — signed by the doctor, then immutable ───
   FINAL_REPORTS: {
-    // real — GET ?scope=overall|last_consultation (doctor): live sections + note candidates, nothing stored
+    // real — POST {scope, selection?} (doctor): live sections + per-section candidates, nothing stored
     PREVIEW: (patientId: string) => `/patients/${patientId}/final-report/preview`,
     // real — POST {scope, diagnosis, note_ids, confirm_sign} (doctor) signs; GET lists previous (doctor + admins)
     FOR_PATIENT: (patientId: string) => `/patients/${patientId}/final-reports`,
