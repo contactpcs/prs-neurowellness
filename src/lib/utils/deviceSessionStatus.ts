@@ -33,22 +33,21 @@ export function patientDeviceSessionLabel(status?: string | null): string {
 
 /** One colour per status bucket, shared by list badges, calendar chips, the
  * calendar legend and the filter buttons so they always agree.
- *  - badge: pale-tint pill (lists, calendar chips); its border-* colour is the
- *    calendar chip / patient card stripe
+ *  - badge: solid pill (lists, calendar chips). Solid, not pale tints —
+ *    pale -100 tints made blue/cyan (and other neighbours) look the same.
  *  - dot:   solid swatch (legend, filter buttons, mobile calendar)
- * Hues: slate, purple, cyan, green, red, yellow — each a separate hue family.
- * Cancelled is outlined white rather than tinted, since a pale slate tint
- * already reads as grey. */
+ * Hues: dark slate, purple, bright cyan, green, red, yellow, light grey —
+ * each differs from the rest in hue and/or lightness. */
 export type SessionTone = { badge: string; dot: string };
 
 const TONES = {
-  upcoming: { badge: "bg-slate-200 text-slate-800 border-slate-700", dot: "bg-slate-700" },
-  paid: { badge: "bg-purple-100 text-purple-800 border-purple-500", dot: "bg-purple-500" },
-  in_progress: { badge: "bg-cyan-100 text-cyan-800 border-cyan-500", dot: "bg-cyan-500" },
-  completed: { badge: "bg-green-100 text-green-800 border-green-500", dot: "bg-green-500" },
-  no_show: { badge: "bg-red-100 text-red-800 border-red-500", dot: "bg-red-500" },
-  not_booked: { badge: "bg-yellow-100 text-yellow-800 border-yellow-400", dot: "bg-yellow-400" },
-  cancelled: { badge: "bg-white text-neutral-500 border border-neutral-300", dot: "bg-neutral-300" },
+  upcoming: { badge: "bg-slate-800 text-white border-slate-800", dot: "bg-slate-800" },
+  paid: { badge: "bg-purple-600 text-white border-purple-600", dot: "bg-purple-600" },
+  in_progress: { badge: "bg-cyan-400 text-neutral-900 border-cyan-400", dot: "bg-cyan-400" },
+  completed: { badge: "bg-green-600 text-white border-green-600", dot: "bg-green-600" },
+  no_show: { badge: "bg-red-600 text-white border-red-600", dot: "bg-red-600" },
+  not_booked: { badge: "bg-yellow-300 text-neutral-900 border-yellow-300", dot: "bg-yellow-300" },
+  cancelled: { badge: "bg-neutral-200 text-neutral-600 border-neutral-300", dot: "bg-neutral-300" },
 } satisfies Record<string, SessionTone>;
 
 type ToneKey = keyof typeof TONES;
