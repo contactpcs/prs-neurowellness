@@ -257,13 +257,17 @@ export default function AppointmentDetailPage() {
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
-  const run = useCallback(async (fn: () => Promise<any>, label: string) => {
+  // Resolves true when the action succeeded, so a caller can follow up
+  // (e.g. Start Consultation opening the workspace).
+  const run = useCallback(async (fn: () => Promise<any>, label: string): Promise<boolean> => {
     setBusy(true);
     setActionError("");
     try {
       await fn();
+      return true;
     } catch (e: any) {
       setActionError(e?.response?.data?.error?.message ?? e?.response?.data?.detail ?? e?.message ?? `${label} failed`);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -288,6 +292,12 @@ export default function AppointmentDetailPage() {
   // expects doctors.doctor_id (public ID) instead, hence doctor_public_id.
   const docId  = appointment.doctor_public_id;
   const patientPublicId = appointment.patient_public_id ?? appointment.patient_id;
+  const workspaceHref =
+    appointment.appointment_type === "device_session"
+      ? `/doctor/patients/${patientPublicId}?section=sessions`
+      : appointment.appointment_type === "initial"
+        ? `/doctor/patients/${patientPublicId}`
+        : `/doctor/patients/${patientPublicId}?session=${appointment.appointment_id}`;
 
   // A device_session still has no treating doctor OF RECORD (doctor_id stays
   // NULL by design), but a doctor can now run one end-to-end just like a
@@ -439,13 +449,7 @@ export default function AppointmentDetailPage() {
               </span>
             ) : (
               <Link
-                href={
-                  appointment.appointment_type === "device_session"
-                    ? `/doctor/patients/${patientPublicId}?section=sessions`
-                    : appointment.appointment_type === "initial"
-                      ? `/doctor/patients/${patientPublicId}`
-                      : `/doctor/patients/${patientPublicId}?session=${appointment.appointment_id}`
-                }
+                href={workspaceHref}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-xs font-semibold"
                 style={{ background: BRAND }}
               >
@@ -564,7 +568,11 @@ export default function AppointmentDetailPage() {
                   icon={Play}
                   label={isDeviceSession ? "Run Device Session" : "Start Consultation"}
                   busy={busy}
-                  onClick={() => (isDeviceSession ? router.push(deviceSessionWorkflowHref) : run(start, "Start"))}
+                  onClick={async () => {
+                    if (isDeviceSession) { router.push(deviceSessionWorkflowHref); return; }
+                    // Starting the consultation unlocks the workspace — go straight there.
+                    if (await run(start, "Start")) router.push(workspaceHref);
+                  }}
                 />
               )}
               {canComplete && (

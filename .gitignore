@@ -7,3 +7,11 @@ out/
 next-env.d.ts
 .env.example
 .gstack/
+
+# design-sync
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
+.design-sync
