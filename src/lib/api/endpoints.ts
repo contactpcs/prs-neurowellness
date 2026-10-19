@@ -299,6 +299,8 @@ export const ENDPOINTS = {
     CREATE: "/protocol-instances",
     DETAIL: (id: string) => `/protocol-instances/${id}`,
     STATUS: (id: string) => `/protocol-instances/${id}/status`,
+    // First protocol waits on the initial consultation's anamnesis, PRS and doctor's note.
+    READINESS: (patientId: string) => `/patients/${patientId}/protocol-readiness`,
   },
 
   // ─── Treatment Protocols (wizard steps 7-8 + lifecycle + PRS) ───

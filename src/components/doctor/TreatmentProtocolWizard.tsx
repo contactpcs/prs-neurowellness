@@ -127,6 +127,14 @@ function describePushError(e: any): string {
   return e?.response?.data?.error?.message || e?.response?.data?.detail || "Failed to push the protocol. Please try again.";
 }
 
+// GET /patients/{id}/protocol-readiness `missing` values.
+const PREREQUISITE_LABELS: Record<string, string> = {
+  initial_consultation: "Start the initial consultation",
+  anamnesis: "Answer all required anamnesis questions",
+  prs: "Complete a PRS",
+  doctor_notes: "Add a doctor's note",
+};
+
 /** The 8-step protocol wizard. Full page by default (the wizard route); with
  * `embedded` it runs inside a dialog (the Final Report's edit pop-up): no
  * back link or clinical snapshot, the footer sticks to the dialog instead of
@@ -214,6 +222,18 @@ export function TreatmentProtocolWizard({
   const [reasonError, setReasonError] = useState<string | null>(null);
   const [prefillLoading, setPrefillLoading] = useState(mode === "modify");
   const [err, setErr] = useState<string | null>(null);
+
+  // A first protocol waits on the initial consultation's anamnesis, PRS and
+  // doctor's note — checked up front so the doctor isn't told only at push.
+  // A failed check doesn't block: the backend enforces the same rule.
+  const [prereqMissing, setPrereqMissing] = useState<string[] | null>(mode === "new" ? null : []);
+  useEffect(() => {
+    if (mode !== "new") return;
+    treatmentProtocolService
+      .getProtocolReadiness(patientId)
+      .then((r) => setPrereqMissing(r.ready ? [] : r.missing))
+      .catch(() => setPrereqMissing([]));
+  }, [mode, patientId]);
 
   const set = <K extends keyof WizardState>(k: K, v: WizardState[K]) => setState((s) => ({ ...s, [k]: v }));
 
@@ -872,7 +892,41 @@ export function TreatmentProtocolWizard({
     }
   };
 
-  if (prefillLoading) return <PageSkeleton />;
+  if (prefillLoading || prereqMissing === null) return <PageSkeleton />;
+
+  if (prereqMissing.length > 0) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-4">
+        {!embedded && (
+          <button
+            onClick={goToWorkspace}
+            className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back to Clinical Workspace
+          </button>
+        )}
+        <Card>
+          <CardContent className="space-y-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
+              <div>
+                <h2 className="text-base font-semibold text-neutral-900">Treatment protocol is locked</h2>
+                <p className="text-sm text-neutral-500 mt-1">Complete these in the patient&apos;s initial consultation first:</p>
+              </div>
+            </div>
+            <ul className="space-y-2 pl-8">
+              {prereqMissing.map((m) => (
+                <li key={m} className="flex items-center gap-2 text-sm text-neutral-700">
+                  <X className="h-4 w-4 text-red-500 shrink-0" /> {PREREQUISITE_LABELS[m] ?? m}
+                </li>
+              ))}
+            </ul>
+            <Button variant="outline" onClick={goToWorkspace}>Back to Clinical Workspace</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (reasonGateOpen) {
     return (
