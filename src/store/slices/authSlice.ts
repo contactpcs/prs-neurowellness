@@ -123,6 +123,9 @@ export const login = createAsyncThunk(
         const session = apiError.details?.[0]?.session;
         return rejectWithValue({ passwordChallenge: { username: credentials.username, session } });
       }
+      if (apiError.code === "PASSWORD_RESET_REQUIRED") {
+        return rejectWithValue("For your security, please set a new password using “Forgot password?” below.");
+      }
       const rawMessage = apiError.message || "Login failed";
       const lower = rawMessage.toLowerCase();
       let errorMessage = rawMessage;

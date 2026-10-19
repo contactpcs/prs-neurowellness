@@ -136,11 +136,8 @@ export const ENDPOINTS = {
   // above). Covers only what's actually built — see
   // Documents/Reception_API_Integration_Guide.md for the full spec.
   RECEPTION: {
-    SEND_CODE: "/reception/registrations/send-code",
-    VERIFY_CODE: "/reception/registrations/verify-code",
-    CONFIRM_REGISTRATION: "/reception/registrations/confirm", // current flow: OTP + full form -> registered, one call
-    PASSWORD_POLICY: "/reception/registrations/password-policy",
-    REGISTER_PATIENT: "/reception/patients",
+    REGISTER_PATIENT: "/reception/patients", // no password/consent — Cognito sends the patient a temporary password
+    RESEND_LOGIN: (patientId: string) => `/reception/patients/${patientId}/resend-login`,
     PATIENTS: "/reception/patients",
     PATIENT: (patientId: string) => `/reception/patients/${patientId}`,
     REGISTRATIONS: "/reception/registrations",
@@ -299,6 +296,8 @@ export const ENDPOINTS = {
     CREATE: "/protocol-instances",
     DETAIL: (id: string) => `/protocol-instances/${id}`,
     STATUS: (id: string) => `/protocol-instances/${id}/status`,
+    // First protocol waits on the initial consultation's anamnesis, PRS and doctor's note.
+    READINESS: (patientId: string) => `/patients/${patientId}/protocol-readiness`,
   },
 
   // ─── Treatment Protocols (wizard steps 7-8 + lifecycle + PRS) ───
