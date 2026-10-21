@@ -87,6 +87,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (isRestoring || !user) return;
     if (user.is_active === false && !isPublicPath(pathname)) {
       router.replace(user.consent_signed === false ? ROUTES.CONSENT : ROUTES.ACCOUNT_DEACTIVATED);
+    } else if (user.consent_type_required && pathname !== ROUTES.CONSENT) {
+      // Active patient asked to re-consent to a new version — the backend
+      // refuses everything else (CONSENT_REQUIRED) until they sign.
+      router.replace(ROUTES.CONSENT);
     }
   }, [isRestoring, user, pathname, router]);
 

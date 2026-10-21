@@ -12,7 +12,8 @@ import { PageSkeleton, Modal } from "@/components/ui";
 import { usersService, NoSupportedFieldsError } from "@/lib/api/services/users.service";
 import { authService } from "@/lib/api/services/auth.service";
 import { patientFilesService, type PatientFile } from "@/lib/api/services/patientFiles.service";
-import { consentService, type ConsentRecord, type ConsentTemplate } from "@/lib/api/services/consent.service";
+import { consentService, type ConsentDocument, type ConsentRecord } from "@/lib/api/services/consent.service";
+import { FullFormModal } from "@/components/consent/FullFormModal";
 import { extractErrorMessage } from "@/lib/api/errors";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
@@ -524,12 +525,14 @@ function ConsentsSection({ patientProfileId }: { patientProfileId?: string }) {
   const { assessments } = useMyAssessments();
   const pendingToSign = assessments.filter((a) => a.status === "granted");
 
-  // Clicked consent's document — fetched on demand (not prefetched for every
-  // row) since the template text is only needed once someone asks to see it.
+  // Clicked consent's document — the exact text, ticks and signer stored at
+  // signing (not the current template), fetched on demand.
   const [viewing, setViewing] = useState<ConsentRecord | null>(null);
-  const [viewTemplate, setViewTemplate] = useState<ConsentTemplate | null>(null);
+  const [viewDoc, setViewDoc] = useState<ConsentDocument | null>(null);
+  const [showFull, setShowFull] = useState(false);
   const [viewLoading, setViewLoading] = useState(false);
   const [viewError, setViewError] = useState<string | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!patientProfileId) return;
@@ -540,16 +543,19 @@ function ConsentsSection({ patientProfileId }: { patientProfileId?: string }) {
 
   const openConsent = (c: ConsentRecord) => {
     setViewing(c);
-    setViewTemplate(null);
+    setViewDoc(null);
     setViewError(null);
+    setPdfError(null);
     setViewLoading(true);
-    // patient_onboarding (and the other non-role-split consent types) have a
-    // single row with role=null — patient consent records are never
-    // role-split the way staff-onboarding ones are, so no role param here.
-    consentService.getTemplate(c.consent_type)
-      .then((t) => { if (!t) setViewError("Consent document not found"); setViewTemplate(t); })
+    consentService.getDocument(c.consent_id)
+      .then(setViewDoc)
       .catch(() => setViewError("Failed to load consent document"))
       .finally(() => setViewLoading(false));
+  };
+
+  const downloadPdf = (consentId: string) => {
+    setPdfError(null);
+    consentService.downloadPdf(consentId).catch((e) => setPdfError(extractErrorMessage(e, "Could not open the PDF")));
   };
 
   return (
@@ -621,25 +627,66 @@ function ConsentsSection({ patientProfileId }: { patientProfileId?: string }) {
       <Modal
         isOpen={!!viewing}
         onClose={() => setViewing(null)}
-        title={viewTemplate?.title ?? (viewing ? `${viewing.consent_type.replace(/_/g, " ")} consent` : "")}
+        title={viewDoc?.title ?? (viewing ? `${viewing.consent_type.replace(/_/g, " ")} consent` : "")}
       >
         <div className="space-y-3">
           {viewing?.signed_at && (
             <p className="text-xs text-neutral-500">
-              Signed {new Date(viewing.signed_at).toLocaleDateString()}
+              Signed {new Date(viewing.signed_at).toLocaleString()}
+              {viewDoc?.signer ? ` by ${viewDoc.signer.name}${viewDoc.signer.signer_type === "guardian" ? " (guardian)" : ""}` : ""}
+              {viewDoc ? ` · version ${viewDoc.version}` : ""}
             </p>
           )}
           {viewLoading ? (
             <p className="text-sm text-neutral-400">Loading…</p>
           ) : viewError ? (
             <p className="text-sm text-red-600">{viewError}</p>
-          ) : (
-            <div className="max-h-96 overflow-y-auto text-sm text-neutral-700 bg-neutral-50 border border-neutral-200 rounded-lg p-4 whitespace-pre-wrap">
-              {viewTemplate?.content}
-            </div>
+          ) : viewDoc && (
+            <>
+              <div className="max-h-80 overflow-y-auto text-sm text-neutral-700 bg-neutral-50 border border-neutral-200 rounded-lg p-4 whitespace-pre-wrap">
+                {viewDoc.content}
+              </div>
+              {viewDoc.clauses.length > 0 && (
+                <ul className="space-y-1.5">
+                  {viewDoc.clauses.map((c) => (
+                    <li key={c.code} className="flex items-start gap-2 text-sm text-neutral-700">
+                      <span className={c.accepted ? "text-green-600" : "text-neutral-300"}>{c.accepted ? "☑" : "☐"}</span>
+                      <span>{c.label}{!c.required && <span className="text-xs text-neutral-400"> (optional)</span>}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {viewing && viewDoc.has_full_form && (
+                <button
+                  onClick={() => setShowFull(true)}
+                  className="block text-sm font-medium hover:underline"
+                  style={{ color: BRAND_PRIMARY }}
+                >
+                  Read the full consent form
+                </button>
+              )}
+              {viewing && viewing.status !== "pending" && (
+                <button
+                  onClick={() => downloadPdf(viewing.consent_id)}
+                  className="text-sm font-medium hover:underline"
+                  style={{ color: BRAND_PRIMARY }}
+                >
+                  Download signed PDF
+                </button>
+              )}
+              {pdfError && <p className="text-xs text-red-600">{pdfError}</p>}
+            </>
           )}
         </div>
       </Modal>
+      {viewing && (
+        <FullFormModal
+          isOpen={showFull}
+          onClose={() => setShowFull(false)}
+          load={() => consentService.getFullForm(viewing.consent_id)}
+          title={viewDoc?.title}
+        />
+      )}
     </div>
   );
 }

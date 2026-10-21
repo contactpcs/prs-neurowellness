@@ -19,8 +19,8 @@ const CONSENT_SECTIONS = [
     body: "Your responses are used to generate a clinical assessment report for your medical record. This report assists your clinician in diagnosis and treatment planning.",
   },
   {
-    title: "Regulatory Compliance",
-    body: "All data is retained in compliance with DISHA and HIPAA regulations. You have the right to request access, correction, or deletion of your data at any time.",
+    title: "Your Rights",
+    body: "Your records are kept as Indian medical record-keeping rules require. You can ask the clinic for a copy of your data or to correct it.",
   },
   {
     title: "Voluntary Participation",
@@ -29,10 +29,6 @@ const CONSENT_SECTIONS = [
   {
     title: "Confidentiality",
     body: "Your responses are confidential and will not be shared with insurance providers, employers, or any third party without your explicit consent, except where required by law.",
-  },
-  {
-    title: "Digital Signature",
-    body: "By checking the box below you are providing a legally binding digital signature indicating you have read, understood, and agree to the terms of this consent.",
   },
 ];
 
@@ -91,7 +87,7 @@ export default function PatientConsentPage() {
             <FileText className="w-4 h-4 text-gray-400" />
             <div>
               <p className="text-xs font-semibold text-gray-900">Assessment Participation Consent</p>
-              <p className="text-[10px] text-gray-400">Treatment consent document · DISHA & HIPAA compliant</p>
+              <p className="text-[10px] text-gray-400">Assessment participation</p>
             </div>
             <div className="ml-auto flex items-center gap-1 text-[10px] text-gray-400">
               <Lock className="w-3 h-3" /> Secure
@@ -125,7 +121,7 @@ export default function PatientConsentPage() {
               "Secure storage of your assessment responses",
               "Use of your data for clinical reporting",
               "Your clinician accessing your assessment results",
-              "Retention of records per DISHA & HIPAA standards",
+              "Retention of records as medical record-keeping rules require",
             ].map((item) => (
               <li key={item} className="flex items-center gap-2 text-xs text-gray-600">
                 <CheckCircle className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
@@ -168,9 +164,6 @@ export default function PatientConsentPage() {
           </button>
         </div>
 
-        <p className="text-center text-[10px] text-gray-400 mt-3">
-          Your digital signature is recorded with a timestamp and IP address for compliance.
-        </p>
       </div>
     </div>
   );

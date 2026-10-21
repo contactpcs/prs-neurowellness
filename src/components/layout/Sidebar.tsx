@@ -12,7 +12,7 @@ import {
   UserCircle, LogOut, ChevronLeft, Menu, Calendar, CalendarDays,
   ClipboardCheck, MapPin, Building2, UserCog, Settings, ShieldCheck,
   ShoppingBag, Receipt, Bell, DollarSign, Activity, BarChart2, Percent,
-  TrendingUp, Cpu,
+  TrendingUp, Cpu, FileSignature,
 } from "lucide-react";
 import { NeuroDeviceIcon } from "@/components/icons/NeuroDeviceIcon";
 import { BrainBoltIcon } from "@/components/icons/BrainBoltIcon";
@@ -88,6 +88,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { label: "Device Catalog",  href: "/admin/device-catalog",  icon: Cpu },
     { label: "Billable Items",  href: "/admin/billable-items",  icon: DollarSign },
     { label: "Fees & Cancellation", href: "/admin/fee-config",  icon: Percent },
+    { label: "Consent Forms",   href: "/admin/consent-templates", icon: FileSignature },
     { label: "Payments",        href: "/admin/payments",        icon: Receipt },
     { label: "Settings",        href: "/admin/settings",        icon: Settings },
   ],
