@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Check, ChevronRight, ChevronDown, ChevronUp, Loader2, Plus, X, AlertTriangle, ShieldCheck,
@@ -16,11 +16,30 @@ import { PatientClinicalSnapshot } from "@/components/doctor/PatientClinicalSnap
 import type {
   DeviceRead, ConditionRead, DiagnosisRead, DiagnosisResolution, PlacementRead, DosingRead, ScaleRead,
   SchedulePreview, ProtocolCreate, ProtocolScaleAssignment, ProtocolRead, ProtocolDetail, ProtocolAmend, CustomMontageCreate,
-  DeviceScheduleRead, DeviceOverrideRead, DeviceSlotRead,
+  DeviceScheduleRead, DeviceOverrideRead,
 } from "@/types/treatmentProtocol.types";
 import {
   TVNS_FREQUENCY_HZ_OPTIONS, TVNS_PULSE_WIDTH_US_OPTIONS, TVNS_DURATION_MIN_OPTIONS, formatTvnsDuration,
 } from "@/types/deviceSession.types";
+
+// Follow-up cadence and total sessions are checked here so the doctor sees the
+// problem on the field. The backend enforces the same limits (follow_up_every_n 1-30
+// and no more than session_count; session_count 10-30) and answers anything else with a 422,
+// which used to leave the schedule preview silently empty.
+function followUpError(everyN: string, sessionCount: string): string | null {
+  if (!everyN) return null;
+  if (!/^\d+$/.test(everyN)) return "Enter a whole number.";
+  const n = parseInt(everyN, 10);
+  const total = parseInt(sessionCount, 10) || 0;
+  if (n < 1) return "Must be at least 1.";
+  if (n > 30) return "Cannot be more than 30.";
+  if (total && n > total) return `Cannot be more than the total sessions (${total}).`;
+  return null;
+}
+function sessionCountOk(sessionCount: string): boolean {
+  const n = parseInt(sessionCount, 10);
+  return Number.isInteger(n) && n >= 10 && n <= 30;
+}
 
 const STEP_LABELS = ["Device", "Condition", "Diagnosis", "Placement", "Dosing", "Scales", "Schedule", "Review"];
 const REASON_OPTIONS = ["Patient discomfort", "Patient tolerance", "Clinical reassessment", "Treatment response", "Other"];
@@ -266,11 +285,15 @@ export function TreatmentProtocolWizard({
   const [scaleCatalogue, setScaleCatalogue] = useState<ScaleRead[]>([]);
   const [scalesLoading, setScalesLoading] = useState(false);
   const scalesCacheKey = useRef<string | null>(null);
+  // Scales the PRS catalogue ties to the selected conditions (condition -> PRS disease -> scale).
+  const [suggestedScaleIds, setSuggestedScaleIds] = useState<string[]>([]);
   const [preview, setPreview] = useState<SchedulePreview | null>(null);
   const [clinicDeviceId, setClinicDeviceId] = useState<string | null>(null);
   const [deviceSchedules, setDeviceSchedules] = useState<DeviceScheduleRead[]>([]);
   const [deviceOverrides, setDeviceOverrides] = useState<DeviceOverrideRead[]>([]);
-  const [deviceSlots, setDeviceSlots] = useState<DeviceSlotRead[]>([]);
+  // False until the clinic's schedule for this device has been fetched (or failed), so the
+  // preview is not drawn first without it and then redrawn.
+  const [clinicScheduleReady, setClinicScheduleReady] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [validation, setValidation] = useState<{ valid: boolean; errors: string[]; warnings: string[]; maxCathodes: number } | null>(null);
 
@@ -552,49 +575,99 @@ export function TreatmentProtocolWizard({
     return () => { cancelled = true; };
   }, []);
 
+  const conditionKey = state.conditionIds.join(",");
+  useEffect(() => {
+    if (step !== 5 || !conditionKey) { setSuggestedScaleIds([]); return; }
+    let cancelled = false;
+    treatmentProtocolService.listScales(conditionKey.split(","))
+      .then((rows) => { if (!cancelled) setSuggestedScaleIds(rows.map((r) => r.scale_id)); })
+      .catch(() => { if (!cancelled) setSuggestedScaleIds([]); });
+    return () => { cancelled = true; };
+  }, [step, conditionKey]);
+
+  // ─── Step 7: the clinic's schedule for this device ───
+  // The calendar must only offer days the clinic is open for this device, so the
+  // weekly schedule (clinic_device_schedules) and the date overrides (closures and
+  // one-off openings) are fetched BEFORE the preview is drawn. They belong to the ONE
+  // device this protocol prescribes (state.deviceId), resolved to the clinic's own
+  // inventory row (clinic_device_id) first. A clinic with no weekly schedule set up
+  // for the device is treated as unrestricted, with a notice on the calendar.
+  useEffect(() => {
+    if (step !== 6) return;
+    const clinicId = user?.clinic_id;
+    if (!clinicId || !state.deviceId) {
+      setClinicDeviceId(null); setDeviceSchedules([]); setDeviceOverrides([]); setClinicScheduleReady(true);
+      return;
+    }
+    let cancelled = false;
+    setClinicScheduleReady(false);
+    (async () => {
+      try {
+        const rows = await clinicDevicesService.list(clinicId, true);
+        const cdId = rows.find((r) => r.device_id === state.deviceId)?.clinic_device_id ?? null;
+        if (cancelled) return;
+        setClinicDeviceId(cdId);
+        if (!cdId) { setDeviceSchedules([]); setDeviceOverrides([]); return; }
+        const [sched, over] = await Promise.all([
+          treatmentProtocolService.listDeviceSchedule(clinicId, cdId).catch(() => [] as DeviceScheduleRead[]),
+          treatmentProtocolService.listDeviceOverrides(clinicId, cdId, state.startDate).catch(() => [] as DeviceOverrideRead[]),
+        ]);
+        if (cancelled) return;
+        setDeviceSchedules(sched);
+        setDeviceOverrides(over);
+      } catch {
+        if (!cancelled) { setClinicDeviceId(null); setDeviceSchedules([]); setDeviceOverrides([]); }
+      } finally {
+        if (!cancelled) setClinicScheduleReady(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [step, user?.clinic_id, state.deviceId, state.startDate]);
+
+  // Every date from the start date on that the clinic is closed for this device: a weekday
+  // with no active weekly schedule (unless an override opens that date) plus every
+  // date an override closes. Sent to the backend as skip dates, so the generator moves a
+  // session to the next open day instead of booking a closed one. 270 days covers
+  // 30 sessions at one a week with room to spare.
+  const clinicScheduleConfigured = deviceSchedules.some((sc) => sc.is_active);
+  const closedDates = useMemo(() => {
+    if (!state.startDate) return [] as string[];
+    const active = deviceSchedules.filter((sc) => sc.is_active);
+    const openDow = new Set(active.map((sc) => sc.day_of_week));
+    const closedByOverride = new Set(deviceOverrides.filter((o) => !o.is_available).map((o) => o.override_date));
+    const openedByOverride = new Set(deviceOverrides.filter((o) => o.is_available).map((o) => o.override_date));
+    const out: string[] = [];
+    const day = new Date(state.startDate + "T00:00:00Z");
+    for (let i = 0; i < 270; i++) {
+      const iso = day.toISOString().slice(0, 10);
+      const weekdayClosed = active.length > 0 && !openDow.has(day.getUTCDay());
+      if ((weekdayClosed && !openedByOverride.has(iso)) || closedByOverride.has(iso)) out.push(iso);
+      day.setUTCDate(day.getUTCDate() + 1);
+    }
+    return out;
+  }, [deviceSchedules, deviceOverrides, state.startDate]);
+  // What the backend is asked to skip: the doctor's own skipped days plus the closed days.
+  const effectiveSkipDates = useMemo(
+    () => Array.from(new Set([...state.skipDates, ...closedDates])).sort(),
+    [state.skipDates, closedDates],
+  );
+
   // ─── Step 7: Schedule preview ───
   useEffect(() => {
-    if (step !== 6 || !state.startDate || !state.sessionCount) return;
+    if (step !== 6 || !state.startDate || !state.sessionCount || !clinicScheduleReady) return;
     setPreviewLoading(true);
     const t = setTimeout(() => {
       treatmentProtocolService.previewSchedule({
         start_date: state.startDate,
         session_count: Math.max(10, Math.min(30, parseInt(state.sessionCount) || 20)),
         sessions_per_week: state.sessionsPerWeek,
-        follow_up_every_n: state.followUpEveryN ? parseInt(state.followUpEveryN) : undefined,
-        skip_dates: state.skipDates,
+        follow_up_every_n: state.followUpEveryN && !followUpError(state.followUpEveryN, state.sessionCount) ? parseInt(state.followUpEveryN) : undefined,
+        skip_dates: effectiveSkipDates,
         extra_dates: state.extraDates,
       }).then(setPreview).catch(() => setPreview(null)).finally(() => setPreviewLoading(false));
     }, 350);
     return () => clearTimeout(t);
-  }, [step, state.startDate, state.sessionCount, state.sessionsPerWeek, state.followUpEveryN, state.skipDates, state.extraDates]);
-
-  // ─── Step 7: Availability panel (device schedule + overrides + slot capacity) ───
-  // Every pool below belongs to the ONE device this protocol prescribes
-  // (state.deviceId), not the whole clinic — resolve its clinic_device_id
-  // (the clinic's inventory row for that device) once, then scope every call
-  // to it. A clinic with several devices of different modalities has an
-  // independent pool per device; this panel only ever shows this protocol's.
-  useEffect(() => {
-    if (step !== 6 || !user?.clinic_id || !state.deviceId) { setClinicDeviceId(null); return; }
-    clinicDevicesService.list(user.clinic_id, true)
-      .then((rows) => setClinicDeviceId(rows.find((r) => r.device_id === state.deviceId)?.clinic_device_id ?? null))
-      .catch(() => setClinicDeviceId(null));
-  }, [step, user?.clinic_id, state.deviceId]);
-
-  useEffect(() => {
-    if (step !== 6 || !user?.clinic_id || !clinicDeviceId) return;
-    treatmentProtocolService.listDeviceSchedule(user.clinic_id, clinicDeviceId).then(setDeviceSchedules).catch(() => setDeviceSchedules([]));
-  }, [step, user?.clinic_id, clinicDeviceId]);
-
-  useEffect(() => {
-    if (step !== 6 || !user?.clinic_id || !clinicDeviceId || !state.startDate) return;
-    treatmentProtocolService.listDeviceOverrides(user.clinic_id, clinicDeviceId, state.startDate).then(setDeviceOverrides).catch(() => setDeviceOverrides([]));
-    const toDate = new Date(state.startDate + "T00:00:00Z");
-    toDate.setUTCDate(toDate.getUTCDate() + 7);
-    treatmentProtocolService.listDeviceAvailability(user.clinic_id, clinicDeviceId, state.startDate, toDate.toISOString().slice(0, 10))
-      .then(setDeviceSlots).catch(() => setDeviceSlots([]));
-  }, [step, user?.clinic_id, clinicDeviceId, state.startDate]);
+  }, [step, state.startDate, state.sessionCount, state.sessionsPerWeek, state.followUpEveryN, state.extraDates, effectiveSkipDates, clinicScheduleReady]);
 
   // ─── Placement node clicks ───
   const maxCathodes = validation?.maxCathodes ?? (isHD ? 4 : 1);
@@ -670,12 +743,12 @@ export function TreatmentProtocolWizard({
     4: isTvns
       ? !!state.tvnsWavelength && !!state.tvnsPattern && !!state.tvnsStrengthPct
         && !!state.tvnsFrequencyHz && !!state.tvnsPulseWidthUs && !!state.tvnsDurationMin
-        && !!state.sessionCount
+        && sessionCountOk(state.sessionCount) && !followUpError(state.followUpEveryN, state.sessionCount)
       : state.montageMode === "custom"
-        ? !!state.currentMa && !!state.sessionDurationMin && !!state.sessionCount
-        : !!state.dosingId && !!state.sessionCount,
+        ? !!state.currentMa && !!state.sessionDurationMin && sessionCountOk(state.sessionCount) && !followUpError(state.followUpEveryN, state.sessionCount)
+        : !!state.dosingId && sessionCountOk(state.sessionCount) && !followUpError(state.followUpEveryN, state.sessionCount),
     5: true,
-    6: !!preview,
+    6: !!preview && !followUpError(state.followUpEveryN, state.sessionCount),
     7: false,
   };
 
@@ -691,6 +764,13 @@ export function TreatmentProtocolWizard({
     // Modifying: the schedule is already set even before a preview is drawn.
     6: canContinue[6] || mode === "modify",
   };
+
+  // Modifying: the protocol already exists, so the doctor changes one step and goes straight
+  // to Review instead of clicking Continue through everything after it. Scales (5) and
+  // Schedule (6) are never required to move on in this mode: the saved ones are kept
+  // unless the doctor edits them. Steps 0-4 still have to be valid.
+  const canJumpTo = (target: number) =>
+    mode === "modify" && [0, 1, 2, 3, 4].filter((j) => j < target).every((j) => canContinue[j]);
 
   const goNext = () => setStep((s) => Math.min(7, s + 1));
   const goBack = () => setStep((s) => Math.max(0, s - 1));
@@ -763,7 +843,7 @@ export function TreatmentProtocolWizard({
       if (state.sessionsPerWeek !== o.sessionsPerWeek) body.sessions_per_week = state.sessionsPerWeek;
       if (state.followUpEveryN !== o.followUpEveryN && state.followUpEveryN) body.follow_up_every_n = num(state.followUpEveryN);
       body.start_date = state.startDate;
-      if (state.skipDates.length) body.skip_dates = state.skipDates;
+      if (effectiveSkipDates.length) body.skip_dates = effectiveSkipDates;
       if (state.extraDates.length) body.extra_dates = state.extraDates;
     }
     return body;
@@ -843,7 +923,7 @@ export function TreatmentProtocolWizard({
         follow_up_every_n: state.followUpEveryN ? parseInt(state.followUpEveryN) : undefined,
         start_date: state.startDate,
         sessions_per_week: state.sessionsPerWeek,
-        skip_dates: state.skipDates,
+        skip_dates: effectiveSkipDates,
         extra_dates: state.extraDates,
         // Step 2. Recorded so "what was this patient treated for" is
         // answerable later; previously selected, used to rank suggestions,
@@ -1024,8 +1104,33 @@ export function TreatmentProtocolWizard({
     );
   }
 
+  // Enter in a text/number/date field or a select moves to the next field instead of
+  // doing nothing. Buttons, checkboxes and textareas keep their own Enter behaviour.
+  const focusNextOnEnter = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+    const target = e.target as HTMLElement;
+    const skip = ["checkbox", "radio", "file", "button", "submit", "reset", "hidden"];
+    const isField = (el: HTMLElement) =>
+      (el instanceof HTMLInputElement && !skip.includes(el.type)) || el instanceof HTMLSelectElement;
+    if (!isField(target)) return;
+    e.preventDefault();
+    const fields = Array.from(e.currentTarget.querySelectorAll<HTMLElement>("input, select"))
+      .filter((el) => isField(el) && !(el as HTMLInputElement).disabled && !(el as HTMLInputElement).readOnly && el.tabIndex !== -1 && el.offsetParent !== null);
+    const at = fields.indexOf(target);
+    if (at === -1) return;
+    const next = fields[at + 1];
+    if (next) {
+      next.focus();
+      if (next instanceof HTMLInputElement && ["text", "number", "search", "tel", "email"].includes(next.type)) next.select();
+      return;
+    }
+    // Last field on the step: move on to the footer button (Continue / Push) so the next
+    // Enter presses it. It is only focused, never clicked, so nothing advances by accident.
+    e.currentTarget.querySelector<HTMLButtonElement>("[data-wizard-primary]:not([disabled])")?.focus();
+  };
+
   return (
-    <div className={embedded ? "space-y-4" : "max-w-6xl mx-auto space-y-4 pb-24"}>
+    <div onKeyDown={focusNextOnEnter} className={embedded ? "space-y-4" : "max-w-6xl mx-auto space-y-4 pb-24"}>
       {!embedded && (
         <button
           onClick={goToWorkspace}
@@ -1056,7 +1161,7 @@ export function TreatmentProtocolWizard({
           return (
             <button
               key={label}
-              onClick={() => (i < step || done) && setStep(i)}
+              onClick={() => (i < step || done || canJumpTo(i)) && setStep(i)}
               className="flex-1 min-w-[110px] flex items-center gap-2 px-3 py-3 text-left"
               style={{ background: active ? "#eff6ff" : "#fff", boxShadow: active ? "inset 0 -2px 0 #2563eb" : "none", borderRight: i < 7 ? "1px solid #f1f1f1" : "none" }}
             >
@@ -1191,6 +1296,11 @@ export function TreatmentProtocolWizard({
               {step === 5 && (
                 <ScalesStep
                   catalogue={scaleCatalogue} loading={scalesLoading} assigned={state.scales}
+                  suggestedIds={suggestedScaleIds}
+                  suggestedLabel={[
+                    resolution?.driving_condition_name ?? conditions.filter((c) => state.conditionIds.includes(c.condition_id)).map((c) => c.condition_name).join(", "),
+                    resolution?.evidence_level ? `Evidence ${resolution.evidence_level}` : "",
+                  ].filter(Boolean).join(" · ")}
                   onAdd={(a) => set("scales", [...state.scales, a])}
                   onRemove={(i) => set("scales", state.scales.filter((_, j) => j !== i))}
                   onCadence={(i, cadence) => set("scales", state.scales.map((s, j) => (j === i ? { ...s, cadence } : s)))}
@@ -1205,7 +1315,7 @@ export function TreatmentProtocolWizard({
               {step === 6 && (
                 <ScheduleStep
                   state={state} preview={preview} loading={previewLoading}
-                  deviceSchedules={deviceSchedules} deviceOverrides={deviceOverrides} deviceSlots={deviceSlots}
+                  closedDates={closedDates} clinicScheduleConfigured={clinicScheduleConfigured} clinicScheduleReady={clinicScheduleReady}
                   onStartDate={(v) => set("startDate", v)}
                   onDayClick={(k, isSession) => {
                     // Branch on the date's OWN current skip/extra membership
@@ -1283,12 +1393,17 @@ export function TreatmentProtocolWizard({
       >
         <Button variant="outline" disabled={step === 0} onClick={goBack}>Back</Button>
         <div className="flex-1" />
+        {mode === "modify" && step < 7 && (
+          <Button variant="outline" disabled={!canJumpTo(7)} onClick={() => setStep(7)}>
+            Skip to Review
+          </Button>
+        )}
         {step < 7 ? (
-          <Button disabled={!canContinue[step]} onClick={goNext}>
+          <Button data-wizard-primary disabled={!canContinue[step]} onClick={goNext}>
             Continue <ChevronRight className="h-4 w-4 ml-1" />
           </Button>
         ) : (
-          <Button disabled={pushing} onClick={handlePush}>
+          <Button data-wizard-primary disabled={pushing} onClick={handlePush}>
             {pushing && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
             {mode === "modify" ? "Push Updated Protocol" : "Save Treatment Protocol"}
           </Button>
@@ -1859,11 +1974,13 @@ function DosingStep({
             label="Total sessions" type="number" min={10} max={30}
             value={state.sessionCount}
             onChange={(e) => onField("sessionCount", e.target.value)}
+            error={state.sessionCount && !sessionCountOk(state.sessionCount) ? "Enter 10 to 30 sessions." : undefined}
           />
           <Input
             label="Follow-up every N sessions (optional)"
-            value={state.followUpEveryN}
-            onChange={(e) => onField("followUpEveryN", e.target.value)}
+            value={state.followUpEveryN} inputMode="numeric"
+            onChange={(e) => onField("followUpEveryN", e.target.value.replace(/\D/g, ""))}
+            error={followUpError(state.followUpEveryN, state.sessionCount) ?? undefined}
             placeholder="e.g. 10"
           />
         </div>
@@ -1991,7 +2108,12 @@ function DosingStep({
         </div>
       </div>
 
-      <Input label="Follow-up every N sessions (optional)" value={state.followUpEveryN} onChange={(e) => onField("followUpEveryN", e.target.value)} placeholder="e.g. 10" />
+      <Input
+        label="Follow-up every N sessions (optional)" value={state.followUpEveryN} inputMode="numeric"
+        onChange={(e) => onField("followUpEveryN", e.target.value.replace(/\D/g, ""))}
+        error={followUpError(state.followUpEveryN, state.sessionCount) ?? undefined}
+        placeholder="e.g. 10"
+      />
     </div>
   );
 }
@@ -2000,13 +2122,18 @@ function DosingStep({
 // Step 6 — Scales
 // ─────────────────────────────────────────────────────────────────────────
 function ScalesStep({
-  catalogue, loading, assigned, onAdd, onRemove, onCadence,
+  catalogue, loading, assigned, suggestedIds, suggestedLabel, onAdd, onRemove, onCadence,
 }: {
   catalogue: ScaleRead[]; loading: boolean; assigned: AssignedScale[];
+  suggestedIds: string[]; suggestedLabel: string;
   onAdd: (a: AssignedScale) => void; onRemove: (i: number) => void; onCadence: (i: number, c: string) => void;
 }) {
   const usedIds = assigned.map((a) => a.scale_id).filter(Boolean);
-  const pool = catalogue.filter((s) => !usedIds.includes(s.scale_id));
+  const suggested = new Set(suggestedIds);
+  // Suggested scales first (highlighted), the rest of the catalogue after them.
+  const pool = catalogue
+    .filter((s) => !usedIds.includes(s.scale_id))
+    .sort((a, b) => Number(suggested.has(b.scale_id)) - Number(suggested.has(a.scale_id)));
   return (
     <div className="space-y-4">
       <div>
@@ -2019,6 +2146,9 @@ function ScalesStep({
           <div key={i} className="flex items-center gap-3 px-3.5 py-2.5">
             <span className="text-sm font-semibold text-neutral-900 flex-1">
               {a.displayName}
+              {a.scale_id && suggested.has(a.scale_id) && (
+                <span className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 align-middle">Suggested</span>
+              )}
             </span>
             <div className="w-52">
               <Select value={a.cadence} onChange={(e) => onCadence(i, e.target.value)} options={CADENCE_OPTIONS.map((c) => ({ value: c, label: c }))} />
@@ -2031,16 +2161,30 @@ function ScalesStep({
 
       <div className="border border-neutral-100 bg-neutral-50 rounded-lg p-3.5">
         <p className="text-xs font-medium text-neutral-700 mb-2">Add a scale</p>
+        {suggested.size > 0 && (
+          <p className="text-xs text-blue-700 mb-2">
+            Highlighted scales are suggested for {suggestedLabel || "the selected condition"}.
+          </p>
+        )}
         <div className="flex flex-wrap gap-2">
-          {pool.map((s) => (
-            <button
-              key={s.scale_id}
-              onClick={() => onAdd({ scale_id: s.scale_id, cadence: "At re-assessment only", displayName: s.scale_name })}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-neutral-300 text-xs font-medium text-neutral-600 hover:border-blue-400 hover:text-blue-700"
-            >
-              <Plus className="h-3 w-3" />{s.scale_code}
-            </button>
-          ))}
+          {pool.map((s) => {
+            const isSuggested = suggested.has(s.scale_id);
+            return (
+              <button
+                key={s.scale_id}
+                title={isSuggested ? `Suggested — ${s.scale_name}` : s.scale_name}
+                onClick={() => onAdd({ scale_id: s.scale_id, cadence: "At re-assessment only", displayName: s.scale_name })}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-full border text-xs font-medium ${
+                  isSuggested
+                    ? "border-blue-500 bg-blue-50 text-blue-700 ring-1 ring-blue-200 font-semibold hover:bg-blue-100"
+                    : "border-neutral-300 text-neutral-600 hover:border-blue-400 hover:text-blue-700"
+                }`}
+              >
+                <Plus className="h-3 w-3" />{s.scale_code}
+                {isSuggested && <span className="ml-0.5 text-[9px] uppercase tracking-wide">Suggested</span>}
+              </button>
+            );
+          })}
           {loading && <p className="text-sm text-neutral-400">Loading scales…</p>}
         </div>
         {/* The free-text "type a scale not listed" box is gone deliberately.
@@ -2061,10 +2205,10 @@ function ScalesStep({
 // Step 7 — Schedule
 // ─────────────────────────────────────────────────────────────────────────
 function ScheduleStep({
-  state, preview, loading, deviceSchedules, deviceOverrides, deviceSlots, onStartDate, onDayClick, onRegenerate, onFollowUpEveryN,
+  state, preview, loading, closedDates, clinicScheduleConfigured, clinicScheduleReady, onStartDate, onDayClick, onRegenerate, onFollowUpEveryN,
 }: {
   state: WizardState; preview: SchedulePreview | null; loading: boolean;
-  deviceSchedules: DeviceScheduleRead[]; deviceOverrides: DeviceOverrideRead[]; deviceSlots: DeviceSlotRead[];
+  closedDates: string[]; clinicScheduleConfigured: boolean; clinicScheduleReady: boolean;
   onStartDate: (v: string) => void; onDayClick: (isoDate: string, isSession: boolean) => void; onRegenerate: () => void;
   onFollowUpEveryN: (v: string) => void;
 }) {
@@ -2078,8 +2222,12 @@ function ScheduleStep({
   if (preview?.first_date && preview?.last_date) {
     const first = new Date(preview.first_date + "T00:00:00Z");
     const monday = new Date(first); monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
-    const last = new Date(preview.last_date + "T00:00:00Z");
-    const nWeeks = Math.min(10, Math.max(1, Math.ceil((+last - +monday) / (7 * 86400000)) + 1));
+    // A follow-up falls the day after its session, so the last one can land in a
+    // week after the final session: size the grid to cover it too.
+    const lastIso = [preview.last_date, ...(preview.follow_ups || []).map((f) => f.planned_date)].sort().pop()!;
+    const last = new Date(lastIso + "T00:00:00Z");
+    // 30 sessions at one a week is 30 weeks, so the old cap of 10 weeks cut sessions off the calendar.
+    const nWeeks = Math.min(40, Math.max(1, Math.ceil((+last - +monday) / (7 * 86400000)) + 1));
     for (let w = 0; w < nWeeks; w++) {
       const days = [];
       for (let d = 0; d < 7; d++) {
@@ -2091,25 +2239,10 @@ function ScheduleStep({
     }
   }
 
-  // ─── Availability panel — 3 of the 4 mock rows are real; Assistant/Patient aren't modelled ───
-  const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const activeSchedules = deviceSchedules.filter((s) => s.is_active).sort((a, b) => a.day_of_week - b.day_of_week);
-  const clinicHoursSummary = activeSchedules.length
-    ? (() => {
-        const first = activeSchedules[0], last = activeSchedules[activeSchedules.length - 1];
-        const sameHours = activeSchedules.every((s) => s.start_time === first.start_time && s.end_time === last.end_time);
-        const dayRange = activeSchedules.length > 1 ? `${DOW[first.day_of_week]}–${DOW[last.day_of_week]}` : DOW[first.day_of_week];
-        return sameHours ? `${dayRange}, ${first.start_time.slice(0, 5)}–${last.end_time.slice(0, 5)}` : `${activeSchedules.length} day(s) configured`;
-      })()
-    : "Not configured";
-  // Capacity now lives only on DeviceSlotRead (derived from clinic_devices.
-  // quantity at read time) — the weekly DeviceScheduleRead rows no longer
-  // carry their own number to fall back to.
-  const maxCapacity = deviceSlots.length ? Math.max(...deviceSlots.map((s) => s.capacity)) : undefined;
-  const closedOverrides = deviceOverrides.filter((o) => !o.is_available);
+  const closedSet = new Set(closedDates);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 items-start">
+    <div className="w-full">
       <div className="space-y-4 min-w-0">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
@@ -2127,9 +2260,17 @@ function ScheduleStep({
         <div className="flex items-center gap-4 text-xs text-neutral-500 flex-wrap">
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-blue-600 inline-block" />Session</span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block" />Follow-up</span>
-          <span>Check a scheduled day to skip it · check an empty weekday to add a session there</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-neutral-200 inline-block" />Clinic closed</span>
+          <span>Check a scheduled day to skip it · check an empty open day to add a session there</span>
         </div>
 
+        {!clinicScheduleReady && <p className="text-xs text-neutral-400">Loading the clinic schedule…</p>}
+        {clinicScheduleReady && !clinicScheduleConfigured && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+            No weekly schedule is set for this device at your clinic yet, so every weekday is shown as open.
+            Set it in Settings → Device Schedule.
+          </p>
+        )}
         {loading && <p className="text-xs text-neutral-400">Refreshing preview…</p>}
 
         <div className="border border-neutral-200 rounded-lg overflow-hidden">
@@ -2141,7 +2282,7 @@ function ScheduleStep({
             <div key={w.label} className="grid grid-cols-[64px_repeat(7,1fr)] border-b border-neutral-100 last:border-0">
               <div className="px-2 py-2 bg-neutral-50 border-r border-neutral-100 text-[11px] font-semibold text-neutral-700">{w.label}</div>
               {w.days.map((d) => {
-                const closed = closedOverrides.some((o) => o.override_date === d.iso);
+                const closed = closedSet.has(d.iso);
                 const skipped = state.skipDates.includes(d.iso);
                 // "Checked" = a session will happen here: either a scheduled
                 // day the doctor hasn't skipped, or an empty day they've
@@ -2154,7 +2295,7 @@ function ScheduleStep({
                   <div
                     key={d.iso}
                     onClick={() => !closed && onDayClick(d.iso, d.session != null)}
-                    className={`min-h-[54px] px-1.5 py-1.5 border-r border-neutral-50 last:border-0 ${closed ? "bg-neutral-100 cursor-not-allowed" : "cursor-pointer hover:bg-blue-50/40"}`}
+                    className={`min-h-[76px] px-2 py-2 border-r border-neutral-50 last:border-0 ${closed ? "bg-neutral-100 cursor-not-allowed" : "cursor-pointer hover:bg-blue-50/40"}`}
                   >
                     <div className="flex items-center justify-between">
                       <p className="text-[10px] text-neutral-400">{d.date}</p>
@@ -2196,10 +2337,16 @@ function ScheduleStep({
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <span className="text-xs text-neutral-600">Follow-up after every</span>
             <div className="w-16">
-              <Input value={state.followUpEveryN} onChange={(e) => onFollowUpEveryN(e.target.value)} placeholder="10" />
+              <Input
+                value={state.followUpEveryN} inputMode="numeric" placeholder="10"
+                onChange={(e) => onFollowUpEveryN(e.target.value.replace(/\D/g, ""))}
+              />
             </div>
             <span className="text-xs text-neutral-600">sessions</span>
           </div>
+          {followUpError(state.followUpEveryN, state.sessionCount) && (
+            <p className="text-xs text-danger-600 mt-1.5">{followUpError(state.followUpEveryN, state.sessionCount)}</p>
+          )}
           <p className="text-xs text-neutral-400 mt-2 leading-relaxed">Each checkpoint books a follow-up appointment on the calendar above.</p>
           <div className="flex flex-wrap gap-1.5 mt-3">
             {(preview?.follow_ups || []).map((f) => (
@@ -2214,32 +2361,6 @@ function ScheduleStep({
         </div>
       </div>
 
-      <Card>
-        <CardContent className="space-y-3">
-          <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Availability</p>
-          <div className="space-y-2.5 text-xs">
-            <div>
-              <p className="text-neutral-400">Clinic</p>
-              <p className="font-medium text-neutral-800 mt-0.5">{clinicHoursSummary}</p>
-            </div>
-            <div>
-              <p className="text-neutral-400">Device</p>
-              <p className="font-medium text-neutral-800 mt-0.5">{maxCapacity != null ? `${maxCapacity} slots/day` : "—"}</p>
-            </div>
-            <div>
-              <p className="text-neutral-400">Clinic closed</p>
-              {closedOverrides.length === 0 ? (
-                <p className="font-medium text-neutral-800 mt-0.5">None in this window</p>
-              ) : (
-                <p className="font-medium text-neutral-800 mt-0.5">{closedOverrides.map((o) => o.override_date).join(", ")}</p>
-              )}
-            </div>
-          </div>
-          <p className="text-[10px] text-neutral-400 pt-2 border-t border-neutral-100">
-            Assistant and patient availability aren&apos;t tracked by this system yet.
-          </p>
-        </CardContent>
-      </Card>
     </div>
   );
 }

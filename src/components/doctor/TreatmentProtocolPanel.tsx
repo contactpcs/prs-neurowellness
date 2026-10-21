@@ -532,9 +532,6 @@ export function TreatmentProtocolPanel({ patientId, showHeader = true }: { patie
                       </div>
                     </div>
                     <div className="flex gap-2 flex-shrink-0">
-                      <Button variant="outline" onClick={() => { setTab("history"); setHistoryDetailId(null); }}>
-                        View Protocol History
-                      </Button>
                       {canModify && canComplete && canPrescribe && (
                         <Button variant="outline" isLoading={completing} onClick={onMarkComplete}>
                           Mark Protocol Complete
