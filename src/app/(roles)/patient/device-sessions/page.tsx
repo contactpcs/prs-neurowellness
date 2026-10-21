@@ -65,7 +65,7 @@ const FILTERS: { key: FilterKey; label: string; test: (a: Appointment) => boolea
   { key: "completed", label: "Completed", test: (a) => a.status === "completed" },
   { key: "paid", label: "Paid", test: (a) => a.status === "paid" },
   { key: "no_show", label: "No-Show", test: (a) => a.status === "no_show" },
-  { key: "not_booked", label: "Not Booked", test: (a) => a.status === "missed" },
+  { key: "not_booked", label: "Missed", test: (a) => a.status === "missed" },
   // Excludes slots auto-cancelled by a protocol amendment — those were never
   // a real cancellation (see isSupersededCancellation).
   { key: "cancelled", label: "Cancelled", test: (a) => a.status === "cancelled" && !isSupersededCancellation(a) },

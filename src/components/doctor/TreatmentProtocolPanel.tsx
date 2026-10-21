@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ChevronRight, ChevronDown, Plus } from "lucide-react";
+import { ArrowLeft, ChevronRight, ChevronDown, Plus, Check } from "lucide-react";
 import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.service";
 import { Card, CardContent, Badge, PageLoader, Button, DetailFieldList } from "@/components/ui";
 import { deviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
@@ -137,7 +137,107 @@ export function ElectrodeChips({ detail }: { detail: ProtocolDetail }) {
  * shown separately since they're a different appointment_type ("protocol_
  * followup") from device sessions, booked either directly by the patient
  * or auto-scheduled by the protocol's follow-up cadence. */
-function SessionsList({ detail, onOpenSession, showCalendar = false }: { detail: ProtocolDetail; onOpenSession?: (appointmentId: string) => void; showCalendar?: boolean }) {
+/** Scroll offsets of `el`'s ancestors (window included). Which one scrolls
+ * depends on the layout and screen size — the clinical workspace's content
+ * pane is overflow-y-auto, but on most screens the window scrolls instead. */
+function snapshotScroll(el: HTMLElement | null): [Element, number][] {
+  const out: [Element, number][] = [];
+  for (let p = el?.parentElement ?? null; p; p = p.parentElement) if (p.scrollTop > 0) out.push([p, p.scrollTop]);
+  const doc = document.scrollingElement;
+  if (doc && !out.some(([e]) => e === doc)) out.push([doc, doc.scrollTop]);
+  return out;
+}
+
+/** Short device name for calendar chips — "Soma-tDCS", else the modality. */
+function deviceShortName(p: Pick<ProtocolRead, "device_name" | "modality">): string {
+  return p.device_name || p.modality || "Protocol";
+}
+
+function protocolCalendarItems(detail: ProtocolDetail, prefix: string | null): CalendarSession[] {
+  const pre = prefix ? `${prefix} ` : "";
+  const followUps = detail.follow_ups.slice().sort((a, b) => (a.appointment_date || "").localeCompare(b.appointment_date || ""));
+  return [
+    ...detail.sessions.map((s) => ({
+      id: s.appointment_id,
+      date: s.appointment_date,
+      time: s.start_time,
+      status: s.status,
+      label: s.session_number != null ? `${pre}${prefix ? "#" : "Session #"}${s.session_number}` : `${pre}Session`,
+    })),
+    ...followUps.map((s, i) => ({
+      id: s.appointment_id,
+      date: s.appointment_date,
+      time: s.start_time,
+      status: s.status,
+      label: `${pre}Follow-up #${i + 1}`,
+      kind: "follow_up" as const,
+    })),
+  ];
+}
+
+/** Calendar over any set of the patient's protocols. With more than one
+ * shown, every chip carries its device name so "Soma-tDCS #3" and
+ * "Biotherm-tDCS #3" stay distinguishable; two versions of the same device
+ * add the version too ("Soma-tDCS v1.1 #3"). */
+function ProtocolsCalendar({
+  details,
+  loading = false,
+  onSelect,
+}: {
+  details: ProtocolDetail[];
+  loading?: boolean;
+  onSelect: (protocolId: string, item: CalendarSession) => void;
+}) {
+  if (details.length === 0) {
+    return loading ? (
+      <p className="text-sm text-neutral-400 px-2">Loading schedule…</p>
+    ) : (
+      <Card>
+        <CardContent className="py-10 text-center">
+          <p className="text-sm font-semibold text-neutral-700">No device sessions selected</p>
+          <p className="text-sm text-neutral-400 mt-1">Tick one or more in &quot;Show on calendar&quot; to see their schedule.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+  const merged = details.length > 1;
+  // Chips are narrow: first word of the device name ("Soma-tDCS"); the full
+  // name is in the "Show on calendar" picker.
+  const shortOf = (d: ProtocolDetail) => deviceShortName(d).split(/\s+/)[0];
+  const chipName = (d: ProtocolDetail) =>
+    details.filter((x) => shortOf(x) === shortOf(d)).length > 1 ? `${shortOf(d)} ${versionLabel(d)}` : shortOf(d);
+  const ownerOf = new Map<string, string>();
+  const items: CalendarSession[] = details.flatMap((d) => {
+    const list = protocolCalendarItems(d, merged ? chipName(d) : null);
+    for (const it of list) ownerOf.set(it.id, d.protocol_id);
+    return list;
+  });
+  if (items.length === 0) return null;
+  return <SessionCalendar sessions={items} showTime={!merged} onSelectSession={(c) => onSelect(ownerOf.get(c.id)!, c)} />;
+}
+
+function SessionsList({
+  detail,
+  onOpenSession,
+  showCalendar = false,
+  calendarDetails,
+  calendarToolbar,
+  calendarLoading = false,
+  onOpenOtherSession,
+}: {
+  detail: ProtocolDetail;
+  onOpenSession?: (appointmentId: string) => void;
+  showCalendar?: boolean;
+  /** Protocols whose schedules the calendar shows — any mix the doctor ticks,
+   *  with or without this one. Omitted = just this protocol. The list below
+   *  always stays this protocol's own. */
+  calendarDetails?: ProtocolDetail[];
+  /** Rendered above the calendar — the protocol picker. */
+  calendarToolbar?: ReactNode;
+  /** Ticked protocols whose detail is still loading. */
+  calendarLoading?: boolean;
+  onOpenOtherSession?: (protocolId: string, appointmentId: string) => void;
+}) {
   const [openId, setOpenId] = useState<string | null>(null);
   const sessions = detail.sessions.slice().sort((a, b) => (a.session_number ?? 0) - (b.session_number ?? 0));
   const followUps = detail.follow_ups.slice().sort((a, b) => (a.appointment_date || "").localeCompare(b.appointment_date || ""));
@@ -177,31 +277,19 @@ function SessionsList({ detail, onOpenSession, showCalendar = false }: { detail:
     );
   };
 
-  const calendarItems: CalendarSession[] = [
-    ...sessions.map((s) => ({
-      id: s.appointment_id,
-      date: s.appointment_date,
-      time: s.start_time,
-      status: s.status,
-      label: s.session_number != null ? `Session #${s.session_number}` : "Session",
-    })),
-    ...followUps.map((s, i) => ({
-      id: s.appointment_id,
-      date: s.appointment_date,
-      time: s.start_time,
-      status: s.status,
-      label: `Follow-up #${i + 1}`,
-      kind: "follow_up" as const,
-    })),
-  ];
-
   return (
     <div className="space-y-4">
-      {showCalendar && calendarItems.length > 0 && (
-        <SessionCalendar
-          key={detail.protocol_id}
-          sessions={calendarItems}
-          onSelectSession={(c) => {
+      {showCalendar && calendarToolbar}
+      {showCalendar && (
+        <ProtocolsCalendar
+          details={calendarDetails ?? [detail]}
+          loading={calendarLoading}
+          onSelect={(protocolId, c) => {
+            if (protocolId !== detail.protocol_id) {
+              // Another protocol's device session: switch to it and open it.
+              if (c.kind !== "follow_up") onOpenOtherSession?.(protocolId, c.id);
+              return;
+            }
             // Device sessions open the review panel, like their list row;
             // follow-ups expand their row in the list below.
             if (c.kind === "follow_up" || !onOpenSession) setOpenId(c.id);
@@ -739,6 +827,23 @@ export function DeviceSessionsPanel({ patientId, hideSuperseded = false, showHea
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [openSessionId, setOpenSessionId] = useState<string | null>(null);
+  // Protocols ticked in "Show on calendar" (the opened one included unless
+  // the doctor unticks it), and their lazily-fetched detail.
+  const [calendarIds, setCalendarIds] = useState<string[]>([]);
+  const [extraDetails, setExtraDetails] = useState<Record<string, ProtocolDetail>>({});
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [calendarSeeded, setCalendarSeeded] = useState(false);
+  // A session opened from the Sessions landing calendar goes Back to that
+  // calendar, not to its protocol version's own page.
+  const [fromLanding, setFromLanding] = useState(false);
+  // Opening a session swaps the (long) lists for the review panel; without
+  // this the pane kept its old scroll offset and showed the review's bottom.
+  // Scroll to the review's top on open, and back to the list spot on Back.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const savedScroll = useRef<[Element, number][] | null>(null);
+  const rememberScroll = () => {
+    if (savedScroll.current === null) savedScroll.current = snapshotScroll(rootRef.current);
+  };
 
   useEffect(() => {
     setIsLoading(true);
@@ -751,6 +856,32 @@ export function DeviceSessionsPanel({ patientId, hideSuperseded = false, showHea
   const patientName = protocols[0]?.patient_name ?? null;
   const visibleProtocols = hideSuperseded ? protocols.filter((p) => p.status !== "superseded") : protocols;
   const openProtocol = protocols.find((p) => p.protocol_id === openProtocolId) ?? null;
+  // Latest protocol version (protocols are sorted oldest -> newest) — the
+  // calendar's default tick when the doctor lands on Sessions.
+  const latestProtocolId = visibleProtocols[visibleProtocols.length - 1]?.protocol_id ?? null;
+
+  // Ticked protocols that have loaded, latest version first, then newest.
+  const pickedDetails = calendarIds
+    .map((id) => extraDetails[id])
+    .filter((d): d is ProtocolDetail => !!d)
+    .sort((a, b) =>
+      (a.protocol_id === latestProtocolId ? 0 : 1) - (b.protocol_id === latestProtocolId ? 0 : 1) ||
+      (b.created_at ?? "").localeCompare(a.created_at ?? ""),
+    );
+
+  const openFromLanding = (protocolId: string, appointmentId: string) => {
+    rememberScroll();
+    setPickerOpen(false);
+    setOpenProtocolId(protocolId);
+    setOpenSessionId(appointmentId);
+    setFromLanding(true);
+  };
+
+  useEffect(() => {
+    if (calendarSeeded || !latestProtocolId) return;
+    setCalendarIds([latestProtocolId]);
+    setCalendarSeeded(true);
+  }, [latestProtocolId, calendarSeeded]);
 
   useEffect(() => {
     if (!openProtocolId) { setDetail(null); setDetailError(null); setOpenSessionId(null); return; }
@@ -762,26 +893,63 @@ export function DeviceSessionsPanel({ patientId, hideSuperseded = false, showHea
       .finally(() => setDetailLoading(false));
   }, [openProtocolId]);
 
+  useEffect(() => {
+    if (detail) setExtraDetails((m) => ({ ...m, [detail.protocol_id]: detail }));
+  }, [detail]);
+
+  useEffect(() => {
+    for (const id of calendarIds) {
+      // The opened protocol's detail arrives through the main fetch above.
+      if (extraDetails[id] || id === openProtocolId) continue;
+      treatmentProtocolService.getProtocolDetail(id)
+        .then((d) => setExtraDetails((m) => ({ ...m, [id]: d })))
+        .catch(() => setCalendarIds((ids) => ids.filter((x) => x !== id)));
+    }
+  }, [calendarIds]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const reviewing = !!(detail && openSessionId && detail.sessions.some((s) => s.appointment_id === openSessionId));
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    if (reviewing) {
+      // Top of the review (also on Prev / Next between sessions) — scrolls
+      // whichever ancestors scroll, window or content pane.
+      root.scrollIntoView({ block: "start" });
+    } else if (!openSessionId && savedScroll.current !== null) {
+      for (const [el, top] of savedScroll.current) el.scrollTop = top;
+      savedScroll.current = null;
+    }
+  }, [reviewing, openSessionId]);
+
   if (isLoading) return <PageLoader />;
 
-  if (detail && openSessionId && detail.sessions.some((s) => s.appointment_id === openSessionId)) {
+  if (reviewing && detail && openSessionId) {
     return (
+      // overflow-anchor: none — the review loads its data after we scroll to
+      // its top; Chrome's scroll anchoring then shifted the view down by the
+      // height that loaded in, landing on the review's bottom again.
+      <div ref={rootRef} className="scroll-mt-20 [overflow-anchor:none]">
       <SessionReviewPanel
         patientId={patientId}
         patientName={openProtocol?.patient_name}
         protocol={detail}
         session={detail.sessions.find((s) => s.appointment_id === openSessionId)!}
         sessions={detail.sessions}
-        onBack={() => setOpenSessionId(null)}
+        onBack={() => {
+          setOpenSessionId(null);
+          if (fromLanding) { setOpenProtocolId(null); setFromLanding(false); }
+        }}
         onSelectSession={setOpenSessionId}
       />
+      </div>
     );
   }
 
   // ─── Child level — device sessions for the picked protocol version ───
   if (openProtocolId) {
     return (
-      <div className="space-y-5">
+      <div ref={rootRef} className="space-y-5">
         <button
           onClick={() => setOpenProtocolId(null)}
           className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800"
@@ -799,7 +967,34 @@ export function DeviceSessionsPanel({ patientId, hideSuperseded = false, showHea
             {detailError || "Couldn't load session detail."}
           </div>
         ) : (
-          <SessionsList detail={detail} onOpenSession={setOpenSessionId} showCalendar />
+          <SessionsList
+            detail={detail}
+            onOpenSession={(id) => { rememberScroll(); setOpenSessionId(id); }}
+            showCalendar
+            calendarDetails={calendarIds
+              .map((id) => (id === detail.protocol_id ? detail : extraDetails[id]))
+              .filter((d): d is ProtocolDetail => !!d)}
+            calendarLoading={calendarIds.some((id) => id !== detail.protocol_id && !extraDetails[id])}
+            onOpenOtherSession={(protocolId, appointmentId) => {
+              // Ticked selection stays as is — only the opened protocol changes.
+              rememberScroll();
+              setPickerOpen(false);
+              setOpenProtocolId(protocolId);
+              setOpenSessionId(appointmentId);
+            }}
+            calendarToolbar={
+              <CalendarProtocolPicker
+                currentId={openProtocolId}
+                latestId={latestProtocolId}
+                options={visibleProtocols}
+                selected={calendarIds}
+                loading={calendarIds.some((id) => id !== detail.protocol_id && !extraDetails[id])}
+                open={pickerOpen}
+                onOpenChange={setPickerOpen}
+                onChange={setCalendarIds}
+              />
+            }
+          />
         )}
       </div>
     );
@@ -807,12 +1002,12 @@ export function DeviceSessionsPanel({ patientId, hideSuperseded = false, showHea
 
   // ─── Parent level — one row per protocol version ───
   return (
-    <div className="space-y-5">
+    <div ref={rootRef} className="space-y-5">
       {showHeader && (
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">Sessions</h1>
           <p className="text-sm text-neutral-500 mt-0.5">
-            {patientName ? `${patientName}'s` : "This patient's"} protocol versions. Open one to see its device sessions and follow-up appointments.
+            {patientName ? `${patientName}'s` : "This patient's"} device-session schedule. Tick protocols in "Show on calendar" to add them — their session lists appear below the calendar.
           </p>
         </div>
       )}
@@ -839,32 +1034,151 @@ export function DeviceSessionsPanel({ patientId, hideSuperseded = false, showHea
       ) : visibleProtocols.length === 0 ? (
         <p className="text-sm text-neutral-400 px-2">No active protocol version.</p>
       ) : (
-        <div className="space-y-2">
-          {/* Latest protocol version first — real version label (versionLabel),
-              not array position, same convention as the Treatment Protocol
-              panel and the patient-facing device-sessions page. */}
-          {visibleProtocols.slice().reverse().map((p) => (
-            <button key={p.protocol_id} onClick={() => setOpenProtocolId(p.protocol_id)} className="w-full text-left">
-              <Card className={p.status === "active" ? "border-blue-200" : ""}>
-                <CardContent className="flex items-center gap-4 py-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-neutral-900">{versionLabel(p)}</span>
-                      <Badge className={statusTone(p.status)}>{p.status}</Badge>
-                    </div>
-                    <p className="text-xs text-neutral-400 mt-1">
-                      {p.device_name ? `${p.device_name} · ${p.modality}` : p.modality || "Protocol"}
-                      {" · "}{p.session_count} session{p.session_count === 1 ? "" : "s"}
-                      {" · "}Started {fmtDate(p.activated_at || p.created_at)}
-                    </p>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-neutral-300" />
-                </CardContent>
-              </Card>
-            </button>
-          ))}
+        <>
+        <div className="space-y-4">
+          <CalendarProtocolPicker
+            currentId={null}
+            latestId={latestProtocolId}
+            options={visibleProtocols}
+            selected={calendarIds}
+            loading={calendarIds.some((id) => !extraDetails[id])}
+            open={pickerOpen}
+            onOpenChange={setPickerOpen}
+            onChange={setCalendarIds}
+          />
+          <ProtocolsCalendar
+            details={calendarIds.map((id) => extraDetails[id]).filter((d): d is ProtocolDetail => !!d)}
+            loading={calendarIds.some((id) => !extraDetails[id])}
+            onSelect={(protocolId, c) => {
+              if (c.kind === "follow_up") return;
+              openFromLanding(protocolId, c.id);
+            }}
+          />
         </div>
+
+        {/* Session list of every ticked protocol — latest version first, then
+            the rest newest first. Same list as a protocol version's own page. */}
+        {pickedDetails.map((d) => (
+          <section key={d.protocol_id} className="space-y-3 pt-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg font-bold text-neutral-900">
+                {d.device_name || d.modality || "Protocol"} {versionLabel(d)}
+              </h2>
+              <Badge className={statusTone(d.status)}>{d.status}</Badge>
+              {d.protocol_id === latestProtocolId && <span className="text-xs font-medium text-neutral-400">Latest</span>}
+            </div>
+            <SessionsList detail={d} onOpenSession={(appointmentId) => openFromLanding(d.protocol_id, appointmentId)} />
+          </section>
+        ))}
+        </>
       )}
+    </div>
+  );
+}
+
+/** "Show on calendar" multi-select: every one of the patient's protocols
+ * (other devices, or other versions) is a tick box — the doctor can show one,
+ * several, all, or none. The opened protocol is only marked, not locked. */
+function CalendarProtocolPicker({
+  currentId,
+  latestId = null,
+  options,
+  selected,
+  loading,
+  open,
+  onOpenChange,
+  onChange,
+}: {
+  currentId: string | null;
+  /** The default tick — marked "(latest)". */
+  latestId?: string | null;
+  options: ProtocolRead[];
+  selected: string[];
+  loading: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onChange: (ids: string[]) => void;
+}) {
+  if (options.length < 2) return null;
+  // Opened protocol first, then the latest, then active ones, then newest.
+  const rank = (p: ProtocolRead) =>
+    p.protocol_id === currentId ? 0 : p.protocol_id === latestId ? 1 : p.status === "active" ? 2 : 3;
+  const sorted = options.slice().sort((a, b) => rank(a) - rank(b) || (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+  const name = (p: ProtocolRead) => `${deviceShortName(p)} ${versionLabel(p)}`;
+  // Keep the picker's order so the summary reads predictably.
+  const toggle = (id: string) =>
+    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : sorted.map((p) => p.protocol_id).filter((x) => x === id || selected.includes(x)));
+  const picked = sorted.filter((p) => selected.includes(p.protocol_id));
+  const summary =
+    picked.length === 0 ? "None selected"
+      : picked.length === 1 ? name(picked[0])
+        : picked.length === options.length ? `All device sessions (${picked.length})`
+          : `${picked.length} device sessions selected`;
+
+  return (
+    <div className="flex items-center gap-3 flex-wrap">
+      <span className="text-sm font-semibold text-neutral-700">Show on calendar:</span>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => onOpenChange(!open)}
+          className="flex items-center gap-2 h-10 pl-3.5 pr-3 rounded-lg border border-neutral-300 bg-white text-sm font-semibold text-neutral-800 hover:bg-neutral-50"
+        >
+          {summary}
+          <ChevronDown className={`h-4 w-4 text-neutral-500 transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+        {open && (
+          <>
+            <div className="fixed inset-0 z-20" onClick={() => onOpenChange(false)} />
+            <div className="absolute left-0 top-full mt-1 z-30 w-80 max-w-[calc(100vw-2rem)] bg-white border border-neutral-200 rounded-xl shadow-lg py-1.5">
+              <div className="flex items-center justify-between px-3.5 pt-1 pb-2 border-b border-neutral-100">
+                <button
+                  type="button"
+                  onClick={() => onChange(sorted.map((p) => p.protocol_id))}
+                  disabled={picked.length === options.length}
+                  className="text-sm font-semibold text-primary-600 hover:underline disabled:text-neutral-300 disabled:no-underline"
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChange([])}
+                  disabled={picked.length === 0}
+                  className="text-sm font-semibold text-neutral-500 hover:underline disabled:text-neutral-300 disabled:no-underline"
+                >
+                  Clear all
+                </button>
+              </div>
+              {sorted.map((p) => {
+                const on = selected.includes(p.protocol_id);
+                return (
+                  <button
+                    key={p.protocol_id}
+                    type="button"
+                    role="checkbox"
+                    aria-checked={on}
+                    onClick={() => toggle(p.protocol_id)}
+                    className="w-full flex items-center gap-3 px-3.5 py-2 text-left text-sm hover:bg-neutral-50"
+                  >
+                    <span className={`h-4 w-4 rounded border flex items-center justify-center flex-shrink-0 ${on ? "bg-primary-600 border-primary-600" : "border-neutral-300"}`}>
+                      {on && <Check className="h-3 w-3 text-white" />}
+                    </span>
+                    <span className="flex-1 font-medium text-neutral-800">
+                      {name(p)}
+                      {p.protocol_id === currentId && <span className="ml-1.5 text-xs font-normal text-neutral-400">(opened)</span>}
+                      {p.protocol_id === latestId && p.protocol_id !== currentId && (
+                        <span className="ml-1.5 text-xs font-normal text-neutral-400">(latest)</span>
+                      )}
+                    </span>
+                    <Badge className={statusTone(p.status)}>{p.status}</Badge>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+      {loading && <span className="text-sm text-neutral-400">Loading schedules…</span>}
     </div>
   );
 }

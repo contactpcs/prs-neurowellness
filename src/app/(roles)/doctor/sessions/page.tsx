@@ -17,15 +17,15 @@ function fmtDate(iso?: string | null): string {
 }
 
 // Matched against deviceSessionLabel by key, so the button text can't drift
-// from the label casing (it used to: "Not Yet Started" never matched).
+// from the label casing (it once did: a "Not Yet Started" button never matched).
 const FILTERS = [
   { key: "all", label: "All", match: null },
-  { key: "not_started", label: "Not Yet Started", match: "Not yet started" },
+  { key: "not_started", label: "Upcoming", match: "Upcoming" },
   { key: "paid", label: "Paid", match: "Paid" },
   { key: "in_progress", label: "In Progress", match: "In Progress" },
   { key: "completed", label: "Completed", match: "Completed" },
   { key: "no_show", label: "No-Show", match: "No-Show" },
-  { key: "not_booked", label: "Not Booked", match: "Not Booked" },
+  { key: "not_booked", label: "Missed", match: "Missed" },
   { key: "cancelled", label: "Cancelled", match: "Cancelled" },
 ] as const;
 
