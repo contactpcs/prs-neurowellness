@@ -143,7 +143,12 @@ export default function ClinicAdminPaymentsPage() {
   const canWaive = payment && (payment.status === "pending" || payment.status === "failed");
   // Distinct from canWaive: refund reverses a *completed* payment, waive
   // writes off one that was never collected — only one ever applies.
-  const canRefund = payment && payment.status === "paid";
+  // Not while Razorpay is already refunding it automatically — confirming by
+  // hand then would pay the patient back twice.
+  const autoRefunding = payment?.refund_status === "pending" && (payment.payment_method ?? "").startsWith("razorpay");
+  const canRefund = payment && payment.status === "paid" && payment.refund_status !== "processed" && !autoRefunding;
+  // A cancellation already opened this refund: the button confirms money was handed back.
+  const refundOpen = payment?.refund_status === "pending" || payment?.refund_status === "failed";
 
   return (
     <div className="space-y-8">
@@ -196,8 +201,22 @@ export default function ClinicAdminPaymentsPage() {
               <div className="flex items-center justify-between px-4 py-2.5"><span className="text-neutral-500">Order ID</span><span className="text-neutral-800 font-medium">{payment.order_id ?? "—"}</span></div>
               {payment.cancellation_refund_amount != null && (
                 <div className="flex items-center justify-between px-4 py-2.5">
-                  <span className="text-neutral-500">Cancellation Refund Due</span>
+                  <span className="text-neutral-500">Cancellation Refund</span>
                   <span className="text-neutral-800 font-medium">{payment.currency} {payment.cancellation_refund_amount.toLocaleString("en-IN")} ({payment.cancellation_refund_percent}%)</span>
+                </div>
+              )}
+              {payment.refund_status && (
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <span className="text-neutral-500">Refund Status</span>
+                  <span className={`font-medium ${payment.refund_status === "processed" ? "text-green-700" : payment.refund_status === "failed" ? "text-red-600" : "text-amber-700"}`}>
+                    {payment.refund_status === "processed"
+                      ? `Refunded${payment.refunded_at ? ` on ${new Date(payment.refunded_at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit" })}` : ""}`
+                      : payment.refund_status === "failed"
+                      ? "Razorpay refund failed — refund by hand, then confirm"
+                      : (payment.payment_method ?? "").startsWith("razorpay")
+                      ? "Razorpay refund in progress"
+                      : "Waiting to be handed back at the counter"}
+                  </span>
                 </div>
               )}
               {payment.waived_reason && (
@@ -209,7 +228,7 @@ export default function ClinicAdminPaymentsPage() {
                 <Button onClick={() => setShowWaive(true)}>Waive Payment</Button>
               )}
               {canRefund && (
-                <Button variant="outline" onClick={() => setShowRefund(true)}>Refund Payment</Button>
+                <Button variant="outline" onClick={() => setShowRefund(true)}>{refundOpen ? "Confirm Refund Given" : "Refund Payment"}</Button>
               )}
             </div>
           </CardContent>

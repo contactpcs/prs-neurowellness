@@ -7,6 +7,7 @@ import { treatmentProtocolService } from "@/lib/api/services/treatmentProtocol.s
 import { Card, CardContent, Badge, PageLoader, Button, DetailFieldList } from "@/components/ui";
 import { deviceSessionLabel, deviceSessionTone } from "@/lib/utils/deviceSessionStatus";
 import { SessionReviewPanel } from "@/components/doctor/SessionReviewPanel";
+import { SessionCalendar, type CalendarSession } from "@/components/deviceSession/SessionCalendar";
 import { PlacementMap } from "@/app/(roles)/doctor/patients/[id]/treatment-protocol/wizard/PlacementMap";
 import { useWorkspaceBase } from "@/lib/hooks/useWorkspaceBase";
 import type { ProtocolRead, ProtocolDetail, ProtocolSessionRead } from "@/types/treatmentProtocol.types";
@@ -136,7 +137,7 @@ export function ElectrodeChips({ detail }: { detail: ProtocolDetail }) {
  * shown separately since they're a different appointment_type ("protocol_
  * followup") from device sessions, booked either directly by the patient
  * or auto-scheduled by the protocol's follow-up cadence. */
-function SessionsList({ detail, onOpenSession }: { detail: ProtocolDetail; onOpenSession?: (appointmentId: string) => void }) {
+function SessionsList({ detail, onOpenSession, showCalendar = false }: { detail: ProtocolDetail; onOpenSession?: (appointmentId: string) => void; showCalendar?: boolean }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const sessions = detail.sessions.slice().sort((a, b) => (a.session_number ?? 0) - (b.session_number ?? 0));
   const followUps = detail.follow_ups.slice().sort((a, b) => (a.appointment_date || "").localeCompare(b.appointment_date || ""));
@@ -149,11 +150,11 @@ function SessionsList({ detail, onOpenSession }: { detail: ProtocolDetail; onOpe
           onClick={() => (openable && onOpenSession ? onOpenSession(s.appointment_id) : setOpenId(open ? null : s.appointment_id))}
           className="w-full grid grid-cols-[70px_1fr_1fr_1fr_140px] gap-3 items-center px-4 py-3 text-left hover:bg-neutral-50 transition-colors"
         >
-          <span className="text-sm font-bold text-neutral-900">{label}</span>
-          <span className="text-sm text-neutral-700">{fmtDate(s.appointment_date)}</span>
-          <span className="text-sm text-neutral-600">{s.start_time || "—"}</span>
-          <span className="text-sm text-neutral-600">{s.ca_id ? "Assigned" : "—"}</span>
-          <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium w-fit ${deviceSessionTone(s.status)}`}>
+          <span className="text-base font-bold text-neutral-900">{label}</span>
+          <span className="text-base text-neutral-700">{fmtDate(s.appointment_date)}</span>
+          <span className="text-base text-neutral-600">{s.start_time || "—"}</span>
+          <span className="text-base text-neutral-600">{s.ca_id ? "Assigned" : "—"}</span>
+          <span className={`inline-flex px-3 py-1 rounded-full text-sm font-semibold w-fit ${deviceSessionTone(s.status)}`}>
             {deviceSessionLabel(s.status)}
           </span>
         </button>
@@ -176,8 +177,39 @@ function SessionsList({ detail, onOpenSession }: { detail: ProtocolDetail; onOpe
     );
   };
 
+  const calendarItems: CalendarSession[] = [
+    ...sessions.map((s) => ({
+      id: s.appointment_id,
+      date: s.appointment_date,
+      time: s.start_time,
+      status: s.status,
+      label: s.session_number != null ? `Session #${s.session_number}` : "Session",
+    })),
+    ...followUps.map((s, i) => ({
+      id: s.appointment_id,
+      date: s.appointment_date,
+      time: s.start_time,
+      status: s.status,
+      label: `Follow-up #${i + 1}`,
+      kind: "follow_up" as const,
+    })),
+  ];
+
   return (
     <div className="space-y-4">
+      {showCalendar && calendarItems.length > 0 && (
+        <SessionCalendar
+          key={detail.protocol_id}
+          sessions={calendarItems}
+          onSelectSession={(c) => {
+            // Device sessions open the review panel, like their list row;
+            // follow-ups expand their row in the list below.
+            if (c.kind === "follow_up" || !onOpenSession) setOpenId(c.id);
+            else onOpenSession(c.id);
+          }}
+        />
+      )}
+
       <Card>
         <CardContent className="p-0">
           <div className="px-4 py-3 border-b border-neutral-100">
@@ -192,7 +224,7 @@ function SessionsList({ detail, onOpenSession }: { detail: ProtocolDetail; onOpe
             </p>
           ) : (
             <>
-              <div className="grid grid-cols-[70px_1fr_1fr_1fr_140px] gap-3 px-4 py-2 bg-neutral-50 text-[10px] font-semibold text-neutral-500 uppercase tracking-wide">
+              <div className="grid grid-cols-[70px_1fr_1fr_1fr_140px] gap-3 px-4 py-2 bg-neutral-50 text-xs font-semibold text-neutral-500 uppercase tracking-wide">
                 <span>Session</span><span>Date</span><span>Time</span><span>Assistant</span><span>Status</span>
               </div>
               {sessions.map((s) => <Row key={s.appointment_id} s={s} label={s.session_number != null ? `#${s.session_number}` : "—"} openable />)}
@@ -211,7 +243,7 @@ function SessionsList({ detail, onOpenSession }: { detail: ProtocolDetail; onOpe
             <p className="text-sm text-neutral-400 px-4 py-8 text-center">No follow-up appointments booked yet.</p>
           ) : (
             <>
-              <div className="grid grid-cols-[70px_1fr_1fr_1fr_140px] gap-3 px-4 py-2 bg-neutral-50 text-[10px] font-semibold text-neutral-500 uppercase tracking-wide">
+              <div className="grid grid-cols-[70px_1fr_1fr_1fr_140px] gap-3 px-4 py-2 bg-neutral-50 text-xs font-semibold text-neutral-500 uppercase tracking-wide">
                 <span>Follow-up</span><span>Date</span><span>Time</span><span>Assistant</span><span>Status</span>
               </div>
               {followUps.map((s, i) => <Row key={s.appointment_id} s={s} label={`#${i + 1}`} />)}
@@ -767,7 +799,7 @@ export function DeviceSessionsPanel({ patientId, hideSuperseded = false, showHea
             {detailError || "Couldn't load session detail."}
           </div>
         ) : (
-          <SessionsList detail={detail} onOpenSession={setOpenSessionId} />
+          <SessionsList detail={detail} onOpenSession={setOpenSessionId} showCalendar />
         )}
       </div>
     );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -75,9 +75,14 @@ function fmt12(t: string | null | undefined): string {
 // ─── constants ────────────────────────────────────────────────────
 
 const DAY_LABELS  = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const CAL_START   = 8;
-const CAL_END     = 15;
+// The time grid's hours follow the doctor's schedule (see calStart/calEnd in
+// the component); this is only the fallback when nothing is scheduled.
+const DEFAULT_CAL_START = 8;
+const DEFAULT_CAL_END   = 21;
 const HOUR_PX     = 64;
+const CAL_VIEW_PX = 560;
+/** Minutes since calStart → pixels on the time grid. */
+const minsToPx = (mins: number) => (mins * HOUR_PX) / 60;
 const BRAND       = "linear-gradient(135deg, #00A1E4 0%, #09172E 100%)";
 
 const APPT_STYLE: Record<string, { bg: string; border: string; text: string }> = {
@@ -121,6 +126,32 @@ export default function DoctorDashboard() {
   const [ghost, setGhost] = useState<{ colIdx: number; top: number; height: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  // Week/Day time grid's scroll box.
+  const timeGridRef = useRef<HTMLDivElement>(null);
+
+  // Visible hours = the doctor's schedule for the range on screen: from the
+  // earliest slot/appointment's hour to the latest one's end, rounded out to
+  // whole hours. Slots come from the doctor's weekly template and overrides,
+  // so a changed schedule changes the grid; appointments are included so a
+  // booking outside the template is never cut off.
+  const { calStart, calEnd } = useMemo(() => {
+    const starts: number[] = [];
+    const ends: number[] = [];
+    const add = (start?: string | null, end?: string | null) => {
+      if (!start) return;
+      const s = timeToMins(start);
+      let e = end ? timeToMins(end) : s + 30;
+      if (e <= s) e = 24 * 60; // an end of 00:00 means midnight
+      starts.push(s);
+      ends.push(e);
+    };
+    slots.forEach((sl) => add(sl.start_time, sl.end_time));
+    appointments.forEach((a) => add(a.start_time, a.end_time));
+    if (starts.length === 0) return { calStart: DEFAULT_CAL_START, calEnd: DEFAULT_CAL_END };
+    const first = Math.max(0, Math.floor(Math.min(...starts) / 60));
+    const last = Math.min(24, Math.ceil(Math.max(...ends) / 60));
+    return { calStart: first, calEnd: Math.max(last, first + 1) };
+  }, [slots, appointments]);
 
   // ── fetch range per view ──────────────────────────────────────────
 
@@ -298,29 +329,34 @@ export default function DoctorDashboard() {
   const handleColumnMouseMove = useCallback(
     (colIdx: number, dateStr: string, e: React.MouseEvent<HTMLDivElement>) => {
       const y = e.clientY - e.currentTarget.getBoundingClientRect().top;
-      const rawMins = Math.floor((y / HOUR_PX) * 60) + CAL_START * 60;
+      const rawMins = Math.floor((y / HOUR_PX) * 60) + calStart * 60;
       const slot = nearestAvailableSlot(dateStr, rawMins);
       if (slot) {
-        setGhost({ colIdx, top: timeToMins(slot.start_time) - CAL_START * 60, height: timeToMins(slot.end_time) - timeToMins(slot.start_time) });
+        setGhost({ colIdx, top: minsToPx(timeToMins(slot.start_time) - calStart * 60), height: minsToPx(timeToMins(slot.end_time) - timeToMins(slot.start_time)) });
       } else {
         setGhost(null);
       }
     },
-    [nearestAvailableSlot],
+    [nearestAvailableSlot, calStart],
   );
 
   const handleColumnClick = useCallback(
     (colIdx: number, dateStr: string, e: React.MouseEvent<HTMLDivElement>) => {
       const y = e.clientY - e.currentTarget.getBoundingClientRect().top;
-      const rawMins = Math.floor((y / HOUR_PX) * 60) + CAL_START * 60;
+      const rawMins = Math.floor((y / HOUR_PX) * 60) + calStart * 60;
       const slot = nearestAvailableSlot(dateStr, rawMins);
       if (slot) setBookingSlot(slot);
     },
-    [nearestAvailableSlot],
+    [nearestAvailableSlot, calStart],
   );
 
-  const hours     = Array.from({ length: CAL_END - CAL_START }, (_, i) => CAL_START + i);
-  const gridHeight = (CAL_END - CAL_START) * HOUR_PX;
+  // Each new view/range opens at the top of the grid.
+  useEffect(() => {
+    if (timeGridRef.current) timeGridRef.current.scrollTop = 0;
+  }, [view, weekMonday, dayDate, isLoading]);
+
+  const hours     = Array.from({ length: calEnd - calStart }, (_, i) => calStart + i);
+  const gridHeight = (calEnd - calStart) * HOUR_PX;
 
   const isDoctor = user?.roles?.includes("doctor");
   const doctorName = isDoctor ? (user?.first_name || "Doctor") : "Doctor";
@@ -348,7 +384,7 @@ export default function DoctorDashboard() {
       >
         {hours.map((h) => (
           <div key={h} className="absolute left-0 right-0 border-t border-neutral-100"
-            style={{ top: (h - CAL_START) * HOUR_PX }} />
+            style={{ top: (h - calStart) * HOUR_PX }} />
         ))}
 
         {/* ghost hover */}
@@ -365,8 +401,8 @@ export default function DoctorDashboard() {
         )}
 
         {dayAppts.map((appt) => {
-          const top    = timeToMins(appt.start_time) - CAL_START * 60;
-          const height = Math.max(timeToMins(appt.end_time) - timeToMins(appt.start_time), 24);
+          const top    = minsToPx(timeToMins(appt.start_time) - calStart * 60);
+          const height = Math.max(minsToPx(timeToMins(appt.end_time) - timeToMins(appt.start_time)), 24);
           if (top < 0 || top >= gridHeight) return null;
           const sty = APPT_STYLE[appt.status] ?? APPT_STYLE.selected;
           return (
@@ -557,10 +593,10 @@ export default function DoctorDashboard() {
         <>
         {/* ── Week view ── */}
         {view === "Week" && (
-          <div className="overflow-x-auto">
+          <div ref={timeGridRef} className="overflow-auto" style={{ maxHeight: CAL_VIEW_PX }}>
             <div style={{ minWidth: 700 }}>
               {/* day headers */}
-              <div className="grid border-b border-neutral-100" style={{ gridTemplateColumns: "52px repeat(7, 1fr)" }}>
+              <div className="grid border-b border-neutral-100 sticky top-0 z-20 bg-white" style={{ gridTemplateColumns: "52px repeat(7, 1fr)" }}>
                 <div />
                 {weekDates.map((d, i) => {
                   const ds = toDateStr(d);
@@ -587,7 +623,7 @@ export default function DoctorDashboard() {
                   <div className="relative">
                     {hours.map((h) => (
                       <div key={h} className="absolute left-0 right-0 flex items-start justify-end pr-2"
-                        style={{ top: (h - CAL_START) * HOUR_PX, height: HOUR_PX }}>
+                        style={{ top: (h - calStart) * HOUR_PX, height: HOUR_PX }}>
                         <span className="text-[10px] text-neutral-400 font-medium mt-1">
                           {String(h).padStart(2, "0")}:00
                         </span>
@@ -603,10 +639,10 @@ export default function DoctorDashboard() {
 
         {/* ── Day view ── */}
         {view === "Day" && (
-          <div className="overflow-x-auto">
+          <div ref={timeGridRef} className="overflow-auto" style={{ maxHeight: CAL_VIEW_PX }}>
             <div style={{ minWidth: 400 }}>
               {/* single day header */}
-              <div className="grid border-b border-neutral-100" style={{ gridTemplateColumns: "52px 1fr" }}>
+              <div className="grid border-b border-neutral-100 sticky top-0 z-20 bg-white" style={{ gridTemplateColumns: "52px 1fr" }}>
                 <div />
                 <div className="text-center py-3 px-1 border-l border-neutral-100">
                   <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide mb-1">
@@ -626,7 +662,7 @@ export default function DoctorDashboard() {
                   <div className="relative">
                     {hours.map((h) => (
                       <div key={h} className="absolute left-0 right-0 flex items-start justify-end pr-2"
-                        style={{ top: (h - CAL_START) * HOUR_PX, height: HOUR_PX }}>
+                        style={{ top: (h - calStart) * HOUR_PX, height: HOUR_PX }}>
                         <span className="text-[10px] text-neutral-400 font-medium mt-1">
                           {String(h).padStart(2, "0")}:00
                         </span>

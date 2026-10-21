@@ -1,27 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { CalendarDays } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { Modal, Button } from "@/components/ui";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
-import { DeviceTimelinePicker } from "@/components/appointments/DeviceTimelinePicker";
-import type { Appointment, AppointmentType, AvailabilitySlot } from "@/types/domain.types";
-
-function fmt12(t: string): string {
-  if (!t) return "";
-  const [h, m] = t.split(":").map(Number);
-  const ampm = h >= 12 ? "PM" : "AM";
-  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
-}
+import { TimeSlotGrid, upcomingOnly, type GridSlot } from "@/components/appointments/TimeSlotGrid";
+import type { Appointment, AppointmentType, DeviceDayAvailability } from "@/types/domain.types";
 
 interface ClaimSlotModalProps {
   isOpen: boolean;
   onClose: () => void;
   appointmentId: string;
-  /** device_session reads clinic device capacity (continuous timeline,
-   * variable duration from billable_items); protocol_followup reads the
-   * patient's own allocated doctor's calendar (discrete list, doctor slots
-   * are exclusive/fixed) — same claim-slot endpoint either way. */
+  /** device_session reads the clinic device's day (hours, bookings, break,
+   * session duration);
+   * protocol_followup reads the patient's own allocated doctor's calendar —
+   * same claim-slot endpoint either way. */
   appointmentType: AppointmentType;
   /** The protocol's own prescribed date (appt.appointment_date) — the only
    * day slots are ever shown for. Device sessions/protocol follow-ups are
@@ -34,54 +26,119 @@ interface ClaimSlotModalProps {
 
 export function ClaimSlotModal({ isOpen, onClose, appointmentId, appointmentType, plannedDate, onClaimed }: ClaimSlotModalProps) {
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Select a Time" className="max-w-4xl">
+    <Modal isOpen={isOpen} onClose={onClose} title="Select a Time" className="max-w-lg">
       <div className="space-y-4">
         <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
           <p className="text-sm font-semibold text-neutral-900">
             {new Date(plannedDate + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
           </p>
-          <p className="text-xs text-neutral-500 mt-0.5">Set by your treatment protocol — pick any open time this day.</p>
+          <p className="text-xs text-neutral-500 mt-0.5">Set by your treatment protocol — pick an open time this day.</p>
         </div>
 
-        {appointmentType === "device_session" ? (
-          <DeviceTimelinePicker appointmentId={appointmentId} plannedDate={plannedDate} onClaimed={onClaimed} />
-        ) : (
-          <DoctorSlotList appointmentId={appointmentId} plannedDate={plannedDate} onClose={onClose} onClaimed={onClaimed} />
-        )}
+        <SlotPicker appointmentId={appointmentId} appointmentType={appointmentType} plannedDate={plannedDate} onClose={onClose} onClaimed={onClaimed} />
       </div>
     </Modal>
   );
 }
 
-/** Doctor calendar — genuinely slot-based (one exclusive slot at a time),
- * unchanged from before this file was split. */
-function DoctorSlotList({
+// Device session boxes are built from the device's day view (opening hours,
+// booked intervals, break, this session's duration) — the same rules the old
+// timeline picker used: a start is offered every 30 min, and it's open only
+// if the whole session fits inside opening hours without touching a booking
+// or the break.
+const SNAP_MINUTES = 30;
+
+function toMinutes(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
+function fromMinutes(mins: number): string {
+  return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}:00`;
+}
+function fmt12(t: string): string {
+  const [h, m] = t.split(":").map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+}
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function deviceSlots(avail: DeviceDayAvailability, plannedDate: string): GridSlot[] {
+  if (!avail.is_open || !avail.open_start || !avail.open_end || !avail.duration_minutes) return [];
+  const open = toMinutes(avail.open_start);
+  const close = toMinutes(avail.open_end);
+  const duration = avail.duration_minutes;
+  const blocked = avail.busy.map((b) => [toMinutes(b.start_time), toMinutes(b.end_time)] as [number, number]);
+  if (avail.break_start && avail.break_end) blocked.push([toMinutes(avail.break_start), toMinutes(avail.break_end)]);
+
+  const out: GridSlot[] = [];
+  for (let t = Math.ceil(open / SNAP_MINUTES) * SNAP_MINUTES; t + duration <= close; t += SNAP_MINUTES) {
+    const end = t + duration;
+    out.push({
+      date: plannedDate,
+      start_time: fromMinutes(t),
+      end_time: fromMinutes(end),
+      is_available: !blocked.some(([bs, be]) => t < be && end > bs),
+    });
+  }
+  return out;
+}
+
+/** Time boxes for the planned day — the patient's doctor's calendar for a
+ * protocol follow-up, the clinic device's day for a device session. Same
+ * claim-slot endpoint either way. Already-passed times are hidden. */
+function SlotPicker({
   appointmentId,
+  appointmentType,
   plannedDate,
   onClose,
   onClaimed,
 }: {
   appointmentId: string;
+  appointmentType: AppointmentType;
   plannedDate: string;
   onClose: () => void;
   onClaimed: (appointment: Appointment) => void;
 }) {
-  const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
+  const isDevice = appointmentType === "device_session";
+  const isPastDay = plannedDate < todayStr();
+  const [slots, setSlots] = useState<GridSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
-  const [picked, setPicked] = useState<AvailabilitySlot | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [deviceClosed, setDeviceClosed] = useState(false);
+  const [duration, setDuration] = useState<number | null>(null);
+  const [picked, setPicked] = useState<GridSlot | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setPicked(null);
-    setError(null);
+    setLoadError(null);
+    setDeviceClosed(false);
+    // A past planned date has nothing bookable — the session is overdue.
+    if (isPastDay) { setSlots([]); return; }
     setLoadingSlots(true);
-    appointmentsService
-      .myAvailability(plannedDate, plannedDate)
-      .then((s) => setSlots(s.filter((x) => x.date === plannedDate)))
-      .catch(() => setSlots([]))
+    const req: Promise<GridSlot[]> = isDevice
+      ? appointmentsService.deviceDayAvailability(appointmentId).then((avail) => {
+          setDuration(avail.duration_minutes || null);
+          setDeviceClosed(!avail.is_open);
+          return deviceSlots(avail, plannedDate);
+        })
+      : appointmentsService.myAvailability(plannedDate, plannedDate);
+    req
+      .then((s) => setSlots(upcomingOnly(s.filter((x) => x.date === plannedDate))))
+      .catch((e) => {
+        setSlots([]);
+        setLoadError(e?.response?.data?.error?.message ?? `Could not load ${isDevice ? "device" : "doctor"} availability`);
+      })
       .finally(() => setLoadingSlots(false));
-  }, [appointmentId, plannedDate]);
+  }, [appointmentId, plannedDate, isDevice, isPastDay]);
+
+  useEffect(() => {
+    setError(null);
+    load();
+  }, [load]);
 
   async function handleConfirm() {
     if (!picked) return;
@@ -91,40 +148,34 @@ function DoctorSlotList({
       const claimed = await appointmentsService.claimSlot(appointmentId, { start_time: picked.start_time });
       onClaimed(claimed);
     } catch (e: any) {
-      setError(e?.response?.data?.error?.message ?? "Could not claim that slot — please try again");
+      setError(e?.response?.data?.error?.message ?? "That time was just taken — pick another");
+      load();
     } finally {
       setSubmitting(false);
     }
   }
 
-  const available = slots.filter((s) => s.is_available);
+  const emptyText = isPastDay
+    ? `This date has already passed — contact the clinic to reschedule this ${isDevice ? "session" : "follow-up"}.`
+    : loadError
+    ? loadError
+    : deviceClosed
+    ? "This device doesn't run sessions on the planned date — contact the clinic."
+    : `No open times left this day on the ${isDevice ? "device" : "doctor's"} calendar — contact the clinic.`;
 
   return (
     <>
-      {loadingSlots ? (
-        <div className="flex justify-center py-8">
-          <div className="w-5 h-5 border-2 border-neutral-200 border-t-primary-500 rounded-full animate-spin" />
-        </div>
-      ) : available.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 py-8 text-center text-neutral-400">
-          <CalendarDays className="h-6 w-6" />
-          <p className="text-xs">No open times left this day — contact the clinic.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-3 gap-2">
-          {available.map((s) => (
-            <button
-              key={s.start_time}
-              onClick={() => setPicked(s)}
-              className={`text-sm font-medium px-2 py-2 rounded-lg text-center border transition-colors ${
-                picked?.start_time === s.start_time
-                  ? "bg-primary-600 text-white border-primary-600"
-                  : "bg-success-50 text-success-700 border-success-100 hover:bg-success-100"
-              }`}
-            >
-              {fmt12(s.start_time)}
-            </button>
-          ))}
+      <div>
+        <label className="block text-xs font-medium text-neutral-700 mb-1.5">
+          Time
+          {isDevice && duration && <span className="text-neutral-400 font-normal"> · each session is {duration} minutes</span>}
+        </label>
+        <TimeSlotGrid slots={slots} selected={picked} onSelect={setPicked} loading={loadingSlots} emptyText={emptyText} />
+      </div>
+
+      {picked && (
+        <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 mt-4">
+          <p className="text-sm font-semibold text-neutral-900">{fmt12(picked.start_time)} – {fmt12(picked.end_time)}</p>
         </div>
       )}
 

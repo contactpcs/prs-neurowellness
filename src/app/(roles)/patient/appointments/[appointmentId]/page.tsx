@@ -2,11 +2,12 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, CalendarDays, Clock, User, RotateCcw, CheckCircle2, XCircle, Brain, Sparkles, TrendingUp } from "lucide-react";
-import { appointmentsService } from "@/lib/api/services/appointments.service";
+import { ChevronLeft, CalendarDays, Clock, User, RotateCcw, CheckCircle2, XCircle, Ban, Brain, Sparkles, TrendingUp } from "lucide-react";
+import { appointmentsService, type RescheduleOptions } from "@/lib/api/services/appointments.service";
 import { MockPaymentModal } from "@/components/appointments/MockPaymentModal";
 import { ClaimSlotModal } from "@/components/appointments/ClaimSlotModal";
 import { RescheduleModal } from "@/components/appointments/RescheduleModal";
+import { CancelAppointmentModal } from "@/components/appointments/CancelAppointmentModal";
 import { STATUS_LABEL, STATUS_TONE } from "@/lib/appointmentStatus";
 import { appointmentDoctorName, getDeviceSessionLabel, protocolContextLine, SESSION_TYPE_LABEL } from "@/lib/utils/sessionType";
 import { doctorLabel } from "@/lib/utils/doctorLabel";
@@ -79,10 +80,21 @@ function AppointmentDetail() {
   const [loading, setLoading] = useState(true);
   const [showClaim, setShowClaim] = useState(false);
   const [showReschedule, setShowReschedule] = useState(false);
+  const [showCancel, setShowCancel] = useState(false);
+  // Whether/where this appointment can be moved, straight from the backend's
+  // own rules (status, clinic notice period, device-session make-up window).
+  const [options, setOptions] = useState<RescheduleOptions | null>(null);
+
+  const loadOptions = () =>
+    appointmentsService
+      .myRescheduleOptions(appointmentId)
+      .then(setOptions)
+      .catch(() => setOptions(null));
 
   useEffect(() => {
     setLoading(true);
-    appointmentsService.getById(appointmentId).then(setAppt).finally(() => setLoading(false));
+    Promise.all([appointmentsService.getById(appointmentId).then(setAppt), loadOptions()]).finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appointmentId]);
 
   // Dashboard's "Select Slot" links here with ?claim=1 so the picker opens
@@ -129,17 +141,26 @@ function AppointmentDetail() {
   const isMissed = appt.status === "no_show" || (isPast && ["selected", "paid", "checked_in", "in_progress"].includes(appt.status));
   const awaitingPayment = appt.status === "selected" && !isPast;
   const isPaidUpcoming = !isPast && ["paid", "checked_in", "in_progress"].includes(appt.status);
-  // Backend accepts a reschedule from 'selected', 'paid', or 'no_show'
-  // (scheduling/service.py's PATIENT_RESCHEDULE_FROM_STATUSES) — checked_in/
-  // in_progress are excluded (the patient is already there, nothing to
-  // move). no_show is the one exception to the 24h-notice check; a
-  // still-upcoming 'paid' appointment needs the usual 24h notice, and a
-  // past-due 'paid' one not yet swept into no_show (no_show_sweeper.py,
-  // 2h/6h grace) will correctly be rejected until it is. Protocol-born types
-  // (device_session/protocol_followup) are rejected outright server-side
-  // (USE_CLAIM_SLOT_INSTEAD) — claim-slot is their equivalent, not reschedule.
-  const isProtocolBorn = appt.appointment_type === "device_session" || appt.appointment_type === "protocol_followup";
-  const canReschedule = ["no_show", "paid"].includes(appt.status) && !isProtocolBorn;
+  // Decided by the backend (GET /me/appointments/{id}/reschedule-options):
+  // allowed statuses, the clinic's own notice period, and for a missed device
+  // session the two make-up days after the course ends. blocked_reason says
+  // why not, for the disabled button's tooltip.
+  const canReschedule = options?.can_reschedule === true;
+  const rescheduleBlockedReason = options?.blocked_reason ?? undefined;
+  // A booked, paid, still-upcoming visit can be cancelled; the dialog shows
+  // the refund the clinic's policy gives before the patient confirms.
+  const canCancel = appt.status === "paid" && !isPast;
+
+  const onChanged = (updated: Appointment) => {
+    setShowReschedule(false);
+    setShowCancel(false);
+    if (updated.appointment_id === appt.appointment_id) {
+      setAppt(updated);
+      loadOptions();
+    } else {
+      router.push(`/patient/appointments/${updated.appointment_id}`);
+    }
+  };
 
   return (
     <div className="max-w-lg mx-auto space-y-5">
@@ -198,7 +219,7 @@ function AppointmentDetail() {
       {isPlanned && (
         <div className="bg-neutral-100 border border-neutral-200 rounded-xl p-5 space-y-3">
           <p className="text-sm text-neutral-600">
-            This session hasn't been scheduled to a specific slot yet — no time is locked in and nothing is due until it is.
+            Please select a slot for this appointment to confirm your visit. 
           </p>
           {claimable && (
             <Button variant="primary" size="sm" onClick={() => setShowClaim(true)}>
@@ -258,13 +279,7 @@ function AppointmentDetail() {
             variant="outline"
             disabled={!canReschedule}
             onClick={() => canReschedule && setShowReschedule(true)}
-            title={
-              canReschedule
-                ? undefined
-                : isProtocolBorn
-                ? "This session needs a new slot claimed instead — contact the clinic to rebook."
-                : "Not reschedulable yet — this slot hasn't been marked as missed on our side."
-            }
+            title={canReschedule ? undefined : rescheduleBlockedReason ?? "Not reschedulable yet — this slot hasn't been marked as missed on our side."}
           >
             <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
             Reschedule
@@ -277,10 +292,17 @@ function AppointmentDetail() {
           isOpen={showReschedule}
           onClose={() => setShowReschedule(false)}
           appointment={appt}
-          onRescheduled={(updated) => {
-            setShowReschedule(false);
-            router.push(`/patient/appointments/${updated.appointment_id}`);
-          }}
+          options={options}
+          onRescheduled={onChanged}
+        />
+      )}
+
+      {canCancel && (
+        <CancelAppointmentModal
+          isOpen={showCancel}
+          onClose={() => setShowCancel(false)}
+          appointment={appt}
+          onCancelled={onChanged}
         />
       )}
 
@@ -302,22 +324,32 @@ function AppointmentDetail() {
         <div className="bg-primary-50 border border-primary-100 rounded-xl p-5 space-y-3">
           <p className="text-sm text-primary-800">This appointment is confirmed and paid.</p>
           {appt.status === "paid" && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!canReschedule}
-              onClick={() => canReschedule && setShowReschedule(true)}
-              title={
-                canReschedule
-                  ? undefined
-                  : isProtocolBorn
-                  ? "This session needs a new slot claimed instead — contact the clinic to rebook."
-                  : undefined
-              }
-            >
-              <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-              Reschedule
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!canReschedule}
+                onClick={() => canReschedule && setShowReschedule(true)}
+                title={canReschedule ? undefined : rescheduleBlockedReason}
+              >
+                <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                Reschedule
+              </Button>
+              {canCancel && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-danger-600 border-danger-200 hover:bg-danger-50"
+                  onClick={() => setShowCancel(true)}
+                >
+                  <Ban className="h-3.5 w-3.5 mr-1.5" />
+                  Cancel Appointment
+                </Button>
+              )}
+            </div>
+          )}
+          {appt.status === "paid" && !canReschedule && rescheduleBlockedReason && (
+            <p className="text-xs text-primary-700">{rescheduleBlockedReason}</p>
           )}
         </div>
       )}

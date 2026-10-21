@@ -147,8 +147,8 @@ export default function CAPatientWorkspacePage() {
     null;
   const appointmentId = currentSession?.appointment.appointment_id ?? null;
   const consultationNotStarted = !sessionsLoading && !currentSession;
-  // The backend takes a staff PRS / anamnesis only while the consultation is
-  // in progress (CONSULTATION_NOT_STARTED / ANAMNESIS_LOCKED).
+  // The backend takes a staff anamnesis only while the consultation is in
+  // progress (CONSULTATION_NOT_STARTED / ANAMNESIS_LOCKED). A PRS is not gated.
   const consultationOpen = currentSession?.appointment.status === "in_progress";
   const { summary: visitSummary, isLoading: visitSummaryLoading, reload: reloadVisitSummary } = usePatientVisitSummary(id, appointmentId);
 
@@ -227,7 +227,7 @@ export default function CAPatientWorkspacePage() {
           <div>
             <p className="text-sm font-semibold text-amber-900">Consultation not started</p>
             <p className="text-xs text-amber-700">
-              Anamnesis and PRS open here once a consultation is booked, paid, checked in and started.
+              Anamnesis opens here once a consultation is booked, paid, checked in and started. A PRS can be taken at any time.
             </p>
           </div>
         </div>
@@ -262,9 +262,9 @@ export default function CAPatientWorkspacePage() {
               <div>
                 <h2 className="text-2xl font-bold text-neutral-900 mb-1">PRS Assessments</h2>
                 <p className="text-neutral-600 text-sm">
-                  {consultationOpen
+                  {appointmentId
                     ? "Taken on the patient's behalf, saved under this consultation."
-                    : "A PRS can be taken only while the consultation is in progress."}
+                    : "Taken on the patient's behalf. No consultation needed."}
                 </p>
               </div>
               {assessments.map((a) => (
@@ -280,10 +280,10 @@ export default function CAPatientWorkspacePage() {
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded ${PERM_BADGE[a.status] ?? "bg-gray-100 text-gray-600"}`}>
                       {statusLabel(a.status)}
                     </span>
-                    {/* Only a granted, not-yet-taken assignment can be started,
-                        and only inside the open consultation. */}
-                    {a.status === "granted" && consultationOpen && appointmentId && (
-                      <Link href={`/clinical-assistant/patients/${id}/assessment/${a.permission_id}?session=${appointmentId}`}>
+                    {/* Only a granted, not-yet-taken assignment can be started —
+                        at any time, with or without a consultation. */}
+                    {a.status === "granted" && (
+                      <Link href={`/clinical-assistant/patients/${id}/assessment/${a.permission_id}${appointmentId ? `?session=${appointmentId}` : ""}`}>
                         <Button size="sm" variant="primary">
                           <PlayCircle className="h-4 w-4" /> Start Assessment
                         </Button>

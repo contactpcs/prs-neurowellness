@@ -40,7 +40,7 @@ function PatientRowDetail({ patientId, registrationStatus }: { patientId: string
 
   return (
     <tr>
-      <td colSpan={7} className="px-6 py-5 bg-neutral-50 border-t border-neutral-100">
+      <td colSpan={6} className="px-6 py-5 bg-neutral-50 border-t border-neutral-100">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
           <div className="bg-white rounded-lg p-3 border border-neutral-200">
             <p className="text-xs text-neutral-500 mb-0.5">Registration Status</p>
@@ -160,7 +160,6 @@ export default function DoctorPatientsPage() {
               <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">MRN</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Clinic Name</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Last Visit</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Status</th>
               <th className="pl-6 pr-2 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Action</th>
               <th className="w-8 pl-0 pr-3 py-3"></th>
             </tr>
@@ -197,28 +196,18 @@ export default function DoctorPatientsPage() {
                     <td className="px-6 py-4 text-neutral-600">{clinicLabel}</td>
                     {/* Last Visit */}
                     <td className="px-6 py-4 text-neutral-600">{fmtDate(lastVisit)}</td>
-                    {/* Status */}
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex px-2.5 py-1 rounded-full text-sm font-medium ${
-                        p.status === "active" || !p.status
-                          ? "bg-green-50 text-green-700"
-                          : "bg-neutral-100 text-neutral-500"
-                      }`}>
-                        {p.status ? (p.status.charAt(0).toUpperCase() + p.status.slice(1)) : "Active"}
-                      </span>
-                    </td>
                     {/* Action */}
                     <td className="pl-6 pr-2 py-4">
                       <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => router.push(`/doctor/patients/${p.id}/summary`)}
-                          className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-neutral-700 border border-neutral-300 hover:bg-neutral-100 transition-colors whitespace-nowrap"
+                          className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-brand-gradient hover:opacity-90 transition-opacity whitespace-nowrap shadow-sm"
                         >
-                          View
+                          View Patient Details
                         </button>
                         <button
                           onClick={() => router.push(`/doctor/patients/${p.id}`)}
-                          className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-action-orange hover:bg-action-orange-dark transition-colors whitespace-nowrap shadow-sm"
+                          className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-brand-gradient hover:opacity-90 transition-opacity whitespace-nowrap shadow-sm"
                         >
                           Open Clinical Workspace
                         </button>
@@ -245,7 +234,7 @@ export default function DoctorPatientsPage() {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-6 py-10 text-center text-neutral-400 text-sm">No patients found</td>
+                <td colSpan={6} className="px-6 py-10 text-center text-neutral-400 text-sm">No patients found</td>
               </tr>
             )}
           </tbody>

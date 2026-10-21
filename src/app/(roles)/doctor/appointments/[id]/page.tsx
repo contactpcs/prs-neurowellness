@@ -257,13 +257,17 @@ export default function AppointmentDetailPage() {
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
-  const run = useCallback(async (fn: () => Promise<any>, label: string) => {
+  // Resolves true when the action succeeded, so a caller can follow up
+  // (e.g. Start Consultation opening the workspace).
+  const run = useCallback(async (fn: () => Promise<any>, label: string): Promise<boolean> => {
     setBusy(true);
     setActionError("");
     try {
       await fn();
+      return true;
     } catch (e: any) {
       setActionError(e?.response?.data?.error?.message ?? e?.response?.data?.detail ?? e?.message ?? `${label} failed`);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -288,6 +292,12 @@ export default function AppointmentDetailPage() {
   // expects doctors.doctor_id (public ID) instead, hence doctor_public_id.
   const docId  = appointment.doctor_public_id;
   const patientPublicId = appointment.patient_public_id ?? appointment.patient_id;
+  const workspaceHref =
+    appointment.appointment_type === "device_session"
+      ? `/doctor/patients/${patientPublicId}?section=sessions`
+      : appointment.appointment_type === "initial"
+        ? `/doctor/patients/${patientPublicId}`
+        : `/doctor/patients/${patientPublicId}?session=${appointment.appointment_id}`;
 
   // A device_session still has no treating doctor OF RECORD (doctor_id stays
   // NULL by design), but a doctor can now run one end-to-end just like a
@@ -439,13 +449,7 @@ export default function AppointmentDetailPage() {
               </span>
             ) : (
               <Link
-                href={
-                  appointment.appointment_type === "device_session"
-                    ? `/doctor/patients/${patientPublicId}?section=sessions`
-                    : appointment.appointment_type === "initial"
-                      ? `/doctor/patients/${patientPublicId}`
-                      : `/doctor/patients/${patientPublicId}?session=${appointment.appointment_id}`
-                }
+                href={workspaceHref}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-xs font-semibold"
                 style={{ background: BRAND }}
               >
@@ -547,7 +551,6 @@ export default function AppointmentDetailPage() {
                 <ActionBtn
                   icon={CreditCard}
                   label="Collect Payment"
-                  color="orange"
                   busy={busy}
                   onClick={() => setShowPay(true)}
                 />
@@ -556,7 +559,6 @@ export default function AppointmentDetailPage() {
                 <ActionBtn
                   icon={UserCheck}
                   label="Check In Patient"
-                  color="blue"
                   busy={busy}
                   onClick={() => run(checkIn, "Check-in")}
                 />
@@ -565,16 +567,18 @@ export default function AppointmentDetailPage() {
                 <ActionBtn
                   icon={Play}
                   label={isDeviceSession ? "Run Device Session" : "Start Consultation"}
-                  color="brand"
                   busy={busy}
-                  onClick={() => (isDeviceSession ? router.push(deviceSessionWorkflowHref) : run(start, "Start"))}
+                  onClick={async () => {
+                    if (isDeviceSession) { router.push(deviceSessionWorkflowHref); return; }
+                    // Starting the consultation unlocks the workspace — go straight there.
+                    if (await run(start, "Start")) router.push(workspaceHref);
+                  }}
                 />
               )}
               {canComplete && (
                 <ActionBtn
                   icon={CheckSquare}
                   label={isDeviceSession ? "Run Device Session" : "Mark Complete"}
-                  color="green"
                   busy={busy}
                   onClick={() => (isDeviceSession ? router.push(deviceSessionWorkflowHref) : run(complete, "Complete"))}
                 />
@@ -583,7 +587,6 @@ export default function AppointmentDetailPage() {
                 <ActionBtn
                   icon={RotateCcw}
                   label="Reschedule"
-                  color="purple"
                   busy={busy}
                   onClick={() => setShowReschedule(true)}
                 />
@@ -592,7 +595,6 @@ export default function AppointmentDetailPage() {
                 <ActionBtn
                   icon={AlertOctagon}
                   label="Mark No-Show"
-                  color="orange"
                   busy={busy}
                   onClick={() => run(noShow, "No-show")}
                 />
@@ -601,7 +603,6 @@ export default function AppointmentDetailPage() {
                 <ActionBtn
                   icon={XCircle}
                   label="Cancel"
-                  color="red"
                   busy={busy}
                   onClick={() => setShowCancel(true)}
                 />
@@ -690,29 +691,15 @@ export default function AppointmentDetailPage() {
 
 // ─── Small helpers ────────────────────────────────────────────────────────────
 
-type BtnColor = "green" | "blue" | "brand" | "purple" | "orange" | "red";
-
-const BTN_STYLES: Record<BtnColor, { bg: string; hover: string; text: string }> = {
-  green:  { bg: "#f0fdf4", hover: "#dcfce7", text: "#15803d" },
-  blue:   { bg: "#eff6ff", hover: "#dbeafe", text: "#1e40af" },
-  brand:  { bg: "#e0f2fe", hover: "#bae6fd", text: "#0369a1" },
-  purple: { bg: "#f5f3ff", hover: "#ede9fe", text: "#4c1d95" },
-  orange: { bg: "#fff7ed", hover: "#ffedd5", text: "#9a3412" },
-  red:    { bg: "#fff1f2", hover: "#ffe4e6", text: "#991b1b" },
-};
-
 function ActionBtn({
-  icon: Icon, label, color, busy, onClick,
-}: { icon: React.ElementType; label: string; color: BtnColor; busy: boolean; onClick: () => void }) {
-  const s = BTN_STYLES[color];
+  icon: Icon, label, busy, onClick,
+}: { icon: React.ElementType; label: string; busy: boolean; onClick: () => void }) {
   return (
     <button
       disabled={busy}
       onClick={onClick}
-      className="w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
-      style={{ backgroundColor: s.bg, color: s.text }}
-      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = s.hover)}
-      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = s.bg)}
+      className="w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-medium text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50"
+      style={{ background: BRAND }}
     >
       <Icon className="w-4 h-4 flex-shrink-0" />
       {label}

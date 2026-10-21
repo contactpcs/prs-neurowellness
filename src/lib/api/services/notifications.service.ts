@@ -18,10 +18,13 @@ function mapNotification(n: Record<string, unknown>): Notification {
     // can route straight to the right screen (see notificationLink.ts). Kept as an
     // opaque bag rather than typed columns since each notification type carries
     // its own shape.
-    metadata:
-      n.metadata && typeof n.metadata === "object"
-        ? (n.metadata as Record<string, unknown>)
-        : undefined,
+    // entity_type/entity_id (what the notification is about, e.g. a signed
+    // final report) ride in the same bag so the link helper has one place
+    // to look.
+    metadata: {
+      ...(n.metadata && typeof n.metadata === "object" ? (n.metadata as Record<string, unknown>) : {}),
+      ...(n.entity_type ? { entity_type: n.entity_type, entity_id: n.entity_id } : {}),
+    },
   };
 }
 

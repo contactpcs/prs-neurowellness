@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { doctorsService, type VisitSummary } from "@/lib/api/services/doctors.service";
 import { withResponses } from "@/lib/api/services/anamnesis.service";
 
@@ -10,15 +10,24 @@ import { withResponses } from "@/lib/api/services/anamnesis.service";
  * switching toggles never shows a previous visit's cached data. */
 export function usePatientVisitSummary(patientId: string, appointmentId: string | null) {
   const [summary, setSummary] = useState<VisitSummary | null>(null);
-  const [isLoading, setIsLoading] = useState(!!appointmentId);
+  const [loading, setLoading] = useState(!!appointmentId);
+  // The visit `summary` was loaded for. Until it matches the selected one the
+  // hook reports loading and no summary — otherwise the render right after a
+  // switch handed out the previous visit's data (or a premature null).
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  // Only the newest request may land — a slow one for the previous visit
+  // must not overwrite the visit now selected.
+  const latest = useRef<string | null>(null);
 
   const load = useCallback(() => {
+    latest.current = appointmentId;
     if (!patientId || !appointmentId) {
       setSummary(null);
-      setIsLoading(false);
+      setLoadedFor(null);
+      setLoading(false);
       return;
     }
-    setIsLoading(true);
+    setLoading(true);
     doctorsService
       .getVisitSummary(patientId, appointmentId)
       // The bundle's anamnesis is the bare assessment row (same shape GET
@@ -26,12 +35,17 @@ export function usePatientVisitSummary(patientId: string, appointmentId: string 
       // endpoint. Without this hydration the form/read-only view always
       // shows "No assessment responses recorded" even when responses exist.
       .then(async (data) => (data.anamnesis ? { ...data, anamnesis: await withResponses(data.anamnesis) } : data))
-      .then(setSummary)
-      .catch(() => setSummary(null))
-      .finally(() => setIsLoading(false));
+      .then((data) => latest.current === appointmentId && setSummary(data))
+      .catch(() => latest.current === appointmentId && setSummary(null))
+      .finally(() => {
+        if (latest.current !== appointmentId) return;
+        setLoadedFor(appointmentId);
+        setLoading(false);
+      });
   }, [patientId, appointmentId]);
 
   useEffect(load, [load]);
 
-  return { summary, isLoading, reload: load };
+  const current = loadedFor === appointmentId;
+  return { summary: current ? summary : null, isLoading: loading || (!!appointmentId && !current), reload: load };
 }

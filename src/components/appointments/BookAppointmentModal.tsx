@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Modal, Button } from "@/components/ui";
 import { appointmentsService } from "@/lib/api/services/appointments.service";
+import { TimeSlotGrid, upcomingOnly } from "@/components/appointments/TimeSlotGrid";
 import type { Appointment, AppointmentType, AvailabilitySlot } from "@/types/domain.types";
 
 const DISPLAY_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -44,6 +45,9 @@ export function BookAppointmentModal({ isOpen, onClose, appointmentType, onBooke
   const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [picked, setPicked] = useState<AvailabilitySlot | null>(null);
+  // Day whose times are shown; the patient picks a time box, then continues.
+  const [day, setDay] = useState<string>(() => toDateStr(new Date()));
+  const [confirming, setConfirming] = useState(false);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +69,7 @@ export function BookAppointmentModal({ isOpen, onClose, appointmentType, onBooke
   useEffect(() => {
     if (!isOpen) return;
     setPicked(null);
+    setConfirming(false);
     setReason("");
     setError(null);
     fetchSlots(weekMonday);
@@ -72,7 +77,14 @@ export function BookAppointmentModal({ isOpen, onClose, appointmentType, onBooke
   }, [isOpen, weekMonday]);
 
   const slotsByDate: Record<string, AvailabilitySlot[]> = {};
-  for (const s of slots) (slotsByDate[s.date] ??= []).push(s);
+  for (const s of upcomingOnly(slots)) (slotsByDate[s.date] ??= []).push(s);
+
+  // Moving to another week lands on its first day that's today or later.
+  useEffect(() => {
+    const first = weekDates.map(toDateStr).find((d) => d >= todayStr);
+    setDay(first ?? toDateStr(weekDates[0]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekMonday]);
 
   const weekLabel = (() => {
     const s = weekDates[0].toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -98,13 +110,14 @@ export function BookAppointmentModal({ isOpen, onClose, appointmentType, onBooke
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={appointmentType === "initial" ? "Book Initial Consultation" : "Book Follow-up"} className="max-w-2xl">
-      {!picked ? (
-        <div>
-          <div className="flex items-center justify-between mb-3">
+    <Modal isOpen={isOpen} onClose={onClose} title={appointmentType === "initial" ? "Book Initial Consultation" : "Book Follow-up"} className="max-w-lg">
+      {!confirming ? (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <button onClick={() => setWeekMonday((m) => { const d = new Date(m); d.setDate(d.getDate() - 7); return d; })}
-                className="p-1.5 text-neutral-500 border border-neutral-200 rounded-lg hover:bg-neutral-50">
+                disabled={toDateStr(weekMonday) <= todayStr}
+                className="p-1.5 text-neutral-500 border border-neutral-200 rounded-lg hover:bg-neutral-50 disabled:opacity-40">
                 <ChevronLeft className="w-4 h-4" />
               </button>
               <button onClick={() => setWeekMonday((m) => { const d = new Date(m); d.setDate(d.getDate() + 7); return d; })}
@@ -118,55 +131,52 @@ export function BookAppointmentModal({ isOpen, onClose, appointmentType, onBooke
             </button>
           </div>
 
-          <div className="overflow-x-auto">
-            <div className="grid" style={{ gridTemplateColumns: "repeat(7, 1fr)", minWidth: 560 }}>
-              {weekDates.map((d, i) => {
-                const ds = toDateStr(d);
-                const isToday = ds === todayStr;
-                const daySlots = (slotsByDate[ds] || []).filter((s) => s.is_available);
-                return (
-                  <div key={i} className="border-r border-neutral-100 last:border-r-0">
-                    <div className="text-center py-2 px-1 border-b border-neutral-100">
-                      <div className="text-[10px] font-semibold text-neutral-500 uppercase">{DISPLAY_DAYS[i]}</div>
-                      <div className={`inline-flex items-center justify-center w-7 h-7 mx-auto mt-1 rounded-full text-xs font-bold ${isToday ? "bg-brand-gradient text-white" : "text-neutral-700"}`}>
-                        {d.getDate()}
-                      </div>
-                    </div>
-                    <div className="p-1.5 space-y-1 min-h-[120px]">
-                      {loadingSlots ? (
-                        <div className="flex items-center justify-center h-16">
-                          <div className="w-4 h-4 border-2 border-neutral-200 border-t-primary-500 rounded-full animate-spin" />
-                        </div>
-                      ) : daySlots.length === 0 ? (
-                        <div className="flex items-center justify-center h-16">
-                          <span className="text-[10px] text-neutral-300">no slots</span>
-                        </div>
-                      ) : (
-                        daySlots.map((s) => (
-                          <button
-                            key={s.start_time}
-                            onClick={() => setPicked(s)}
-                            className="w-full text-[11px] font-medium px-1.5 py-1 rounded-md text-center bg-success-50 text-success-700 border border-success-100 hover:bg-success-100 transition-colors"
-                          >
-                            {fmt12(s.start_time)}
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+          {/* Day */}
+          <div className="grid grid-cols-7 gap-1.5">
+            {weekDates.map((d, i) => {
+              const ds = toDateStr(d);
+              const isPast = ds < todayStr;
+              const isSel = ds === day;
+              const open = (slotsByDate[ds] || []).some((s) => s.is_available);
+              return (
+                <button
+                  key={ds}
+                  disabled={isPast}
+                  onClick={() => { setDay(ds); setPicked(null); }}
+                  className={`flex flex-col items-center py-1.5 rounded-lg border text-xs transition-colors ${
+                    isSel
+                      ? "bg-primary-600 text-white border-primary-600"
+                      : isPast
+                      ? "bg-neutral-50 text-neutral-300 border-neutral-100 cursor-not-allowed"
+                      : "bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-50"
+                  }`}
+                >
+                  <span className="text-[10px] font-semibold uppercase">{DISPLAY_DAYS[i]}</span>
+                  <span className="text-sm font-bold">{d.getDate()}</span>
+                  <span className={`mt-0.5 w-1.5 h-1.5 rounded-full ${!loadingSlots && open && !isPast ? (isSel ? "bg-white" : "bg-green-500") : "bg-transparent"}`} />
+                </button>
+              );
+            })}
           </div>
 
-          {!loadingSlots && slots.every((s) => !s.is_available) && (
-            <div className="flex flex-col items-center gap-2 py-6 text-center text-neutral-400">
-              <CalendarDays className="h-6 w-6" />
-              <p className="text-xs">No open slots this week — try the next one.</p>
-            </div>
-          )}
+          {/* Time */}
+          <div>
+            <label className="block text-xs font-medium text-neutral-700 mb-1.5">Time</label>
+            <TimeSlotGrid
+              slots={slotsByDate[day] || []}
+              selected={picked}
+              onSelect={setPicked}
+              loading={loadingSlots}
+              emptyText={day === todayStr ? "No upcoming slots left today — pick another day." : "No slots on this day — pick another day."}
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100">
+            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+            <Button variant="primary" size="sm" onClick={() => setConfirming(true)} disabled={!picked}>Continue</Button>
+          </div>
         </div>
-      ) : (
+      ) : picked && (
         <div className="space-y-4">
           <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
             <p className="text-sm font-semibold text-neutral-900">
@@ -186,7 +196,7 @@ export function BookAppointmentModal({ isOpen, onClose, appointmentType, onBooke
           </div>
           {error && <p className="text-xs text-danger-600 bg-danger-50 border border-danger-200 rounded-lg px-3 py-2">{error}</p>}
           <div className="flex items-center justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={() => setPicked(null)} disabled={submitting}>Back</Button>
+            <Button variant="outline" size="sm" onClick={() => setConfirming(false)} disabled={submitting}>Back</Button>
             <Button variant="primary" size="sm" onClick={handleConfirm} isLoading={submitting}>
               Confirm & Continue to Payment
             </Button>

@@ -265,6 +265,7 @@ export default function PatientDetailPage() {
             >
               <ArrowLeft className="h-4 w-4" /> Back
             </button>
+            {registrationStatus === "demographics_complete" && <ResendLoginButton patientId={id} />}
             <button
               onClick={() => setShowBooking(true)}
               disabled={isPending || !user?.clinic_id}
@@ -601,6 +602,63 @@ export default function PatientDetailPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// Registered at the desk but consent not signed yet — usually the patient
+// never got (or lost) the temporary password. Backend refuses once they have
+// logged in (LOGIN_ALREADY_ACTIVATED → use "Forgot password").
+function ResendLoginButton({ patientId }: { patientId: string }) {
+  const [open, setOpen] = useState(false);
+  const [contact, setContact] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const send = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await receptionService.resendLogin(patientId, contact.trim() || undefined);
+      setMsg({ ok: true, text: `New login details sent to ${r.login_id}` });
+      setContact("");
+    } catch (e: any) {
+      setMsg({ ok: false, text: e?.response?.data?.error?.message || "Could not resend the login details" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => { setOpen((o) => !o); setMsg(null); }}
+        className="h-[38px] px-3.5 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-sm font-medium hover:bg-neutral-50 transition-colors whitespace-nowrap"
+      >
+        Resend login
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 w-72 z-20 bg-white border border-neutral-200 rounded-xl shadow-lg p-3 space-y-2">
+          <p className="text-xs text-neutral-500">
+            Sends a new temporary password. To fix a mistyped number or email, enter the correct one (otherwise leave blank).
+          </p>
+          <input
+            value={contact}
+            onChange={(e) => setContact(e.target.value)}
+            placeholder="Corrected mobile or email (optional)"
+            className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300"
+          />
+          {msg && <p className={`text-xs ${msg.ok ? "text-green-700" : "text-red-600"}`}>{msg.text}</p>}
+          <button
+            onClick={send}
+            disabled={busy}
+            className="w-full h-9 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+          >
+            {busy ? "Sending…" : "Send"}
+          </button>
         </div>
       )}
     </div>

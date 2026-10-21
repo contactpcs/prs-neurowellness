@@ -10,7 +10,7 @@ const CONSENT_TEXT = `By proceeding, you understand and agree that:
 
 1. Your responses will be stored securely and shared only with your assigned clinician.
 2. Your data will be used to generate a clinical assessment report for your medical record.
-3. Data is retained in compliance with DISHA and HIPAA regulations.
+3. Your records are kept as Indian medical record-keeping rules require.
 4. You may stop at any time and resume later — your progress is saved automatically.
 5. Your responses are confidential and will not be shared with third parties without your explicit consent.`;
 

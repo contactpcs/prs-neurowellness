@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Cpu, Clock, ChevronRight } from "lucide-react";
+import { Cpu, Clock, ChevronRight, ReceiptText } from "lucide-react";
 import { Card } from "@/components/ui";
 
 // Clinic-admin settings hub, laid out as a list of links so more sections
@@ -19,6 +19,12 @@ const SETTINGS_SECTIONS = [
     icon: Clock,
     label: "Device Schedule",
     description: "When device sessions can run each week, and how many at once",
+  },
+  {
+    href: "/clinic-admin/settings/booking-policy",
+    icon: ReceiptText,
+    label: "Booking Policy",
+    description: "Refund on cancellation and how close to a visit patients can reschedule",
   },
 ];
 

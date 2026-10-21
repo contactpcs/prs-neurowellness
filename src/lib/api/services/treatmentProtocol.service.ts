@@ -5,7 +5,7 @@ import type {
   DeviceCompanyCreate, DeviceCompanyUpdate, DeviceCreate, DeviceUpdate,
   PlacementRead, ElectrodeValidationRequest, ElectrodeValidationResult,
   DosingRead, ScaleRead, SchedulePreviewRequest, SchedulePreview,
-  ProtocolCreate, ProtocolUpdate, ProtocolRead, ProtocolDetail, ProtocolSessionRead,
+  ProtocolCreate, ProtocolUpdate, ProtocolAmend, ProtocolRead, ProtocolDetail, ProtocolSessionRead,
   CustomMontageCreate, CustomMontageRead,
   DeviceSessionPrsCreate, FollowUpPrsCreate, PrsResponseRead,
   DeviceScheduleRead, DeviceOverrideRead, DeviceSlotRead,
@@ -155,6 +155,22 @@ export const treatmentProtocolService = {
   },
 
   // ─── Step 8 — Protocol lifecycle ───
+  /** Whether "Start New Treatment Protocol" is unlocked for this patient.
+   * `missing` lists what the initial consultation still needs: initial_consultation | anamnesis | prs | doctor_notes. */
+  async getProtocolReadiness(patientId: string): Promise<{
+    ready: boolean;
+    gate_applies: boolean;
+    missing: string[];
+    appointment_id: string | null;
+    anamnesis_id: string | null;
+    missing_questions: string[];
+    prs_completed: boolean;
+    notes_count: number;
+  }> {
+    const { data } = await apiClient.get(ENDPOINTS.PROTOCOL_INSTANCES.READINESS(patientId));
+    return data;
+  },
+
   async createProtocol(body: ProtocolCreate): Promise<ProtocolRead> {
     const { data } = await apiClient.post(ENDPOINTS.TREATMENT_PROTOCOLS.CREATE, body);
     return data;
@@ -190,6 +206,11 @@ export const treatmentProtocolService = {
   async listProtocolSessions(protocolId: string, appointmentType?: string): Promise<ProtocolSessionRead[]> {
     const { data } = await apiClient.get(ENDPOINTS.TREATMENT_PROTOCOLS.SESSIONS(protocolId), { params: { appointment_type: appointmentType } });
     return Array.isArray(data) ? data : [];
+  },
+
+  async amendProtocol(protocolId: string, body: ProtocolAmend): Promise<ProtocolRead> {
+    const { data } = await apiClient.post(ENDPOINTS.TREATMENT_PROTOCOLS.AMEND(protocolId), body);
+    return data;
   },
 
   async activateProtocol(protocolId: string): Promise<ProtocolRead> {

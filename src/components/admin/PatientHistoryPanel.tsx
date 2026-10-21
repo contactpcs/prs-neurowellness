@@ -9,6 +9,7 @@ import { patientFilesService, type PatientFile } from "@/lib/api/services/patien
 import { extractErrorMessage } from "@/lib/api/errors";
 import type { InstanceScoreDetail } from "@/lib/api/services/scores.service";
 import type { Appointment } from "@/types/domain.types";
+import { PatientFinalReports } from "@/components/reports/PatientFinalReports";
 
 export type Tab = "appointments" | "reports" | "prs" | "sessions" | "final-reports";
 
@@ -472,8 +473,8 @@ export function PatientHistoryPanel({ patientId, clinicId, initialTab }: { patie
 
         {/* ── Final Treatment Reports ── */}
         {tab === "final-reports" && (
-          <div className="px-6 py-12 text-center text-sm text-neutral-400 bg-white">
-            No final treatment reports available yet
+          <div className="px-6 py-4 bg-white">
+            <PatientFinalReports patientId={patientId} />
           </div>
         )}
 

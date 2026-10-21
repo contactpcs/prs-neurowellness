@@ -29,9 +29,11 @@ export interface RegisterPatientPayload {
   state: string;
   country?: string;
   pincode?: string;
-  guardian?: { name: string; relation: string; contact_number: string };
-  password: string;
+  /** reason: required for an adult (why a guardian consents for them). */
+  guardian?: { name: string; relation: string; contact_number: string; reason?: GuardianReason };
 }
+
+export type GuardianReason = "patient_requested" | "lacks_capacity" | "lawful_guardian" | "nominated_representative";
 
 function splitName(fullName: string): { first: string; last: string } {
   const parts = fullName.trim().split(/\s+/);
@@ -209,47 +211,14 @@ export const receptionService = {
     });
   },
 
-  // ─── Registration wizard (§4.1-4.4) — real flow requires a Cognito OTP
-  // round-trip; there is no way to register a patient in one call. ───
-  async sendVerificationCode(payload: {
-    channel: "phone" | "email";
-    contact: string;
-    first_name: string;
-    last_name: string;
-    dob?: string;
-    gender?: string;
-    /** Current flow: the patient's password goes in BEFORE the OTP. */
-    password?: string;
-  }): Promise<{ verification_id: string }> {
-    const { data } = await apiClient.post(ENDPOINTS.RECEPTION.SEND_CODE, payload);
-    return data;
-  },
-
-  async verifyCode(verificationId: string, code: string): Promise<{ registration_token: string }> {
-    const { data } = await apiClient.post(ENDPOINTS.RECEPTION.VERIFY_CODE, { verification_id: verificationId, code });
-    return data;
-  },
-
-  async getPasswordPolicy(): Promise<{ min_length: number }> {
-    const { data } = await apiClient.get(ENDPOINTS.RECEPTION.PASSWORD_POLICY);
-    return data;
-  },
-
-  /** registrationToken is the contact (email/phone). clinicId is resolved by
-   *  the caller (receptionist's own clinic). With `code` (current flow) this
-   *  verifies the OTP and registers the patient in ONE call
-   *  (/reception/registrations/confirm); without it, the legacy two-call flow
-   *  (verifyCode() first, then POST /reception/patients). */
-  async registerPatient(
-    registrationToken: string,
-    clinicId: string,
-    payload: RegisterPatientPayload,
-    code?: string,
-  ): Promise<PatientListItem> {
-    const endpoint = code ? ENDPOINTS.RECEPTION.CONFIRM_REGISTRATION : ENDPOINTS.RECEPTION.REGISTER_PATIENT;
-    const { data } = await apiClient.post(endpoint, {
-      ...(code ? { code } : {}),
-      registration_token: registrationToken,
+  // ─── Registration (Documents/design_consent_v2.md) ───
+  // No password and no consent at the desk: Cognito sends the patient a
+  // temporary password on their own phone/email; they set their own password
+  // and sign consent in their own session.
+  async registerPatient(clinicId: string, payload: RegisterPatientPayload): Promise<PatientListItem & { login_id: string }> {
+    const { data } = await apiClient.post(ENDPOINTS.RECEPTION.REGISTER_PATIENT, {
+      channel: payload.channel,
+      contact: payload.contact,
       personal: {
         first_name: payload.first_name,
         last_name: payload.last_name || payload.first_name,
@@ -264,36 +233,25 @@ export const receptionService = {
         pincode: payload.pincode || undefined,
       },
       clinic_id: clinicId,
-      guardian: payload.guardian
-        ? { name: payload.guardian.name, relation: payload.guardian.relation, contact_number: payload.guardian.contact_number }
-        : undefined,
-      password: payload.password,
-      consent: { accepted: true, signature_captured: true },
+      guardian: payload.guardian,
     });
-
-    // The reception response has no profile_id (only patient_id) — the
-    // caller needs profile_id to sign the pending patient_onboarding
-    // consent record PatientService.register() creates as a side effect.
-    // Reused from the generic (non-reception) /patients/{id} endpoint,
-    // which this adapter doesn't duplicate — see §4.9 of the guide.
-    let profile_id: string | undefined;
-    try {
-      const detail = await apiClient.get(`/patients/${data.patient_id}`);
-      profile_id = detail.data?.profile_id;
-    } catch {
-      // Non-fatal — registration itself already succeeded.
-    }
-
     return {
       id: String(data.patient_id ?? ""),
-      profile_id,
       full_name: data.full_name ?? `${payload.first_name} ${payload.last_name}`.trim(),
       first_name: payload.first_name,
       last_name: payload.last_name,
-      email: payload.channel === "email" ? payload.contact : "",
-      phone: payload.channel === "phone" ? payload.contact : undefined,
+      email: payload.channel === "email" ? data.login_id : "",
+      phone: payload.channel === "phone" ? data.login_id : undefined,
       status: data.registration_status,
+      login_id: data.login_id,
     };
+  },
+
+  /** New temporary password for a patient who hasn't logged in yet —
+   *  optionally to a corrected phone/email. */
+  async resendLogin(patientId: string, contact?: string): Promise<{ login_id: string; login_channel: string }> {
+    const { data } = await apiClient.post(ENDPOINTS.RECEPTION.RESEND_LOGIN(patientId), { contact: contact || undefined });
+    return data;
   },
 
   // ─── Doctors (§4.18) ───

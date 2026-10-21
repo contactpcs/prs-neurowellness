@@ -1,0 +1,285 @@
+/* =============================================================================
+   Anava Clinics — Patient Medical Report and Treatment Plan
+   Ported from the report template package (templates/patient_report.css,
+   design language of Form ACPL-PT v2.0). Same class names and tokens as the
+   reference, scoped under .anava-report so nothing leaks into the app.
+
+   Two things differ from the reference, which is written for WeasyPrint:
+   - On screen the report is one continuous A4-wide sheet.
+   - The running header and footer of printed pages 2+ are not elements here:
+     the browser draws them in the page margins (printFinalReport.ts).
+   Units stay in pt / mm on purpose: they are what the printed page uses.
+   ============================================================================= */
+
+.anava-report {
+  /* ---------- Design tokens ---------- */
+  --sage-100: #B3D2C7;   /* brand bar 1, footer rule, outer arc   */
+  --sage-300: #84B0A3;   /* brand bar 2, middle arc               */
+  --pine:     #4A8774;   /* brand bar 3, accents, links, numbers  */
+  --pine-ink: #2F6655;   /* pine text on tinted backgrounds       */
+  --rose:     #C08090;   /* brand bar 4, logo dot, alerts         */
+  --rose-ink: #9A5266;
+  --brass:    #B98A3E;   /* moderate / paid                       */
+  --brass-ink:#8A6424;
+  --navy:     #1B2B44;   /* headings, company name, values        */
+  --ink:      #2E3A44;   /* body text                             */
+  --slate:    #6B7780;   /* labels, meta text                     */
+  --slate-2:  #97A1A8;   /* empty values, hints                   */
+  --bone:     #F4F1EA;   /* patient panel, clinic card            */
+  --mint:     #EEF5F2;   /* group rows, chips                     */
+  --rose-tint:#F7EEF1;
+  --brass-tint:#F6EFE2;
+  --hair:     #DDE7E3;   /* table hairlines                       */
+  --hair-2:   #C9DAD3;
+  --sans:  var(--font-report-sans), "Lato", "Segoe UI", sans-serif;
+  --serif: var(--font-report-serif), "Gelasio", Georgia, serif;
+
+  /* ---------- The sheet (screen) ---------- */
+  position: relative;
+  box-sizing: border-box;
+  width: 210mm;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 10mm min(18mm, 5vw) 14mm;
+  background: #fff;
+  font-family: var(--sans);
+  font-size: 9pt;
+  line-height: 1.45;
+  color: var(--ink);
+  text-align: left;
+}
+.anava-report p { margin: 0 0 2mm; }
+.anava-report img { display: block; max-width: none; }
+.anava-report table { text-indent: 0; }
+.anava-report b { font-weight: 700; }
+.anava-report .sep { color: var(--slate-2); padding: 0 1.4mm; }
+/* Warms the cache for the running-header logo, which print draws as a
+   margin background and nothing else loads. */
+.anava-report .preload { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none; }
+
+/* ---------- Brand bar (4 segments, as on Form ACPL-PT) ---------- */
+.anava-report .brand-bar { display: flex; height: 2.6pt; margin: 0; }
+.anava-report .brand-bar i { display: block; height: 2.6pt; }
+.anava-report .brand-bar i:nth-child(1) { width: 40%; background: var(--sage-100); }
+.anava-report .brand-bar i:nth-child(2) { width: 30%; background: var(--sage-300); }
+.anava-report .brand-bar i:nth-child(3) { width: 25%; background: var(--pine); }
+.anava-report .brand-bar i:nth-child(4) { width: 5%;  background: var(--rose); }
+
+/* ---------- Letterhead (page 1) ---------- */
+.anava-report .letterhead__row { display: flex; align-items: center; justify-content: space-between; gap: 4mm; padding: 5mm 0 4.5mm; }
+.anava-report .letterhead__logo { width: 34mm; height: auto; flex-shrink: 0; }
+.anava-report .letterhead__org { text-align: right; min-width: 0; }
+.anava-report .org-name { font-family: var(--serif); font-weight: 700; font-size: 11.5pt; letter-spacing: 0.24em;
+                          color: var(--navy); margin-right: -0.24em; margin-bottom: 1.6mm; }
+.anava-report .org-contact { font-size: 8pt; color: var(--pine); }
+.anava-report .org-contact .sep { color: var(--slate-2); padding: 0 1.2mm; }
+.anava-report .letterhead__rule { border-bottom: 0.9pt solid var(--pine); }
+
+/* ---------- Title block ---------- */
+.anava-report .title-block { position: relative; padding: 7mm 0 5mm; }
+.anava-report .eyebrow { font-weight: 700; font-size: 7pt; letter-spacing: 0.32em; text-transform: uppercase; color: var(--pine); margin-bottom: 2mm; }
+.anava-report .doc-title { font-family: var(--serif); font-weight: 400; font-size: 21pt; line-height: 1.15; color: var(--navy); margin: 0 0 2mm; }
+.anava-report .doc-sub { font-size: 9pt; color: var(--pine); }
+
+/* ---------- Patient panel ---------- */
+.anava-report .patient-panel { background: var(--bone); border-left: 2.6pt solid var(--pine); padding: 3.6mm 5mm 1.4mm; margin-bottom: 2mm; }
+.anava-report .kv { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.anava-report .kv__item { padding: 0 3mm 2.6mm 0; }
+.anava-report .kv .k { display: block; font-size: 6.6pt; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--slate); margin-bottom: 0.5mm; }
+.anava-report .kv .v { display: block; font-size: 9.4pt; font-weight: 700; color: var(--navy); overflow-wrap: anywhere; }
+.anava-report .kv .v.mono { letter-spacing: 0.03em; }
+
+/* ---------- Sections ---------- */
+.anava-report .section { margin-top: 7mm; }
+.anava-report .section__title { font-family: var(--serif); font-weight: 700; font-size: 10.5pt; letter-spacing: 0.15em; text-transform: uppercase;
+                                color: var(--navy); margin: 0 0 3.2mm; padding-bottom: 1.6mm; border-bottom: 0.6pt solid var(--sage-100);
+                                break-after: avoid; page-break-after: avoid; }
+.anava-report .section__title .num { color: var(--pine); font-weight: 700; letter-spacing: 0.05em; padding-right: 2.6mm; }
+.anava-report .subhead { font-weight: 700; font-size: 8.6pt; color: var(--navy); margin: 4mm 0 2mm; break-after: avoid; page-break-after: avoid; }
+.anava-report .subhead .meta { font-weight: 400; color: var(--slate); }
+.anava-report .subhead .meta::before { content: "·"; padding: 0 1.4mm; color: var(--slate-2); }
+/* A PRS block (label + table + weekly strip) stays together when it fits on a page */
+.anava-report .prs-group { break-inside: avoid; page-break-inside: avoid; }
+.anava-report .condition-label { display: inline-block; font-weight: 700; font-size: 7.4pt; letter-spacing: 0.16em; text-transform: uppercase;
+                                 color: var(--pine-ink); background: var(--mint); padding: 0.8mm 2.4mm; border-radius: 1mm; margin: 3mm 0 2mm;
+                                 break-after: avoid; page-break-after: avoid; }
+/* What a "Device session PRS" block belongs to: device and protocol conditions. */
+.anava-report .condition-meta { font-size: 7.6pt; color: var(--slate); padding-left: 2.4mm; }
+.anava-report .empty { font-style: italic; color: var(--slate); }
+.anava-report .nil { color: var(--slate-2); font-weight: 400; }
+
+/* ---------- Tables ---------- */
+.anava-report table.data { width: 100%; border-collapse: collapse; }
+.anava-report table.data thead th { font-size: 6.6pt; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--slate);
+                                    text-align: left; padding: 0 2.2mm 1.6mm; border-bottom: 0.8pt solid var(--pine); vertical-align: bottom; }
+.anava-report table.data td { padding: 1.7mm 2.2mm; border-bottom: 0.5pt solid var(--hair); vertical-align: top; }
+.anava-report table.data tr { break-inside: avoid; page-break-inside: avoid; }
+.anava-report table.data td.n { color: var(--slate); font-size: 7.6pt; width: 6mm; text-align: right; padding-right: 2.6mm; }
+.anava-report table.data td.q { color: var(--ink); }
+.anava-report table.data td.a { color: var(--navy); font-weight: 700; white-space: pre-wrap; }
+.anava-report table.data tr.group td { background: var(--mint); color: var(--pine-ink); font-weight: 700; font-size: 6.8pt; letter-spacing: 0.14em;
+                                       text-transform: uppercase; padding: 1.4mm 2.2mm; border-bottom: 0; }
+.anava-report table.data small, .anava-report .small { display: block; font-size: 7.2pt; color: var(--slate); font-weight: 400; margin-top: 0.4mm; }
+.anava-report table.data.qa col.c-n { width: 7mm; }
+.anava-report table.data.qa col.c-q { width: 52%; }
+
+/* Score cells */
+.anava-report .score { font-variant-numeric: lining-nums; font-family: var(--serif); font-weight: 700; font-size: 12.5pt; color: var(--navy); line-height: 1.1; }
+.anava-report .score .of { font-family: var(--sans); font-size: 7.4pt; font-weight: 400; color: var(--slate); }
+.anava-report .scale { margin-bottom: 1mm; }
+.anava-report .scale:last-child { margin-bottom: 0; }
+.anava-report .scale__name { color: var(--ink); }
+.anava-report .scale__val { font-weight: 700; color: var(--navy); white-space: nowrap; }
+.anava-report .scale__int { color: var(--slate); }
+/* A value not taken in this sitting: carried forward from an earlier one. */
+.anava-report .scale__carried { color: var(--slate-2); font-size: 7.2pt; font-style: italic; white-space: nowrap; }
+
+/* Weekly progress strip */
+.anava-report table.weekly { width: 100%; border-collapse: collapse; margin: 2.4mm 0 1mm; table-layout: fixed; break-inside: avoid; page-break-inside: avoid; }
+.anava-report table.weekly th { font-size: 6.4pt; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--slate);
+                                text-align: center; padding: 1.4mm 1mm; background: var(--mint); }
+.anava-report table.weekly th.lbl, .anava-report table.weekly td.lbl { text-align: left; padding-left: 2.2mm; width: 26%; }
+.anava-report table.weekly td { text-align: center; padding: 1.6mm 1mm; border-bottom: 0.5pt solid var(--hair);
+                                font-family: var(--serif); font-weight: 700; font-size: 10pt; color: var(--navy); font-variant-numeric: lining-nums; }
+.anava-report table.weekly td.lbl { font-family: var(--sans); font-weight: 400; font-size: 8.4pt; color: var(--ink); }
+.anava-report table.weekly td.lbl small { display: block; font-size: 6.8pt; color: var(--slate-2); }
+.anava-report table.weekly td .of { font-family: var(--sans); font-size: 7pt; font-weight: 400; color: var(--slate); }
+/* Change from the previous week. Lower is better, so a minus is the good one. */
+.anava-report table.weekly td .delta { display: block; font-family: var(--sans); font-size: 7.2pt; font-weight: 700; line-height: 1.2; }
+.anava-report .delta--better { color: var(--pine-ink); }
+.anava-report .delta--worse  { color: var(--rose-ink); }
+.anava-report .delta--same   { color: var(--slate-2); }
+
+/* ---------- Pills ---------- */
+.anava-report .pill { display: inline-block; font-size: 6.6pt; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+                      padding: 0.5mm 1.8mm; border-radius: 3mm; white-space: nowrap; line-height: 1.35; }
+.anava-report .tone-good     { background: var(--mint);       color: var(--pine-ink); }
+.anava-report .tone-mild     { background: #E8F0EC;           color: #4E7366; }
+.anava-report .tone-moderate { background: var(--brass-tint); color: var(--brass-ink); }
+.anava-report .tone-severe   { background: var(--rose-tint);  color: var(--rose-ink); }
+.anava-report .tone-neutral  { background: #EEF0F2;           color: var(--slate); }
+.anava-report .pill-below { margin-top: 1mm; }
+
+/* ---------- Diagnosis ---------- */
+.anava-report .dx { break-inside: avoid; page-break-inside: avoid; margin-bottom: 3mm; }
+.anava-report .dx__name { font-family: var(--serif); font-weight: 700; font-size: 12.5pt; color: var(--navy); margin-bottom: 1.6mm; white-space: pre-wrap; }
+.anava-report .dx__codes { width: 100%; border-collapse: collapse; }
+.anava-report .dx__codes td { padding: 1.3mm 0; border-bottom: 0.5pt solid var(--hair); vertical-align: top; }
+.anava-report .dx__codes td.code { width: 17mm; }
+.anava-report .code-chip { display: inline-block; font-weight: 700; font-size: 7.8pt; letter-spacing: 0.04em; color: var(--pine-ink);
+                           background: var(--mint); border-radius: 1mm; padding: 0.3mm 1.6mm; }
+.anava-report .dx__label { font-size: 6.6pt; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--slate); margin-bottom: 0.8mm; }
+
+/* ---------- Notes ---------- */
+.anava-report .note { border-left: 2pt solid var(--sage-300); background: #FAFBFA; padding: 2.6mm 4mm 2mm; margin-bottom: 2.6mm;
+                      break-inside: avoid; page-break-inside: avoid; }
+.anava-report .note__meta { font-size: 7pt; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--pine-ink); margin-bottom: 1.2mm; }
+.anava-report .note__meta .rest { font-weight: 400; letter-spacing: 0.02em; text-transform: none; color: var(--slate); }
+.anava-report .note__text { font-size: 9.2pt; color: var(--ink); white-space: pre-line; margin: 0; }
+
+/* ---------- Treatment plan ---------- */
+.anava-report .plan { border: 0.6pt solid var(--hair-2); border-radius: 1.6mm; padding: 4mm 4.6mm 3mm; margin-bottom: 4mm; }
+.anava-report .plan__head { display: flex; justify-content: space-between; align-items: baseline; gap: 3mm; margin-bottom: 3mm;
+                            break-after: avoid; page-break-after: avoid; }
+.anava-report .plan__device { font-family: var(--serif); font-weight: 700; font-size: 11.5pt; color: var(--navy); }
+.anava-report .plan__device .ver { font-family: var(--sans); font-weight: 400; font-size: 8pt; color: var(--slate); padding-left: 1.6mm; }
+.anava-report .plan__params { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 3mm; break-inside: avoid; page-break-inside: avoid; }
+.anava-report .plan__params td { padding: 1.6mm 3mm 1.6mm 0; border-top: 0.5pt solid var(--hair); vertical-align: top; }
+.anava-report .plan__params .k { display: block; font-size: 6.4pt; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--slate); margin-bottom: 0.4mm; }
+.anava-report .plan__params .v { display: block; font-size: 9pt; color: var(--navy); font-weight: 700; }
+.anava-report .plan__sched-head { font-size: 6.6pt; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--slate);
+                                  margin-bottom: 1.8mm; break-after: avoid; page-break-after: avoid; }
+.anava-report .plan__sched-head .counts { font-weight: 400; letter-spacing: 0.02em; text-transform: none; color: var(--ink); padding-left: 2mm; }
+.anava-report .chips { font-size: 0; margin: 0 -0.8mm; }
+.anava-report .chip { display: inline-block; vertical-align: top; width: 23.4%; min-width: 30mm; margin: 0 0.8mm 1.6mm; box-sizing: border-box;
+                      border: 0.5pt solid var(--hair); border-left: 2.2pt solid var(--slate-2); border-radius: 0.8mm;
+                      padding: 1mm 1.6mm; font-size: 7.4pt; line-height: 1.3; background: #fff;
+                      break-inside: avoid; page-break-inside: avoid; }
+.anava-report .chip__n { font-weight: 700; color: var(--navy); padding-right: 1.2mm; }
+.anava-report .chip__date { color: var(--ink); }
+.anava-report .chip__status { display: block; font-size: 6.2pt; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--slate); }
+.anava-report .chip.st-completed   { border-left-color: var(--pine);    background: var(--mint); }
+.anava-report .chip.st-completed   .chip__status { color: var(--pine-ink); }
+.anava-report .chip.st-in_progress { border-left-color: var(--sage-300); }
+.anava-report .chip.st-in_progress .chip__status { color: #4E7366; }
+.anava-report .chip.st-planned, .anava-report .chip.st-scheduled, .anava-report .chip.st-confirmed { border-left-color: #B9C2C8; }
+.anava-report .chip.st-paid        { border-left-color: var(--brass); }
+.anava-report .chip.st-paid        .chip__status { color: var(--brass-ink); }
+.anava-report .chip.st-missed      { border-left-color: var(--rose); }
+.anava-report .chip.st-missed      .chip__status { color: var(--rose-ink); }
+.anava-report .chip.st-no_show     { border-left-color: var(--rose-ink); background: var(--rose-tint); }
+.anava-report .chip.st-no_show     .chip__status { color: var(--rose-ink); }
+.anava-report .chip.st-cancelled   { border-left-color: #B9C2C8; }
+
+/* ---------- Session details ---------- */
+.anava-report .outcome { font-weight: 700; }
+.anava-report .outcome.tone-ok   { color: var(--pine-ink); background: none; }
+.anava-report .outcome.tone-warn { color: var(--rose-ink); background: none; }
+.anava-report .flag { display: inline-block; font-size: 6.6pt; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+                      color: var(--brass-ink); background: var(--brass-tint); border-radius: 0.8mm; padding: 0.2mm 1.4mm; margin: 0.8mm 1mm 0 0; }
+
+/* ---------- Sign-off ---------- */
+.anava-report .signoff { break-inside: avoid; page-break-inside: avoid; }
+.anava-report .sign { padding: 1mm 0 4mm; }
+.anava-report .sign__seal { display: inline-block; border: 0.8pt solid var(--pine); border-radius: 1.4mm; padding: 1.6mm 3.6mm; margin-bottom: 2mm; color: var(--pine-ink); }
+.anava-report .sign__seal .t { display: block; font-size: 6.4pt; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; }
+.anava-report .sign__seal .n { display: block; font-family: var(--serif); font-style: italic; font-size: 13pt; color: var(--navy); }
+.anava-report .sign__line { width: 68mm; max-width: 100%; border-bottom: 0.6pt solid var(--slate-2); margin-bottom: 1.6mm; }
+.anava-report .sign__name { font-weight: 700; font-size: 10pt; color: var(--navy); }
+.anava-report .sign__reg { font-size: 8.4pt; color: var(--slate); margin-bottom: 2mm; }
+.anava-report .sign__statement { font-size: 8pt; color: var(--ink); margin: 0 0 0.6mm; }
+.anava-report .sign__docid { font-size: 7.4pt; color: var(--slate); letter-spacing: 0.02em; }
+.anava-report .sign--pending .sign__seal { border-style: dashed; border-color: var(--rose); color: var(--rose-ink); }
+
+.anava-report .clinic-card { background: var(--bone); border-left: 2.6pt solid var(--pine); padding: 3.4mm 5mm 3mm; }
+.anava-report .clinic-card .eyebrow { margin-bottom: 1.2mm; }
+.anava-report .clinic-card__name { font-family: var(--serif); font-weight: 700; font-size: 11pt; color: var(--navy); margin-bottom: 0.8mm; }
+.anava-report .clinic-card__addr { font-size: 8.6pt; color: var(--ink); }
+.anava-report .clinic-card__contact { font-size: 8.4pt; color: var(--pine); margin-top: 0.8mm; }
+
+/* The report ID at the foot of the on-screen sheet. */
+.anava-report .screen-footer { margin-top: 8mm; padding-top: 2.6mm; border-top: 0.6pt solid var(--sage-100);
+                               font-size: 6pt; letter-spacing: 0.02em; color: var(--slate); text-align: center; overflow-wrap: anywhere; }
+
+.anava-report .end-mark { text-align: center; font-size: 7pt; letter-spacing: 0.3em; text-transform: uppercase; color: var(--slate-2); margin-top: 6mm; }
+
+/* ---------- Watermark (centre of the page) ----------
+   Same mechanics as the draft mark below. */
+.anava-report .watermark { position: sticky; top: 28vh; height: 0; z-index: 0; pointer-events: none; }
+.anava-report .watermark img { width: 92mm; max-width: 60%; height: auto; margin: 0 auto; opacity: 0.06; }
+
+/* ---------- Draft watermark ----------
+   On screen it stays centred in view while the report scrolls (sticky, zero
+   height so it takes no room). In print it is fixed, which the browser
+   repeats on every page. */
+.anava-report .draft-mark { position: sticky; top: 38vh; height: 0; z-index: 1; pointer-events: none; text-align: center; }
+.anava-report .draft-mark span { display: inline-block; transform: rotate(-30deg); font-family: var(--serif); font-weight: 700;
+                                 font-size: 80pt; line-height: 1; letter-spacing: 0.3em; color: var(--rose); opacity: 0.09; }
+
+/* ---------- Phone-width screens ----------
+   The reference is a paper layout; these only stop it cramping on a phone. */
+@media screen and (max-width: 640px) {
+  .anava-report { font-size: 8.4pt; }
+  .anava-report .letterhead__row { flex-wrap: wrap; justify-content: flex-start; }
+  .anava-report .letterhead__logo { width: 26mm; }
+  .anava-report .letterhead__org { text-align: left; }
+  .anava-report .org-name { font-size: 9pt; letter-spacing: 0.14em; margin-right: 0; }
+  .anava-report .doc-title { font-size: 16pt; }
+  .anava-report .kv { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .anava-report .chip { width: 47%; min-width: 0; }
+  .anava-report table.data td, .anava-report table.data thead th { padding-left: 1.2mm; padding-right: 1.2mm; }
+}
+
+/* ---------- Print ---------- */
+@media print {
+  /* The page box supplies the margins (and the running header / footer). */
+  .anava-report { width: auto; padding: 0; margin: 0; }
+  .anava-report .draft-mark { position: fixed; top: 105mm; left: 0; right: 0; }
+  /* Centred in the page area, on every printed page. */
+  .anava-report .watermark { position: fixed; inset: 0; height: auto; display: flex; align-items: center; justify-content: center; }
+  .anava-report .watermark img { margin: 0; }
+  .anava-report .screen-footer { display: none; }
+  /* Tints, pills and the brand bar are backgrounds: print them even when
+     "Background graphics" is unticked in the print dialog. */
+  .anava-report, .anava-report * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

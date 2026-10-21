@@ -82,6 +82,8 @@ interface AssessmentUIProps {
 
   backHref?: string;
   backLabel?: string;
+  /** Inside a dialog: fill it instead of the page's content area. */
+  embedded?: boolean;
 }
 
 export function AssessmentUI({
@@ -115,6 +117,7 @@ export function AssessmentUI({
   isLanguageSwitching,
   backHref,
   backLabel = "Back to patient details",
+  embedded = false,
 }: AssessmentUIProps) {
   // Hooks can't be conditional — always call it, but only render the button
   // (and thus only ever navigate) when a caller actually passed backHref.
@@ -181,7 +184,7 @@ export function AssessmentUI({
   const scaleResponses = responses[currentScale.scale_id] ?? {};
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] -mx-6 -mt-6 -mb-6 bg-neutral-50 relative">
+    <div className={cn("flex bg-neutral-50 relative", embedded ? "h-full" : "h-[calc(100vh-4rem)] -mx-6 -mt-6 -mb-6")}>
       {/* Mobile sidebar overlay backdrop */}
       {sidebarOpen && (
         <div
