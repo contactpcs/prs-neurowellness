@@ -24,6 +24,29 @@ export interface ConsentTemplate {
   is_active: boolean;
   published_at: string | null;
   created_at: string;
+  /** The complete form behind "Read the full consent form" — only in the
+   * super admin's listing (listTemplates(true)). */
+  full_html: string | null;
+  has_full_html: boolean;
+}
+
+export interface ConsentPlaceholder {
+  name: string;
+  description: string;
+  /** Personal detail: only allowed in the full form (as [NAME] or <input name="NAME">). */
+  full_form_only: boolean;
+  /** required: a full form without it cannot be published. */
+  level: "required" | "recommended" | "optional";
+}
+
+/** What the backend found in an uploaded full form (POST /consent-templates/analyze). */
+export interface FullFormAnalysis {
+  fields: { name: string; description: string; as_input: boolean; as_text: boolean; known: boolean; required: boolean }[];
+  missing_required: string[];
+  missing_recommended: string[];
+  unknown: string[];
+  problems: string[];
+  has_guardian_section: boolean;
 }
 
 export interface ConsentTemplateDraft {
@@ -33,6 +56,8 @@ export interface ConsentTemplateDraft {
   title: string;
   content: string;
   clauses: ConsentClause[];
+  /** "" removes the full form from a draft. */
+  full_html?: string | null;
 }
 
 export interface ConsentRecord {
@@ -73,6 +98,8 @@ export interface ConsentDocument {
   rendered_hash: string;
   signer: ConsentSigner | null;
   signed_at: string | null;
+  /** A full form exists — show "Read the full consent form" (getFullForm). */
+  has_full_form: boolean;
   pdf_available: boolean;
 }
 
@@ -93,6 +120,13 @@ export const consentService = {
   async getDocument(consentId: string): Promise<ConsentDocument> {
     const { data } = await apiClient.get(`/consent-records/${consentId}/document`);
     return data;
+  },
+
+  /** The full form filled with the signer's details (pending: as it reads
+   * now; signed: exactly as signed). Render only in <FullFormFrame>. */
+  async getFullForm(consentId: string): Promise<string> {
+    const { data } = await apiClient.get(`/consent-records/${consentId}/full`);
+    return data.html;
   },
 
   /** Opens the signed PDF (short-lived download link). */
@@ -124,13 +158,60 @@ export const consentService = {
     return data;
   },
 
-  async updateTemplate(templateId: string, patch: Partial<Pick<ConsentTemplateDraft, "title" | "content" | "clauses">>): Promise<ConsentTemplate> {
+  async updateTemplate(
+    templateId: string,
+    patch: Partial<Pick<ConsentTemplateDraft, "title" | "content" | "clauses" | "full_html">>,
+  ): Promise<ConsentTemplate> {
     const { data } = await apiClient.patch(`/consent-templates/${templateId}`, patch);
     return data;
   },
 
   async deleteTemplate(templateId: string): Promise<void> {
     await apiClient.delete(`/consent-templates/${templateId}`);
+  },
+
+  /** What the system fills in automatically for this consent type. */
+  async getPlaceholders(consentType: string, role?: string | null): Promise<ConsentPlaceholder[]> {
+    const { data } = await apiClient.get("/consent-templates/placeholders", { params: { consent_type: consentType, role: role || undefined } });
+    return Array.isArray(data) ? data : [];
+  },
+
+  /** Ready-structured full form for this type (every field in place). */
+  async getStarter(consentType: string, role?: string | null): Promise<{ filename: string; html: string }> {
+    const { data } = await apiClient.get("/consent-templates/starter", { params: { consent_type: consentType, role: role || undefined } });
+    return data;
+  },
+
+  /** Fields the form will capture, missing required fields, unknown names, unsafe HTML. */
+  async analyzeFullHtml(consentType: string, role: string | null | undefined, fullHtml: string): Promise<FullFormAnalysis> {
+    const { data } = await apiClient.post("/consent-templates/analyze", { consent_type: consentType, role: role || null, full_html: fullHtml });
+    return data;
+  },
+
+  /** The saved template filled with sample details, as a signed copy looks. */
+  async previewHtml(templateId: string, signer: "self" | "guardian" = "self"): Promise<string> {
+    const { data } = await apiClient.post(`/consent-templates/${templateId}/preview`, null, {
+      params: { format: "html", signer },
+      responseType: "text",
+    });
+    return data;
+  },
+
+  /** Opens the PDF that would be stored for this template, with sample details. */
+  async previewPdf(templateId: string, signer: "self" | "guardian" = "self"): Promise<void> {
+    const tab = window.open("", "_blank"); // opened before the await so pop-up blockers allow it
+    try {
+      const { data } = await apiClient.post(`/consent-templates/${templateId}/preview`, null, {
+        params: { format: "pdf", signer },
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(data);
+      if (tab) tab.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      tab?.close();
+      throw e;
+    }
   },
 
   async publishTemplate(templateId: string, requireReconsent: boolean): Promise<ConsentTemplate & { reconsent_count: number }> {

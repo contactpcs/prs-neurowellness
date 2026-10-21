@@ -13,6 +13,7 @@ import { usersService, NoSupportedFieldsError } from "@/lib/api/services/users.s
 import { authService } from "@/lib/api/services/auth.service";
 import { patientFilesService, type PatientFile } from "@/lib/api/services/patientFiles.service";
 import { consentService, type ConsentDocument, type ConsentRecord } from "@/lib/api/services/consent.service";
+import { FullFormModal } from "@/components/consent/FullFormModal";
 import { extractErrorMessage } from "@/lib/api/errors";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { updateUserInStore } from "@/store/slices/authSlice";
@@ -528,6 +529,7 @@ function ConsentsSection({ patientProfileId }: { patientProfileId?: string }) {
   // signing (not the current template), fetched on demand.
   const [viewing, setViewing] = useState<ConsentRecord | null>(null);
   const [viewDoc, setViewDoc] = useState<ConsentDocument | null>(null);
+  const [showFull, setShowFull] = useState(false);
   const [viewLoading, setViewLoading] = useState(false);
   const [viewError, setViewError] = useState<string | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
@@ -654,6 +656,15 @@ function ConsentsSection({ patientProfileId }: { patientProfileId?: string }) {
                   ))}
                 </ul>
               )}
+              {viewing && viewDoc.has_full_form && (
+                <button
+                  onClick={() => setShowFull(true)}
+                  className="block text-sm font-medium hover:underline"
+                  style={{ color: BRAND_PRIMARY }}
+                >
+                  Read the full consent form
+                </button>
+              )}
               {viewing && viewing.status !== "pending" && (
                 <button
                   onClick={() => downloadPdf(viewing.consent_id)}
@@ -668,6 +679,14 @@ function ConsentsSection({ patientProfileId }: { patientProfileId?: string }) {
           )}
         </div>
       </Modal>
+      {viewing && (
+        <FullFormModal
+          isOpen={showFull}
+          onClose={() => setShowFull(false)}
+          load={() => consentService.getFullForm(viewing.consent_id)}
+          title={viewDoc?.title}
+        />
+      )}
     </div>
   );
 }

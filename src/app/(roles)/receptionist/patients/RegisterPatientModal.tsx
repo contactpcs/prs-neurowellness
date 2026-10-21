@@ -23,6 +23,7 @@ const COUNTRY_CODES = [
 ];
 
 const GUARDIAN_REASON_OPTIONS: { value: GuardianReason; label: string }[] = [
+  { value: "patient_requested", label: "Patient asked for a guardian's help" },
   { value: "lacks_capacity", label: "Patient cannot consent for themselves" },
   { value: "lawful_guardian", label: "Court-appointed / lawful guardian" },
   { value: "nominated_representative", label: "Nominated representative (Mental Healthcare Act)" },
@@ -98,7 +99,7 @@ const EMPTY_FORM: FormState = {
   guardianName: "",
   guardianRelation: "",
   guardianContact: "",
-  guardianReason: "",
+  guardianReason: "patient_requested",
 };
 
 const selectClass =
@@ -177,7 +178,7 @@ export default function RegisterPatientModal({
     (form.channel === "phone" ? isValidMobile(form.mobile) : /\S+@\S+\.\S+/.test(form.email)) &&
     form.city.trim() && form.state.trim() && form.country.trim() &&
     (!guardianRequired || (
-      form.guardianName.trim() && form.guardianRelation && isValidMobile(guardianContact) && (minor || form.guardianReason)
+      form.guardianName.trim() && form.guardianRelation && isValidMobile(guardianContact)
     ));
 
   const handleRegister = async () => {
@@ -371,7 +372,7 @@ export default function RegisterPatientModal({
                 />
                 <span className="text-sm font-medium text-neutral-800">Guardian gives consent</span>
                 <span className="text-xs text-neutral-400">
-                  {minor ? `— required: patient is ${ageFromDob(form.dob)} (under 18)` : "— only if the patient cannot consent for themselves"}
+                  {minor ? `— required: patient is ${ageFromDob(form.dob)} (under 18)` : "— optional: tick if the patient wants a guardian to give consent for them"}
                 </span>
               </label>
 
@@ -406,9 +407,8 @@ export default function RegisterPatientModal({
                   </div>
                   {!minor && (
                     <div>
-                      <label className="block text-xs font-medium text-neutral-700 mb-1.5">Why does a guardian consent for this adult? <span className="text-red-500">*</span></label>
+                      <label className="block text-xs font-medium text-neutral-700 mb-1.5">Why does a guardian consent for this adult?</label>
                       <select value={form.guardianReason} onChange={(e) => set("guardianReason", e.target.value as GuardianReason)} className={selectClass}>
-                        <option value="">Select…</option>
                         {GUARDIAN_REASON_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                       </select>
                     </div>

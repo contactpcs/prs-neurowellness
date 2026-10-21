@@ -2,18 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ShieldCheck, Brain, UserRound } from "lucide-react";
+import { ShieldCheck, Brain, FileText } from "lucide-react";
 import { useAuth } from "@/lib/hooks";
 import { Button } from "@/components/ui";
 import { ROUTES } from "@/lib/constants";
 import { consentService, type ConsentDocument } from "@/lib/api/services/consent.service";
-
-const GUARDIAN_REASON_LABEL: Record<string, string> = {
-  minor: "the patient is under 18",
-  lacks_capacity: "the patient cannot consent for themselves",
-  lawful_guardian: "you are the patient's lawful guardian",
-  nominated_representative: "you are the patient's nominated representative",
-};
+import { FullFormModal } from "@/components/consent/FullFormModal";
 
 function errorMessage(err: any, fallback: string): string {
   return err?.response?.data?.error?.message || err?.response?.data?.detail || fallback;
@@ -25,6 +19,8 @@ export default function ConsentPage() {
 
   const [doc, setDoc] = useState<ConsentDocument | null>(null);
   const [ticked, setTicked] = useState<Record<string, boolean>>({});
+  // The full form opens over the summary, so ticked boxes survive closing it.
+  const [showFull, setShowFull] = useState(false);
   const [loading, setLoading] = useState(true);
   const [signing, setSigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -119,9 +115,6 @@ export default function ConsentPage() {
     );
   }
 
-  const signer = doc?.signer;
-  const guardian = signer?.signer_type === "guardian";
-
   return (
     <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-4 sm:p-6">
       <div className="w-full max-w-lg bg-white rounded-2xl shadow-card border border-neutral-200/80 p-6 sm:p-8">
@@ -144,21 +137,19 @@ export default function ConsentPage() {
           </p>
         )}
 
-        {guardian && signer && (
-          <div className="flex items-start gap-2 text-sm text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5 mb-4">
-            <UserRound className="h-4 w-4 mt-0.5 flex-shrink-0" />
-            <span>
-              You are giving this consent as <strong>{signer.name}</strong>
-              {signer.relation ? ` (${signer.relation})` : ""} on behalf of <strong>{signer.on_behalf_of}</strong>
-              {signer.guardian_reason && GUARDIAN_REASON_LABEL[signer.guardian_reason] ? `, because ${GUARDIAN_REASON_LABEL[signer.guardian_reason]}` : ""}.
-            </span>
-          </div>
-        )}
-
         {doc && (
           <div className="max-h-72 overflow-y-auto text-sm text-neutral-700 bg-neutral-50 border border-neutral-200 rounded-lg p-4 mb-4 whitespace-pre-wrap">
             {doc.content}
           </div>
+        )}
+
+        {doc?.has_full_form && (
+          <button
+            onClick={() => setShowFull(true)}
+            className="flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline -mt-2 mb-4"
+          >
+            <FileText className="h-4 w-4" /> Read the full consent form
+          </button>
         )}
 
         {doc && (
@@ -187,6 +178,15 @@ export default function ConsentPage() {
         <p className="text-xs text-neutral-400 mb-4">
           Your answers, the time, and your device and network address are recorded with this consent. You can download a copy from your profile.
         </p>
+
+        {doc && (
+          <FullFormModal
+            isOpen={showFull}
+            onClose={() => setShowFull(false)}
+            load={() => consentService.getFullForm(doc.consent_id)}
+            title={doc.title}
+          />
+        )}
 
         <div className="flex justify-between items-center">
           <button onClick={logout} className="text-xs text-neutral-400 hover:text-neutral-600">Log out</button>

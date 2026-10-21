@@ -33,7 +33,7 @@ export interface RegisterPatientPayload {
   guardian?: { name: string; relation: string; contact_number: string; reason?: GuardianReason };
 }
 
-export type GuardianReason = "lacks_capacity" | "lawful_guardian" | "nominated_representative";
+export type GuardianReason = "patient_requested" | "lacks_capacity" | "lawful_guardian" | "nominated_representative";
 
 function splitName(fullName: string): { first: string; last: string } {
   const parts = fullName.trim().split(/\s+/);
