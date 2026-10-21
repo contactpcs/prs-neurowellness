@@ -1,28 +1,32 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
-import {
-  X, Check, Smartphone, Mail, ShieldCheck, Lock, Loader2, MapPin,
-} from "lucide-react";
-import { receptionService } from "@/lib/api/services/reception.service";
-import { consentService } from "@/lib/api/services/consent.service";
+import { Fragment, useEffect, useState } from "react";
+import { X, Check, Smartphone, Mail, ShieldCheck, Loader2, MapPin, Send } from "lucide-react";
+import { receptionService, type GuardianReason } from "@/lib/api/services/reception.service";
 import { useClinics, usePincodeLookup, useGeolocationAddress } from "@/lib/hooks";
 import { Input } from "@/components/ui";
 import { GUARDIAN_RELATION_OPTIONS, ageFromDob, isMinor } from "@/lib/utils/guardian";
 import { MOBILE_ERROR, isValidMobile, toMobileDigits } from "@/lib/utils/phone";
 import type { PatientListItem } from "@/types/domain.types";
 
-// Password before the code: entering the code on the last step registers the
-// patient in the same request, so a registration can't be abandoned between
-// "contact verified" and "patient exists".
-const STEP_LABELS = ["Method", "Details", "Password", "Consent", "Review", "Verify"] as const;
-type Step = 1 | 2 | 3 | 4 | 5 | 6;
+// No password and no consent here (Documents/design_consent_v2.md): Cognito
+// sends the patient a temporary password on their own phone/email, and the
+// patient (or guardian) signs consent in their own session.
+const STEP_LABELS = ["Method", "Details", "Review", "Sent"] as const;
+type Step = 1 | 2 | 3 | 4;
 
 const COUNTRY_CODES = [
   { code: "+91", label: "India (+91)" },
   { code: "+1", label: "USA (+1)" },
   { code: "+44", label: "UK (+44)" },
   { code: "+971", label: "UAE (+971)" },
+];
+
+const GUARDIAN_REASON_OPTIONS: { value: GuardianReason; label: string }[] = [
+  { value: "patient_requested", label: "Patient asked for a guardian's help" },
+  { value: "lacks_capacity", label: "Patient cannot consent for themselves" },
+  { value: "lawful_guardian", label: "Court-appointed / lawful guardian" },
+  { value: "nominated_representative", label: "Nominated representative (Mental Healthcare Act)" },
 ];
 
 function Stepper({ current }: { current: Step }) {
@@ -74,9 +78,7 @@ interface FormState {
   guardianName: string;
   guardianRelation: string;
   guardianContact: string;
-  password: string;
-  confirmPassword: string;
-  consentAccepted: boolean;
+  guardianReason: GuardianReason | "";
 }
 
 const EMPTY_FORM: FormState = {
@@ -97,10 +99,11 @@ const EMPTY_FORM: FormState = {
   guardianName: "",
   guardianRelation: "",
   guardianContact: "",
-  password: "",
-  confirmPassword: "",
-  consentAccepted: false,
+  guardianReason: "patient_requested",
 };
+
+const selectClass =
+  "w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white text-neutral-700";
 
 export default function RegisterPatientModal({
   onClose,
@@ -113,6 +116,9 @@ export default function RegisterPatientModal({
   const [step, setStep] = useState<Step>(1);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [err, setErr] = useState<string | null>(null);
+  const [registering, setRegistering] = useState(false);
+  const [clinicId, setClinicId] = useState("");
+  const [created, setCreated] = useState<(PatientListItem & { login_id: string }) | null>(null);
 
   const [genderOptions, setGenderOptions] = useState([
     { value: "male", label: "Male" },
@@ -128,16 +134,8 @@ export default function RegisterPatientModal({
         if (relationship.length) setRelationOptions(relationship);
       })
       .catch(() => {});
+    receptionService.resolveOwnClinicId().then(setClinicId).catch(() => {});
   }, []);
-
-  // Verification round-trip state — real backend sends an actual Cognito
-  // OTP, there is no way to skip this step.
-  const [otpDigits, setOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
-  const [clinicId, setClinicId] = useState("");
-
-  const [sendingCode, setSendingCode] = useState(false);
-  const [resending, setResending] = useState(false);
-  const [registering, setRegistering] = useState(false);
 
   const set = <K extends keyof FormState>(field: K, val: FormState[K]) =>
     setForm((f) => ({ ...f, [field]: val }));
@@ -161,114 +159,34 @@ export default function RegisterPatientModal({
   }, [geoAddress]);
 
   // Under 18: guardian section opens automatically and can't be switched off.
-  // The mobile entered above belongs to the guardian, so it prefills the
-  // guardian contact until the receptionist types something else there.
+  // A guardian holds the patient's login (receives the temporary password and
+  // gives consent), so with a mobile login the guardian's number IS the login.
   const minor = isMinor(form.dob);
   const guardianRequired = minor || form.guardianApplicable;
-  const autoGuardianContact = useRef("");
-  useEffect(() => {
-    if (!minor) return;
-    const prev = autoGuardianContact.current;
-    const next = form.channel === "phone" ? form.mobile : "";
-    autoGuardianContact.current = next;
-    // guardianApplicable is NOT set here — the tick is derived from age
-    // (guardianRequired), so changing DOB back to 18+ un-requires it.
-    setForm((f) => ({
-      ...f,
-      guardianContact: !f.guardianContact || f.guardianContact === prev ? next : f.guardianContact,
-    }));
-  }, [minor, form.channel, form.mobile]);
+  const guardianOwnsLogin = guardianRequired && form.channel === "phone";
+  const guardianContact = guardianOwnsLogin ? form.mobile : form.guardianContact;
 
-  const contact = form.channel === "phone" ?`${form.countryCode}${form.mobile.replace(/\D/g, "")}` : form.email.trim();
+  const contact = form.channel === "phone" ? `${form.countryCode}${form.mobile.replace(/\D/g, "")}` : form.email.trim();
   const clinicName = clinics.find((c) => c.clinic_id === clinicId)?.clinic_name
     || clinics.find((c) => c.clinic_id === clinicId)?.city
     || null;
 
   const goBack = () => setStep((s) => (Math.max(1, s - 1) as Step));
 
-  // ─── Step 1: Method ───
-  const canContinueMethod = !!form.channel;
-
-  // ─── Step 2: Details ───
   const detailsValid =
     form.firstName.trim() && form.lastName.trim() && form.gender && form.dob &&
     (form.channel === "phone" ? isValidMobile(form.mobile) : /\S+@\S+\.\S+/.test(form.email)) &&
     form.city.trim() && form.state.trim() && form.country.trim() &&
-    (!guardianRequired || (form.guardianName.trim() && form.guardianRelation && isValidMobile(form.guardianContact)));
+    (!guardianRequired || (
+      form.guardianName.trim() && form.guardianRelation && isValidMobile(guardianContact)
+    ));
 
-  // ─── Step 5 (Review) -> send code; Step 6 (Verify) registers ───
-  const handleSendCode = async () => {
-    if (!detailsValid || !passwordValid || !form.consentAccepted) return;
-    setErr(null);
-    setSendingCode(true);
-    try {
-      const resolvedClinicId = await receptionService.resolveOwnClinicId();
-      await receptionService.sendVerificationCode({
-        channel: form.channel!,
-        contact,
-        first_name: form.firstName.trim(),
-        last_name: form.lastName.trim(),
-        dob: form.dob,
-        gender: form.gender,
-        password: form.password,
-      });
-      setClinicId(resolvedClinicId);
-      setOtpDigits(["", "", "", "", "", ""]);
-      setStep(6);
-    } catch (e: any) {
-      setErr(e?.response?.data?.error?.message || e?.message || "Failed to send verification code. Please try again.");
-    } finally {
-      setSendingCode(false);
-    }
-  };
-
-  // ─── Step 3: Verify ───
-  const otpCode = otpDigits.join("");
-
-  const handleOtpChange = (i: number, val: string) => {
-    const digit = val.replace(/\D/g, "").slice(-1);
-    setOtpDigits((prev) => {
-      const next = [...prev];
-      next[i] = digit;
-      return next;
-    });
-    if (digit && i < 5) {
-      document.getElementById(`otp-box-${i + 1}`)?.focus();
-    }
-  };
-
-  const handleResendCode = async () => {
-    setErr(null);
-    setResending(true);
-    try {
-      // Re-sending restarts the (unverified) signup with a fresh code.
-      await receptionService.sendVerificationCode({
-        channel: form.channel!,
-        contact,
-        first_name: form.firstName.trim(),
-        last_name: form.lastName.trim(),
-        dob: form.dob,
-        gender: form.gender,
-        password: form.password,
-      });
-      setOtpDigits(["", "", "", "", "", ""]);
-    } catch (e: any) {
-      setErr(e?.response?.data?.error?.message || "Failed to resend code. Please try again.");
-    } finally {
-      setResending(false);
-    }
-  };
-
-  // ─── Step 3: Password ───
-  const passwordValid = form.password.length >= 8 && form.password === form.confirmPassword;
-
-  // ─── Step 6: Verify code + register (one call) ───
   const handleRegister = async () => {
-    if (otpCode.length !== 6) return;
     setErr(null);
     setRegistering(true);
     try {
-      const patient = await receptionService.registerPatient(contact, clinicId, {
+      const resolvedClinicId = clinicId || (await receptionService.resolveOwnClinicId());
+      const patient = await receptionService.registerPatient(resolvedClinicId, {
         first_name: form.firstName.trim(),
         last_name: form.lastName.trim(),
         gender: form.gender,
@@ -281,35 +199,31 @@ export default function RegisterPatientModal({
         country: form.country.trim(),
         pincode: form.pincode.trim() || undefined,
         guardian: guardianRequired
-          ? { name: form.guardianName.trim(), relation: form.guardianRelation, contact_number: form.guardianContact.trim() }
+          ? {
+              name: form.guardianName.trim(),
+              relation: form.guardianRelation,
+              contact_number: guardianContact.trim(),
+              reason: minor ? undefined : (form.guardianReason || undefined),
+            }
           : undefined,
-        password: form.password,
-      }, otpCode);
-      // Registering auto-creates a pending patient_onboarding
-      // consent record — sign it now that consent was captured at the
-      // front desk (no witness required).
-      if (patient.profile_id) {
-        const pending = await consentService.getMyPending(patient.profile_id, "patient");
-        if (pending) {
-          await consentService.sign(pending.consent_id, {
-            signature_data: `${form.firstName.trim()} ${form.lastName.trim()} — consent captured at clinic front desk`,
-          });
-        }
-      }
-      onSuccess(patient);
+      });
+      setCreated(patient);
+      setStep(4);
     } catch (e: any) {
-      setErr(e?.response?.data?.error?.message || e?.response?.data?.detail || "Invalid or expired code, or registration failed. Please try again.");
+      setErr(e?.response?.data?.error?.message || e?.response?.data?.detail || "Registration failed. Please try again.");
     } finally {
       setRegistering(false);
     }
   };
+
+  const loginLabel = form.channel === "phone" ? (guardianRequired ? "Guardian's mobile number" : "Mobile number") : "Email address";
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 flex-shrink-0">
           <h2 className="text-lg font-semibold text-neutral-900">Register New Patient</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-neutral-100 text-neutral-500 transition-colors">
+          <button onClick={step === 4 && created ? () => onSuccess(created) : onClose} className="p-1.5 rounded-lg hover:bg-neutral-100 text-neutral-500 transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -325,7 +239,8 @@ export default function RegisterPatientModal({
           {step === 1 && (
             <div className="space-y-4">
               <p className="text-sm text-neutral-500">
-                Choose how the patient will register. Their mobile number or email becomes their login ID, and the verification code is sent there.
+                Choose the patient&apos;s login. Their login details (a temporary password) are sent there — make sure the patient
+                {" "}(or, for a minor, the guardian) has this phone or email with them.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {(["phone", "email"] as const).map((c) => {
@@ -344,10 +259,10 @@ export default function RegisterPatientModal({
                         <Icon className="h-4.5 w-4.5 text-neutral-600" />
                       </div>
                       <p className="text-sm font-semibold text-neutral-900">
-                        Register with {c === "phone" ? "Number" : "Email"}
+                        Register with {c === "phone" ? "Mobile Number" : "Email"}
                       </p>
                       <p className="text-xs text-neutral-500 mt-0.5">
-                        Verification code sent by {c === "phone" ? "SMS" : "email"}
+                        Login details sent by {c === "phone" ? "SMS" : "email"}
                       </p>
                     </button>
                   );
@@ -370,11 +285,7 @@ export default function RegisterPatientModal({
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-neutral-700 mb-1.5">Gender <span className="text-red-500">*</span></label>
-                  <select
-                    value={form.gender}
-                    onChange={(e) => set("gender", e.target.value)}
-                    className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white text-neutral-700"
-                  >
+                  <select value={form.gender} onChange={(e) => set("gender", e.target.value)} className={selectClass}>
                     <option value="">Select…</option>
                     {genderOptions.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
                   </select>
@@ -389,23 +300,19 @@ export default function RegisterPatientModal({
                   <>
                     <div>
                       <label className="block text-xs font-medium text-neutral-700 mb-1.5">Country Code <span className="text-red-500">*</span></label>
-                      <select
-                        value={form.countryCode}
-                        onChange={(e) => set("countryCode", e.target.value)}
-                        className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white text-neutral-700"
-                      >
+                      <select value={form.countryCode} onChange={(e) => set("countryCode", e.target.value)} className={selectClass}>
                         {COUNTRY_CODES.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-neutral-700 mb-1.5">Mobile Number <span className="text-red-500">*</span></label>
+                      <label className="block text-xs font-medium text-neutral-700 mb-1.5">{loginLabel} <span className="text-red-500">*</span></label>
                       <Input type="tel" inputMode="numeric" maxLength={10} placeholder="9820011223" value={form.mobile} onChange={(e) => set("mobile", toMobileDigits(e.target.value))} />
                       {form.mobile && !isValidMobile(form.mobile) && <p className="text-xs text-red-600 mt-1">{MOBILE_ERROR}</p>}
                     </div>
                   </>
                 ) : (
                   <div className="sm:col-span-2">
-                    <label className="block text-xs font-medium text-neutral-700 mb-1.5">Email Address <span className="text-red-500">*</span></label>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1.5">{loginLabel} <span className="text-red-500">*</span></label>
                     <Input type="email" placeholder="jane.smith@example.com" value={form.email} onChange={(e) => set("email", e.target.value)} />
                   </div>
                 )}
@@ -429,12 +336,8 @@ export default function RegisterPatientModal({
                 )}
                 Use my location
               </button>
-              {geoStatus === "denied" && (
-                <p className="text-xs text-red-600">Location permission denied — enter address manually.</p>
-              )}
-              {geoStatus === "error" && (
-                <p className="text-xs text-red-600">Couldn&apos;t determine address — enter it manually.</p>
-              )}
+              {geoStatus === "denied" && <p className="text-xs text-red-600">Location permission denied — enter address manually.</p>}
+              {geoStatus === "error" && <p className="text-xs text-red-600">Couldn&apos;t determine address — enter it manually.</p>}
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
@@ -467,154 +370,63 @@ export default function RegisterPatientModal({
                   onChange={(e) => set("guardianApplicable", e.target.checked)}
                   className="w-4 h-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:opacity-60"
                 />
-                <span className="text-sm font-medium text-neutral-800">Guardian applicable</span>
+                <span className="text-sm font-medium text-neutral-800">Guardian gives consent</span>
                 <span className="text-xs text-neutral-400">
-                  {minor
-                    ? `— required: patient is ${ageFromDob(form.dob)} (under 18)`
-                    : "— for minors or patients under assisted care"}
+                  {minor ? `— required: patient is ${ageFromDob(form.dob)} (under 18)` : "— optional: tick if the patient wants a guardian to give consent for them"}
                 </span>
               </label>
 
               {guardianRequired && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-700 mb-1.5">Guardian name <span className="text-red-500">*</span></label>
-                    <Input placeholder="Arun Nair" value={form.guardianName} onChange={(e) => set("guardianName", e.target.value)} />
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-700 mb-1.5">Guardian name <span className="text-red-500">*</span></label>
+                      <Input placeholder="Arun Nair" value={form.guardianName} onChange={(e) => set("guardianName", e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-700 mb-1.5">Relation type <span className="text-red-500">*</span></label>
+                      <select value={form.guardianRelation} onChange={(e) => set("guardianRelation", e.target.value)} className={selectClass}>
+                        <option value="">Select…</option>
+                        {relationOptions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-700 mb-1.5">Guardian mobile <span className="text-red-500">*</span></label>
+                      <Input
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={10}
+                        placeholder="9820033445"
+                        value={guardianContact}
+                        disabled={guardianOwnsLogin}
+                        onChange={(e) => set("guardianContact", toMobileDigits(e.target.value))}
+                      />
+                      {guardianOwnsLogin && <p className="text-xs text-neutral-400 mt-1">Same as the login number above.</p>}
+                      {!guardianOwnsLogin && guardianContact && !isValidMobile(guardianContact) && <p className="text-xs text-red-600 mt-1">{MOBILE_ERROR}</p>}
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-700 mb-1.5">Relation type <span className="text-red-500">*</span></label>
-                    <select
-                      value={form.guardianRelation}
-                      onChange={(e) => set("guardianRelation", e.target.value)}
-                      className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white text-neutral-700"
-                    >
-                      <option value="">Select…</option>
-                      {relationOptions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-700 mb-1.5">Contact number <span className="text-red-500">*</span></label>
-                    <Input type="tel" inputMode="numeric" maxLength={10} placeholder="9820033445" value={form.guardianContact} onChange={(e) => set("guardianContact", toMobileDigits(e.target.value))} />
-                    {form.guardianContact && !isValidMobile(form.guardianContact) && <p className="text-xs text-red-600 mt-1">{MOBILE_ERROR}</p>}
-                  </div>
+                  {!minor && (
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-700 mb-1.5">Why does a guardian consent for this adult?</label>
+                      <select value={form.guardianReason} onChange={(e) => set("guardianReason", e.target.value as GuardianReason)} className={selectClass}>
+                        {GUARDIAN_REASON_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                      </select>
+                    </div>
+                  )}
                 </div>
               )}
-
-              <div className="flex items-start gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3.5 py-2.5">
-                <ShieldCheck className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                <span>
-                  Pressing <strong>Verify</strong> sends a 6-digit code to the {form.channel === "phone" ? "mobile number" : "email address"} above.
-                  This becomes the patient&apos;s login ID.
-                </span>
-              </div>
             </div>
           )}
 
-          {/* ─── Step 6: Verify (registers) ─── */}
-          {step === 6 && (
-            <div className="flex flex-col items-center text-center py-6 space-y-4">
-              <div className="w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center">
-                {form.channel === "phone" ? <Smartphone className="h-6 w-6 text-blue-600" /> : <Mail className="h-6 w-6 text-blue-600" />}
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-neutral-900">Enter the code sent to {contact}</p>
-                <p className="text-xs text-neutral-400 mt-0.5">The 6-digit code expires in 10 minutes.</p>
-              </div>
-              <div className="flex gap-2">
-                {otpDigits.map((d, i) => (
-                  <input
-                    key={i}
-                    id={`otp-box-${i}`}
-                    value={d}
-                    onChange={(e) => handleOtpChange(i, e.target.value)}
-                    inputMode="numeric"
-                    maxLength={1}
-                    className="w-11 h-12 text-center text-lg font-semibold border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300"
-                  />
-                ))}
-              </div>
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={handleRegister}
-                  disabled={registering || otpCode.length !== 6}
-                  className="flex items-center gap-2 px-5 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-50 transition-colors"
-                  style={{ background: "linear-gradient(135deg, #0284c7 0%, #1e40af 100%)" }}
-                >
-                  {registering && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  {registering ? "Registering…" : "Verify & Register"}
-                </button>
-                <button
-                  onClick={handleResendCode}
-                  disabled={resending}
-                  className="text-sm text-blue-600 hover:underline disabled:opacity-50"
-                >
-                  {resending ? "Resending…" : "Resend code"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ─── Step 3: Password ─── */}
+          {/* ─── Step 3: Review ─── */}
           {step === 3 && (
-            <div className="flex flex-col items-center text-center py-6 space-y-4 w-full">
-              <div className="w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center">
-                <Lock className="h-6 w-6 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-neutral-900">Create portal password</p>
-                <p className="text-xs text-neutral-500 mt-0.5">
-                  {form.firstName} {form.lastName} will sign in with <strong>{contact}</strong> and this password.
-                </p>
-              </div>
-              <div className="w-full max-w-sm space-y-3 text-left">
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 mb-1.5">Create Password <span className="text-red-500">*</span></label>
-                  <Input type="password" placeholder="Minimum 8 characters" value={form.password} onChange={(e) => set("password", e.target.value)} />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 mb-1.5">Confirm Password <span className="text-red-500">*</span></label>
-                  <Input type="password" placeholder="Re-enter password" value={form.confirmPassword} onChange={(e) => set("confirmPassword", e.target.value)} />
-                </div>
-                {form.confirmPassword && form.password !== form.confirmPassword && (
-                  <p className="text-xs text-red-600">Passwords do not match.</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ─── Step 4: Consent ─── */}
-          {step === 4 && (
-            <div className="space-y-4">
-              <p className="text-xs text-neutral-500 leading-relaxed bg-neutral-50 border border-neutral-200 rounded-lg px-4 py-3">
-                By creating an account on Anava NeuroWellness, the patient acknowledges and agrees to the data privacy terms
-                governing the storage and clinical use of their health records. Please read this to the patient before submitting.
-              </p>
-              <label className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.consentAccepted}
-                  onChange={(e) => set("consentAccepted", e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-neutral-800">
-                  Patient has read and accepted the Data Privacy Consent Form{" "}
-                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded ml-1">Required</span>
-                </span>
-              </label>
-            </div>
-          )}
-
-          {/* ─── Step 5: Review ─── */}
-          {step === 5 && (
             <div className="space-y-4">
               <div className="border border-neutral-200 rounded-xl p-5 grid grid-cols-2 sm:grid-cols-3 gap-4">
                 {[
                   ["Name", `${form.firstName} ${form.lastName}`.trim()],
                   ["DOB", form.dob],
                   ["Gender", genderOptions.find((g) => g.value === form.gender)?.label || form.gender],
-                  [form.channel === "phone" ? "Mobile" : "Email", form.channel === "phone" ? `${form.countryCode} ${form.mobile}` : form.email],
-                  ["Verification", "Code sent next"],
-                  ["Password", form.password ? "Set" : "—"],
+                  ["Login", form.channel === "phone" ? `${form.countryCode} ${form.mobile}` : form.email],
                   ["Address", form.street || "—"],
                   ["City / State", `${form.city}, ${form.state}`],
                   ["Pincode", form.pincode || "—"],
@@ -622,12 +434,11 @@ export default function RegisterPatientModal({
                     ? [
                         ["Guardian", form.guardianName],
                         ["Guardian relation", relationOptions.find((r) => r.value === form.guardianRelation)?.label || form.guardianRelation],
-                        ["Guardian contact", form.guardianContact],
+                        ["Guardian mobile", guardianContact],
                       ]
                     : []),
                   ["Country", form.country],
                   ["Clinic", clinicName || "—"],
-                  ["Consent", form.consentAccepted ? "Signed" : "—"],
                 ].map(([label, value]) => (
                   <div key={label}>
                     <p className="text-xs text-neutral-400">{label}</p>
@@ -636,27 +447,44 @@ export default function RegisterPatientModal({
                 ))}
               </div>
 
-              <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-100 rounded-lg px-4 py-2.5">
-                <Check className="h-4 w-4 flex-shrink-0" strokeWidth={3} />
-                Ready — send the verification code to finish
+              <div className="flex items-start gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3.5 py-2.5">
+                <ShieldCheck className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                <span>
+                  Check the {form.channel === "phone" ? "mobile number" : "email"} with the patient — the login details go there.
+                  The {guardianRequired ? "guardian" : "patient"} then signs in on their own device, sets a password and reviews the consent form.
+                  Consent is never recorded at the front desk.
+                </span>
               </div>
+            </div>
+          )}
 
-              <p className="text-xs text-neutral-400">
-                A patient ID will be issued. Emergency contact, ID proof and photo are completed by the patient in their portal.
+          {/* ─── Step 4: Sent ─── */}
+          {step === 4 && created && (
+            <div className="flex flex-col items-center text-center py-6 space-y-3">
+              <div className="w-14 h-14 rounded-full bg-green-50 flex items-center justify-center">
+                <Send className="h-6 w-6 text-green-600" />
+              </div>
+              <p className="text-sm font-semibold text-neutral-900">{created.full_name} is registered</p>
+              <p className="text-sm text-neutral-600 max-w-md">
+                A temporary password was sent to <strong>{created.login_id}</strong>. Ask the {guardianRequired ? "guardian" : "patient"} to
+                sign in on their phone, set their own password and confirm the consent form.
               </p>
+              <p className="text-xs text-neutral-400">Didn&apos;t arrive? Use “Resend login” on the patient&apos;s page.</p>
             </div>
           )}
         </div>
 
         <div className="flex gap-3 px-6 py-4 border-t border-neutral-100 flex-shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg border border-neutral-200 text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors"
-          >
-            Cancel
-          </button>
-          {step > 1 && (
+          {step < 4 && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg border border-neutral-200 text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors"
+            >
+              Cancel
+            </button>
+          )}
+          {step > 1 && step < 4 && (
             <button
               type="button"
               onClick={goBack}
@@ -670,7 +498,7 @@ export default function RegisterPatientModal({
           {step === 1 && (
             <button
               onClick={() => setStep(2)}
-              disabled={!canContinueMethod}
+              disabled={!form.channel}
               className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:bg-neutral-200 disabled:text-neutral-400 transition-colors"
             >
               Continue
@@ -689,32 +517,21 @@ export default function RegisterPatientModal({
 
           {step === 3 && (
             <button
-              onClick={() => setStep(4)}
-              disabled={!passwordValid}
-              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:bg-neutral-200 disabled:text-neutral-400 transition-colors"
-            >
-              Continue
-            </button>
-          )}
-
-          {step === 4 && (
-            <button
-              onClick={() => setStep(5)}
-              disabled={!form.consentAccepted}
-              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:bg-neutral-200 disabled:text-neutral-400 transition-colors"
-            >
-              Continue
-            </button>
-          )}
-
-          {step === 5 && (
-            <button
-              onClick={handleSendCode}
-              disabled={sendingCode}
+              onClick={handleRegister}
+              disabled={registering}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
-              {sendingCode && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {sendingCode ? "Sending…" : "Send Verification Code"}
+              {registering && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {registering ? "Registering…" : "Register & send login"}
+            </button>
+          )}
+
+          {step === 4 && created && (
+            <button
+              onClick={() => onSuccess(created)}
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+            >
+              Done
             </button>
           )}
         </div>

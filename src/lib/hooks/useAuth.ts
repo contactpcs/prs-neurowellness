@@ -70,6 +70,10 @@ export function useAuth() {
         }
         return result;
       }
+      if (result.payload?.consent_type_required) {
+        router.push(ROUTES.CONSENT); // re-consent to a new version
+        return result;
+      }
 
       router.push(dashboardRouteForRoles(roles));
     }
@@ -100,8 +104,17 @@ export function useAuth() {
     if (!passwordChallenge) return;
     const result = await dispatch(completeNewPassword({ username: passwordChallenge.username, newPassword, session: passwordChallenge.session }));
     if (completeNewPassword.fulfilled.match(result)) {
-      const roles = result.payload?.roles || [];
-      router.push(dashboardRouteForRoles(roles));
+      // First login of a front-desk-registered patient (or new staff): the
+      // consent gate comes next, not the dashboard.
+      const payload = result.payload;
+      const roles = payload?.roles || [];
+      if (payload?.is_active === false && roles.includes(USER_ROLES.PATIENT)) {
+        router.push(resumeRouteForPatient(payload?.registration_status));
+      } else if (payload?.consent_type_required || payload?.consent_signed === false) {
+        router.push(ROUTES.CONSENT);
+      } else {
+        router.push(dashboardRouteForRoles(roles));
+      }
     }
     return result;
   }, [dispatch, router, passwordChallenge]);
