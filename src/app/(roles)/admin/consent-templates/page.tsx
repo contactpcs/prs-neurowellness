@@ -78,7 +78,7 @@ function DraftEditor({ draft, onChanged, onClose }: { draft: ConsentTemplate; on
   const fullTooBig = fullBytes > FULL_FORM_MAX_BYTES;
   // The backend refuses to publish these; say so before the admin tries.
   const fullBlocked = !!fullHtml.trim() && (!analysis
-    || analysis.problems.length + analysis.unknown.length + analysis.missing_required.length > 0);
+    || analysis.problems.length + analysis.missing_required.length > 0);
   const fields = () => ({ title, content, clauses, full_html: fullHtml });
   const save = () => run("save", () => consentService.updateTemplate(draft.template_id, fields())).then((ok) => ok && onChanged());
   // Previews render what is saved, so save first.

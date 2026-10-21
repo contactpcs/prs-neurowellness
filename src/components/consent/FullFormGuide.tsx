@@ -87,7 +87,7 @@ export function FullFormGuide({
             Every personal detail is captured automatically from Anava&apos;s records — the patient never types it. Put it in
             the HTML as a <strong>field</strong> <code className="font-mono bg-white px-1 rounded">&lt;input name=&quot;PATIENT_NAME&quot;&gt;</code>{" "}
             (filled and locked) or as <strong>text</strong> <code className="font-mono bg-white px-1 rounded">[PATIENT_NAME]</code>.
-            Use only the names below; any other name is refused.
+            Use the names below to have them filled; any other name is allowed but stays blank.
           </li>
           {isPatient && (
             <li>
@@ -184,7 +184,8 @@ export function DetectedFields({
   if (error) return <p className="text-xs text-red-600">{error}</p>;
   if (!analysis) return <p className="text-xs text-neutral-400">Checking the form…</p>;
 
-  const blocked = analysis.problems.length + analysis.unknown.length + analysis.missing_required.length > 0;
+  // Only required fields and unsafe HTML block publishing; unknown names are allowed (shown blank).
+  const blocked = analysis.problems.length + analysis.missing_required.length > 0;
   return (
     <div className={`rounded-lg border p-3 text-xs space-y-2 ${blocked ? "border-red-200 bg-red-50/40" : "border-green-200 bg-green-50/40"}`}>
       <p className="font-medium flex items-center gap-1.5">
@@ -208,11 +209,11 @@ export function DetectedFields({
               {analysis.fields.map((f) => (
                 <tr key={f.name} className="border-b border-neutral-100 last:border-0">
                   <td className="px-2 py-1 font-mono whitespace-nowrap">
-                    {f.known ? <CheckCircle2 className="inline h-3 w-3 text-green-600 mr-1" /> : <XCircle className="inline h-3 w-3 text-red-600 mr-1" />}
+                    {f.known ? <CheckCircle2 className="inline h-3 w-3 text-green-600 mr-1" /> : <AlertTriangle className="inline h-3 w-3 text-amber-600 mr-1" />}
                     {f.name}
                     {f.required && <span className="ml-1 text-[10px] text-red-700 font-sans">required</span>}
                   </td>
-                  <td className={`px-2 py-1 ${f.known ? "" : "text-red-700"}`}>{f.description}</td>
+                  <td className={`px-2 py-1 ${f.known ? "" : "text-amber-800"}`}>{f.description}</td>
                   <td className="px-2 py-1 whitespace-nowrap text-neutral-500">
                     {[f.as_input && "input field", f.as_text && "text"].filter(Boolean).join(" + ")}
                   </td>
@@ -229,8 +230,12 @@ export function DetectedFields({
         </p>
       )}
       {analysis.unknown.length > 0 && (
-        <p className="text-red-700">
-          <strong>Unknown names:</strong> {analysis.unknown.join(", ")} — Anava cannot fill these. Rename them to a field from the guide or remove them.
+        <p className="text-amber-800 flex gap-1.5">
+          <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+          <span>
+            <strong>Not filled by Anava:</strong> {analysis.unknown.join(", ")} — allowed, but they will show blank (—). Rename them
+            to a field from the guide if you want them filled.
+          </span>
         </p>
       )}
       {analysis.problems.length > 0 && (
