@@ -25,7 +25,7 @@ interface NavItem {
   badge?: BadgeKey;
 }
 
-// Links the bottom user card to the role's own Profile route when one
+// Links the bottom user cardd to the role's own Profile route when one
 // exists (platform/regional/clinic admin have no Profile nav item, so this
 // stays a plain non-interactive div for them).
 function UserCard({ href, className, children }: { href?: string; className: string; children: React.ReactNode }) {
