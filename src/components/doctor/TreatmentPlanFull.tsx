@@ -26,6 +26,21 @@ function fmtDateTime(iso?: string | null): string {
 }
 const show = (v: unknown) => (v === null || v === undefined || v === "" ? "Not recorded" : String(v));
 
+/** Placement text from data already loaded: the list row's summary, else the
+ * active protocol's detail (catalogue placement, then custom montage). */
+function placementLabel(row: ProtocolRead, detail: ProtocolDetail | null): string {
+  if (row.placement_summary) return row.placement_summary;
+  const p = detail?.placement;
+  if (p) {
+    if (p.summary) return p.summary;
+    const sites = [p.anode_site && `Anode ${p.anode_site}`, (p.cathode_site || p.return_sites?.join(", ")) && `Cathode ${p.cathode_site || p.return_sites?.join(", ")}`].filter(Boolean).join(" · ");
+    return sites || p.montage_label || "—";
+  }
+  const m = detail?.custom_montage;
+  if (m) return `${m.montage_name} · Anode ${m.anode_sites.join(", ")} · Cathode ${m.cathode_sites.join(", ")}`;
+  return "—";
+}
+
 // ─── small building blocks ──────────────────────────────────────────────────
 
 export function Card({ title, sub, right, children }: { title: string; sub?: string; right?: React.ReactNode; children: React.ReactNode }) {
@@ -33,8 +48,8 @@ export function Card({ title, sub, right, children }: { title: string; sub?: str
     <section className="border border-neutral-200 rounded-xl bg-white">
       <div className="flex items-start justify-between gap-3 flex-wrap px-4 py-3.5 border-b border-neutral-100">
         <div>
-          <h3 className="text-sm font-bold text-neutral-900">{title}</h3>
-          {sub && <p className="text-xs text-neutral-500 mt-0.5">{sub}</p>}
+          <h3 className="text-base font-bold text-neutral-900">{title}</h3>
+          {sub && <p className="text-sm text-neutral-500 mt-0.5">{sub}</p>}
         </div>
         {right}
       </div>
@@ -46,31 +61,31 @@ export function Card({ title, sub, right, children }: { title: string; sub?: str
 export function Row({ label, value, strong, tone }: { label: string; value: React.ReactNode; strong?: boolean; tone?: string }) {
   return (
     <div className="flex justify-between gap-3 py-2 border-b border-neutral-100 last:border-0">
-      <span className="text-xs text-neutral-500">{label}</span>
-      <span className={`text-[12.5px] text-right ${strong ? "font-bold" : "font-semibold"}`} style={tone ? { color: tone } : undefined}>{value}</span>
+      <span className="text-sm text-neutral-500">{label}</span>
+      <span className={`text-sm text-right ${strong ? "font-bold" : "font-semibold"}`} style={tone ? { color: tone } : undefined}>{value}</span>
     </div>
   );
 }
 
 export function GroupLabel({ children }: { children: React.ReactNode }) {
-  return <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide mb-1.5">{children}</p>;
+  return <p className="text-xs font-bold text-neutral-400 uppercase tracking-wide mb-1.5">{children}</p>;
 }
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
     <div>
-      <label className="text-xs font-semibold text-neutral-700 block mb-1.5">{label}</label>
+      <label className="text-sm font-semibold text-neutral-700 block mb-1.5">{label}</label>
       {children}
-      {hint && <p className="text-[11px] text-neutral-400 mt-1">{hint}</p>}
+      {hint && <p className="text-xs text-neutral-400 mt-1">{hint}</p>}
     </div>
   );
 }
 
-const inputCls = "w-full h-9 border border-neutral-200 rounded-md px-2.5 text-sm bg-white outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-100";
-export const textareaCls = "w-full border border-neutral-200 rounded-md p-2.5 text-sm bg-white outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-100 resize-y";
+const inputCls = "w-full h-9 border border-neutral-200 rounded-md px-2.5 text-base bg-white outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-100";
+export const textareaCls = "w-full border border-neutral-200 rounded-md p-2.5 text-base bg-white outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-100 resize-y";
 
 export function Pill({ children, className }: { children: React.ReactNode; className: string }) {
-  return <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap ${className}`}>{children}</span>;
+  return <span className={`text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap ${className}`}>{children}</span>;
 }
 
 function Fold({ title, summary, children, defaultOpen }: { title: string; summary: string; children: React.ReactNode; defaultOpen?: boolean }) {
@@ -79,8 +94,8 @@ function Fold({ title, summary, children, defaultOpen }: { title: string; summar
     <div className="border border-neutral-200 rounded-lg bg-white">
       <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left">
         <div className="min-w-0">
-          <span className="text-[13px] font-bold text-neutral-900">{title}</span>
-          <p className="text-[11.5px] text-neutral-500 mt-0.5 truncate">{summary}</p>
+          <span className="text-base font-bold text-neutral-900">{title}</span>
+          <p className="text-sm text-neutral-500 mt-0.5 truncate">{summary}</p>
         </div>
         <ChevronDown className={`w-4 h-4 text-neutral-400 flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
@@ -94,8 +109,8 @@ function KV({ rows }: { rows: [string, React.ReactNode][] }) {
     <div className="grid gap-x-4" style={{ gridTemplateColumns: "minmax(140px,190px) 1fr" }}>
       {rows.map(([k, v], i) => (
         <div key={k + i} className="contents">
-          <span className={`text-xs text-neutral-500 py-2 ${i ? "border-t border-neutral-100" : ""}`}>{k}</span>
-          <span className={`text-[12.5px] text-neutral-800 py-2 leading-relaxed ${i ? "border-t border-neutral-100" : ""}`}>{v}</span>
+          <span className={`text-sm text-neutral-500 py-2 ${i ? "border-t border-neutral-100" : ""}`}>{k}</span>
+          <span className={`text-sm text-neutral-800 py-2 leading-relaxed ${i ? "border-t border-neutral-100" : ""}`}>{v}</span>
         </div>
       ))}
     </div>
@@ -103,16 +118,16 @@ function KV({ rows }: { rows: [string, React.ReactNode][] }) {
 }
 
 function Table({ cols, rows, empty }: { cols: string[]; rows: React.ReactNode[][]; empty: string }) {
-  if (!rows.length) return <p className="text-[12.5px] text-neutral-400 py-4 text-center">{empty}</p>;
+  if (!rows.length) return <p className="text-sm text-neutral-400 py-4 text-center">{empty}</p>;
   return (
     <div className="border border-neutral-200 rounded-lg overflow-x-auto">
       <div style={{ minWidth: cols.length * 105 }}>
         <div className="grid gap-2.5 px-3.5 py-2 bg-neutral-50 border-b border-neutral-200" style={{ gridTemplateColumns: `repeat(${cols.length}, 1fr)` }}>
-          {cols.map((c) => <span key={c} className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide">{c}</span>)}
+          {cols.map((c) => <span key={c} className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">{c}</span>)}
         </div>
         {rows.map((r, i) => (
           <div key={i} className={`grid gap-2.5 items-center px-3.5 py-2.5 ${i < rows.length - 1 ? "border-b border-neutral-100" : ""}`} style={{ gridTemplateColumns: `repeat(${cols.length}, 1fr)` }}>
-            {r.map((c, j) => <span key={j} className={`text-xs ${j ? "text-neutral-700" : "text-neutral-900 font-semibold"}`}>{c}</span>)}
+            {r.map((c, j) => <span key={j} className={`text-sm ${j ? "text-neutral-700" : "text-neutral-900 font-semibold"}`}>{c}</span>)}
           </div>
         ))}
       </div>
@@ -123,9 +138,9 @@ function Table({ cols, rows, empty }: { cols: string[]; rows: React.ReactNode[][
 export function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
   return (
     <div className={`rounded-lg border border-neutral-100 px-3.5 py-3 ${tone ?? "bg-neutral-50"}`}>
-      <p className="text-[10.5px] font-semibold text-neutral-500 uppercase tracking-wide">{label}</p>
-      <p className="text-[15px] font-bold text-neutral-900 mt-1 leading-tight">{value}</p>
-      {sub && <p className="text-[11px] text-neutral-500 mt-0.5">{sub}</p>}
+      <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">{label}</p>
+      <p className="text-lg font-bold text-neutral-900 mt-1 leading-tight">{value}</p>
+      {sub && <p className="text-xs text-neutral-500 mt-0.5">{sub}</p>}
     </div>
   );
 }
@@ -310,21 +325,21 @@ export function TreatmentPlanFull({
   };
   const reopen = () => persist({ ...plan, status: "draft", setBy: null, setAt: null });
 
-  if (isLoading) return <p className="text-sm text-neutral-400 px-2">Loading…</p>;
+  if (isLoading) return <p className="text-base text-neutral-400 px-2">Loading…</p>;
 
   if (!active) {
     return (
       <div className="space-y-4">
         <div>
           <h2 className="text-2xl font-bold text-neutral-900">Treatment Plan</h2>
-          <p className="text-sm text-neutral-500 mt-1">Forward course of treatment for {patient?.full_name ?? "this patient"}.</p>
+          <p className="text-base text-neutral-500 mt-1">Forward course of treatment for {patient?.full_name ?? "this patient"}.</p>
         </div>
         <div className="border border-dashed border-neutral-300 rounded-xl px-6 py-14 text-center">
-          <p className="text-sm font-semibold text-neutral-700">No treatment plan yet</p>
-          <p className="text-xs text-neutral-400 mt-1.5 max-w-md mx-auto">
+          <p className="text-base font-semibold text-neutral-700">No treatment plan yet</p>
+          <p className="text-sm text-neutral-400 mt-1.5 max-w-md mx-auto">
             A plan is built on an active treatment protocol. Assign one first — the plan then pulls its device, montage, dosing and schedule from it.
           </p>
-          <button onClick={() => onNavigateSection("treatment-protocol")} className="mt-4 h-9 px-4 rounded-lg border border-neutral-300 bg-white text-xs font-semibold text-neutral-700 hover:bg-neutral-50">
+          <button onClick={() => onNavigateSection("treatment-protocol")} className="mt-4 h-9 px-4 rounded-lg border border-neutral-300 bg-white text-sm font-semibold text-neutral-700 hover:bg-neutral-50">
             Go to Treatment Protocol
           </button>
         </div>
@@ -335,7 +350,7 @@ export function TreatmentPlanFull({
   return (
     <div className="space-y-4">
       {sessionLocked && (
-        <div className="flex items-center gap-2 bg-neutral-100 border border-neutral-200 rounded-lg px-4 py-2.5 text-xs text-neutral-600">
+        <div className="flex items-center gap-2 bg-neutral-100 border border-neutral-200 rounded-lg px-4 py-2.5 text-sm text-neutral-600">
           <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 text-neutral-400" />
           Viewing a frozen session — the Treatment Plan below is read-only from here.
         </div>
@@ -347,7 +362,7 @@ export function TreatmentPlanFull({
             <h2 className="text-2xl font-bold text-neutral-900">Treatment Plan</h2>
             {isSet ? <Pill className="bg-green-50 text-green-700">Plan set</Pill> : <Pill className="bg-amber-50 text-amber-700">Draft — not finalised</Pill>}
           </div>
-          <p className="text-sm text-neutral-600 mt-1 max-w-2xl">
+          <p className="text-base text-neutral-600 mt-1 max-w-2xl">
             Forward course prescribed for {patient?.full_name ?? "this patient"}. {isSet ? `Set by ${plan.setBy} on ${plan.setAt}.` : "Review the plan below, edit where needed, then finalise."}
           </p>
         </div>
@@ -355,21 +370,21 @@ export function TreatmentPlanFull({
           <div className="flex gap-2 flex-wrap">
             {edit ? (
               <>
-                <button onClick={saveDraft} className="h-9 px-4 rounded-lg bg-brand-gradient text-white text-xs font-semibold">Save Changes</button>
-                <button onClick={() => { setForm(plan); setEdit(false); }} className="h-9 px-3.5 rounded-lg border border-neutral-300 bg-white text-xs font-medium text-neutral-600">Cancel</button>
+                <button onClick={saveDraft} className="h-9 px-4 rounded-lg bg-brand-gradient text-white text-sm font-semibold">Save Changes</button>
+                <button onClick={() => { setForm(plan); setEdit(false); }} className="h-9 px-3.5 rounded-lg border border-neutral-300 bg-white text-sm font-medium text-neutral-600">Cancel</button>
               </>
             ) : isSet ? (
               <>
-                <button onClick={reopen} className="h-9 px-3.5 rounded-lg border border-neutral-300 bg-white text-xs font-semibold text-neutral-700">Reopen for Edit</button>
-                <button onClick={onGenerateFinalReport} className="h-9 px-4 rounded-lg bg-action-orange text-white text-xs font-semibold">Convert to Final Report</button>
+                <button onClick={reopen} className="h-9 px-3.5 rounded-lg border border-neutral-300 bg-white text-sm font-semibold text-neutral-700">Reopen for Edit</button>
+                <button onClick={onGenerateFinalReport} className="h-9 px-4 rounded-lg bg-action-orange text-white text-sm font-semibold">Convert to Final Report</button>
               </>
             ) : (
               <>
-                <button onClick={() => setEdit(true)} className="h-9 px-3.5 rounded-lg border border-neutral-300 bg-white text-xs font-semibold text-neutral-700">Edit Plan</button>
+                <button onClick={() => setEdit(true)} className="h-9 px-3.5 rounded-lg border border-neutral-300 bg-white text-sm font-semibold text-neutral-700">Edit Plan</button>
                 <button
                   disabled={blocking.length > 0}
                   onClick={finalise}
-                  className={`h-9 px-4 rounded-lg text-xs font-semibold ${blocking.length ? "bg-neutral-200 text-neutral-400 cursor-not-allowed" : "bg-brand-gradient text-white"}`}
+                  className={`h-9 px-4 rounded-lg text-sm font-semibold ${blocking.length ? "bg-neutral-200 text-neutral-400 cursor-not-allowed" : "bg-brand-gradient text-white"}`}
                 >
                   Finalise Treatment Plan
                 </button>
@@ -397,14 +412,14 @@ export function TreatmentPlanFull({
           <div className="flex gap-2.5 items-start">
             {blocking.length ? <AlertTriangle className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" /> : <CheckCircle2 className="w-4 h-4 text-green-700 flex-shrink-0 mt-0.5" />}
             <div className="min-w-0 flex-1">
-              <p className={`text-[12.5px] font-bold ${blocking.length ? "text-amber-800" : "text-green-700"}`}>
+              <p className={`text-sm font-bold ${blocking.length ? "text-amber-800" : "text-green-700"}`}>
                 {blocking.length ? `${blocking.length} item${blocking.length === 1 ? "" : "s"} still to record before this plan can be finalised` : "All clinical inputs recorded — plan is ready to finalise"}
               </p>
               <div className="flex gap-x-3.5 gap-y-1.5 flex-wrap mt-2">
                 {checks.map((c) => (
                   <button key={c.key} onClick={() => onNavigateSection(c.go)} className="flex items-center gap-1.5 text-left">
                     {c.ok ? <CheckCircle2 className="w-3.5 h-3.5 text-green-700 flex-shrink-0" /> : <Circle className="w-3.5 h-3.5 text-amber-700 flex-shrink-0" />}
-                    <span className="text-[11.5px] text-neutral-700">{c.key} — <span className="text-neutral-500">{c.detail}</span></span>
+                    <span className="text-sm text-neutral-700">{c.key} — <span className="text-neutral-500">{c.detail}</span></span>
                   </button>
                 ))}
               </div>
@@ -419,7 +434,7 @@ export function TreatmentPlanFull({
         right={
           <div className="flex items-center gap-2 flex-wrap">
             <Pill className="bg-primary-100 text-primary-700">{active.modality || "Protocol"} v{versionNumber(active)}</Pill>
-            <button onClick={() => onNavigateSection("treatment-protocol")} className="h-8 px-3 rounded-lg border border-neutral-300 bg-white text-[11.5px] font-semibold text-neutral-700">Modify protocol</button>
+            <button onClick={() => onNavigateSection("treatment-protocol")} className="h-8 px-3 rounded-lg border border-neutral-300 bg-white text-sm font-semibold text-neutral-700">Modify protocol</button>
           </div>
         }
       >
@@ -427,7 +442,7 @@ export function TreatmentPlanFull({
           <div>
             <GroupLabel>Device &amp; stimulation</GroupLabel>
             <Row label="Device / modality" value={active.device_name || active.modality || "—"} />
-            <Row label="Placement" value={active.placement_summary || "—"} />
+            <Row label="Placement" value={placementLabel(active, activeDetail)} />
             <Row label="Current intensity" value={active.prescribed_current_ma != null ? `${active.prescribed_current_ma} mA` : "—"} strong />
             <Row label="Session duration" value={active.prescribed_duration_min != null ? `${active.prescribed_duration_min} min` : "—"} />
             <Row label="Ramp up / down" value={active.ramp_seconds != null ? `${active.ramp_seconds} sec` : "—"} />
@@ -467,10 +482,10 @@ export function TreatmentPlanFull({
             </div>
           ) : (
               <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
-                <div><GroupLabel>Treatment goal</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{show(plan.goal)}</p></div>
-                <div><GroupLabel>Medication plan</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{show(plan.medicationPlan)}</p></div>
-                <div className="col-span-full"><GroupLabel>Instructions for clinical assistants</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{show(plan.caInstructions)}</p></div>
-                {plan.notes && <div className="col-span-full"><GroupLabel>Plan notes</GroupLabel><p className="text-[13px] text-neutral-800 leading-relaxed">{plan.notes}</p></div>}
+                <div><GroupLabel>Treatment goal</GroupLabel><p className="text-base text-neutral-800 leading-relaxed">{show(plan.goal)}</p></div>
+                <div><GroupLabel>Medication plan</GroupLabel><p className="text-base text-neutral-800 leading-relaxed">{show(plan.medicationPlan)}</p></div>
+                <div className="col-span-full"><GroupLabel>Instructions for clinical assistants</GroupLabel><p className="text-base text-neutral-800 leading-relaxed">{show(plan.caInstructions)}</p></div>
+                {plan.notes && <div className="col-span-full"><GroupLabel>Plan notes</GroupLabel><p className="text-base text-neutral-800 leading-relaxed">{plan.notes}</p></div>}
               </div>
           )}
         </div>
@@ -482,28 +497,28 @@ export function TreatmentPlanFull({
           <div className="border border-neutral-200 rounded-lg overflow-x-auto mb-5">
             <div style={{ minWidth: 150 + clinicalSessions.length * 130 }}>
               <div className="grid gap-2.5 px-3.5 py-2 bg-neutral-50 border-b border-neutral-200" style={{ gridTemplateColumns: `150px repeat(${clinicalSessions.length}, 1fr) 110px` }}>
-                {["Scale", ...clinicalSessions.map((s) => s.label), "Change"].map((c, i) => <span key={c + i} className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide">{c}</span>)}
+                {["Scale", ...clinicalSessions.map((s) => s.label), "Change"].map((c, i) => <span key={c + i} className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">{c}</span>)}
               </div>
               {scaleGrid.map((s, i) => (
                 <div key={s.name} className={`grid gap-2.5 px-3.5 py-2.5 items-start ${i < scaleGrid.length - 1 ? "border-b border-neutral-100" : ""}`} style={{ gridTemplateColumns: `150px repeat(${clinicalSessions.length}, 1fr) 110px` }}>
-                  <p className="text-xs font-bold text-neutral-900">{s.name}</p>
+                  <p className="text-sm font-bold text-neutral-900">{s.name}</p>
                   {s.points.map((pt, j) => (
                     <div key={j}>
                       {pt.value == null ? (
-                        <p className="text-xs text-neutral-400">Not recorded</p>
+                        <p className="text-sm text-neutral-400">Not recorded</p>
                       ) : (
                         <>
-                          <p className="text-[13px] font-bold text-neutral-900">{pt.value}<span className="text-[11px] font-normal text-neutral-400"> / {pt.max}</span></p>
-                          <p className="text-[10.5px] text-neutral-500 mt-0.5">{show(pt.severity)}</p>
+                          <p className="text-base font-bold text-neutral-900">{pt.value}<span className="text-xs font-normal text-neutral-400"> / {pt.max}</span></p>
+                          <p className="text-xs text-neutral-500 mt-0.5">{show(pt.severity)}</p>
                         </>
                       )}
                     </div>
                   ))}
                   <div>
                     {s.delta == null ? (
-                      <p className="text-xs text-neutral-400">Not comparable</p>
+                      <p className="text-sm text-neutral-400">Not comparable</p>
                     ) : (
-                      <p className={`text-[12.5px] font-bold ${s.delta < 0 ? "text-green-700" : s.delta > 0 ? "text-red-700" : "text-neutral-600"}`}>
+                      <p className={`text-sm font-bold ${s.delta < 0 ? "text-green-700" : s.delta > 0 ? "text-red-700" : "text-neutral-600"}`}>
                         {s.delta > 0 ? "+" : ""}{s.delta} pts
                       </p>
                     )}
@@ -513,7 +528,7 @@ export function TreatmentPlanFull({
             </div>
           </div>
         ) : (
-          <p className="text-[12.5px] text-neutral-400 mb-5">No PRS scale scores recorded yet — scores appear here once an assessment records them.</p>
+          <p className="text-sm text-neutral-400 mb-5">No PRS scale scores recorded yet — scores appear here once an assessment records them.</p>
         )}
 
         <GroupLabel>Tolerance across delivered {active?.modality || "device"} sessions</GroupLabel>
@@ -524,12 +539,12 @@ export function TreatmentPlanFull({
           <Row label="Stopped early" value={stoppedEarly} />
           <Row label="Missed" value={missedSessions.length} tone={missedSessions.length ? "#b91c1c" : undefined} />
         </div>
-        <button onClick={() => onNavigateSection("sessions")} className="mt-3 h-8 px-3 rounded-lg border border-neutral-300 bg-white text-[11.5px] font-semibold text-neutral-700">Open session log</button>
+        <button onClick={() => onNavigateSection("sessions")} className="mt-3 h-8 px-3 rounded-lg border border-neutral-300 bg-white text-sm font-semibold text-neutral-700">Open session log</button>
       </Card>
 
       <div>
-        <h3 className="text-sm font-bold text-neutral-900 mb-1">Clinical basis</h3>
-        <p className="text-xs text-neutral-500 mb-3">Everything the plan rests on, pulled from the patient&apos;s own record. Open only what you need.</p>
+        <h3 className="text-base font-bold text-neutral-900 mb-1">Clinical basis</h3>
+        <p className="text-sm text-neutral-500 mb-3">Everything the plan rests on, pulled from the patient&apos;s own record. Open only what you need.</p>
         <div className="flex flex-col gap-2">
           <Fold title="Patient profile" summary={`${patient?.full_name ?? "—"} · ${patient?.mrn ?? "—"} · ${patient?.age ?? "—"} yrs, ${patient?.gender ?? "—"}`}>
             <KV rows={[
@@ -549,11 +564,11 @@ export function TreatmentPlanFull({
                 ["Previous Neuromodulation treatments", show(anamnesis.previous_treatments)],
                 
               ]} />
-            ) : <p className="text-[12.5px] text-neutral-400">No anamnesis recorded.</p>}
+            ) : <p className="text-sm text-neutral-400">No anamnesis recorded.</p>}
           </Fold>
 
           <Fold title="Medication" summary="No medication-tracking module in this system yet">
-            <p className="text-[12.5px] text-neutral-400">Structured medication history isn&apos;t tracked by this system — see the free-text Medication Plan above.</p>
+            <p className="text-sm text-neutral-400">Structured medication history isn&apos;t tracked by this system — see the free-text Medication Plan above.</p>
           </Fold>
 
           <Fold title="Protocols undergone" summary={protocols.length === 1 ? "1 version" : `${protocols.length} versions · ${protocols.length - 1} change${protocols.length - 1 === 1 ? "" : "s"}`}>
@@ -562,7 +577,7 @@ export function TreatmentPlanFull({
               rows={protocols.map((p) => [`v${versionNumber(p)}`, p.status, p.prescribed_current_ma != null ? `${p.prescribed_current_ma} mA` : "—", p.prescribed_duration_min != null ? `${p.prescribed_duration_min} min` : "—", fmtDate(p.created_at)])}
               empty="No protocol history."
             />
-            <p className="text-[11.5px] text-neutral-400 mt-3 leading-relaxed">Completed sessions keep the parameters delivered at the time — a newer version never rewrites them.</p>
+            <p className="text-sm text-neutral-400 mt-3 leading-relaxed">Completed sessions keep the parameters delivered at the time — a newer version never rewrites them.</p>
           </Fold>
 
           <Fold title={`${active?.modality || "Device"} session history`} summary={`${completed} delivered · ${missedSessions.length} missed · ${remaining} upcoming`}>
@@ -585,7 +600,7 @@ export function TreatmentPlanFull({
           </Fold>
 
           <Fold title="Doctor's notes" summary={doctorNoteText ? "Recorded" : "Not recorded"}>
-            {doctorNoteText ? <p className="text-[12.5px] text-neutral-800 leading-relaxed whitespace-pre-wrap">{doctorNoteText}</p> : <p className="text-[12.5px] text-neutral-400">No doctor&apos;s notes recorded.</p>}
+            {doctorNoteText ? <p className="text-sm text-neutral-800 leading-relaxed whitespace-pre-wrap">{doctorNoteText}</p> : <p className="text-sm text-neutral-400">No doctor&apos;s notes recorded.</p>}
           </Fold>
         </div>
       </div>
@@ -596,28 +611,28 @@ export function TreatmentPlanFull({
             {plan.log.map((e) => (
               <div key={e.n} className={`border border-neutral-200 rounded-lg px-4 py-3 ${e.status === "In effect" ? "border-l-[3px] border-l-primary-500" : "border-l-[3px] border-l-neutral-300"}`}>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[13px] font-bold text-neutral-900">Plan {e.n}</span>
+                  <span className="text-base font-bold text-neutral-900">Plan {e.n}</span>
                   <Pill className={e.status === "In effect" ? "bg-green-50 text-green-700" : "bg-neutral-100 text-neutral-600"}>{e.status}</Pill>
-                  <span className="text-[11.5px] text-neutral-500">Set at {e.assessmentLabel} · {e.at} · {e.by}</span>
+                  <span className="text-sm text-neutral-500">Set at {e.assessmentLabel} · {e.at} · {e.by}</span>
                 </div>
                 <div className="mt-1.5 flex flex-col gap-0.5">
-                  {e.lines.map((l, i) => <p key={i} className="text-[12.5px] text-neutral-700">{l}</p>)}
+                  {e.lines.map((l, i) => <p key={i} className="text-sm text-neutral-700">{l}</p>)}
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-[12.5px] text-neutral-400">No plan has been finalised yet. Finalising the plan above records the first entry here.</p>
+          <p className="text-sm text-neutral-400">No plan has been finalised yet. Finalising the plan above records the first entry here.</p>
         )}
         <div className="mt-4 pt-3.5 border-t border-neutral-100 flex justify-between gap-3 flex-wrap items-center">
-          <p className="text-xs text-neutral-500 max-w-lg leading-relaxed">Once the course completes, the set plan converts into the Final Report.</p>
-          <button onClick={onGenerateFinalReport} className="h-8 px-3 rounded-lg border border-neutral-300 bg-white text-[11.5px] font-semibold text-neutral-700 flex items-center gap-1.5">
+          <p className="text-sm text-neutral-500 max-w-lg leading-relaxed">Once the course completes, the set plan converts into the Final Report.</p>
+          <button onClick={onGenerateFinalReport} className="h-8 px-3 rounded-lg border border-neutral-300 bg-white text-sm font-semibold text-neutral-700 flex items-center gap-1.5">
             <FileText className="w-3.5 h-3.5" /> Go to Final Report
           </button>
         </div>
       </Card>
 
-      <p className="text-[11px] text-neutral-400 flex items-center gap-1.5">
+      <p className="text-xs text-neutral-400 flex items-center gap-1.5">
         <Pencil className="w-3 h-3" /> The plan fields and log above are saved to this browser only — there is no backend record for a Treatment Plan yet. See CLINICAL_SESSION_BACKEND_CHANGES.md.
       </p>
     </div>

@@ -133,6 +133,17 @@ export default function DoctorPatientDetailPage() {
     ? clinicalSessions.findIndex((s) => s.appointment.appointment_id === sessionId)
     : clinicalSessions.findIndex((s) => s.appointment.appointment_type === "initial");
   const currentSession = currentSessionIdx >= 0 ? clinicalSessions[currentSessionIdx] : null;
+  // Opening a patient lands on their newest session, not the first
+  // Consultation. ?visit=initial (set by the Consultation tab) opts out.
+  const wantsInitial = searchParams.get("visit") === "initial";
+  useEffect(() => {
+    if (sessionsLoading || sessionId || wantsInitial || clinicalSessions.length < 2) return;
+    const latest = clinicalSessions[clinicalSessions.length - 1];
+    if (latest.appointment.appointment_type === "initial") return;
+    const qs = new URLSearchParams(searchParams.toString());
+    qs.set("session", latest.appointment.appointment_id);
+    router.replace(`${pathname}?${qs.toString()}`, { scroll: false });
+  }, [sessionsLoading, sessionId, wantsInitial, clinicalSessions, searchParams, pathname, router]);
   // The appointment a PRS started from this view is taken under. The first
   // Consultation has no ?session= in the URL, so sessionId alone left its
   // PRS unlinked — and the backend now refuses a staff PRS with no

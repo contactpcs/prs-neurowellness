@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, ChevronDown, ChevronRight } from "lucide-react";
+import { Search, ChevronDown, ChevronRight, ChevronUp, ChevronsUpDown } from "lucide-react";
 import { Input, PatientListSkeleton } from "@/components/ui";
 import { useDoctorPatients, usePatientPermissions } from "@/lib/hooks";
 
@@ -105,11 +105,26 @@ export default function DoctorPatientsPage() {
   const [search, setSearch] = useState(searchParams.get("q") ?? "");
   const [visitDate, setVisitDate] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [visitSort, setVisitSort] = useState<"asc" | "desc" | null>(null);
   const router = useRouter();
 
   const filtered = patients
     .filter((p) => `${p.first_name} ${p.last_name} ${p.email} ${p.mrn || ""}`.toLowerCase().includes(search.toLowerCase()))
     .filter((p) => !visitDate || (p.last_visit_date ?? "").slice(0, 10) === visitDate);
+
+  const lastVisitOf = (p: (typeof patients)[number]) => p.last_visit_date ?? p.last_prs?.completed_at ?? null;
+  if (visitSort) {
+    const dir = visitSort === "asc" ? 1 : -1;
+    // Patients with no visit always sink to the bottom regardless of direction.
+    filtered.sort((a, b) => {
+      const ta = lastVisitOf(a) ? new Date(lastVisitOf(a)!).getTime() : NaN;
+      const tb = lastVisitOf(b) ? new Date(lastVisitOf(b)!).getTime() : NaN;
+      if (isNaN(ta) && isNaN(tb)) return 0;
+      if (isNaN(ta)) return 1;
+      if (isNaN(tb)) return -1;
+      return (ta - tb) * dir;
+    });
+  }
 
   if (isLoading) return <PatientListSkeleton />;
 
@@ -159,7 +174,20 @@ export default function DoctorPatientsPage() {
               <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Patient Name</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">MRN</th>
               <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Clinic Name</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Last Visit</th>
+              <th
+                className="px-6 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide"
+                aria-sort={visitSort === "asc" ? "ascending" : visitSort === "desc" ? "descending" : "none"}
+              >
+                <button
+                  type="button"
+                  onClick={() => setVisitSort((s) => (s === "desc" ? "asc" : "desc"))}
+                  className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-neutral-700"
+                  title="Sort by last visit"
+                >
+                  Last Visit
+                  {visitSort === "asc" ? <ChevronUp className="w-4 h-4" /> : visitSort === "desc" ? <ChevronDown className="w-4 h-4" /> : <ChevronsUpDown className="w-4 h-4 text-neutral-400" />}
+                </button>
+              </th>
               <th className="pl-6 pr-2 py-3 text-left text-sm font-semibold text-neutral-500 uppercase tracking-wide">Action</th>
               <th className="w-8 pl-0 pr-3 py-3"></th>
             </tr>

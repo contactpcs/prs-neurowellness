@@ -28,7 +28,8 @@ export function SessionTabsBar({
 
   function openTab(t: ClinicalSessionTab) {
     if (t.appointment.appointment_type === "initial") {
-      router.push(`${base}/patients/${patientId}`);
+      // visit=initial is the opt-out of the "open on latest session" redirect.
+      router.push(`${base}/patients/${patientId}?visit=initial`);
     } else {
       router.push(`${base}/patients/${patientId}?session=${t.appointment.appointment_id}`);
     }

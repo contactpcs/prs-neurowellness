@@ -4,6 +4,7 @@ import "./globals.css";
 import { StoreProvider } from "@/store/provider";
 import { AuthProvider } from "@/components/providers";
 import { NotificationToaster } from "@/components/providers/NotificationToast";
+import { EnterToNext } from "@/components/providers/EnterToNext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -22,6 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <AuthProvider>
               {children}
               <NotificationToaster />
+              <EnterToNext />
             </AuthProvider>
           </StoreProvider>
         </ThemeProvider>

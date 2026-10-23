@@ -70,7 +70,11 @@ export function useSidebarBadges(keys: BadgeKey[]): Record<string, number> {
     refresh();
     const onPush = () => refresh(true);
     window.addEventListener("sse:notification", onPush);
-    return () => window.removeEventListener("sse:notification", onPush);
+    window.addEventListener("notifications:changed", onPush);
+    return () => {
+      window.removeEventListener("sse:notification", onPush);
+      window.removeEventListener("notifications:changed", onPush);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [keysSignature, refresh]);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
 import { CheckCircle, AlertCircle, Stethoscope, Loader2, Save } from "lucide-react";
 import { anamnesisService, withResponses } from "@/lib/api/services/anamnesis.service";
@@ -71,7 +71,11 @@ const inputCls =
   "w-full px-3 py-2.5 border border-neutral-200 rounded-lg text-sm outline-none transition-colors focus:border-primary-500 focus:ring-1 focus:ring-primary-100 disabled:bg-neutral-50 disabled:text-neutral-500 disabled:cursor-default";
 const textareaCls = `${inputCls} min-h-[88px] resize-y`;
 
-function QuestionField({
+// memo: each answer re-renders the whole form (responses/saving state live in
+// the parent), so without it every question re-rendered on every keystroke and
+// again when the autosave indicator toggled. Props are stable per question
+// (q, that question's own response object, a useCallback onChange).
+const QuestionField = memo(function QuestionField({
   q, response, onChange, readOnly,
 }: {
   q: AnamnesisQuestion;
@@ -172,7 +176,7 @@ function QuestionField({
       className={inputCls}
     />
   );
-}
+});
 
 // ── main component ────────────────────────────────────────────────────────────
 
