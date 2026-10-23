@@ -52,7 +52,15 @@ async function getAuthMode(): Promise<"local" | "cognito"> {
   return cachedAuthMode;
 }
 
+/** Public: false (default) = patients are registered at the clinic only;
+ * the self-signup pages are hidden (backend: PATIENT_SELF_SIGNUP_ENABLED). */
+async function isSelfSignupEnabled(): Promise<boolean> {
+  const { data } = await apiClient.get(ENDPOINTS.AUTH.CONFIG);
+  return data.self_signup_enabled === true;
+}
+
 export const authService = {
+  isSelfSignupEnabled,
   /** Local dev: POST /auth/local-login {email} -> {access_token} (no
    * password check). Cognito mode: POST /auth/login {username, password} ->
    * real tokens. Either way, fetch /auth/me right after to build the User

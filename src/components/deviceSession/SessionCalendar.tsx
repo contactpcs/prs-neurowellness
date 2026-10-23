@@ -48,6 +48,8 @@ interface SessionCalendarProps {
   colorsFor?: (status?: string | null) => SessionTone;
   /** When given, clicking a day selects it and this renders under the grid. */
   renderSelectedDay?: (dateStr: string, sessions: CalendarSession[]) => ReactNode;
+  /** Show the start time on chips (it's always in the hover title). */
+  showTime?: boolean;
 }
 
 /**
@@ -62,6 +64,7 @@ export function SessionCalendar({
   labelFor = deviceSessionLabel,
   colorsFor = deviceSessionColors,
   renderSelectedDay,
+  showTime = true,
 }: SessionCalendarProps) {
   const [viewMonth, setViewMonth] = useState(() => initialMonth(sessions));
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -215,7 +218,7 @@ export function SessionCalendar({
                         onSelectSession ? "hover:brightness-95" : "cursor-default",
                       )}
                     >
-                      {fmtTime(s.time) && <span className="font-normal opacity-75 mr-1">{fmtTime(s.time)}</span>}
+                      {showTime && fmtTime(s.time) && <span className="font-normal opacity-75 mr-1">{fmtTime(s.time)}</span>}
                       {s.label}
                     </button>
                   ))}

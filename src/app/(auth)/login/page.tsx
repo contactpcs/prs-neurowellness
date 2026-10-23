@@ -17,9 +17,11 @@ export default function LoginPage() {
   });
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [cognitoMode, setCognitoMode] = useState(false);
+  const [selfSignup, setSelfSignup] = useState(false);
 
   useEffect(() => {
     authService.isRealSignupEnabled().then((mode) => setCognitoMode(mode === "cognito")).catch(() => {});
+    authService.isSelfSignupEnabled().then(setSelfSignup).catch(() => {});
   }, []);
 
   const onSubmit = (data: LoginFormData) => {
@@ -91,7 +93,12 @@ export default function LoginPage() {
         </Button>
       </form>
 
-      <div className="mt-6">
+      {!selfSignup && (
+        <p className="mt-6 text-center text-sm text-neutral-500">
+          New patient? Your clinic registers you and sends your login details to your phone or email.
+        </p>
+      )}
+      {selfSignup && <div className="mt-6">
         <p className="text-center text-sm text-neutral-500 mb-3">Don&apos;t have an account?</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Link
@@ -107,13 +114,13 @@ export default function LoginPage() {
             <Phone className="w-4 h-4" />Sign up with Mobile Number
           </Link>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
 
-// Cognito's NEW_PASSWORD_REQUIRED challenge — fires on a staff account's
-// first login (the temp password Cognito auto-emailed after AdminCreateUser).
+// Cognito's NEW_PASSWORD_REQUIRED challenge — first login of a staff account
+// or a clinic-registered patient (temporary password sent by Cognito).
 function NewPasswordForm({
   onCancel, onSubmit, isLoading, error,
 }: {
@@ -139,7 +146,7 @@ function NewPasswordForm({
       <div className="mb-7">
         <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">Set your password</h2>
         <p className="text-sm text-neutral-500 mt-1.5">
-          This is your first sign-in — choose a new password to replace the temporary one we emailed you.
+          This is your first sign-in — choose your own password to replace the temporary one we sent you.
         </p>
       </div>
 

@@ -1,8 +1,8 @@
 // Device sessions are appointments (appointment_type "device_session" /
 // "protocol_followup"), so they share the real AppointmentStatus vocabulary
-// — never the prototype's made-up "scheduled"/"missed" values. "Not yet
-// started" covers every pre-session state: booked but the CA hasn't checked
-// the patient in or begun stimulation yet.
+// — never the prototype's made-up "scheduled" value. "Upcoming" covers every
+// pre-session state: booked but the CA hasn't checked the patient in or
+// begun stimulation yet.
 const NOT_STARTED = new Set(["planned", "selected", "paid", "checked_in"]);
 const FINISHED = new Set(["completed", "cancelled", "no_show", "missed"]);
 
@@ -11,21 +11,21 @@ export function isSessionFinished(status?: string | null): boolean {
 }
 
 /** Staff label. "Paid" and the two kinds of miss get their own label (and
- * colour) — no_show = a slot was booked but not attended; missed = the date
- * passed with no slot ever booked. */
+ * colour) — "No-Show" (no_show) = a slot was booked but not attended;
+ * "Missed" (missed) = the date passed with no slot ever booked. */
 export function deviceSessionLabel(status?: string | null): string {
   if (status === "paid") return "Paid";
-  if (!status || NOT_STARTED.has(status)) return "Not yet started";
+  if (!status || NOT_STARTED.has(status)) return "Upcoming";
   if (status === "in_progress") return "In Progress";
   if (status === "completed") return "Completed";
   if (status === "no_show") return "No-Show";
-  if (status === "missed") return "Not Booked";
+  if (status === "missed") return "Missed";
   if (status === "cancelled") return "Cancelled";
   return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/** Patient-facing label — same as staff, except pre-session states read
- * "Upcoming" to match the patient page's filter name. */
+/** Patient-facing label — same as staff (kept as its own entry point so the
+ * two can diverge again without touching callers). */
 export function patientDeviceSessionLabel(status?: string | null): string {
   if (status !== "paid" && (!status || NOT_STARTED.has(status))) return "Upcoming";
   return deviceSessionLabel(status);
