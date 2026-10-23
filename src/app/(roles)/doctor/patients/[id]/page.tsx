@@ -281,7 +281,9 @@ export default function DoctorPatientDetailPage() {
     const text = newNoteBody.trim();
     if (!text || noteSaving) return;
     setNoteSaving(true);
-    addDoctorNoteApi(newNoteCategory, text)
+    // Linked to the visit like a PRS is — the first protocol's readiness
+    // gate counts the initial consultation's notes by appointment_id.
+    addDoctorNoteApi(newNoteCategory, text, visitAppointmentId)
       .then(() => { setNewNoteBody(""); setNoteSaveError(null); })
       .catch(() => setNoteSaveError("Could not save the note. Please try again."))
       .finally(() => setNoteSaving(false));
@@ -292,7 +294,7 @@ export default function DoctorPatientDetailPage() {
     const text = widgetBody.trim();
     if (!text || widgetSaving) return;
     setWidgetSaving(true);
-    addDoctorNoteApi(widgetCategory, `(from ${SECTION_LABELS[selectedSection] ?? selectedSection}) ${text}`)
+    addDoctorNoteApi(widgetCategory, `(from ${SECTION_LABELS[selectedSection] ?? selectedSection}) ${text}`, visitAppointmentId)
       .then(() => {
         setWidgetBody("");
         setNoteSaveError(null);

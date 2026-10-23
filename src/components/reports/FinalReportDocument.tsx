@@ -360,6 +360,7 @@ function Plan({ plan }: { plan: FinalReportTreatmentPlan }) {
   const schedule = [
     plan.session_count != null ? `${plan.session_count} sessions` : null,
     plan.sessions_per_week != null ? `${plan.sessions_per_week}/week` : null,
+    plan.sessions_per_day != null && plan.sessions_per_day > 1 ? `${plan.sessions_per_day}/day` : null,
     plan.follow_up_every_n != null ? `follow-up every ${plan.follow_up_every_n}` : null,
   ]
     .filter(Boolean)

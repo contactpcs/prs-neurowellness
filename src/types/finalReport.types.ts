@@ -113,6 +113,7 @@ export interface FinalReportTreatmentPlan {
   dosage: Record<string, string | number>;
   session_count: number | null;
   sessions_per_week: number | null;
+  sessions_per_day?: number | null;
   follow_up_every_n: number | null;
   schedule: { session_number: number | null; date: string; start_time: string | null; status: string }[];
   follow_ups: { after_session_number: number | null; date: string; status: string }[];

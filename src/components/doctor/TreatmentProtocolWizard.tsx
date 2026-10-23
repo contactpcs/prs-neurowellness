@@ -67,6 +67,13 @@ const CADENCE_STORED: Record<string, string> = {
 };
 const NOT_STARTED = ["planned", "selected", "paid"];
 const FREQ_OPTIONS = [1, 2, 3, 5, 7];
+// Device sessions per treatment day; ceiling matches the backend's
+// MAX_SESSIONS_PER_DAY / chk_protocol_plan_sessions_per_day (124).
+const PER_DAY_OPTIONS = [1, 2, 3, 4];
+const PER_DAY_HINT =
+  "Only prescribe more than one session a day if you are confident the patient tolerates it. Same-day sessions cannot overlap.";
+const frequencyLabel = (perWeek: number, perDay: number) =>
+  `${perWeek === 7 ? "Daily" : `${perWeek}×/week`}${perDay > 1 ? ` · ${perDay}×/day` : ""}`;
 
 interface AssignedScale extends ProtocolScaleAssignment {
   displayName: string;
@@ -109,6 +116,7 @@ interface WizardState {
   tvnsRampDownSec: string;
   sessionCount: string;
   sessionsPerWeek: number;
+  sessionsPerDay: number;
   followUpEveryN: string;
   startDate: string;
   skipDates: string[];
@@ -127,7 +135,7 @@ function emptyState(): WizardState {
     dosingId: null, currentMa: "", sessionDurationMin: "", rampSeconds: "30",
     tvnsWavelength: "", tvnsPattern: "", tvnsStrengthPct: "10", tvnsFrequencyHz: "",
     tvnsPulseWidthUs: "", tvnsDurationMin: "", tvnsRampUpSec: "", tvnsRampDownSec: "",
-    sessionCount: "20", sessionsPerWeek: 5, followUpEveryN: "",
+    sessionCount: "20", sessionsPerWeek: 5, sessionsPerDay: 1, followUpEveryN: "",
     startDate: todayIso(), skipDates: [], extraDates: [],
     scales: [], protocolNote: "",
   };
@@ -378,6 +386,7 @@ export function TreatmentProtocolWizard({
         tvnsRampDownSec: detail.prescribed_tvns_ramp_down_sec != null ? String(detail.prescribed_tvns_ramp_down_sec) : "",
         sessionCount: String(detail.session_count),
         sessionsPerWeek: detail.sessions_per_week ?? s.sessionsPerWeek,
+        sessionsPerDay: detail.sessions_per_day ?? s.sessionsPerDay,
         followUpEveryN: detail.follow_up_every_n ? String(detail.follow_up_every_n) : "",
       });
       original.current = { detail, state: fill(emptyState()) };
@@ -661,13 +670,14 @@ export function TreatmentProtocolWizard({
         start_date: state.startDate,
         session_count: Math.max(10, Math.min(30, parseInt(state.sessionCount) || 20)),
         sessions_per_week: state.sessionsPerWeek,
+        sessions_per_day: state.sessionsPerDay,
         follow_up_every_n: state.followUpEveryN && !followUpError(state.followUpEveryN, state.sessionCount) ? parseInt(state.followUpEveryN) : undefined,
         skip_dates: effectiveSkipDates,
         extra_dates: state.extraDates,
       }).then(setPreview).catch(() => setPreview(null)).finally(() => setPreviewLoading(false));
     }, 350);
     return () => clearTimeout(t);
-  }, [step, state.startDate, state.sessionCount, state.sessionsPerWeek, state.followUpEveryN, state.extraDates, effectiveSkipDates, clinicScheduleReady]);
+  }, [step, state.startDate, state.sessionCount, state.sessionsPerWeek, state.sessionsPerDay, state.followUpEveryN, state.extraDates, effectiveSkipDates, clinicScheduleReady]);
 
   // ─── Placement node clicks ───
   const maxCathodes = validation?.maxCathodes ?? (isHD ? 4 : 1);
@@ -836,11 +846,13 @@ export function TreatmentProtocolWizard({
     }
 
     const scheduleChanged =
-      state.sessionCount !== o.sessionCount || state.sessionsPerWeek !== o.sessionsPerWeek || state.followUpEveryN !== o.followUpEveryN
+      state.sessionCount !== o.sessionCount || state.sessionsPerWeek !== o.sessionsPerWeek || state.sessionsPerDay !== o.sessionsPerDay
+      || state.followUpEveryN !== o.followUpEveryN
       || state.startDate !== o.startDate || state.skipDates.length > 0 || state.extraDates.length > 0;
     if (scheduleChanged || deviceChanged) {
       if (state.sessionCount !== o.sessionCount) body.session_count = num(state.sessionCount);
       if (state.sessionsPerWeek !== o.sessionsPerWeek) body.sessions_per_week = state.sessionsPerWeek;
+      if (state.sessionsPerDay !== o.sessionsPerDay) body.sessions_per_day = state.sessionsPerDay;
       if (state.followUpEveryN !== o.followUpEveryN && state.followUpEveryN) body.follow_up_every_n = num(state.followUpEveryN);
       body.start_date = state.startDate;
       if (effectiveSkipDates.length) body.skip_dates = effectiveSkipDates;
@@ -923,6 +935,7 @@ export function TreatmentProtocolWizard({
         follow_up_every_n: state.followUpEveryN ? parseInt(state.followUpEveryN) : undefined,
         start_date: state.startDate,
         sessions_per_week: state.sessionsPerWeek,
+        sessions_per_day: state.sessionsPerDay,
         skip_dates: effectiveSkipDates,
         extra_dates: state.extraDates,
         // Step 2. Recorded so "what was this patient treated for" is
@@ -1432,7 +1445,7 @@ function LiveSummary({
       ? `${state.customMontageName} (custom)`
       : state.anodeSite ? `${state.anodeSite} → ${state.cathodeSites.join(", ") || "—"}` : "—"],
     ["Dose", state.currentMa || state.sessionDurationMin ? `${state.currentMa || "—"} mA · ${state.sessionDurationMin || "—"} min` : "—"],
-    ["Frequency", `${state.sessionsPerWeek === 7 ? "Daily" : `${state.sessionsPerWeek}×/week`} × ${state.sessionCount || "—"} sessions`],
+    ["Frequency", `${frequencyLabel(state.sessionsPerWeek, state.sessionsPerDay)} × ${state.sessionCount || "—"} sessions`],
     ["Scales", state.scales.length ? state.scales.map((s) => s.displayName).join(", ") : "—"],
     ["Schedule", preview ? `${preview.session_count} booked · ${preview.follow_up_count} follow-ups` : "—"],
   ];
@@ -1999,6 +2012,22 @@ function DosingStep({
             ))}
           </div>
         </div>
+
+        <div>
+          <p className="text-xs font-medium text-neutral-700 mb-2">Device sessions per day</p>
+          <div className="flex flex-wrap gap-2">
+            {PER_DAY_OPTIONS.map((n) => (
+              <button
+                key={n}
+                onClick={() => onField("sessionsPerDay", n)}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-medium border ${state.sessionsPerDay === n ? "border-blue-600 bg-blue-600 text-white" : "border-neutral-300 text-neutral-600"}`}
+              >
+                {n}× / day
+              </button>
+            ))}
+          </div>
+          {state.sessionsPerDay > 1 && <p className="text-xs text-amber-700 mt-2">{PER_DAY_HINT}</p>}
+        </div>
       </div>
     );
   }
@@ -2108,6 +2137,22 @@ function DosingStep({
         </div>
       </div>
 
+      <div>
+        <p className="text-xs font-medium text-neutral-700 mb-2">Device sessions per day</p>
+        <div className="flex flex-wrap gap-2">
+          {PER_DAY_OPTIONS.map((n) => (
+            <button
+              key={n}
+              onClick={() => onField("sessionsPerDay", n)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-medium border ${state.sessionsPerDay === n ? "border-blue-600 bg-blue-600 text-white" : "border-neutral-300 text-neutral-600"}`}
+            >
+              {n}× / day
+            </button>
+          ))}
+        </div>
+        {state.sessionsPerDay > 1 && <p className="text-xs text-amber-700 mt-2">{PER_DAY_HINT}</p>}
+      </div>
+
       <Input
         label="Follow-up every N sessions (optional)" value={state.followUpEveryN} inputMode="numeric"
         onChange={(e) => onField("followUpEveryN", e.target.value.replace(/\D/g, ""))}
@@ -2215,10 +2260,16 @@ function ScheduleStep({
   const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-  const sessionsByDate = new Map((preview?.sessions || []).map((s) => [s.planned_date, s.session_number]));
+  // A day can hold several sessions (sessions_per_day > 1): label it with
+  // the whole run, "S3" or "S3–4".
+  const sessionsByDate = new Map<string, string>();
+  for (const s of preview?.sessions || []) {
+    const prev = sessionsByDate.get(s.planned_date);
+    sessionsByDate.set(s.planned_date, prev ? `${prev.split("–")[0]}–${s.session_number}` : `S${s.session_number}`);
+  }
   const followUpsByDate = new Set((preview?.follow_ups || []).map((f) => f.planned_date));
 
-  const weeks: { label: string; days: { date: string; iso: string; session?: number; isFollowUp: boolean }[] }[] = [];
+  const weeks: { label: string; days: { date: string; iso: string; session?: string; isFollowUp: boolean }[] }[] = [];
   if (preview?.first_date && preview?.last_date) {
     const first = new Date(preview.first_date + "T00:00:00Z");
     const monday = new Date(first); monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
@@ -2248,7 +2299,7 @@ function ScheduleStep({
           <div>
             <h2 className="text-base font-bold text-neutral-900">7 · Session Schedule</h2>
             <p className="text-sm text-neutral-500 mt-1">
-              {preview ? `${preview.session_count} sessions · ${preview.week_count} weeks · ${preview.follow_up_count} follow-ups` : "Set a start date to preview."}
+              {preview ? `${preview.session_count} sessions${preview.day_count && preview.day_count !== preview.session_count ? ` on ${preview.day_count} days` : ""} · ${preview.week_count} weeks · ${preview.follow_up_count} follow-ups` : "Set a start date to preview."}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -2313,7 +2364,7 @@ function ScheduleStep({
                     </div>
                     {closed && <p className="text-[9.5px] text-neutral-400 mt-0.5">Closed</p>}
                     {d.session != null && !skipped && (
-                      <div className="mt-1 rounded px-1 py-0.5 text-[10px] font-semibold text-white bg-blue-600 text-center">S{d.session}</div>
+                      <div className="mt-1 rounded px-1 py-0.5 text-[10px] font-semibold text-white bg-blue-600 text-center">{d.session}</div>
                     )}
                     {skipped && (
                       <div className="mt-1 rounded px-1 py-0.5 text-[10px] font-semibold text-neutral-400 bg-neutral-100 text-center line-through">Skipped</div>
@@ -2428,7 +2479,7 @@ function ReviewStep({
         ["Current intensity", state.currentMa ? `${state.currentMa} mA` : "—"],
         ["Session duration", state.sessionDurationMin ? `${state.sessionDurationMin} min` : "—"],
         ["Ramp up/down", state.rampSeconds ? `${state.rampSeconds} s` : "—"],
-        ["Frequency", `${state.sessionsPerWeek === 7 ? "Daily" : `${state.sessionsPerWeek}×/week`}`],
+        ["Frequency", frequencyLabel(state.sessionsPerWeek, state.sessionsPerDay)],
         ["Total sessions", state.sessionCount || "—"],
       ],
     },

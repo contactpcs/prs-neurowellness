@@ -483,6 +483,7 @@ export default function DeviceSessionChecklistPage() {
                         }),
                     ramp_seconds: protocol.ramp_seconds,
                     sessions_per_week: protocol.sessions_per_week,
+                    sessions_per_day: protocol.sessions_per_day ?? 1,
                     session: appointment.session_number
                       ? `Session ${appointment.session_number} of ${protocol.session_count}`
                       : `Session of ${protocol.session_count}`,

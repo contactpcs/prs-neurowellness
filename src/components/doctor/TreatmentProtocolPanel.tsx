@@ -350,6 +350,7 @@ export function ProtocolFacts({ detail, title }: { detail: ProtocolDetail; title
     ["Device / Modality", detail.device_name ? `${detail.device_name} · ${detail.modality}` : detail.modality || "—"],
     ["Session Duration", detail.prescribed_duration_min != null ? `${detail.prescribed_duration_min} min` : detail.dosing?.session_duration_min != null ? `${detail.dosing.session_duration_min} min` : "—"],
     ["Sessions Per Week", detail.sessions_per_week != null ? `${detail.sessions_per_week} ${detail.sessions_per_week === 1 ? "session" : "sessions"} / week` : "—"],
+    ["Sessions Per Day", `Up to ${detail.sessions_per_day ?? 1} ${(detail.sessions_per_day ?? 1) === 1 ? "session" : "sessions"} / day`],
     ["Treatment Period", first && last ? `${fmtDate(first)} – ${fmtDate(last)}` : "—"],
     ["Total Planned Sessions", String(detail.session_count)],
     ["Follow-ups", detail.follow_up_every_n ? `Every ${detail.follow_up_every_n} sessions` : "None scheduled"],

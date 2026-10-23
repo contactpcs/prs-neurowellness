@@ -365,6 +365,8 @@ export interface SchedulePreviewRequest {
   start_date: string;
   session_count: number;
   sessions_per_week: number;
+  /** 1..MAX_SESSIONS_PER_DAY device sessions on each treatment day (default 1). */
+  sessions_per_day?: number;
   follow_up_every_n?: number | null;
   skip_dates: string[];
   extra_dates: string[];
@@ -388,6 +390,7 @@ export interface SchedulePreview {
   first_date?: string | null;
   last_date?: string | null;
   week_count: number;
+  day_count?: number;
 }
 
 // ─── Step 8 — Protocol lifecycle ───
@@ -433,6 +436,8 @@ export interface ProtocolCreate {
   start_date: string;
   /** 1 | 2 | 3 | 5 | 7 only — chk_treatment_protocols_sessions_per_week. */
   sessions_per_week: number;
+  /** Doctor-set max device sessions per day, 1..4 — chk_protocol_plan_sessions_per_day. */
+  sessions_per_day?: number;
   skip_dates: string[];
   extra_dates: string[];
   conditions: ProtocolConditionAssignment[];
@@ -486,6 +491,7 @@ export interface ProtocolUpdate {
   prescribed_tvns_ramp_up_sec?: number | null;
   prescribed_tvns_ramp_down_sec?: number | null;
   sessions_per_week?: number | null;
+  sessions_per_day?: number | null;
   device_settings?: Record<string, unknown>;
   notes?: string | null;
 }
@@ -536,6 +542,7 @@ export interface ProtocolRead {
   prescribed_tvns_ramp_up_sec?: number | null;
   prescribed_tvns_ramp_down_sec?: number | null;
   sessions_per_week?: number | null;
+  sessions_per_day?: number;
   device_settings: Record<string, unknown>;
   notes?: string | null;
   activated_at?: string | null;
@@ -620,6 +627,7 @@ export interface ProtocolAmend {
    *  the whole course; delivered sessions count toward it. */
   session_count?: number;
   sessions_per_week?: number;
+  sessions_per_day?: number;
   follow_up_every_n?: number;
   start_date?: string;
   skip_dates?: string[];
