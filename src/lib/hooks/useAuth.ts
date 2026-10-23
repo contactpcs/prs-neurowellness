@@ -81,7 +81,11 @@ export function useAuth() {
   // app sees it, then routes straight into the portal. No re-login needed.
   const completeConsent = useCallback(async () => {
     const result = await dispatch(refreshUser());
-    if (refreshUser.fulfilled.match(result)) {
+    // Still inactive after the refresh = the sign didn't actually activate the
+    // account. Routing into the portal would just bounce back to /consent
+    // (AuthProvider's inactive gate) in an endless push/replace loop, so stay
+    // put and let the caller show the problem.
+    if (refreshUser.fulfilled.match(result) && result.payload?.is_active !== false) {
       router.push(dashboardRouteForRoles(result.payload?.roles || []));
     }
     return result;

@@ -40,7 +40,10 @@ export default function ConsentPage() {
     // Backend already flipped profiles.is_active=TRUE in the same
     // transaction — re-read /auth/me and go straight into the portal,
     // no re-login needed.
-    await completeConsent();
+    const result = await completeConsent();
+    if (!("payload" in result) || (result.payload as { is_active?: boolean } | undefined)?.is_active === false) {
+      setError("Consent is signed but your account is not active yet — contact your clinic admin.");
+    }
   }
 
   useEffect(() => {
@@ -76,7 +79,9 @@ export default function ConsentPage() {
       .catch(() => setError("Could not load your consent form. Try refreshing."))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRestoring, user, router]);
+    // Keyed on id/is_active, not the user object: refreshUser() swaps the
+    // object, which would re-run this fetch (and any redirect it triggers).
+  }, [isRestoring, user?.id, user?.is_active, router]);
 
   async function handleSign() {
     if (!record || !agreed || signingRef.current) return;
