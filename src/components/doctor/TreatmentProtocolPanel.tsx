@@ -95,7 +95,7 @@ export function ElectrodeChips({ detail }: { detail: ProtocolDetail }) {
             <p className="text-2xl font-bold text-blue-700 mt-1">{cathodeSite}</p>
           </div>
         </div>
-        {isCustomMontage && (anodeSite !== "—" || cathodeSites.length > 0) && (
+        {(anodeSite !== "—" || cathodeSites.length > 0) && (
           <div className="pt-1">
             <PlacementMap anodeSite={anodeSite === "—" ? null : anodeSite} cathodeSites={cathodeSites} interactive={false} />
           </div>
@@ -349,7 +349,7 @@ export function ProtocolFacts({ detail, title }: { detail: ProtocolDetail; title
   const rows: [string, string][] = [
     ["Device / Modality", detail.device_name ? `${detail.device_name} · ${detail.modality}` : detail.modality || "—"],
     ["Session Duration", detail.prescribed_duration_min != null ? `${detail.prescribed_duration_min} min` : detail.dosing?.session_duration_min != null ? `${detail.dosing.session_duration_min} min` : "—"],
-    ["Sessions Per Day", detail.dosing?.sessions_per_day != null ? `${detail.dosing.sessions_per_day} session / day` : "—"],
+    ["Sessions Per Week", detail.sessions_per_week != null ? `${detail.sessions_per_week} ${detail.sessions_per_week === 1 ? "session" : "sessions"} / week` : "—"],
     ["Treatment Period", first && last ? `${fmtDate(first)} – ${fmtDate(last)}` : "—"],
     ["Total Planned Sessions", String(detail.session_count)],
     ["Follow-ups", detail.follow_up_every_n ? `Every ${detail.follow_up_every_n} sessions` : "None scheduled"],

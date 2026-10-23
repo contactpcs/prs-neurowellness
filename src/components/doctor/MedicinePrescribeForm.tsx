@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Save } from "lucide-react";
 import { Button } from "@/components/ui";
 import { useAppDispatch } from "@/store/hooks";
@@ -29,6 +29,19 @@ export function MedicinePrescribeForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const formRef = useRef<HTMLDivElement>(null);
+
+  // Enter in a text box moves to the next field (DOM order); on the last
+  // field it saves, so the doctor can fill the form without the mouse.
+  const onEnter = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Enter" || e.nativeEvent.isComposing || !(e.target instanceof HTMLInputElement)) return;
+    e.preventDefault();
+    const fields = Array.from(formRef.current?.querySelectorAll<HTMLElement>("input, select") ?? []);
+    const next = fields[fields.indexOf(e.target) + 1];
+    if (next) next.focus();
+    else if (form.name.trim() && !saving) save();
+  };
+
   const save = async () => {
     setSaving(true);
     setError(null);
@@ -43,7 +56,7 @@ export function MedicinePrescribeForm({
   };
 
   return (
-    <div className="border border-blue-100 bg-blue-50/50 rounded-lg p-4 space-y-4">
+    <div ref={formRef} onKeyDown={onEnter} className="border border-blue-100 bg-blue-50/50 rounded-lg p-4 space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div>
           <label className="text-xs font-semibold text-neutral-700">Medicine name *</label>

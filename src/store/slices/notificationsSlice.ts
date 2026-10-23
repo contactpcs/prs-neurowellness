@@ -36,6 +36,11 @@ function isFresh(loadedAt: number | null): boolean {
 
 type NotificationQueryParams = { skip?: number; limit?: number };
 
+// Sidebar badges (useSidebarBadges) keep their own counts; tell them to refetch.
+function notifyBadgesChanged() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("notifications:changed"));
+}
+
 export const fetchNotifications = createAsyncThunk<
   { notifications: Notification[]; total: number; unread_count: number },
   NotificationQueryParams | undefined,
@@ -62,6 +67,7 @@ export const markNotificationRead = createAsyncThunk<
   "notifications/markRead",
   async (notificationId) => {
     await notificationsService.markRead(notificationId);
+    notifyBadgesChanged();
     return notificationId;
   },
 );
@@ -74,6 +80,7 @@ export const markAllNotificationsRead = createAsyncThunk<
   "notifications/markAllRead",
   async () => {
     await notificationsService.markAllRead();
+    notifyBadgesChanged();
   },
 );
 
@@ -117,14 +124,14 @@ const notificationsSlice = createSlice({
         s.error = a.error.message ?? "Failed to load notifications";
       })
       .addCase(markNotificationRead.fulfilled, (s, a) => {
-        const notification = s.notifications.find((n: any) => n.id === a.payload || (n as any).notification_id === a.payload);
-        if (notification && !(notification as any).read) {
-          (notification as any).read = true;
+        const notification = s.notifications.find((n) => n.id === a.payload);
+        if (notification && !notification.is_read) {
+          notification.is_read = true;
           if (s.unreadCount > 0) s.unreadCount -= 1;
         }
       })
       .addCase(markAllNotificationsRead.fulfilled, (s) => {
-        s.notifications.forEach((n: any) => { (n as any).read = true; });
+        s.notifications.forEach((n) => { n.is_read = true; });
         s.unreadCount = 0;
       });
   },
